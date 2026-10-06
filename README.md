@@ -4,7 +4,7 @@
 
 Siku brings your Silo library to Roku TVs and streaming players. It is a port of the official [Silo Android TV client](https://github.com/Silo-Server/silo-android) to Roku SceneGraph and BrightScript, and aims to look, feel and behave like it on a 10-foot, remote-driven screen.
 
-> **Status:** early development. Sign-in, profiles and settings work; browsing and playback are being built. The checklist below tracks progress.
+> **Status:** early development. Sign-in, browsing, detail pages and the player are built and tested in a simulator; they still need testing on a real Roku. Music and audiobooks are in progress. The checklist below tracks progress.
 >
 > Siku is an independent community project. It is not made or endorsed by Silo Media L.L.C. "Silo" is a trademark of Silo Media L.L.C. and is used here only to say what Siku connects to.
 
@@ -18,11 +18,11 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Sign in | Username and password | ✅ |
 | Sign in | Sign in with a code or QR from your phone (device sign-in) | ✅ |
 | Profiles | Profile picker, PIN-protected profiles, switch profile | ✅ |
-| Navigation | Top bar like Android TV: Home, media tabs (Movies, Shows, Music, Audiobooks), For You, Calendar, Search, Profile | 🚧 |
-| Home | Hero banner plus server-defined rows: Continue Watching, Next Up, Recently Added | 🚧 |
-| Browse | Library grids with sort and filters, collections | 🚧 |
+| Navigation | Top bar like Android TV: Home, media tabs (Movies, Shows, Music, Audiobooks), For You, Calendar, Search, Profile | ✅ |
+| Home | Hero banner plus server-defined rows: Continue Watching, Next Up, Recently Added | ✅ |
+| Browse | Library grids with sort and filters, collections | ✅ |
 | Detail | Movies, series (seasons and episodes), episodes, cast, person pages | ✅ |
-| Discover | Search, For You (Watchlist and Favorites), release Calendar | 🚧 |
+| Discover | Search, For You (Watchlist and Favorites), release Calendar | ✅ |
 | Playback | Direct Play, Remux or Transcode chosen by the server from the Roku's capabilities | 🟡 needs device testing |
 | Playback | Resume, progress sync, mark watched, audio and subtitle selection, Skip Intro, Up Next | 🟡 needs device testing |
 | Settings | Account, playback and subtitle preferences, sign out, switch server | ✅ |
