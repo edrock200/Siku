@@ -102,6 +102,9 @@ A screen is `<component name="XScreen" extends="BaseScreen">` (`components/BaseS
 
 ## Calling the API
 
+Soku uses the Silo **v2 API only** (`/api/v2/...`). `ApiTask` refuses any `path` outside `/api/v2/`. Never call `/api/v1` or the root `/health` route.
+
+
 ```brightscript
 Api_get("/api/v2/home/sections", { image_size: "medium" }, "onHome")
 

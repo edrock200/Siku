@@ -36,6 +36,10 @@ function perform(req as object) as object
 
     if not Str_isEmpty(req.url) then
         url = req.url
+    else if Left(Str_orEmpty(req.path), 8) <> "/api/v2/" then
+        ' Soku speaks only the Silo v2 API (docs/api-spec.md §0); v1 is a frozen alpha surface.
+        print "[ApiTask] refused non-v2 path: "; req.path
+        return { status: 0, text: "", data: invalid, error: { code: "not_v2", title: "Unsupported API path" } }
     else
         base = req.baseUrl
         if Str_isEmpty(base) then base = session.serverUrl
