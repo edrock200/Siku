@@ -3,6 +3,18 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.10
+
+- **Fixed:** subtitles now turn on by themselves according to your Subtitles settings, the same
+  way the Android TV app does it:
+  - **Always:** the best track in your chosen language starts on every video.
+  - **Auto:** subtitles start when the audio is in another language; with Show Forced Subtitles
+    on, a forced track (signs and foreign dialogue) starts for audio in your language.
+  - **Off:** no subtitles.
+  A full track is preferred over forced or SDH ones. A subtitle you pick on the details page,
+  or Off chosen there, still wins.
+- **Note:** this applies to text subtitles (SRT and WebVTT), which are the kinds Roku can show.
+
 ## v0.1.9
 
 - **Fixed:** the highlighted poster was cut off at the top of each row on Home, and in the cast,

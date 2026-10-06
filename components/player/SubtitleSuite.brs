@@ -172,7 +172,93 @@ function Subs_buildTrack(t as object) as dynamic
         combinedIndex: t.combined_index
         isVtt: isVtt
         storedId: storedId
+        forced: t.forced = true
+        hearingImpaired: t.hearing_impaired = true or Subs_labelIsSdh(Str_orEmpty(t.label))
     }
+end function
+
+' ---------- Automatic subtitle choice ----------
+' Android TV's resolveAutoSubtitle (shared/model/playback/AutoSubtitleResolver.kt), over the tracks
+' this Roku can render. Returns the m.subtitleTracks index to turn on, -1 for "subtitles off", or
+' -2 when the preferences pick nothing (the server's own selection, if any, then stands).
+'   mode off, or no tracks                → off / nothing
+'   no preferred language                 → only "always" picks (the best track of any language)
+'   "auto" and the audio is that language → off, or that language's forced track if forced subs are on
+'   otherwise                             → the best track in that language, else any forced track
+' Best within a pool: full dialogue (not forced, not SDH) → not forced → any.
+function Subs_autoChoice(audioLanguage as string) as integer
+    tracks = m.subtitleTracks
+    if tracks.Count() = 0 then return -2
+    prefs = Subs_autoPrefs()
+    if prefs.mode = "off" then return -1
+    target = Subs_autoLangKey(prefs.language)
+    if target = "" then
+        if prefs.mode <> "always" then return -2
+        return Subs_autoBest(tracks, "")
+    end if
+    if prefs.mode = "auto" and Subs_autoLangKey(audioLanguage) = target then
+        if prefs.showForced then
+            for i = 0 to tracks.Count() - 1
+                if tracks[i].forced and Subs_autoLangKey(tracks[i].language) = target and not tracks[i].hearingImpaired then return i
+            end for
+            for i = 0 to tracks.Count() - 1
+                if tracks[i].forced and Subs_autoLangKey(tracks[i].language) = target then return i
+            end for
+        end if
+        return -1
+    end if
+    best = Subs_autoBest(tracks, target)
+    if best >= 0 then return best
+    if prefs.showForced then
+        for i = 0 to tracks.Count() - 1
+            if tracks[i].forced then return i
+        end for
+    end if
+    return -2
+end function
+
+function Subs_autoBest(tracks as object, target as string) as integer
+    for pass = 0 to 2
+        for i = 0 to tracks.Count() - 1
+            t = tracks[i]
+            if target = "" or Subs_autoLangKey(t.language) = target then
+                if pass = 2 then return i
+                if not t.forced and (pass = 1 or not t.hearingImpaired) then return i
+            end if
+        end for
+    end for
+    return -2
+end function
+
+' The cascaded preferences, as Android TV's player reads them: the watch detail's effective values
+' for this title, then the profile settings. A blank language means "no preference".
+function Subs_autoPrefs() as object
+    w = m.watch
+    if w = invalid then w = {}
+    lang = Str_orEmpty(w.effective_subtitle_language).Trim()
+    if lang = "" then lang = Str_orEmpty(Settings_value("playback.subtitle_language", "")).Trim()
+    mode = LCase(Str_orEmpty(w.effective_subtitle_mode).Trim())
+    if mode = "" then mode = LCase(Str_orEmpty(Settings_value("playback.subtitle_mode", "auto")).Trim())
+    if mode = "" then mode = "auto"
+    forced = w.effective_show_forced_subtitles
+    if Type(forced) <> "roBoolean" and Type(forced) <> "Boolean" then forced = Settings_value("playback.show_forced_subtitles", true)
+    return { language: lang, mode: mode, showForced: forced = true }
+end function
+
+' ISO-639 folding for "is this the language asked for" (Android's autoSubtitleLanguageKey).
+function Subs_autoLangKey(code as dynamic) as string
+    c = LCase(Str_orEmpty(code).Trim()).Replace("_", "-")
+    dash = Instr(1, c, "-")
+    if dash > 0 then c = Left(c, dash - 1)
+    if c = "" or c = "und" then return ""
+    folds = { eng: "en", spa: "es", fre: "fr", fra: "fr", ger: "de", deu: "de", dut: "nl", nld: "nl", jpn: "ja", dan: "da", ita: "it", por: "pt", rus: "ru", chi: "zh", zho: "zh", kor: "ko", swe: "sv", nor: "no", fin: "fi", pol: "pl" }
+    if folds.DoesExist(c) then return folds[c]
+    return c
+end function
+
+function Subs_labelIsSdh(label as string) as boolean
+    l = LCase(label)
+    return Instr(1, l, "sdh") > 0 or Instr(1, l, "hearing impaired") > 0 or Instr(1, l, "cc") = 1
 end function
 
 function Subs_appendQuery(u as string, pair as string) as string

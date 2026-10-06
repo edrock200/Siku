@@ -130,6 +130,7 @@ sub resetPlaybackState()
     m.shuffleAdvancing = false
     m.shufflePicking = false
     m.forceSubtitlesOff = false
+    m.explicitSubtitleId = ""
     m.upNextShown = false
     m.upNextDismissed = false
     m.countdown = -1
@@ -417,6 +418,7 @@ sub startSession(installation as string)
     prefix = "file:" + m.fileId + ":"
     if audioId <> "" and Left(audioId, Len(prefix)) <> prefix then audioId = ""
     if subId <> "" and Left(subId, Len(prefix)) <> prefix then subId = ""
+    m.explicitSubtitleId = subId
     body = PlaybackCaps_startBody(installation, m.fileId, m.attemptId, startPos, audioId, subId)
     Api_send("POST", "/api/v2/playback/start", body, "onStart")
 end sub
@@ -530,15 +532,28 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
     end for
     if tracks.Count() > 0 then content.SubtitleTracks = tracks
 
-    ' Default subtitle: the caller's choice (a remount keeps the current track), else what the plan
-    ' selected, if we can render it.
+    ' Default subtitle: the caller's choice (a remount keeps the current track), else the detail
+    ' page's pick (the plan carries it), else the profile's language and Off/Auto/Always choice as
+    ' Android TV resolves it (Subs_autoChoice), else whatever the plan selected, if we can render it.
     m.pendingSubtitleTrackId = ""
+    planSubId = ""
+    if plan.subtitle <> invalid and Str_orEmpty(plan.subtitle.mode) <> "off" and plan.selected_tracks <> invalid and plan.selected_tracks.subtitle <> invalid then
+        planSubId = Str_orEmpty(plan.selected_tracks.subtitle.id)
+    end if
     if opts.subtitleTrackId <> invalid then
         m.pendingSubtitleTrackId = Str_orEmpty(opts.subtitleTrackId)
     else if m.forceSubtitlesOff then
         ' The detail page chose "Off · Start without subtitles".
-    else if plan.subtitle <> invalid and Str_orEmpty(plan.subtitle.mode) <> "off" and plan.selected_tracks <> invalid and plan.selected_tracks.subtitle <> invalid then
-        m.pendingSubtitleTrackId = Str_orEmpty(plan.selected_tracks.subtitle.id)
+    else if Str_orEmpty(m.explicitSubtitleId) <> "" then
+        m.pendingSubtitleTrackId = planSubId
+        if m.pendingSubtitleTrackId = "" then m.pendingSubtitleTrackId = m.explicitSubtitleId
+    else
+        autoPick = Subs_autoChoice(planAudioLanguage(plan))
+        if autoPick >= 0 then
+            m.pendingSubtitleTrackId = m.subtitleTracks[autoPick].trackId
+        else if autoPick = -2 then
+            m.pendingSubtitleTrackId = planSubId
+        end if
     end if
 
     m.video.content = content
@@ -549,6 +564,28 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
     ' Follow the syncable subtitles of this file (their timing and running sync jobs).
     if not m.subs.syncLoaded then Subs_syncReload()
 end sub
+
+' Language of the audio track the plan plays (from this file's version), for automatic subtitles.
+function planAudioLanguage(plan as object) as string
+    if m.version = invalid then return ""
+    tracks = Arr_or(m.version.audio_tracks)
+    if tracks.Count() = 0 then return ""
+    idx = -1
+    if plan.selected_tracks <> invalid and plan.selected_tracks.audio <> invalid then
+        a = plan.selected_tracks.audio
+        if a.index <> invalid then idx = Int(Val(Str_orEmpty(a.index)))
+    end if
+    if idx < 0 or idx >= tracks.Count() then
+        idx = 0
+        for i = 0 to tracks.Count() - 1
+            if tracks[i].default = true then
+                idx = i
+                exit for
+            end if
+        end for
+    end if
+    return Str_orEmpty(tracks[idx].language)
+end function
 
 ' Fetches the mounted sidecar again (a delay change or new server timing): the Video node keeps the
 ' cues it parsed, so the same plan is remounted at the current position with the same track.
