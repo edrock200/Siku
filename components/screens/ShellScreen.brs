@@ -27,13 +27,18 @@ sub init()
     m.panelLibs = []
     m.currentLibraryId = ""
     m.profileId = Str_orEmpty(m.global.session.profileId)
+    ' Fetch bookkeeping: the libraries and the requests gate load when the screen is shown
+    ' (onScreenShown runs right after init) and again only when stale (see refreshData).
+    m.libsLoadedAt = 0
+    m.libsLoading = false
+    m.gateLoadedAt = 0
+    m.gateLoading = false
+    m.prefsSig = prefsSignature()
 
     updateProfile()
     resetRequestsGate()
     buildTabs()
     showHome()
-    loadLibraries()
-    loadRequestsGate()
 end sub
 
 ' ---------- Tabs ----------
@@ -44,13 +49,35 @@ sub updateProfile()
     m.bar.profileName = Str_orEmpty(s.profileName)
 end sub
 
+' The preferences that change the tab set.
+function prefsSignature() as string
+    p = m.global.prefs
+    if p = invalid then return ""
+    return Str_orEmpty(p.showAudiobooks) + "|" + Str_orEmpty(p.posterSize)
+end function
+
+' Loads the libraries and the requests gate once per profile, then again only when the data is
+' older than five minutes (or forced). In-flight requests are never duplicated. Preference changes
+' (Settings → Show Audiobooks) only rebuild the tabs from the libraries we already have.
+sub refreshData(force = false as boolean)
+    now = Time_nowSeconds()
+    maxAge = 300
+    if force or (not m.libsLoading and (m.libsLoadedAt = 0 or now - m.libsLoadedAt > maxAge)) then loadLibraries()
+    if force or (not m.gateLoading and (m.gateLoadedAt = 0 or now - m.gateLoadedAt > maxAge)) then loadRequestsGate()
+end sub
+
 sub loadLibraries()
-    Api_get("/api/v2/user/libraries", invalid, "onLibraries")
+    if m.libsLoading then return
+    m.libsLoading = true
+    Api_get("/api/v2/user/libraries", invalid, "onLibraries", { profileId: m.profileId })
 end sub
 
 sub onLibraries(event as object)
     resp = Api_result(event)
+    if resp.context = invalid or resp.context.profileId <> m.profileId then return
+    m.libsLoading = false
     if not resp.ok or resp.data = invalid then return
+    m.libsLoadedAt = Time_nowSeconds()
     m.libraries = Arr_or(resp.data.items)
     buildTabs()
 end sub
@@ -59,6 +86,8 @@ end sub
 ' server enables requests for this profile; admins who can moderate also get the approval rows.
 ' A transient failure keeps the previous answer.
 sub loadRequestsGate()
+    if m.gateLoading then return
+    m.gateLoading = true
     Api_get("/api/v2/requests/status", invalid, "onRequestsStatus", { profileId: m.profileId })
 end sub
 
@@ -73,6 +102,8 @@ sub onRequestsStatus(event as object)
     enabled = prev.enabled = true
     if resp.ok then enabled = Req_statusAvailable(resp.data)
     if not enabled then
+        m.gateLoading = false
+        if resp.ok then m.gateLoadedAt = Time_nowSeconds()
         applyRequestsGate({ enabled: false, canModerate: false, resolved: true })
         return
     end if
@@ -82,6 +113,8 @@ end sub
 sub onRequestsCapabilities(event as object)
     resp = Api_result(event)
     if resp.context = invalid or resp.context.profileId <> m.profileId then return
+    m.gateLoading = false
+    m.gateLoadedAt = Time_nowSeconds()
     moderates = false
     if resp.ok and resp.data <> invalid then
         moderates = resp.data.available = true
@@ -217,7 +250,7 @@ sub commitLibrary(tabDef as object, lib as object, section as string)
     if Library_mode(lib.type) = "mixed" then mediaType = Str_orEmpty(tabDef.mediaType)
     key = "lib:" + libId + ":" + section + ":" + mediaType
     if section = "recommended" then
-        showPage(key, "HomePage", { libraryId: libId, libraryName: libName })
+        showPage(key, "HomePage", { libraryId: libId, libraryName: libName, mode: Library_mode(lib.type) })
     else
         showPage(key, "LibraryPage", { section: section, libraryId: libId, libraryName: libName, mode: Library_mode(lib.type), mediaType: mediaType })
     end if
@@ -261,10 +294,22 @@ end sub
 
 ' ---------- Panels ----------
 
+' Level-2 sections per library type (TvLibraryPill.set): Movies / Series: Recommended · Browse ·
+' Collections. Music: Recommended · Browse · Genres. Audiobooks: Recommended · Browse · Authors ·
+' Series · Collections · A-Z. The ids are LibraryPage sections.
 function sectionRows(tabDef as object) as object
     rows = [{ id: "recommended", label: "Recommended", icon: "sparkle" }]
     rows.Push({ id: "browse", label: "Browse", icon: "list" })
-    if tabDef.mode <> "music" then rows.Push({ id: "collections", label: "Collections", icon: "collections" })
+    if tabDef.mode = "music" then
+        rows.Push({ id: "genres", label: "Genres", icon: "sparkle" })
+    else if tabDef.mode = "audiobooks" then
+        rows.Push({ id: "authors", label: "Authors", icon: "person" })
+        rows.Push({ id: "series", label: "Series", icon: "collections" })
+        rows.Push({ id: "collections", label: "Collections", icon: "collections" })
+        rows.Push({ id: "alphabet", label: "A-Z", icon: "list" })
+    else
+        rows.Push({ id: "collections", label: "Collections", icon: "collections" })
+    end if
     return rows
 end function
 
@@ -508,18 +553,26 @@ sub onScreenShown()
         m.currentLibraryId = ""
         m.libraries = []
         m.bar.selectedIndex = 0
+        m.libsLoading = false
+        m.gateLoading = false
         resetRequestsGate()
         buildTabs()
         showHome()
-        loadLibraries()
-        loadRequestsGate()
+        refreshData(true)
         m.global.homeDirty = false
         focusBar(0)
         return
     end if
     updateProfile()
-    ' Settings may have toggled the Audiobooks tab; the tab set keeps its selection by id.
-    buildTabs()
+    ' Settings may have toggled the Audiobooks tab (or the poster size): rebuild the tabs from the
+    ' libraries we have, immediately and without a network round trip.
+    sig = prefsSignature()
+    if sig <> m.prefsSig then
+        m.prefsSig = sig
+        buildTabs()
+    end if
+    ' First show, or data older than five minutes: fetch again.
+    refreshData(false)
     if m.currentPage <> invalid then m.currentPage.active = true
     if m.focusArea = "content" then
         focusContent()

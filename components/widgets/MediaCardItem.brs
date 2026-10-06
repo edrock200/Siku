@@ -1,10 +1,12 @@
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
 sub init()
+    m.inner = m.top.findNode("inner")
     m.card = m.top.findNode("card")
     m.glow = m.top.findNode("glow")
     m.placeholder = m.top.findNode("placeholder")
     m.placeholderText = m.top.findNode("placeholderText")
+    m.initialsText = m.top.findNode("initialsText")
     m.mask = m.top.findNode("mask")
     m.image = m.top.findNode("image")
     m.shade = m.top.findNode("shade")
@@ -17,14 +19,16 @@ sub init()
     m.title = m.top.findNode("title")
     m.subtitle = m.top.findNode("subtitle")
     m.style = "poster"
+    m.insetX = 0
+    m.insetY = 0
 end sub
 
-' Image box size for the current item width. Captions go below it.
+' Image box size for the current item width (minus the cell inset). Captions go below it.
 function imageSize() as object
-    w = m.top.width
+    w = m.top.width - 2 * m.insetX
     if w <= 0 then w = 176
     if m.style = "landscape" then return [w, Int(w * 9 / 16)]
-    if m.style = "circle" then return [w, w]
+    if m.style = "circle" or m.style = "square" then return [w, w]
     return [w, Int(w * 3 / 2)]
 end function
 
@@ -32,7 +36,16 @@ sub onContent()
     c = m.top.itemContent
     if c = invalid then return
     if c.cardStyle <> invalid and c.cardStyle <> "" then m.style = c.cardStyle
+    m.insetX = 0
+    m.insetY = 0
+    if c.cardInsetX <> invalid then m.insetX = c.cardInsetX
+    if c.cardInsetY <> invalid then m.insetY = c.cardInsetY
     m.image.uri = c.HDPosterUrl
+    initials = ""
+    if c.initials <> invalid then initials = c.initials
+    m.initialsText.text = initials
+    m.initialsText.visible = initials <> ""
+    m.placeholderText.visible = initials = ""
     m.placeholderText.text = c.title
     m.title.text = c.title
     m.subtitle.text = c.subtitle
@@ -44,6 +57,7 @@ sub layout()
     size = imageSize()
     w = size[0]
     h = size[1]
+    m.inner.translation = [m.insetX, m.insetY]
     m.card.scaleRotateCenter = [w / 2, h / 2]
     if m.style = "circle" then
         m.mask.maskUri = "pkg:/images/ui/mask_circle.png"
@@ -54,6 +68,8 @@ sub layout()
         m.subtitle.horizAlign = "center"
     else if m.style = "landscape" then
         m.mask.maskUri = "pkg:/images/ui/mask_landscape.png"
+    else if m.style = "square" then
+        m.mask.maskUri = "pkg:/images/ui/mask_square.png"
     else
         m.mask.maskUri = "pkg:/images/ui/mask_poster.png"
     end if
@@ -63,6 +79,8 @@ sub layout()
     m.placeholderText.width = w - 24
     m.placeholderText.height = h
     m.placeholderText.translation = [12, 0]
+    m.initialsText.width = w
+    m.initialsText.height = h
     m.image.width = w
     m.image.height = h
     m.border.width = w

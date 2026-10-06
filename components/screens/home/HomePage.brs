@@ -113,8 +113,18 @@ function isAudiobook(card as object) as boolean
     return t = "audiobook" or t = "audiobook_part" or t = "book"
 end function
 
+' Audiobook and music libraries show square covers; everywhere else audio items get their own square row.
+function squareLibrary() as boolean
+    p = m.top.params
+    if p = invalid then return false
+    libMode = LCase(Str_orEmpty(p.mode))
+    return libMode = "audiobooks" or libMode = "music"
+end function
+
 sub buildRows()
     rows = []
+    defaultStyle = "poster"
+    if squareLibrary() then defaultStyle = "square"
     for each e in m.sections
         s = e.section
         items = e.items
@@ -129,9 +139,9 @@ sub buildRows()
                     if isAudiobook(c) then audio.Push(c) else video.Push(c)
                 end for
                 if video.Count() > 0 then rows.Push({ id: sid, title: Str_orEmpty(s.title), style: "landscape", items: video })
-                if audio.Count() > 0 then rows.Push({ id: "continue_listening", title: "Continue Listening", style: "poster", items: audio })
+                if audio.Count() > 0 then rows.Push({ id: "continue_listening", title: "Continue Listening", style: "square", items: audio })
             else
-                rows.Push({ id: sid, title: Str_orEmpty(s.title), style: "poster", items: items })
+                rows.Push({ id: sid, title: Str_orEmpty(s.title), style: defaultStyle, items: items })
             end if
         end if
     end for

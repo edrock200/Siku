@@ -20,7 +20,7 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Profiles | Profile picker, PIN-protected profiles, switch profile | ✅ |
 | Navigation | Top bar like Android TV: Home, media tabs (Movies, Shows, Music, Audiobooks), For You, Calendar, Search, Profile | ✅ |
 | Home | Hero banner plus server-defined rows: Continue Watching, Next Up, Recently Added | ✅ |
-| Browse | Library grids with sort and filters, collections | ✅ |
+| Browse | Library grids with sort and filters, collections, A‑Z rail; audiobook Authors / Series groups; music Genres | ✅ |
 | Detail | Movies, series (seasons and episodes), episodes, cast, person pages | ✅ |
 | Discover | Search, For You (Watchlist and Favorites), release Calendar | ✅ |
 | Playback | Direct Play, Remux or Transcode chosen by the server from the Roku's capabilities | 🟡 needs device testing |

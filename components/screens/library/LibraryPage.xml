@@ -1,16 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  6-column poster grid (design-spec §4.2) for a library's Browse / Collections, and the personal
-  lists (Favorites, Watchlist, Watch History), a person's filmography or a section's "See all".
+  6-column poster grid (design-spec §4.2) for a library's Browse / Collections / A-Z / Genres, the
+  audiobook Authors / Series group grids, the personal lists (Favorites, Watchlist, Watch History),
+  a person's filmography or a section's "See all".
   params:
-    section     "browse" | "collections" | "collection" | "favorites" | "watchlist" | "history" | "person" | "section"
-    libraryId, libraryName, mode   the library (browse / collections / collection)
+    section     "browse" | "alphabet" | "genres" | "authors" | "series" | "collections" | "collection"
+                | "favorites" | "watchlist" | "history" | "person" | "section"
+    libraryId, libraryName, mode   the library (mode: movies | series | mixed | music | audiobooks)
     mediaType   "movie" | "series" forced type (Movies / Series tab on a mixed library)
     collectionId, collectionTitle  (section "collection")
     personId, personName           (section "person")
     sectionId, scope               (section "section")
     title       page title override
     hostedInShell  true when the shell's top bar is above the page (default layout)
+  Audiobook and music grids use square cards; Authors / Series show GET /api/v2/catalog/audiobook-groups
+  as square group cards and drill into the group's books (POST /api/v2/catalog/query, rule
+  {field: author|series, op: is}); Back (or the "All Authors" pill) returns to the groups.
+  Browse and A-Z show the right-edge AlphabetRail, which drives name_prefix.
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="LibraryPage" extends="ShellPage">
@@ -25,14 +31,19 @@
       <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />
     </Label>
     <Group id="controls" translation="[80, 196]" visible="false">
+      <PillButton id="backPill" text="All Authors" iconUri="pkg:/images/icons/chevron_left.png" height="56" fontSize="24" padX="28" scaleOnFocus="1.04" visible="false" />
       <PillButton id="sortPill" text="Sort · Title" height="56" fontSize="24" padX="28" scaleOnFocus="1.04" />
       <PillButton id="filterPill" text="Filter" height="56" fontSize="24" padX="28" scaleOnFocus="1.04" />
       <PillButton id="clearPill" text="Clear filters" height="56" fontSize="24" padX="28" scaleOnFocus="1.04" visible="false" />
       <PillButton id="shufflePill" text="Shuffle" iconUri="pkg:/images/icons/shuffle.png" height="56" fontSize="24" padX="28" scaleOnFocus="1.04" visible="false" />
     </Group>
-    <MarkupGrid id="grid" translation="[70, 284]" itemComponentName="MediaCardItem" numColumns="6" numRows="2"
-                itemSize="[269, 493]" itemSpacing="[40, 60]" drawFocusFeedback="false"
+    <!-- Genres: one scrolling line of genre chips ("All" first), TvLibraryDetailScreen.GenreChipCloud. -->
+    <Group id="chips" translation="[80, 196]" visible="false" />
+    <!-- Cells carry a 20 px horizontal and 30 px vertical inset (Content_grid insetX/insetY) so the focused card is not clipped. -->
+    <MarkupGrid id="grid" translation="[60, 244]" itemComponentName="MediaCardItem" numColumns="6" numRows="2"
+                itemSize="[303, 543]" itemSpacing="[0, 0]" drawFocusFeedback="false"
                 vertFocusAnimationStyle="floatingFocus" visible="false" />
+    <AlphabetRail id="rail" visible="false" />
     <LoadingSpinner id="spinner" translation="[924, 560]" visible="false" />
     <Group id="status" visible="false">
       <Label id="statusTitle" width="1920" horizAlign="center" color="0xEDEDEDFF" translation="[0, 470]">

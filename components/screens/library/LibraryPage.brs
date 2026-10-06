@@ -4,16 +4,14 @@ sub init()
     m.titleLabel = m.top.findNode("titleLabel")
     m.countLabel = m.top.findNode("countLabel")
     m.controls = m.top.findNode("controls")
+    m.backPill = m.top.findNode("backPill")
     m.sortPill = m.top.findNode("sortPill")
     m.filterPill = m.top.findNode("filterPill")
     m.clearPill = m.top.findNode("clearPill")
     m.shufflePill = m.top.findNode("shufflePill")
+    m.chips = m.top.findNode("chips")
     m.grid = m.top.findNode("grid")
-    ' Columns follow the poster-size preference; cells fill the 1780 px content width.
-    cols = Theme_gridColumns()
-    cellW = Int((1780 - (cols - 1) * 40) / cols)
-    m.grid.numColumns = cols
-    m.grid.itemSize = [cellW, Int(cellW * 3 / 2) + 90]
+    m.rail = m.top.findNode("rail")
     m.spinner = m.top.findNode("spinner")
     m.status = m.top.findNode("status")
     m.statusTitle = m.top.findNode("statusTitle")
@@ -29,6 +27,7 @@ sub init()
 
     m.grid.observeField("itemFocused", "onGridFocused")
     m.grid.observeField("itemSelected", "onGridSelected")
+    m.backPill.observeField("buttonSelected", "onBackPill")
     m.sortPill.observeField("buttonSelected", "openSortPanel")
     m.filterPill.observeField("buttonSelected", "openFilterPanel")
     m.clearPill.observeField("buttonSelected", "clearFilters")
@@ -40,6 +39,8 @@ sub init()
     m.filterPanel.observeField("exitRight", "enterFilterFly")
     m.filterFly.observeField("rowSelected", "onFilterValueChosen")
     m.filterFly.observeField("exitLeft", "leaveFilterFly")
+    m.rail.observeField("prefixSelected", "onPrefixSelected")
+    m.rail.observeField("exitLeft", "onRailExit")
     m.menu.observeField("chosen", "onMenuChosen")
     m.menu.observeField("dismissed", "onMenuDismissed")
     m.pressTimer.observeField("fire", "onPressHeld")
@@ -64,6 +65,7 @@ sub init()
     m.sortDesc = false
     m.genre = ""
     m.watchStatus = ""
+    m.namePrefix = ""
     m.facets = invalid
     m.filterFacet = ""
     m.cards = []
@@ -73,8 +75,20 @@ sub init()
     m.loadingMore = false
     m.loaded = false
     m.requestSeq = 0
-    m.drill = invalid        ' {collectionId, title} while showing a collection's items from the Collections list
+    ' Drill-in from a list grid: {kind: "collection", collectionId, title} from the Collections list, or
+    ' {kind: "group", field: "author"|"series", name, title, subtitle} from the Authors / Series groups.
+    m.drill = invalid
     m.optionsTarget = invalid
+    m.chipNodes = []
+    m.chipValues = []
+    m.chipFocus = 0
+    ' Room inside each grid cell: MarkupGrid clips to its bounds, so the scaled first column / row
+    ' needs 20 px (1.10 × half the card) + glow on the left and 30 px on top; the same 30 px below
+    ' keeps the focused card's caption (pushed down by the scale) inside the cell.
+    m.insetX = 20
+    m.insetY = 30
+    m.cardStyle = "poster"
+    m.gridY = 284
     m.top.focusable = true
     m.mode = "browse"
 end sub
@@ -94,9 +108,41 @@ sub onParams()
     if m.mode = "" then m.mode = "browse"
     if m.mode = "favorites" or m.mode = "watchlist" then m.sortField = ""
     if m.mode = "collection" then m.sortField = ""
+    if m.mode = "alphabet" then
+        m.sortField = "title"
+        m.sortDesc = false
+    end if
     layoutPage()
     m.loaded = false
 end sub
+
+' Authors / Series: a grid of audiobook groups (GET /api/v2/catalog/audiobook-groups).
+function isGroupsMode() as boolean
+    return m.mode = "authors" or m.mode = "series"
+end function
+
+function groupBy() as string
+    if m.mode = "authors" then return "author"
+    if m.mode = "series" then return "series"
+    return ""
+end function
+
+function groupsLabel() as string
+    if m.mode = "authors" then return "Authors"
+    return "Series"
+end function
+
+function inGroupDrill() as boolean
+    return m.drill <> invalid and m.drill.kind = "group"
+end function
+
+' Audiobook and album covers are square; everything else is a 2:3 poster.
+function gridStyle() as string
+    if isGroupsMode() and m.drill = invalid then return "square"
+    libMode = LCase(Str_orEmpty(prm("mode")))
+    if libMode = "audiobooks" or libMode = "music" then return "square"
+    return "poster"
+end function
 
 function currentTitle() as string
     t = Str_orEmpty(prm("title"))
@@ -108,17 +154,44 @@ function currentTitle() as string
     if m.mode = "collection" then return Str_orEmpty(prm("collectionTitle"))
     if m.mode = "person" then return Str_orEmpty(prm("personName"))
     name = Str_orEmpty(prm("libraryName"))
-    if m.mode = "collections" then
-        if name <> "" then return name + " · Collections"
-        return "Collections"
+    suffix = ""
+    if m.mode = "collections" then suffix = "Collections"
+    if m.mode = "alphabet" then suffix = "A-Z"
+    if m.mode = "genres" then suffix = "Genres"
+    if isGroupsMode() then suffix = groupsLabel()
+    if suffix <> "" then
+        if name <> "" then return name + " · " + suffix
+        return suffix
     end if
     return name
 end function
 
 function showsControls() as boolean
-    if m.drill <> invalid then return false
+    if m.drill <> invalid then return m.drill.kind = "group"
     return m.mode = "browse" or m.mode = "favorites" or m.mode = "watchlist" or m.mode = "collection" or m.mode = "person" or m.mode = "section"
 end function
+
+' The A–Z rail: Browse (while sorted by title, like TvLibraryDetailScreen) and the A-Z section.
+function railAvailable() as boolean
+    if m.drill <> invalid then return false
+    if m.mode <> "browse" and m.mode <> "alphabet" then return false
+    return m.sortField = "title"
+end function
+
+' Columns follow the poster-size preference; cells fill the 1780 px content width and carry the inset.
+sub applyGridMetrics()
+    m.cardStyle = gridStyle()
+    cols = Theme_gridColumns()
+    cellW = Int((1780 - (cols - 1) * 40) / cols)
+    if m.cardStyle = "square" then
+        imgH = cellW
+    else
+        imgH = Int(cellW * 3 / 2)
+    end if
+    m.grid.numColumns = cols
+    m.grid.itemSize = [cellW + 2 * m.insetX, imgH + 90 + 2 * m.insetY]
+    m.grid.itemSpacing = [40 - 2 * m.insetX, 60 - 2 * m.insetY]
+end sub
 
 sub layoutPage()
     m.titleLabel.text = currentTitle()
@@ -134,23 +207,40 @@ sub layoutPage()
     m.titleLabel.width = 1400
     m.countLabel.translation = [80 + tw + 20, titleY + 14]
     hasControls = showsControls()
+    hasChips = m.mode = "genres" and m.drill = invalid
     m.controls.visible = hasControls
-    if hasControls then
-        m.controls.translation = [80, titleY + 68]
+    m.chips.visible = hasChips
+    if hasControls or hasChips then
+        rowY = titleY + 68
+        m.controls.translation = [80, rowY]
+        m.chips.translation = [80, rowY]
         gridY = titleY + 68 + 56 + 32
-        m.filterPill.visible = m.mode = "browse"
-        m.shufflePill.visible = shuffleOffered()
-        layoutPills()
+        if hasControls then
+            m.backPill.visible = inGroupDrill()
+            m.sortPill.visible = not inGroupDrill()
+            m.filterPill.visible = m.mode = "browse"
+            m.shufflePill.visible = shuffleOffered()
+            layoutPills()
+        end if
     else
         gridY = titleY + 88
     end if
-    m.grid.translation = [70, gridY]
+    m.gridY = gridY
+    applyGridMetrics()
+    m.grid.translation = [80 - m.insetX, gridY - m.insetY]
+    m.rail.railTop = gridY
+    m.rail.railBottom = 1040
+    updateRail()
     updateSortPill()
 end sub
 
+function allPills() as object
+    return [m.backPill, m.sortPill, m.filterPill, m.clearPill, m.shufflePill]
+end function
+
 sub layoutPills()
     x = 0
-    for each pill in [m.sortPill, m.filterPill, m.clearPill, m.shufflePill]
+    for each pill in allPills()
         if pill.visible then
             pill.translation = [x, 0]
             x = x + pill.width + 16
@@ -160,11 +250,19 @@ end sub
 
 function visiblePills() as object
     out = []
-    for each pill in [m.sortPill, m.filterPill, m.clearPill, m.shufflePill]
+    if not m.controls.visible then return out
+    for each pill in allPills()
         if pill.visible then out.Push(pill)
     end for
     return out
 end function
+
+sub updateRail()
+    show = railAvailable()
+    if not show and m.rail.hasFocus() then onRailExit()
+    m.rail.visible = show
+    m.rail.selected = m.namePrefix
+end sub
 
 ' ---------- Lifecycle ----------
 
@@ -203,8 +301,10 @@ sub focusContent()
         m.grid.setFocus(true)
     else if m.retryBtn.visible then
         m.retryBtn.setFocus(true)
-    else if m.controls.visible then
-        m.sortPill.setFocus(true)
+    else if m.chips.visible and m.chipNodes.Count() > 0 then
+        focusChip(m.chipFocus)
+    else if visiblePills().Count() > 0 then
+        visiblePills()[0].setFocus(true)
     else
         m.top.setFocus(true)
     end if
@@ -219,14 +319,17 @@ sub reload()
     m.grid.content = invalid
     m.grid.visible = false
     m.status.visible = false
-    m.countLabel.visible = false
+    if not inGroupDrill() then m.countLabel.visible = false
     m.loaded = false
     m.loading = true
     m.spinner.visible = true
     m.requestSeq = m.requestSeq + 1
     if m.mode = "collections" and m.drill = invalid then
         Api_get("/api/v2/library/" + Str_urlEncode(Str_orEmpty(prm("libraryId"))) + "/collections", invalid, "onCollections", { seq: m.requestSeq })
+    else if isGroupsMode() and m.drill = invalid then
+        requestGroups("")
     else
+        if m.mode = "genres" and m.facets = invalid then loadFacets()
         requestPage("")
     end if
 end sub
@@ -251,7 +354,7 @@ sub requestPage(cursor as string)
         return
     end if
     q = { limit: 60, image_size: "medium" }
-    if m.drill <> invalid then
+    if m.drill <> invalid and m.drill.kind = "collection" then
         q.source = "library_collection"
         q.collection_id = m.drill.collectionId
         q.library_id = Str_orEmpty(prm("libraryId"))
@@ -283,28 +386,32 @@ sub requestPage(cursor as string)
     mt = Str_orEmpty(prm("mediaType"))
     if mt <> "" then q["type"] = mt
     if not Str_isEmpty(prm("query")) then q.q = prm("query")
+    if m.namePrefix <> "" and railAvailable() then q.name_prefix = m.namePrefix
     sw = sortWire()
     if sw <> "" then q.sort = sw
     if cursor <> "" then q.cursor = cursor
 
-    if filtersActive() then
-        groups = []
-        if m.genre <> "" then groups.Push({ match: "any", rules: [{ field: "genre", op: "contains", value: m.genre }] })
-        if m.watchStatus <> "" then
-            ws = m.watchStatus
-            if ws = "unwatched" then
-                rule = { field: "watched", op: "is", value: "false" }
-            else if ws = "watched" then
-                rule = { field: "watched", op: "is", value: "true" }
-            else if ws = "in_progress" then
-                rule = { field: "in_progress", op: "is", value: "true" }
-            else if ws = "favorited" then
-                rule = { field: "favorited", op: "is", value: "true" }
-            else
-                rule = { field: "in_watchlist", op: "is", value: "true" }
-            end if
-            groups.Push({ match: "all", rules: [rule] })
+    ' Structured rules go through POST /api/v2/catalog/query (TvLibraryDetailViewModel: a chosen
+    ' author / series is the rule {field, op: "is", value: name}; filters add their own groups).
+    groups = []
+    if inGroupDrill() then groups.Push({ match: "all", rules: [{ field: m.drill.field, op: "is", value: m.drill.name }] })
+    if m.genre <> "" then groups.Push({ match: "any", rules: [{ field: "genre", op: "contains", value: m.genre }] })
+    if m.watchStatus <> "" then
+        ws = m.watchStatus
+        if ws = "unwatched" then
+            rule = { field: "watched", op: "is", value: "false" }
+        else if ws = "watched" then
+            rule = { field: "watched", op: "is", value: "true" }
+        else if ws = "in_progress" then
+            rule = { field: "in_progress", op: "is", value: "true" }
+        else if ws = "favorited" then
+            rule = { field: "favorited", op: "is", value: "true" }
+        else
+            rule = { field: "in_watchlist", op: "is", value: "true" }
         end if
+        groups.Push({ match: "all", rules: [rule] })
+    end if
+    if groups.Count() > 0 then
         body = q
         body.groups = groups
         body.Delete("image_size")
@@ -312,6 +419,28 @@ sub requestPage(cursor as string)
     else
         Api_get("/api/v2/catalog", q, "onPage", ctx)
     end if
+end sub
+
+' Reads the page cursor out of a catalog-style response and updates hasMore / nextCursor.
+sub readPaging(data as object)
+    m.hasMore = false
+    m.nextCursor = ""
+    if data = invalid then return
+    page = data.page
+    if page <> invalid and page.has_more = true and not Str_isEmpty(page.next_cursor) then
+        m.hasMore = true
+        m.nextCursor = page.next_cursor
+    end if
+end sub
+
+sub showCount(data as object, singular as string, plural as string)
+    if data = invalid or data.total = invalid then return
+    n = Int(data.total)
+    txt = n.ToStr() + " " + plural
+    if n = 1 then txt = "1 " + singular
+    if data.total_exact = false then txt = "About " + txt
+    m.countLabel.text = txt
+    m.countLabel.visible = n > 0
 end sub
 
 sub onPage(event as object)
@@ -334,24 +463,9 @@ sub onPage(event as object)
     data = resp.data
     items = []
     if data <> invalid then items = Arr_or(data.items)
-    page = invalid
-    if data <> invalid then page = data.page
-    m.hasMore = false
-    m.nextCursor = ""
-    if page <> invalid then
-        if page.has_more = true and not Str_isEmpty(page.next_cursor) then
-            m.hasMore = true
-            m.nextCursor = page.next_cursor
-        end if
-    end if
-    if data <> invalid and data.total <> invalid and not isMore then
-        n = Int(data.total)
-        txt = n.ToStr() + " titles"
-        if n = 1 then txt = "1 title"
-        if data.total_exact = false then txt = "About " + txt
-        m.countLabel.text = txt
-        m.countLabel.visible = n > 0
-    end if
+    readPaging(data)
+    ' A group drill keeps the group's own "3 books · 2h" line.
+    if not isMore and not inGroupDrill() then showCount(data, "title", "titles")
     if isMore then
         appendCards(items)
     else
@@ -367,7 +481,7 @@ sub setCards(items as object)
         return
     end if
     m.status.visible = false
-    m.grid.content = Content_grid(items, "poster")
+    m.grid.content = Content_grid(items, m.cardStyle, m.insetX, m.insetY)
     m.grid.visible = true
     if m.top.hasFocus() then m.grid.setFocus(true)
 end sub
@@ -378,8 +492,115 @@ sub appendCards(items as object)
         return
     end if
     m.cards.Append(items)
-    Content_appendCards(m.grid.content, items, "poster")
+    Content_appendCards(m.grid.content, items, m.cardStyle, m.insetX, m.insetY)
 end sub
+
+' ---------- Audiobook groups (Authors / Series) ----------
+
+' GET /api/v2/catalog/audiobook-groups?library_id=&group_by=author|series&sort=name&limit=&cursor=
+sub requestGroups(cursor as string)
+    q = { library_id: Str_orEmpty(prm("libraryId")), group_by: groupBy(), sort: "name", limit: 60, image_size: "medium" }
+    if cursor <> "" then q.cursor = cursor
+    Api_get("/api/v2/catalog/audiobook-groups", q, "onGroups", { seq: m.requestSeq, cursor: cursor })
+end sub
+
+sub onGroups(event as object)
+    resp = Api_result(event)
+    ctx = resp.context
+    if ctx = invalid or ctx.seq <> m.requestSeq then return
+    isMore = ctx.cursor <> ""
+    m.loading = false
+    m.loadingMore = false
+    m.spinner.visible = false
+    if not resp.ok then
+        if isMore then
+            m.global.toast = "Couldn't load more. " + Api_errorText(resp)
+            m.hasMore = true
+        else
+            showError(Api_errorText(resp))
+        end if
+        return
+    end if
+    data = resp.data
+    cards = []
+    if data <> invalid then
+        gb = groupBy()
+        for each g in Arr_or(data.items)
+            if g <> invalid and not Str_isEmpty(g.name) then cards.Push(Content_groupCard(g, gb))
+        end for
+    end if
+    readPaging(data)
+    if not isMore then
+        if m.mode = "authors" then
+            showCount(data, "author", "authors")
+        else
+            showCount(data, "series", "series")
+        end if
+    end if
+    if isMore then
+        appendCards(cards)
+    else
+        m.loaded = true
+        setCards(cards)
+    end if
+end sub
+
+' OK on a group card: show the group's books (Back / "All Authors" returns to the groups).
+sub enterGroup(card as object)
+    g = card.group
+    if g = invalid then g = { name: card.title }
+    name = Str_orEmpty(card.title)
+    m.drill = { kind: "group", field: groupBy(), name: name, title: name, subtitle: Content_groupSubtitle(g) }
+    saveParentGrid()
+    m.sortField = "title"
+    m.sortDesc = false
+    m.backPill.text = "All " + groupsLabel()
+    m.countLabel.text = m.drill.subtitle
+    m.countLabel.visible = m.drill.subtitle <> ""
+    layoutPage()
+    reload()
+    m.top.setFocus(true)
+end sub
+
+sub saveParentGrid()
+    m.parent = { cards: m.cards, content: m.grid.content, index: m.grid.itemFocused, hasMore: m.hasMore, cursor: m.nextCursor, countText: m.countLabel.text, countVisible: m.countLabel.visible }
+end sub
+
+sub onBackPill()
+    leaveDrill()
+end sub
+
+' Back from a drill (a collection's items, a group's books) to the list it came from.
+function leaveDrill() as boolean
+    if m.drill = invalid then return false
+    m.drill = invalid
+    m.requestSeq = m.requestSeq + 1
+    m.loading = false
+    m.loadingMore = false
+    m.spinner.visible = false
+    m.status.visible = false
+    m.countLabel.visible = false
+    layoutPage()
+    parent = m.parent
+    m.parent = invalid
+    if parent = invalid then
+        reload()
+        return true
+    end if
+    m.cards = parent.cards
+    m.grid.content = parent.content
+    m.grid.visible = true
+    m.countLabel.text = Str_orEmpty(parent.countText)
+    m.countLabel.visible = parent.countVisible = true
+    m.hasMore = parent.hasMore = true
+    m.nextCursor = Str_orEmpty(parent.cursor)
+    m.loaded = true
+    m.grid.setFocus(true)
+    if parent.index <> invalid and parent.index >= 0 then m.grid.jumpToItem = parent.index
+    return true
+end function
+
+' ---------- Collections ----------
 
 sub onCollections(event as object)
     resp = Api_result(event)
@@ -420,7 +641,9 @@ sub onCollections(event as object)
     m.status.visible = false
     root = CreateObject("roSGNode", "ContentNode")
     for each c in cards
-        node = Content_cardNode(c, "poster")
+        node = Content_cardNode(c, m.cardStyle)
+        node.cardInsetX = m.insetX
+        node.cardInsetY = m.insetY
         if c.item_count <> invalid then
             n = Int(c.item_count)
             if n = 1 then node.subtitle = "1 item" else node.subtitle = n.ToStr() + " items"
@@ -431,6 +654,8 @@ sub onCollections(event as object)
     m.grid.visible = true
     if m.top.hasFocus() then m.grid.setFocus(true)
 end sub
+
+' ---------- Status ----------
 
 sub showError(msg as string)
     m.grid.visible = false
@@ -459,6 +684,12 @@ sub showEmpty()
     else if m.mode = "collections" and m.drill = invalid then
         title = "No collections"
         body = "This library has no collections yet."
+    else if isGroupsMode() and m.drill = invalid then
+        title = "No audiobook " + LCase(groupsLabel()) + " found."
+        body = ""
+    else if m.namePrefix <> "" and railAvailable() then
+        title = "No titles match"
+        body = "Try another letter."
     else if filtersActive() then
         title = "No titles match"
         body = "Try clearing a filter."
@@ -469,7 +700,13 @@ sub showEmpty()
     m.statusTitle.text = title
     m.statusBody.text = body
     if m.top.hasFocus() or m.grid.hasFocus() then
-        if m.controls.visible then m.sortPill.setFocus(true) else m.top.setFocus(true)
+        if visiblePills().Count() > 0 then
+            visiblePills()[0].setFocus(true)
+        else if m.chips.visible and m.chipNodes.Count() > 0 then
+            focusChip(m.chipFocus)
+        else
+            m.top.setFocus(true)
+        end if
     end if
 end sub
 
@@ -479,7 +716,11 @@ sub onGridFocused()
     idx = m.grid.itemFocused
     if m.hasMore and not m.loadingMore and not m.loading and idx >= m.cards.Count() - 12 then
         m.loadingMore = true
-        requestPage(m.nextCursor)
+        if isGroupsMode() and m.drill = invalid then
+            requestGroups(m.nextCursor)
+        else
+            requestPage(m.nextCursor)
+        end if
     end if
 end sub
 
@@ -491,13 +732,15 @@ sub onGridSelected()
     if idx < 0 or idx >= m.cards.Count() then return
     card = m.cards[idx]
     if m.mode = "collections" and m.drill = invalid then
-        m.drill = { collectionId: Str_orEmpty(card.collection_id), title: Str_orEmpty(card.title) }
-        m.collectionsCards = m.cards
-        m.collectionsContent = m.grid.content
-        m.collectionsIndex = idx
+        m.drill = { kind: "collection", collectionId: Str_orEmpty(card.collection_id), title: Str_orEmpty(card.title) }
+        saveParentGrid()
         layoutPage()
         reload()
         m.top.setFocus(true)
+        return
+    end if
+    if isGroupsMode() and m.drill = invalid then
+        enterGroup(card)
         return
     end if
     if LongPress_enabled() then
@@ -522,25 +765,93 @@ sub flushPendingSelect()
     if idx <> invalid and idx >= 0 and idx < m.cards.Count() then CardActions_openDetail(m.cards[idx])
 end sub
 
-' Back from a collection's items to the Collections list.
-function leaveDrill() as boolean
-    if m.drill = invalid then return false
-    m.drill = invalid
-    m.requestSeq = m.requestSeq + 1
-    m.loading = false
-    m.loadingMore = false
-    m.spinner.visible = false
-    m.status.visible = false
-    layoutPage()
-    m.cards = m.collectionsCards
-    m.grid.content = m.collectionsContent
-    m.grid.visible = true
-    m.hasMore = false
-    m.loaded = true
-    m.grid.setFocus(true)
-    if m.collectionsIndex <> invalid then m.grid.jumpToItem = m.collectionsIndex
-    return true
+' ---------- A–Z rail ----------
+
+sub onPrefixSelected()
+    prefix = m.rail.prefixSelected
+    if prefix = m.namePrefix then return
+    m.namePrefix = prefix
+    m.rail.selected = prefix
+    reload()
+end sub
+
+sub onRailExit()
+    if m.grid.visible and m.cards.Count() > 0 then
+        m.grid.setFocus(true)
+    else if visiblePills().Count() > 0 then
+        visiblePills()[0].setFocus(true)
+    else
+        m.top.setFocus(true)
+    end if
+end sub
+
+' ---------- Genres chips ----------
+
+sub loadFacets()
+    if m.facets <> invalid or m.facetsLoading = true then return
+    m.facetsLoading = true
+    Api_get("/api/v2/catalog/filters", { library_id: Str_orEmpty(prm("libraryId")), skip_technical: "true" }, "onFacets")
+end sub
+
+sub buildChips()
+    for each old in m.chipNodes
+        m.chips.removeChild(old)
+    end for
+    m.chipNodes = []
+    m.chipValues = [""]
+    for each v in genreValues()
+        m.chipValues.Push(v)
+    end for
+    x = 0
+    for i = 0 to m.chipValues.Count() - 1
+        pill = m.chips.createChild("PillButton")
+        pill.id = "chip" + i.ToStr()
+        pill.height = 56
+        pill.fontSize = 24
+        pill.padX = 28
+        pill.scaleOnFocus = 1.04
+        if i = 0 then pill.text = "All" else pill.text = m.chipValues[i]
+        pill.selectedState = m.chipValues[i] = m.genre
+        pill.translation = [x, 0]
+        pill.observeField("buttonSelected", "onChipSelected")
+        x = x + pill.width + 16
+        m.chipNodes.Push(pill)
+    end for
+    if m.chipFocus >= m.chipNodes.Count() then m.chipFocus = 0
+end sub
+
+function focusedChipIndex() as integer
+    for i = 0 to m.chipNodes.Count() - 1
+        if m.chipNodes[i].hasFocus() then return i
+    end for
+    return -1
 end function
+
+' Focuses chip i and scrolls the line so it stays inside the 1780 px content width.
+sub focusChip(i as integer)
+    if i < 0 or i >= m.chipNodes.Count() then return
+    m.chipFocus = i
+    pill = m.chipNodes[i]
+    px = pill.translation[0]
+    shift = 0
+    if px + pill.width > 1780 then shift = px + pill.width - 1780
+    m.chips.translation = [80 - shift, m.chips.translation[1]]
+    pill.setFocus(true)
+end sub
+
+sub onChipSelected(event as object)
+    node = event.getRoSGNode()
+    idx = -1
+    for i = 0 to m.chipNodes.Count() - 1
+        if m.chipNodes[i].isSameNode(node) then idx = i
+    end for
+    if idx < 0 then return
+    m.genre = m.chipValues[idx]
+    for i = 0 to m.chipNodes.Count() - 1
+        m.chipNodes[i].selectedState = i = idx
+    end for
+    reload()
+end sub
 
 ' ---------- Sort ----------
 
@@ -572,7 +883,7 @@ sub updateSortPill()
     o = sortOption(m.sortField)
     if o = invalid then
         lbl = "Recently Saved"
-        if m.mode = "collection" or m.drill <> invalid then lbl = "Collection Order"
+        if m.mode = "collection" or (m.drill <> invalid and m.drill.kind = "collection") then lbl = "Collection Order"
     else
         lbl = o.label
     end if
@@ -594,7 +905,7 @@ end sub
 sub openSortPanel()
     rows = []
     personal = m.mode = "favorites" or m.mode = "watchlist"
-    collectionLike = m.mode = "collection" or m.drill <> invalid
+    collectionLike = m.mode = "collection" or (m.drill <> invalid and m.drill.kind = "collection")
     if personal then rows.Push({ id: "__list", label: "Recently Saved", trailing: trailingFor("") })
     if collectionLike then rows.Push({ id: "__list", label: "Collection Order", trailing: trailingFor("") })
     for each o in m.sortOptions
@@ -631,18 +942,18 @@ sub onSortChosen()
         o = sortOption(id)
         m.sortDesc = o <> invalid and o.defaultDesc = true
     end if
+    ' The A–Z jump only applies to the title order (TvLibraryDetailScreen hides the rail otherwise).
+    if m.sortField <> "title" then m.namePrefix = ""
     closePanels()
     updateSortPill()
+    updateRail()
     reload()
 end sub
 
 ' ---------- Filter ----------
 
 sub openFilterPanel()
-    if m.facets = invalid and m.facetsLoading <> true then
-        m.facetsLoading = true
-        Api_get("/api/v2/catalog/filters", { library_id: Str_orEmpty(prm("libraryId")), skip_technical: "true" }, "onFacets")
-    end if
+    loadFacets()
     rows = [
         { id: "genre", label: "Genre", trailing: "chevron", sub: m.genre },
         { id: "status", label: "Watch Status", trailing: "chevron", sub: watchStatusLabel() },
@@ -678,19 +989,29 @@ sub onFacets(event as object)
         m.facets = { genres: [] }
     end if
     if m.filterPanel.visible and m.filterFacet = "genre" then showFlyFor("genre")
+    if m.mode = "genres" then
+        hadFocus = focusedChipIndex() >= 0
+        buildChips()
+        if hadFocus then focusChip(m.chipFocus)
+    end if
 end sub
 
 function genreValues() as object
     out = []
     if m.facets = invalid then return out
+    seen = {}
     for each g in Arr_or(m.facets.genres)
+        v = ""
         if Type(g) = "roString" or Type(g) = "String" then
-            out.Push(g)
+            v = g
         else if g <> invalid then
             v = Str_orEmpty(g.value)
             if v = "" then v = Str_orEmpty(g.name)
             if v = "" then v = Str_orEmpty(g.label)
-            if v <> "" then out.Push(v)
+        end if
+        if v <> "" and not seen.DoesExist(v) then
+            seen[v] = true
+            out.Push(v)
         end if
     end for
     return out
@@ -810,7 +1131,10 @@ end function
 
 ' The shuffle scope this page browses: a movie/TV library, or a library collection.
 function shuffleScope() as dynamic
-    if m.drill <> invalid then return { kind: "library_collection", id: Str_orEmpty(m.drill.collectionId) }
+    if m.drill <> invalid then
+        if m.drill.kind = "collection" then return { kind: "library_collection", id: Str_orEmpty(m.drill.collectionId) }
+        return invalid
+    end if
     if m.mode = "collection" then return { kind: "library_collection", id: Str_orEmpty(prm("collectionId")) }
     if m.mode = "browse" and Shuffle_libraryMode(prm("mode")) then return { kind: "library", id: Str_orEmpty(prm("libraryId")) }
     return invalid
@@ -847,7 +1171,8 @@ end sub
 sub openOptionsFor(idx as integer)
     if idx < 0 or idx >= m.cards.Count() then return
     card = m.cards[idx]
-    if LCase(Str_orEmpty(card.type)) = "collection" then return
+    t = LCase(Str_orEmpty(card.type))
+    if t = "collection" or t = "audiobook_group" then return
     m.optionsTarget = { index: idx, card: card }
     m.menu.title = Str_orEmpty(card.title)
     m.menu.actions = CardActions_build(card, "")
@@ -896,6 +1221,13 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
         return true
     end if
+    if m.rail.hasFocus() or m.rail.isInFocusChain() then
+        if key = "back" then
+            onRailExit()
+            return true
+        end if
+        return false
+    end if
     if key = "back" then
         return leaveDrill()
     end if
@@ -907,7 +1239,11 @@ function onKeyEvent(key as string, press as boolean) as boolean
                 if i > 0 then pills[i - 1].setFocus(true)
                 return true
             else if key = "right" then
-                if i < pills.Count() - 1 then pills[i + 1].setFocus(true)
+                if i < pills.Count() - 1 then
+                    pills[i + 1].setFocus(true)
+                else if m.rail.visible then
+                    m.rail.setFocus(true)
+                end if
                 return true
             else if key = "down" then
                 if m.grid.visible and m.cards.Count() > 0 then
@@ -920,10 +1256,39 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return false
         end if
     end for
+    ' Genre chips.
+    ci = focusedChipIndex()
+    if ci >= 0 then
+        if key = "left" then
+            if ci > 0 then focusChip(ci - 1)
+            return true
+        else if key = "right" then
+            if ci < m.chipNodes.Count() - 1 then focusChip(ci + 1)
+            return true
+        else if key = "down" then
+            if m.grid.visible and m.cards.Count() > 0 then
+                m.grid.setFocus(true)
+            else if m.retryBtn.visible then
+                m.retryBtn.setFocus(true)
+            end if
+            return true
+        end if
+        return false
+    end if
     if m.grid.hasFocus() then
         if key = "up" then
-            if m.controls.visible then
-                m.sortPill.setFocus(true)
+            if visiblePills().Count() > 0 then
+                visiblePills()[0].setFocus(true)
+                return true
+            else if m.chips.visible and m.chipNodes.Count() > 0 then
+                focusChip(m.chipFocus)
+                return true
+            end if
+            return false
+        else if key = "right" then
+            ' The grid did not take Right (last column / last card): move to the A–Z rail.
+            if m.rail.visible then
+                m.rail.setFocus(true)
                 return true
             end if
             return false
@@ -932,9 +1297,14 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
         end if
     end if
-    if m.retryBtn.hasFocus() and key = "up" and m.controls.visible then
-        m.sortPill.setFocus(true)
-        return true
+    if m.retryBtn.hasFocus() and key = "up" then
+        if visiblePills().Count() > 0 then
+            visiblePills()[0].setFocus(true)
+            return true
+        else if m.chips.visible and m.chipNodes.Count() > 0 then
+            focusChip(m.chipFocus)
+            return true
+        end if
     end if
     return false
 end function

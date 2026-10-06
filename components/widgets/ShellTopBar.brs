@@ -60,24 +60,40 @@ function tabNode(i as integer) as object
 end function
 
 ' Lays out the centered cluster: [search] gap tabs... gap [56 px spacer].
+' When every media type plus Requests is present the cluster can be wider than the
+' space between the wordmark and the avatar: tab padding then shrinks, and as a last
+' resort the cluster is left-aligned after the wordmark instead of centered.
 sub rebuild()
     if m.tabsGroup = invalid then return
     tabs = m.top.tabs
     if tabs = invalid then tabs = []
-    widths = []
-    total = 56 + m.gap
+    minX = 88 + m.wordmark.width + 32
+    maxX = 1920 - 88 - 56 - 32
+    textWidths = []
     for i = 0 to tabs.Count() - 1
         g = tabNode(i)
         lbl = g.findNode("label")
         lbl.font = m.fontSemibold
         lbl.text = Str_orEmpty(tabs[i].label)
         lbl.width = 0
-        w = Int(lbl.boundingRect().width) + m.tabPadX * 2
-        widths.Push(w)
-        total = total + w + m.gap
+        textWidths.Push(Int(lbl.boundingRect().width))
     end for
-    total = total + 56
-    x = Int((1920 - total) / 2)
+    padX = m.tabPadX
+    while true
+        widths = []
+        total = 56 + m.gap
+        for each tw in textWidths
+            w = tw + padX * 2
+            widths.Push(w)
+            total = total + w + m.gap
+        end for
+        total = total + 56
+        x = Int((1920 - total) / 2)
+        if x >= minX or padX <= 14 then exit while
+        padX = padX - 3
+    end while
+    if x < minX then x = minX
+    if x + total - 56 > maxX then x = minX
     y = m.barTop + (m.barH - m.tabH) / 2
     m.searchBtn.translation = [x, m.barTop + (m.barH - 56) / 2]
     x = x + 56 + m.gap

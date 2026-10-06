@@ -3,7 +3,9 @@
 
 ' Card fields on every node built here:
 '   TITLE, HDPosterUrl (poster or still), FHDPosterUrl (backdrop), contentId, itemType,
-'   subtitle, progress (0..1), watched, cardStyle ("poster"|"landscape"|"circle"), raw (the API object)
+'   subtitle, progress (0..1), watched, cardStyle ("poster"|"landscape"|"circle"|"square"), raw (the API object),
+'   initials (placeholder text when there is no image; the title when empty),
+'   cardInsetX / cardInsetY (room inside a grid cell so the focused 1.10 card is not clipped at the grid's edge)
 function Content_cardNode(card as object, style = "poster" as string) as object
     node = CreateObject("roSGNode", "ContentNode")
     Content_ensureFields(node)
@@ -22,6 +24,9 @@ sub Content_ensureFields(node as object)
         backdropUrl: ""
         logoUrl: ""
         badge: ""
+        initials: ""
+        cardInsetX: 0
+        cardInsetY: 0
         raw: {}
     })
 end sub
@@ -61,6 +66,10 @@ sub Content_fillCard(node as object, card as object, style as string)
         img = Str_orEmpty(card.photo_url)
     else
         img = poster
+    end if
+    if t = "audiobook_group" then
+        node.initials = Content_initials(title)
+        if card.group <> invalid then node.subtitle = Content_groupSubtitle(card.group)
     end if
     node.HDPosterUrl = Url_resolve(img)
     node.backdropUrl = Url_resolve(backdrop)
@@ -115,20 +124,62 @@ function Content_rows(rows as object) as object
     return root
 end function
 
-' Builds a flat grid content node from cards.
-function Content_grid(cards as object, style = "poster" as string) as object
+' Builds a flat grid content node from cards. insetX/insetY are the cell padding MediaCardItem
+' leaves around the card (see cardInsetX/Y above).
+function Content_grid(cards as object, style = "poster" as string, insetX = 0 as integer, insetY = 0 as integer) as object
     root = CreateObject("roSGNode", "ContentNode")
-    for each c in cards
-        root.appendChild(Content_cardNode(c, style))
-    end for
+    Content_appendCards(root, cards, style, insetX, insetY)
     return root
 end function
 
-sub Content_appendCards(root as object, cards as object, style = "poster" as string)
+sub Content_appendCards(root as object, cards as object, style = "poster" as string, insetX = 0 as integer, insetY = 0 as integer)
     for each c in cards
-        root.appendChild(Content_cardNode(c, style))
+        node = Content_cardNode(c, style)
+        if insetX > 0 then node.cardInsetX = insetX
+        if insetY > 0 then node.cardInsetY = insetY
+        root.appendChild(node)
     end for
 end sub
+
+' "FH" for "Frank Herbert": up to two initials for an image-less group or person card.
+function Content_initials(name as string) as string
+    out = ""
+    for each word in name.Trim().Tokenize(" ")
+        if word <> "" and Len(out) < 2 then
+            ch = UCase(Left(word, 1))
+            if ch >= "0" and ch <= "Z" then out = out + ch
+        end if
+    end for
+    if out = "" and Len(name) > 0 then out = UCase(Left(name.Trim(), 1))
+    return out
+end function
+
+' Card for an audiobook group (GET /api/v2/catalog/audiobook-groups item): name, item_count,
+' total_duration_seconds, in_progress_count, poster_urls. groupBy is "author" | "narrator" | "series".
+function Content_groupCard(group as object, groupField as string) as object
+    name = Str_orEmpty(group.name)
+    posters = Arr_or(group.poster_urls)
+    poster = ""
+    for each p in posters
+        if poster = "" and not Str_isEmpty(p) then poster = p
+    end for
+    return { content_id: "group:" + groupField + ":" + name, type: "audiobook_group", group_by: groupField, title: name, poster_url: poster, group: group }
+end function
+
+' "3 books · 2h 5m · 1 in progress" (TvLibraryDetailScreen.audiobookGroupSubtitle).
+function Content_groupSubtitle(group as object) as string
+    parts = []
+    n = 0
+    if group.item_count <> invalid then n = Int(group.item_count)
+    if n = 1 then
+        parts.Push("1 book")
+    else if n > 1 then
+        parts.Push(n.ToStr() + " books")
+    end if
+    if group.total_duration_seconds <> invalid and group.total_duration_seconds > 0 then parts.Push(Time_runtime(group.total_duration_seconds))
+    if group.in_progress_count <> invalid and Int(group.in_progress_count) > 0 then parts.Push(Str_orEmpty(group.in_progress_count) + " in progress")
+    return Str_joinDots(parts)
+end function
 
 ' The marquee meta line for a card: "2025 · Science Fiction · 1h 59m" / "S2 E8 · Exodus · 52 min · 18m left"
 function Content_metaLine(card as object) as string

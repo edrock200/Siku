@@ -86,6 +86,7 @@ A screen is `<component name="XScreen" extends="BaseScreen">` (`components/BaseS
 | `ProfileScreen` | `{ switching: bool }` |
 | `ShellScreen` | none. Top bar and root tabs: Home, Movies, Series, Music, Audiobooks, For You, Calendar, Requests (only when `GET /api/v2/requests/status` enables it; page `RequestsPage`) |
 | `LibraryScreen` | `{ libraryId, libraryName, mode, section: "browse"\|"collections"\|..., title, source?, collectionId? }` |
+| `LibraryPage` (shell page) | `{ section, libraryId, libraryName, mode, mediaType?, ... }`. Sections: `browse`, `collections`, `alphabet` (A‑Z), `genres` (Music), `authors` / `series` (audiobook groups via `GET /api/v2/catalog/audiobook-groups`, drill-in through `POST /api/v2/catalog/query` with an `author`/`series` `is` rule), plus the personal lists. Browse and A‑Z show the right-edge `AlphabetRail` (`name_prefix`) |
 | `DetailScreen` | `{ itemId, itemType?, libraryId? }`. Movie, series, season and episode |
 | `PersonScreen` | `{ personId, name? }` |
 | `SearchScreen` | `{ query? }` |
@@ -142,7 +143,9 @@ end sub
   - `drawFocusFeedback="false"`
   - `rowFocusAnimationStyle="fixedFocus"`, which pins focus at the row start like Android TV
 - Build the content with `Content_rows([{ id, title, style: "poster"|"landscape", items: [card...] }])`.
-- Grids use a `MarkupGrid` with `itemComponentName="MediaCardItem"`.
+- Grids use a `MarkupGrid` with `itemComponentName="MediaCardItem"`. MarkupGrid clips to its bounds, so grid cells carry an inset (`Content_grid(cards, style, insetX, insetY)` → `cardInsetX/Y` on the node) and the grid starts that much left of / above the first card.
+- Card styles: `poster` (2:3), `landscape` (16:9), `circle` (people) and `square` (1:1: audiobooks, albums, audiobook groups; `initials` on the node draws a lettered placeholder when there is no image).
+- Row titles in `HomeSkylineFeed` are drawn by the feed itself (RowList's own label is transparent): RowList sizes its label to the row's content width, so a one-card row would truncate its title.
 - Item sizes:
 
   | Card | Image | Item height (with captions) |

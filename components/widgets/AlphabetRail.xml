@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Right-edge A–Z jump rail for the library grid (design-spec §4.2, TvAlphabetRail.kt).
+  Entries "All", "#", A–Z. Collapsed (no focus) it is a 36 px column of dots at the screen edge;
+  focused it expands to a 192 px column of letter chips. OK on an entry sets `prefixSelected`
+  ("" for All, "#" for the symbol bucket, else the letter) which the page sends as name_prefix.
+  Fields:
+    selected        the active prefix ("" = All)
+    railTop / railBottom   vertical span of the rail (entries are spread evenly between them)
+  Outputs (alwaysNotify):
+    prefixSelected  the chosen prefix
+    exitLeft        Left pressed (the host returns focus to the grid)
+  Up on "All" and Down on "Z" are swallowed so focus stays in the rail; Back is left to the host.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="AlphabetRail" extends="Group">
+  <interface>
+    <field id="selected" type="string" value="" onChange="restyle" />
+    <field id="railTop" type="integer" value="216" onChange="relayout" />
+    <field id="railBottom" type="integer" value="1040" onChange="relayout" />
+    <field id="prefixSelected" type="string" alwaysNotify="true" />
+    <field id="exitLeft" type="boolean" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/AlphabetRail.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Theme.brs" />
+  <children>
+    <Poster id="panelShadow" uri="pkg:/images/ui/r28.9.png" blendColor="0x0000008C" visible="false" />
+    <Poster id="panelBg" uri="pkg:/images/ui/r22.9.png" blendColor="0x1A1C22F2" visible="false" />
+    <Group id="entries" />
+  </children>
+</component>

@@ -15,6 +15,18 @@ sub init()
     m.metaLabel = m.top.findNode("metaLabel")
     m.synopsis = m.top.findNode("synopsis")
     m.rowList = m.top.findNode("rowList")
+    m.rowTitles = m.top.findNode("rowTitles")
+    m.titlesAnim = m.top.findNode("titlesAnim")
+    m.titlesInterp = m.top.findNode("titlesInterp")
+    ' Row title metrics: RowList reserves (label height + rowLabelOffset.y) above each row's items.
+    probe = m.top.findNode("labelProbe")
+    m.titleH = Int(probe.boundingRect().height)
+    if m.titleH <= 0 then m.titleH = 38
+    m.labelBlock = m.titleH + 44
+    m.rowTitleFont = ThemeFont("semibold", 31)
+    m.titleNodes = []
+    m.rowTops = []
+    m.focusRow = 0
     m.spinner = m.top.findNode("spinner")
     m.status = m.top.findNode("status")
     m.statusTitle = m.top.findNode("statusTitle")
@@ -52,42 +64,121 @@ sub onRows()
     rows = m.top.rows
     if rows = invalid then rows = []
     specs = []
-    heights = []
-    spacing = []
-    sizes = []
     for each r in rows
         style = Str_orEmpty(r.style)
         if style = "" then style = "poster"
-        scale = Theme_posterScale()
-        if style = "landscape" then
-            w = Int(360 * scale)
-            h = Int(w * 9 / 16) + 90
-        else
-            w = Int(176 * scale)
-            h = Int(w * 3 / 2) + 90
-        end if
-        sizes.Push([w, h])
-        heights.Push(h)
-        spacing.Push([40, 0])
         specs.Push({ id: r.id, title: r.title, style: style, items: Arr_or(r.items) })
     end for
     if specs.Count() = 0 then
         m.rowList.content = invalid
         m.top.hasRows = false
         m.rowList.visible = false
+        m.rowTitles.visible = false
         return
     end if
-    m.rowList.rowItemSize = sizes
-    m.rowList.rowHeights = heights
-    m.rowList.rowItemSpacing = spacing
     m.rowList.content = Content_rows(specs)
+    m.focusRow = 0
+    syncRowMetrics()
     m.top.hasRows = true
     m.rowList.visible = m.top.state = "ready"
+    m.rowTitles.visible = m.rowList.visible
     ' Marquee for the first card without waiting for a focus event.
     if m.top.state = "ready" then
         first = firstCard()
         if first <> invalid then showCard(first)
     end if
+end sub
+
+' Card size per row style (poster 176×264, landscape 360×203, square 200×200; captions add 90).
+function rowCardSize(style as string) as object
+    scale = Theme_posterScale()
+    if style = "landscape" then
+        w = Int(360 * scale)
+        return [w, Int(w * 9 / 16) + 90]
+    else if style = "square" then
+        w = Int(200 * scale)
+        return [w, w + 90]
+    end if
+    w = Int(176 * scale)
+    return [w, Int(w * 3 / 2) + 90]
+end function
+
+' Sets the per-row item sizes / heights from the content rows (also after a row was removed) and
+' rebuilds the row titles. Row heights include the label block RowList reserves above the items.
+sub syncRowMetrics()
+    c = m.rowList.content
+    sizes = []
+    heights = []
+    spacing = []
+    tops = []
+    y = 0
+    if c <> invalid then
+        for i = 0 to c.getChildCount() - 1
+            row = c.getChild(i)
+            style = Str_orEmpty(row.rowStyle)
+            if style = "" then style = "poster"
+            size = rowCardSize(style)
+            sizes.Push(size)
+            rowH = size[1] + m.labelBlock
+            heights.Push(rowH)
+            spacing.Push([40, 0])
+            tops.Push(y)
+            y = y + rowH + 28
+        end for
+    end if
+    if sizes.Count() = 0 then sizes.Push([176, 354])
+    if heights.Count() = 0 then heights.Push(354 + m.labelBlock)
+    if spacing.Count() = 0 then spacing.Push([40, 0])
+    m.rowList.rowItemSize = sizes
+    m.rowList.rowHeights = heights
+    m.rowList.rowItemSpacing = spacing
+    m.rowTops = tops
+    rebuildRowTitles()
+end sub
+
+' One full-width Label per row, stacked at the rows' tops inside rowTitles.
+sub rebuildRowTitles()
+    c = m.rowList.content
+    n = 0
+    if c <> invalid then n = c.getChildCount()
+    for i = 0 to n - 1
+        if i < m.titleNodes.Count() then
+            lbl = m.titleNodes[i]
+        else
+            lbl = m.rowTitles.createChild("Label")
+            lbl.font = m.rowTitleFont
+            lbl.color = "0xEDEDEDFF"
+            lbl.width = 1780
+            lbl.maxLines = 1
+            m.titleNodes.Push(lbl)
+        end if
+        lbl.text = Str_orEmpty(c.getChild(i).title)
+        lbl.height = m.titleH
+        lbl.translation = [0, m.rowTops[i]]
+    end for
+    for i = n to m.titleNodes.Count() - 1
+        m.titleNodes[i].visible = false
+        m.titleNodes[i].text = ""
+    end for
+    layoutRowTitles(false)
+end sub
+
+' Vertical fixedFocus keeps the focused row at bandTop; the titles group scrolls with it. Rows
+' above the focused one have scrolled out of the band, so their titles hide.
+sub layoutRowTitles(animate as boolean)
+    f = m.focusRow
+    if f < 0 then f = 0
+    if f >= m.rowTops.Count() then f = m.rowTops.Count() - 1
+    offset = 0
+    if f >= 0 then offset = m.rowTops[f]
+    target = [88, m.top.bandTop - offset]
+    for i = 0 to m.titleNodes.Count() - 1
+        m.titleNodes[i].visible = i >= f and i < m.rowTops.Count()
+    end for
+    ' Set directly (RowList's own scroll is ~instant on the focused row); the animation node is kept
+    ' for a later tween but is not relied on.
+    m.titlesAnim.control = "stop"
+    m.rowTitles.translation = target
 end sub
 
 function firstCard() as dynamic
@@ -100,7 +191,8 @@ end function
 
 sub layoutBand()
     bt = m.top.bandTop
-    m.rowList.translation = [68, bt]
+    m.rowList.translation = [40, bt]
+    layoutRowTitles(false)
     layoutMarquee()
 end sub
 
@@ -109,6 +201,7 @@ sub applyState()
     m.spinner.visible = s = "loading"
     m.status.visible = s = "error" or s = "empty"
     m.rowList.visible = s = "ready" and m.top.hasRows
+    m.rowTitles.visible = m.rowList.visible
     m.marquee.visible = s = "ready"
     showBackdropLayers(s = "ready")
     if s = "error" then
@@ -163,6 +256,11 @@ end sub
 
 sub onRowItemFocused()
     m.pendingFocus = m.rowList.rowItemFocused
+    rf = m.pendingFocus
+    if rf <> invalid and rf.Count() >= 1 and rf[0] <> m.focusRow then
+        m.focusRow = rf[0]
+        layoutRowTitles(true)
+    end if
     m.restTimer.control = "stop"
     m.restTimer.control = "start"
 end sub
@@ -464,6 +562,9 @@ sub onItemPatch()
             if m.rowList.content.getChildCount() = 0 then
                 m.top.hasRows = false
                 m.top.state = "empty"
+            else
+                if m.focusRow >= m.rowList.content.getChildCount() then m.focusRow = m.rowList.content.getChildCount() - 1
+                syncRowMetrics()
             end if
         end if
         return

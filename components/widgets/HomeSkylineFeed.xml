@@ -68,13 +68,24 @@
       </Label>
     </Group>
 
-    <!-- Row band. -->
-    <RowList id="rowList" translation="[68, 540]" itemComponentName="MediaCardItem"
+    <!-- Row band. The list starts 48 px left of the 88 px safe area (focusXOffset puts the resting
+         card back at 88) so the focused card's 1.10 scale, ring and glow are not clipped at its edge.
+         RowList's own row label is kept for layout but drawn transparent: its width follows the
+         row's content width (a one-card row truncates "Failed requests"), so rowTitles draws the
+         titles at full width instead. -->
+    <RowList id="rowList" translation="[40, 540]" itemComponentName="MediaCardItem"
              drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" vertFocusAnimationStyle="fixedFocus"
-             itemSize="[1852, 354]" itemSpacing="[0, 28]" numRows="2" focusXOffset="[20]"
-             showRowLabel="[true]" rowLabelOffset="[[20, 44]]" rowLabelColor="0xEDEDEDFF" visible="false">
+             itemSize="[1880, 354]" itemSpacing="[0, 28]" numRows="2" focusXOffset="[48]"
+             showRowLabel="[true]" rowLabelOffset="[[48, 44]]" rowLabelColor="0x00000000" visible="false">
       <Font role="rowLabelFont" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
     </RowList>
+    <Group id="rowTitles" translation="[88, 540]" visible="false" />
+    <Animation id="titlesAnim" duration="0.2" easeFunction="outCubic">
+      <Vector2DFieldInterpolator id="titlesInterp" key="[0.0, 1.0]" keyValue="[[88, 540], [88, 540]]" fieldToInterp="rowTitles.translation" />
+    </Animation>
+    <Label id="labelProbe" text="Ag" visible="false">
+      <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+    </Label>
 
     <!-- States. -->
     <LoadingSpinner id="spinner" translation="[924, 504]" visible="false" />

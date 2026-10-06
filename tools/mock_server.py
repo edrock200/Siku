@@ -253,9 +253,17 @@ ALBUMS = [(0, "Harbor Songs", 2019, 9), (0, "Weather Systems", 2022, 7), (1, "Ne
 TRACK_WORDS = ["Lanterns", "Saltwater", "Northbound", "Quiet Engines", "Paper Boats", "Undertow", "Firelight", "Low Tide",
                "Glass Hours", "Satellites", "Driftwood", "Static Bloom", "Morning Train", "Cinder"]
 AUDIOBOOKS = [
-    {"slug": "the-long-orbit", "title": "The Long Orbit", "year": 2023, "authors": [0], "narrators": [1], "parts": [[1500, 1800, 2100, 1800], [1600, 2000, 1900], [2400, 1700, 2200]]},
+    {"slug": "the-long-orbit", "title": "The Long Orbit", "year": 2023, "authors": [0], "narrators": [1], "series": "Orbit Cycle", "parts": [[1500, 1800, 2100, 1800], [1600, 2000, 1900], [2400, 1700, 2200]]},
     {"slug": "small-kingdoms", "title": "Small Kingdoms", "year": 2021, "authors": [2], "narrators": [3, 4], "parts": [[1200, 1500, 1320, 1800, 1500, 1680, 1440, 1560]]},
+    {"slug": "a-wider-orbit", "title": "A Wider Orbit", "year": 2024, "authors": [0], "narrators": [1], "series": "Orbit Cycle", "parts": [[1700, 1900, 2000], [1800, 2100]]},
+    {"slug": "glass-harbor", "title": "Glass Harbor", "year": 2019, "authors": [5], "narrators": [6], "series": "Harbor Chronicles", "parts": [[2200, 2400, 1900, 2100]]},
+    {"slug": "harbor-of-salt", "title": "Harbor of Salt", "year": 2020, "authors": [5], "narrators": [6], "series": "Harbor Chronicles", "parts": [[2000, 2300, 2100]]},
+    {"slug": "1984-revisited", "title": "1984 Revisited", "year": 2018, "authors": [7], "narrators": [2], "parts": [[1500, 1500, 1500, 1500]]},
+    {"slug": "midnight-ledger", "title": "Midnight Ledger", "year": 2022, "authors": [7], "narrators": [4], "parts": [[1800, 1600, 1700, 1900, 1500]]},
+    {"slug": "the-quiet-shore", "title": "The Quiet Shore", "year": 2017, "authors": [2], "narrators": [3], "series": "Harbor Chronicles", "parts": [[1300, 1400, 1600]]},
 ]
+# Groups that have cover stacks (the others exercise the initials placeholder).
+GROUP_COVERS = {"Ava Thornton", "Orbit Cycle", "Harbor Chronicles"}
 AUDIO_FILES = {}
 
 
@@ -300,7 +308,97 @@ def audiobook_card(bi):
     pos = STATE["progress"].get(cid, 0)
     return {"content_id": cid, "type": "audiobook", "title": b["title"], "year": b["year"], "genres": ["Fiction"], "keywords": [],
             "status": "matched", "duration_seconds": total, "position_seconds": pos or None,
-            "poster_url": img("poster", "book-" + b["slug"])}
+            "authors": [PEOPLE[i] for i in b["authors"]], "narrators": [PEOPLE[i] for i in b["narrators"]],
+            "series_name": b.get("series"), "poster_url": img("poster", "book-" + b["slug"])}
+
+
+def sort_title(t):
+    """The server sorts on a sort title without the leading article."""
+    for art in ("The ", "A ", "An "):
+        if t.startswith(art):
+            return t[len(art):]
+    return t
+
+
+def catalog_filter(items, q):
+    """Shared GET /api/v2/catalog + POST /api/v2/catalog/query filters: name_prefix and rule groups
+    (the client sends author / series "is" rules and genre "contains" rules), then sort."""
+    prefix = q.get("name_prefix", [""])[0]
+    if prefix:
+        if prefix == "#":
+            items = [i for i in items if not sort_title(i["title"])[:1].isalpha()]
+        else:
+            items = [i for i in items if sort_title(i["title"]).lower().startswith(prefix.lower())]
+    for group in q.get("_groups", []):
+        match_any = group.get("match") == "any"
+        rules = group.get("rules") or []
+
+        def rule_ok(item, rule):
+            field, value = rule.get("field"), rule.get("value")
+            if field == "author":
+                return value in item.get("authors", [])
+            if field == "narrator":
+                return value in item.get("narrators", [])
+            if field == "series":
+                return value == item.get("series_name")
+            if field == "genre":
+                return value in item.get("genres", [])
+            if field == "watched":
+                return (item["content_id"] in STATE["watched"]) == (str(value).lower() == "true")
+            if field == "in_progress":
+                return bool(STATE["progress"].get(item["content_id"])) == (str(value).lower() == "true")
+            if field == "favorited":
+                return (item["content_id"] in STATE["favorites"]) == (str(value).lower() == "true")
+            if field == "in_watchlist":
+                return (item["content_id"] in STATE["watchlist"]) == (str(value).lower() == "true")
+            return True
+
+        if rules:
+            items = [i for i in items if (any if match_any else all)(rule_ok(i, r) for r in rules)]
+    sort = q.get("sort", ["title"])[0]
+    key = sort.lstrip("-")
+    if key == "title":
+        items = sorted(items, key=lambda i: sort_title(i["title"]).lower(), reverse=sort.startswith("-"))
+    elif key in ("year", "runtime", "rating", "rating_imdb", "duration_seconds"):
+        items = sorted(items, key=lambda i: (i.get("rating_imdb" if key == "rating" else key) or 0), reverse=sort.startswith("-"))
+    return items
+
+
+def audiobook_groups(q):
+    """GET /api/v2/catalog/audiobook-groups: AudiobookGroupCollection built from the books."""
+    group_by = q.get("group_by", [""])[0]
+    groups = {}
+    for bi, b in enumerate(AUDIOBOOKS):
+        card = audiobook_card(bi)
+        if group_by == "author":
+            names = card["authors"]
+        elif group_by == "narrator":
+            names = card["narrators"]
+        else:
+            names = [b["series"]] if b.get("series") else []
+        for name in names:
+            g = groups.setdefault(name, {"name": name, "item_count": 0, "total_duration_seconds": 0, "in_progress_count": 0,
+                                         "finished_count": 0, "poster_urls": []})
+            g["item_count"] += 1
+            g["total_duration_seconds"] += card["duration_seconds"]
+            if STATE["progress"].get(card["content_id"]):
+                g["in_progress_count"] += 1
+            if card["content_id"] in STATE["watched"]:
+                g["finished_count"] += 1
+            if name in GROUP_COVERS and len(g["poster_urls"]) < 4:
+                g["poster_urls"].append(card["poster_url"])
+    out = list(groups.values())
+    text = q.get("q", [""])[0].lower()
+    if text:
+        out = [g for g in out if g["name"].lower().startswith(text)]
+    sort = q.get("sort", ["name"])[0]
+    if sort == "count":
+        out.sort(key=lambda g: -g["item_count"])
+    elif sort == "duration":
+        out.sort(key=lambda g: -g["total_duration_seconds"])
+    else:
+        out.sort(key=lambda g: g["name"].lower())
+    return out
 
 
 def audiobook_detail(bi):
@@ -368,6 +466,13 @@ def audio_detail(cid):
 
 def audio_route(handler, method, p, q, b):
     """Returns True when it answered the request; other routes fall through untouched."""
+    if p == "/api/v2/catalog/audiobook-groups" and method == "GET":
+        if q.get("group_by", [""])[0] not in ("author", "narrator", "series"):
+            handler.problem(422, "validation_failed", "group_by must be author, narrator or series")
+            return True
+        groups = audiobook_groups(q) if q.get("library_id", [""])[0] == "4" else []
+        handler.send(200, page(groups, q))
+        return True
     if p == "/api/v2/catalog" and method == "GET":
         lib = q.get("library_id", [""])[0]
         typ = q.get("type", [""])[0]
@@ -384,7 +489,7 @@ def audio_route(handler, method, p, q, b):
         text = q.get("q", [""])[0].lower()
         if text:
             items = [i for i in items if text in i["title"].lower()]
-        handler.send(200, page(items, q))
+        handler.send(200, page(catalog_filter(items, q), q))
         return True
     m = re.match(r"^/api/v2/catalog/items/([^/]+)$", p)
     if m:
@@ -795,6 +900,16 @@ class Handler(BaseHTTPRequestHandler):
         if p.startswith("/mock-media/"):
             return self.send(404)
 
+        # POST /api/v2/catalog/query: the same query as GET /api/v2/catalog, as a JSON body plus
+        # rule `groups` (CatalogQuery). Fold it into the GET handlers.
+        if p == "/api/v2/catalog/query" and method == "POST":
+            for k, v in (b or {}).items():
+                if k == "groups":
+                    q["_groups"] = v or []
+                elif v is not None:
+                    q[k] = [str(v)]
+            p, method = "/api/v2/catalog", "GET"
+
         if audio_route(self, method, p, q, b):
             return
 
@@ -877,7 +992,18 @@ class Handler(BaseHTTPRequestHandler):
             cols = [{"id": "c%d" % i, "title": t, "poster_url": img("poster", "collection-" + t), "item_count": 4} for i, t in enumerate(["Award Winners", "Night Owls", "Comfort Picks"])]
             return self.send(200, {"library_id": m.group(1), "collections": cols, "groups": [], "ungrouped": {"collections": cols}})
         if p == "/api/v2/catalog/filters":
-            return self.send(200, {"genres": GENRES, "studios": [], "networks": [], "countries": [], "original_languages": [], "content_ratings": ["PG", "PG-13", "R"], "technical": {}})
+            lib = q.get("library_id", [""])[0]
+            genres = GENRES
+            authors, narrators, series = [], [], []
+            if lib == "3":
+                genres = sorted({g for _, g in ARTISTS})
+            elif lib == "4":
+                genres = ["Fiction"]
+                authors = [g["name"] for g in audiobook_groups({"group_by": ["author"]})]
+                narrators = [g["name"] for g in audiobook_groups({"group_by": ["narrator"]})]
+                series = [g["name"] for g in audiobook_groups({"group_by": ["series"]})]
+            return self.send(200, {"genres": genres, "studios": [], "networks": [], "countries": [], "original_languages": [], "content_ratings": ["PG", "PG-13", "R"],
+                                   "authors": authors, "narrators": narrators, "series": series, "technical": {}})
         if p == "/api/v2/catalog":
             src = q.get("source", ["query"])[0]
             lib = q.get("library_id", [""])[0]
@@ -902,8 +1028,8 @@ class Handler(BaseHTTPRequestHandler):
             key = sort.lstrip("-")
             if key == "random":
                 items = items[h(str(time.time())) % len(items):][:1] or items[:1]
-            elif key in ("title", "year", "runtime", "rating"):
-                items.sort(key=lambda i: (i.get(key if key != "rating" else "rating_imdb") or 0), reverse=sort.startswith("-"))
+            else:
+                items = catalog_filter(items, q)
             return self.send(200, page(items, q))
         m = re.match(r"^/api/v2/catalog/items/(.+)$", p)
         if m:
