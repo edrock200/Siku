@@ -1,0 +1,34 @@
+# Publishes a side-loadable zip as a GitHub Release whenever a version tag is pushed:
+#   git tag v0.1.5 && git push origin v0.1.5
+# The zip is also attached to every CI run as an artifact (see ci.yml).
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run package
+      - name: Name the zip after the tag
+        run: cp out/siku.zip "out/siku-${GITHUB_REF_NAME}.zip"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/siku-${{ github.ref_name }}.zip
+          generate_release_notes: true
+          body: |
+            Side-loadable Roku package. Install it on a Roku in developer mode: open `http://<roku-ip>`,
+            sign in as `rokudev`, choose **Upload**, pick the zip, then **Install**.
+            See the README for enabling developer mode.

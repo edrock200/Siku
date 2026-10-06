@@ -38,7 +38,7 @@ Not planned for v1: Watch Party (experimental and off in Android TV release buil
 Siku is not in the Roku Channel Store. To run it on your own Roku:
 
 1. **Turn on developer mode.** On the Roku remote press **Home ×3, Up ×2, Right, Left, Right, Left, Right**. Note the IP address shown, accept the license and set a developer password. The Roku restarts.
-2. **Build the package** (see [Build](#build)) or download a release zip.
+2. **Download the latest zip** from the [Releases page](../../releases/latest), or [build it yourself](#build).
 3. **Upload it.** Open `http://<roku-ip>` in a browser, sign in as `rokudev` with your password, choose **Upload** and select the zip, then **Install**.
 
 See Roku's [developer setup guide](https://developer.roku.com/docs/developer-program/getting-started/developer-setup.md) for details.
