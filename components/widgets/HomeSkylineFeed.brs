@@ -146,7 +146,7 @@ sub rebuildRowTitles()
             lbl = m.titleNodes[i]
         else
             lbl = m.rowTitles.createChild("Label")
-            lbl.font = m.rowTitleFont
+            Label_setFont(lbl, "semibold", 31)
             lbl.color = "0xEDEDEDFF"
             lbl.width = 1780
             lbl.maxLines = 1
@@ -424,7 +424,7 @@ function badgeNode(i as integer) as object
     ring.height = 36
     lbl = g.createChild("Label")
     lbl.id = "label"
-    lbl.font = m.badgeFont
+    Label_setFont(lbl, "semibold", 19)
     lbl.color = "0xEDEDEDE6"
     lbl.height = 36
     lbl.vertAlign = "center"

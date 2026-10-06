@@ -100,7 +100,7 @@ sub buildChips()
         g = m.chips.createChild("Group")
         g.translation = [x, 0]
         lbl = CreateObject("roSGNode", "Label")
-        lbl.font = m.fontChip
+        Label_setFont(lbl, "medium", 24)
         lbl.text = m.chipDefs[i].label
         w = Int(Label_width(lbl)) + 80
         bg = g.createChild("Poster")

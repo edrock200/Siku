@@ -48,7 +48,7 @@ function rowNode(i as integer) as object
     icon.height = 36
     lbl = g.createChild("Label")
     lbl.id = "label"
-    lbl.font = m.fontRow
+    Label_setFont(lbl, "medium", 26)
     lbl.vertAlign = "center"
     lbl.height = m.rowH
     sub1 = g.createChild("Label")
@@ -240,13 +240,13 @@ sub applyFocus()
             sub1 = g.findNode("sub")
             if isF then
                 lbl.color = Theme().colors.onInk
-                lbl.font = m.fontRowFocused
+                Label_setFont(lbl, "semibold", 26)
                 icon.blendColor = Theme().colors.onInk
                 trailing.blendColor = Theme().colors.onInk
                 sub1.color = "0x000000B3"
             else
                 lbl.color = Theme().colors.ink
-                lbl.font = m.fontRow
+                Label_setFont(lbl, "medium", 26)
                 icon.blendColor = Theme().colors.ink
                 trailing.blendColor = "0xEDEDED9E"
                 sub1.color = "0xEDEDED9E"

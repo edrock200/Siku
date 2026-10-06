@@ -122,7 +122,7 @@ sub buildSegments()
         bg.height = 56
         lbl = g.createChild("Label")
         lbl.id = "label"
-        lbl.font = m.fontSeg
+        Label_setFont(lbl, "semibold", 24)
         lbl.width = segW
         lbl.height = 56
         lbl.horizAlign = "center"
@@ -148,13 +148,13 @@ sub buildStrip()
         g = stripCell("day" + i.ToStr(), x, 132)
         dow = g.createChild("Label")
         dow.id = "dow"
-        dow.font = m.fontDow
+        Label_setFont(dow, "medium", 20)
         dow.width = 132
         dow.horizAlign = "center"
         dow.translation = [0, 8]
         num = g.createChild("Label")
         num.id = "num"
-        num.font = m.fontDay
+        Label_setFont(num, "bold", 29)
         num.width = 132
         num.horizAlign = "center"
         num.translation = [0, 30]
@@ -179,7 +179,7 @@ sub buildStrip()
     g = stripCell("today", x, 140)
     lbl = g.createChild("Label")
     lbl.id = "label"
-    lbl.font = m.fontSeg
+    Label_setFont(lbl, "semibold", 24)
     lbl.width = 140
     lbl.height = 72
     lbl.horizAlign = "center"

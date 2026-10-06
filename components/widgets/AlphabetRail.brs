@@ -24,7 +24,7 @@ sub init()
         lbl.horizAlign = "center"
         lbl.vertAlign = "center"
         lbl.maxLines = 1
-        if i = 0 then lbl.font = m.allFont else lbl.font = m.chipFont
+        if i = 0 then Label_setFont(lbl, "semibold", 20) else Label_setFont(lbl, "semibold", 22)
         m.nodes.Push(g)
     end for
     m.focusIndex = 0

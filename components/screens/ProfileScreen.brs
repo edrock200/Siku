@@ -171,7 +171,7 @@ sub buildGrid()
         av.profile = p
 
         nm = g.createChild("Label")
-        nm.font = m.nameFont
+        Label_setFont(nm, "semibold", 26)
         nm.width = colW
         nm.height = 36
         nm.horizAlign = "center"

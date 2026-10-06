@@ -48,7 +48,7 @@ sub init()
                 m.keys.Push({ group: g, fill: fill, ring: ring, icon: ico, label: invalid })
             else
                 lbl = g.createChild("Label")
-                lbl.font = m.digitFont
+                Label_setFont(lbl, "regular", 38)
                 lbl.text = m.labels[i]
                 lbl.width = m.keySize
                 lbl.height = m.keySize

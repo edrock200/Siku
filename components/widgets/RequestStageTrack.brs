@@ -7,7 +7,7 @@ sub init()
     for i = 0 to 3
         m.segments.createChild("Rectangle")
         lbl = m.labels.createChild("Label")
-        lbl.font = m.labelFont
+        Label_setFont(lbl, "semibold", 24)
         lbl.maxLines = 1
     end for
     layout()

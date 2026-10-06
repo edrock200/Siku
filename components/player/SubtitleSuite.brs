@@ -151,8 +151,12 @@ function Subs_buildTrack(t as object) as dynamic
         su = Subs_appendQuery(su, "timestamp_offset=" + Subs_formatSeconds(shift))
     end if
     su = Subs_appendQuery(su, "token=" + s.accessToken)
-    label = Str_orEmpty(t.label)
-    if label = "" then label = Subs_languageName(t.language)
+    ' Language name first, as Android TV shows it; the server's label can be a bare codec
+    ' name ("SUBRIP" was seen on device), so it is only a fallback.
+    label = ""
+    if not Str_isEmpty(t.language) then label = Subs_languageName(t.language)
+    if label = "" or label = "Unknown" then label = Str_orEmpty(t.label)
+    if label = "" then label = "Unknown"
     if t.forced = true then label = label + " (Forced)"
     if t.hearing_impaired = true then label = label + " (SDH)"
     storedId = Subs_storedIdOf(t)

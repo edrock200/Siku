@@ -96,3 +96,12 @@ function Theme_gridColumns() as integer
     end if
     return 6
 end function
+
+' Gives a Label its own Font node. A SceneGraph Font is a node and can have only one parent,
+' so assigning one shared Font to several Labels silently un-fonts all but the last one
+' (seen on device: tabs, chips and menu rows rendered as empty shapes). Always use this
+' instead of reusing a Font created once in init().
+sub Label_setFont(lbl as object, weight as string, sizePx as integer)
+    if lbl = invalid then return
+    lbl.font = ThemeFont(weight, sizePx)
+end sub
