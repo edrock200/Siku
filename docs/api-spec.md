@@ -9,8 +9,8 @@ Roots used below:
 
 ## 0. Answer to #10 first: v1 or v2?
 
-**The TV client uses `/api/v2` only.** `A/docs/api-v2/android-migration-status.md` says: "Every HTTP call the Android clients make goes to `/api/v2/` except the two exceptions."
-- The only exception that matters is `GET /health`, the root liveness route.
+**The TV client uses `/api/v2` only, and so does Siku, with no exceptions.** `A/docs/api-v2/android-migration-status.md` says: "Every HTTP call the Android clients make goes to `/api/v2/` except the two exceptions."
+- Android's only exception that matters is `GET /health`, the root liveness route. **Siku does not call it**: reachability and the server name come from `/api/v2/system/info`, `/api/v2/system/identity` and `/api/v2/theme/branding`. `ApiTask` rejects any path outside `/api/v2/`.
 - Server settings v1 routes were deleted with no v2 replacement.
 
 v1 is the "frozen alpha" surface. The client never falls back to v1, playback included (`A/docs/playback/sequenced-api-v2.md`).
@@ -59,8 +59,8 @@ The user types a URL (`A/androidTvApp/.../tv/ui/screens/auth/TvServerSetupViewMo
 |---|---|
 | `GET /api/v2/system/info` | `{"api_major":2,"server_version":"abc123","contract_digest":"<sha256>","links":{"openapi":"...","identity":"/api/v2/system/identity","capabilities":"..."}}`. The client requires `api_major == 2`. |
 | `GET /api/v2/system/identity` | `{"server_id":"3f2a9d5e-..."}`. A stable deployment ID; use it to recognise the same server at different URLs (`S/network/api/ServerIdentityApi.kt`). 8 s timeout on TV. |
-| `GET /health` (root) | `{"status":"ok","server_name":"Silo","server_id":"..."}` (`S/network/api/HealthApi.kt`, 6 s timeout). Used for a friendly name. **Caveat:** in this server checkout the handler is only registered at `/api/v1/health` (`SV/internal/api/router.go:2910`). Treat `/health` as best-effort. |
-| `GET /api/v2/theme/branding` | Branding and server name. The client prefers this name over `/health`. |
+| `GET /api/v2/theme/branding` | Branding and server name (Android prefers it over its `/health` call). Siku uses it for the server's friendly name. |
+| ~~`GET /health`~~ (root) | **Not used by Siku.** Android calls it for a friendly name, but it is outside v2 and in this server checkout is only registered at `/api/v1/health` (`SV/internal/api/router.go:2910`). |
 | `GET /api/v2/system/connections` (auth) | `{state, allowed, server_id, endpoints:[{kind:"public"\|"provider", url, provider, display_name, state}]}`. Lists alternate addresses. Optional. |
 
 ### Cleartext HTTP
@@ -802,10 +802,10 @@ Android TV's Settings screen is mostly server-synced per profile (`shared/.../ne
 ---
 
 ## Discrepancies and caveats
-- `/health` (root) is called by the client, but this server checkout registers it only at `/api/v1/health`. Use `/api/v2/system/info` and `/api/v2/system/identity` for reachability.
+- `/health` (root) is called by the Android client, but this server checkout registers it only at `/api/v1/health`. Siku never calls it; it uses `/api/v2/system/info` and `/api/v2/system/identity` for reachability.
 - Integer vs string IDs:
   - The server returns `media_file_id` / `requested_media_file_id` as **strings** in v2. Android's internal model parses them as Int.
   - The golden v3 schema fixture uses an integer `file_id`, but the v2 openapi says `file_id` is a string. Send a string.
 - Marker field names differ by endpoint: `{start,end}` on `/catalog/items/{id}`, but `{start_seconds,end_seconds}` on `/watch/{id}` and `marker_segments`.
-- `SV/docs/architecture/playback-protocol-v3.md` §2 describes the `/api/v1` error envelope. v2 uses problem+json. Its path list (`/stream/...`) is relative to the API prefix; in v2 the paths are `/api/v2/stream/...`.
+- `SV/docs/architecture/playback-protocol-v3.md` §2 describes the `/api/v1` error envelope. Ignore it: v2 uses problem+json, which is what Siku parses. Its path list (`/stream/...`) is relative to the API prefix; in v2 the paths are `/api/v2/stream/...`.
 - Not verified here: whether a Roku Video node forwards `HttpHeaders` to sidecar subtitle fetches. The server accepts `?token=` on subtitle routes as a fallback.

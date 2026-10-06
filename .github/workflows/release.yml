@@ -65,6 +65,8 @@ jobs:
             echo
             echo "## Install"
             echo
+            echo "Requires a Silo server with the v2 API (\`/api/v2\`)."
+            echo ""
             echo "1. Download the \`.zip\` below (do not unzip it)."
             echo "2. With developer mode on, open \`http://<roku-ip>\` in a browser and sign in as \`rokudev\`."
             echo "3. Click **Upload**, pick the zip, then **Install** (or **Replace** to update)."

@@ -38,6 +38,8 @@ Not planned for v1: Watch Party (experimental and off in Android TV release buil
 
 ## Install on your Roku (side-load)
 
+**Requirements:** a Silo server that provides the v2 API (`/api/v2/system/info` reports `api_major: 2`). Siku checks this when you connect and says so if the server is too old.
+
 Siku is not in the Roku Channel Store yet. Any Roku can run it as a *developer channel*
 ("side-loading"). It takes about five minutes and needs a computer, phone or tablet on the same
 network as the Roku.
@@ -125,7 +127,7 @@ scripts/                 Packaging and deploy helpers
 
 ## How it works
 
-Siku talks to a Silo server over the same HTTP API (v2) as the Android TV client. The server owns the library, metadata, transcoding decisions and accounts; Siku displays them and drives playback with Roku's native `Video` node. When playback starts, Siku describes what this Roku can decode (H.264, HEVC, AAC, AC3/EAC3, HLS…) so the server can pick Direct Play, Remux or Transcode.
+Siku talks to a Silo server over the **Silo v2 API only** (`/api/v2/...`), the same API the Android TV client uses. It never calls the legacy v1 API, and its network layer rejects any request outside `/api/v2/`. The server owns the library, metadata, transcoding decisions and accounts; Siku displays them and drives playback with Roku's native `Video` node. When playback starts, Siku describes what this Roku can decode (H.264, HEVC, AAC, AC3/EAC3, HLS…) so the server can pick Direct Play, Remux or Transcode.
 
 ## Contributing
 
