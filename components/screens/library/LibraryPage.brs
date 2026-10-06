@@ -9,6 +9,11 @@ sub init()
     m.clearPill = m.top.findNode("clearPill")
     m.shufflePill = m.top.findNode("shufflePill")
     m.grid = m.top.findNode("grid")
+    ' Columns follow the poster-size preference; cells fill the 1780 px content width.
+    cols = Theme_gridColumns()
+    cellW = Int((1780 - (cols - 1) * 40) / cols)
+    m.grid.numColumns = cols
+    m.grid.itemSize = [cellW, Int(cellW * 3 / 2) + 90]
     m.spinner = m.top.findNode("spinner")
     m.status = m.top.findNode("status")
     m.statusTitle = m.top.findNode("statusTitle")

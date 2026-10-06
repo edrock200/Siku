@@ -173,7 +173,6 @@ function Prefs_default() as object
         quality: "auto"
         skipBack: 10
         skipForward: 30
-        subtitleSize: "medium"
         hiddenSections: []
     }
 end function

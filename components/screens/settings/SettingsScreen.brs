@@ -80,7 +80,6 @@ function buildCategories() as object
         {
             id: "subtitles", title: "Subtitles", description: "Language and appearance", icon: "subtitles"
             rows: [
-                { id: "subtitleSize", label: "Font Size", kind: "choice", options: [{ value: "small", label: "Small" }, { value: "medium", label: "Medium" }, { value: "large", label: "Large" }] }
                 { id: "captionsNote", label: "Caption style follows your Roku's Accessibility settings", kind: "info" }
             ]
         }

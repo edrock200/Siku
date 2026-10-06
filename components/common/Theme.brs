@@ -76,3 +76,23 @@ end function
 function Sp(value as float) as integer
     return Int(value * 1.72 + 0.5)
 end function
+
+' Poster-size preference (Settings → General → Poster Size): Compact ×0.86, Standard ×1, Large ×1.2.
+function Theme_posterScale() as float
+    p = m.global.prefs
+    if p <> invalid then
+        if p.posterSize = "compact" then return 0.86
+        if p.posterSize = "large" then return 1.2
+    end if
+    return 1.0
+end function
+
+' Grid columns for the poster-size preference (Compact 7, Standard 6, Large 5).
+function Theme_gridColumns() as integer
+    p = m.global.prefs
+    if p <> invalid then
+        if p.posterSize = "compact" then return 7
+        if p.posterSize = "large" then return 5
+    end if
+    return 6
+end function

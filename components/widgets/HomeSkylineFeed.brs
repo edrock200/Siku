@@ -54,13 +54,16 @@ sub onRows()
     for each r in rows
         style = Str_orEmpty(r.style)
         if style = "" then style = "poster"
+        scale = Theme_posterScale()
         if style = "landscape" then
-            sizes.Push([360, 293])
-            heights.Push(293)
+            w = Int(360 * scale)
+            h = Int(w * 9 / 16) + 90
         else
-            sizes.Push([176, 354])
-            heights.Push(354)
+            w = Int(176 * scale)
+            h = Int(w * 3 / 2) + 90
         end if
+        sizes.Push([w, h])
+        heights.Push(h)
         spacing.Push([40, 0])
         specs.Push({ id: r.id, title: r.title, style: style, items: Arr_or(r.items) })
     end for
@@ -198,12 +201,18 @@ sub showCard(node as object)
     title = Str_orEmpty(card.title)
     if t = "episode" and not Str_isEmpty(card.series_title) then title = card.series_title
     logoUrl = Str_orEmpty(node.logoUrl)
+    m.titleLabel.text = title
     if logoUrl <> "" then
-        m.logo.visible = true
-        m.logo.width = 880
-        m.logo.height = 168
-        m.logo.uri = logoUrl
+        ' Hidden until loaded and sized (onLogoLoaded), so it never flashes centered.
+        m.logo.visible = false
         m.titleLabel.visible = false
+        if m.logo.uri <> logoUrl then
+            m.logo.width = 880
+            m.logo.height = 168
+            m.logo.uri = logoUrl
+        end if
+        ' A cached bitmap may already be "ready" without a loadStatus change.
+        onLogoLoaded()
     else
         m.logo.visible = false
         m.logo.uri = ""
@@ -335,10 +344,20 @@ end sub
 
 ' Resize the logo to its aspect ratio (max 880x168) so it sits left-aligned.
 sub onLogoLoaded()
+    if m.logo.uri = "" then return
+    if m.logo.loadStatus = "failed" then
+        ' Fall back to the text title.
+        m.logo.visible = false
+        m.titleLabel.visible = true
+        layoutMarquee()
+        return
+    end if
     if m.logo.loadStatus <> "ready" then return
     bw = m.logo.bitmapWidth
     bh = m.logo.bitmapHeight
     if bw <= 0 or bh <= 0 then return
+    m.logo.visible = true
+    m.titleLabel.visible = false
     scale = 880 / bw
     if 168 / bh < scale then scale = 168 / bh
     if scale > 1.5 then scale = 1.5
