@@ -1,12 +1,16 @@
-# Publishes a side-loadable zip as a GitHub Release whenever a version tag is pushed:
-#   git tag v0.1.5 && git push origin v0.1.5
-# The zip is also attached to every CI run as an artifact (see ci.yml).
+# Publishes a side-loadable zip as a GitHub Release.
+# Runs on every push to the default branch: reads the version from the manifest
+# (major.minor.build) and, if no release with that tag exists yet, builds the zip,
+# creates the tag and publishes the release. Bumping build_version in the manifest
+# is therefore all it takes to ship a new build.
 name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - ccr-26864aeb-leveko
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -16,17 +20,42 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Read the version from the manifest
+        id: version
+        run: |
+          major=$(grep '^major_version=' manifest | cut -d= -f2)
+          minor=$(grep '^minor_version=' manifest | cut -d= -f2)
+          build=$(grep '^build_version=' manifest | cut -d= -f2 | sed 's/^0*//')
+          echo "tag=v${major}.${minor}.${build:-0}" >> "$GITHUB_OUTPUT"
+      - name: Skip if this version is already released
+        id: exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.version.outputs.tag }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-node@v4
+        if: steps.exists.outputs.released == 'false'
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
+        if: steps.exists.outputs.released == 'false'
       - run: npm run lint
+        if: steps.exists.outputs.released == 'false'
       - run: npm run package
-      - name: Name the zip after the tag
-        run: cp out/siku.zip "out/siku-${GITHUB_REF_NAME}.zip"
+        if: steps.exists.outputs.released == 'false'
+      - name: Name the zip after the version
+        if: steps.exists.outputs.released == 'false'
+        run: cp out/siku.zip "out/siku-${{ steps.version.outputs.tag }}.zip"
       - uses: softprops/action-gh-release@v2
+        if: steps.exists.outputs.released == 'false'
         with:
-          files: out/siku-${{ github.ref_name }}.zip
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Siku ${{ steps.version.outputs.tag }}
+          files: out/siku-${{ steps.version.outputs.tag }}.zip
           generate_release_notes: true
           body: |
             Side-loadable Roku package. Install it on a Roku in developer mode: open `http://<roku-ip>`,
