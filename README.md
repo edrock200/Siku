@@ -4,7 +4,7 @@
 
 Siku brings your Silo library to Roku TVs and streaming players. It is a port of the official [Silo Android TV client](https://github.com/Silo-Server/silo-android) to Roku SceneGraph and BrightScript, and aims to look, feel and behave like it on a 10-foot, remote-driven screen.
 
-> **Status:** early development. Sign-in, browsing, detail pages and the player are built and tested in a simulator; they still need testing on a real Roku. The checklist below tracks progress.
+> **Status:** alpha. Siku installs and runs on a real Roku against a real Silo server: sign-in, Home, browsing and detail pages work on device. Playback, subtitles and audio have been exercised only in a simulator so far and are the next things to verify on hardware. The checklist below tracks progress.
 >
 > Siku is an independent community project. It is not made or endorsed by Silo Media L.L.C. "Silo" is a trademark of Silo Media L.L.C. and is used here only to say what Siku connects to.
 
