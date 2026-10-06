@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Shared first-run "marquee" chrome (Android TvMarqueeScreen top row + MarqueeBackdrop):
+  the pre-rendered brand-light backdrop, Siku's wordmark top-left (150 px wide at 90,60)
+  and an optional status chip top-right (60 px glass capsule, 14 sp at 62%).
+  Fields:
+    backdropUri  pkg:/images/marquee_server.jpg | marquee_bg.jpg | marquee_profiles.jpg
+    chipText     "" hides the chip
+    chipIconUri  optional chip icon
+    showLogo     default true
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="AuthMarqueeChrome" extends="Group">
+  <interface>
+    <field id="backdropUri" type="string" value="pkg:/images/marquee_bg.jpg" onChange="render" />
+    <field id="chipText" type="string" onChange="render" />
+    <field id="chipIconUri" type="string" onChange="render" />
+    <field id="showLogo" type="boolean" value="true" onChange="render" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/AuthMarqueeChrome.brs" />
+  <children>
+    <Poster id="backdrop" width="1920" height="1080" />
+    <Poster id="logo" uri="pkg:/images/logo_wordmark.png" width="150" height="40" translation="[90, 72]" />
+    <Group id="chip" visible="false">
+      <Poster id="chipBg" uri="pkg:/images/ui/r30.9.png" height="60" blendColor="0xFFFFFF14" />
+      <Poster id="chipRing" uri="pkg:/images/ui/r30_ring2.9.png" height="60" blendColor="0xFFFFFF24" />
+      <Poster id="chipIcon" width="24" height="24" translation="[22, 18]" blendColor="0xEDEDED9E" />
+      <Label id="chipLabel" height="60" vertAlign="center" color="0xEDEDED9E">
+        <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />
+      </Label>
+    </Group>
+  </children>
+</component>

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  First-run server address entry (Android TvServerSetupScreen, "address" page; Roku has
+  no phone-pairing LAN flow so this page is shown directly). Left: headline, the address
+  field (OK opens the keyboard), shortcut chips, the HTTPS/HTTP note and Connect. Right:
+  a glass card with saved servers to pick from, or a short explanation.
+  Probes {base}/api/v2/system/info (https first when no scheme is typed), then reads
+  /api/v2/system/identity and /api/v2/theme/branding, saves the server and opens LoginScreen.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="ServerConnectScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/screens/ServerConnectScreen.brs" />
+  <children>
+    <AuthMarqueeChrome id="chrome" backdropUri="pkg:/images/marquee_server.jpg" chipIconUri="pkg:/images/icons/tv.png" />
+
+    <Group id="copy" translation="[90, 0]">
+      <Label id="headline" width="900" wrap="true" maxLines="3" color="0xEDEDEDFF" text="Enter your&#10;server address">
+        <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="76" />
+      </Label>
+      <Label id="body" width="900" wrap="true" color="0xEDEDED9E" text="Type the address you use for Silo.">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+      </Label>
+      <AuthTextField id="field" fieldWidth="760" placeholder="media.example.com" iconUri="pkg:/images/icons/language.png" />
+      <Label id="error" width="760" wrap="true" color="0xFF6961FF" visible="false">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+      </Label>
+      <Group id="chips">
+        <PillButton id="chipHttps" text="https://" variant="glass" height="61" fontSize="21" padX="28" />
+        <PillButton id="chipHttp" text="http://" variant="glass" height="61" fontSize="21" padX="28" />
+        <PillButton id="chipCom" text=".com" variant="glass" height="61" fontSize="21" padX="28" />
+      </Group>
+      <Label id="note" width="760" wrap="true" color="0xEDEDED66" text="Secure HTTPS is tried automatically.">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+      </Label>
+      <PillButton id="connect" text="Connect" variant="glass" />
+    </Group>
+
+    <Group id="card" translation="[1190, 0]">
+      <Poster id="cardBg" uri="pkg:/images/ui/r40.9.png" width="640" blendColor="0x1F1F1FB8" />
+      <Poster id="cardRing" uri="pkg:/images/ui/r40_ring2.9.png" width="640" blendColor="0xFFFFFF24" />
+      <Group id="infoCard">
+        <Poster id="infoSymbolBg" uri="pkg:/images/ui/circle.png" width="112" height="112" translation="[264, 52]" blendColor="0xFFFFFF14" />
+        <Poster id="infoSymbolRing" uri="pkg:/images/ui/circle_ring.png" width="112" height="112" translation="[264, 52]" blendColor="0xFFFFFF24" />
+        <Poster id="infoSymbol" uri="pkg:/images/icons/dns.png" width="52" height="52" translation="[294, 82]" blendColor="0xEDEDEDFF" />
+        <Label id="infoTitle" width="536" translation="[52, 198]" horizAlign="center" wrap="true" color="0xEDEDEDFF" text="Siku connects to your Silo server">
+          <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="34" />
+        </Label>
+        <Label id="infoBody" width="536" horizAlign="center" wrap="true" color="0xEDEDED9E" lineSpacing="6"
+          text="Enter the address you use for Silo in a browser or the Silo app, like media.example.com. Siku checks the server and remembers it on this TV.">
+          <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+        </Label>
+      </Group>
+      <Group id="savedCard" visible="false">
+        <Label id="savedTitle" width="536" translation="[52, 52]" color="0xEDEDEDFF" text="Saved servers">
+          <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="34" />
+        </Label>
+        <Label id="savedHint" width="536" translation="[52, 100]" color="0xEDEDED9E" text="Pick one to connect again.">
+          <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+        </Label>
+        <Group id="savedRows" translation="[52, 158]" />
+      </Group>
+    </Group>
+  </children>
+</component>

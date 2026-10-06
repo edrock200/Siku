@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  QR code on a white rounded tile (Android QrCodePanel inside the sign-in card).
+  Encodes `text` with QrCode.brs (byte mode, level M) and draws the dark modules as
+  merged Rectangles, with the standard 4-module quiet zone inside `qrSize` and an
+  extra `padding` of white around it. Integer module size keeps the edges crisp.
+  Fields:
+    text      the content (e.g. verification_uri_complete); "" shows an empty tile
+    qrSize    side of the code area in px, quiet zone included (default 340)
+    padding   white margin around the code area (default 20)
+    tileSize  (out) qrSize + 2 * padding
+    version   (out) QR version used, 0 when empty or too long
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="AuthQrCode" extends="Group">
+  <interface>
+    <field id="text" type="string" onChange="rebuild" />
+    <field id="qrSize" type="integer" value="340" onChange="rebuild" />
+    <field id="padding" type="integer" value="20" onChange="rebuild" />
+    <field id="tileSize" type="integer" value="380" />
+    <field id="version" type="integer" value="0" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/AuthQrCode.brs" />
+  <script type="text/brightscript" uri="pkg:/components/screens/QrCode.brs" />
+  <children>
+    <Poster id="tile" uri="pkg:/images/ui/r22.9.png" blendColor="0xFFFFFFFF" />
+    <Group id="modules" />
+  </children>
+</component>

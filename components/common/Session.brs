@@ -91,7 +91,15 @@ function Session_withTokens(s as object, tokens as object) as object
     expiresIn = tokens.expires_in
     if expiresIn = invalid then expiresIn = 3600
     c.expiresAt = Time_nowSeconds() + Int(expiresIn)
-    if tokens.user <> invalid then c.user = tokens.user
+    ' A response with a user is a new sign-in (refresh responses carry none):
+    ' drop any profile selected under the previous login.
+    if tokens.user <> invalid then
+        c.user = tokens.user
+        c.profileId = ""
+        c.profileToken = ""
+        c.profileName = ""
+        c.profileAvatar = ""
+    end if
     return c
 end function
 

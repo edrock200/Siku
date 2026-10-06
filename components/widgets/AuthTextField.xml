@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  First-run text field (Android TvMarqueeField): 84 px tall, 16 px corners, glass at rest
+  (white 8% fill, white 12% ring), solid #EDEDED with black ink when focused.
+  OK opens the Roku keyboard (StandardKeyboardDialog, or KeyboardDialog on older firmware)
+  prefilled with the current text; "OK" on the keyboard stores the text and fires `submitted`.
+  Fields:
+    text          current value (in/out)
+    placeholder   shown at 40% ink when empty; also the keyboard title
+    iconUri       optional leading icon (white PNG, tinted)
+    secure        masks the value with dots and uses a secure keyboard
+    revealed      with secure, shows the characters instead of dots
+    error         red ring
+    disabled      dims and ignores OK
+    fieldWidth    width in px (default 760)
+    submitted     (out, alwaysNotify) the keyboard closed with OK
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="AuthTextField" extends="Group">
+  <interface>
+    <field id="text" type="string" onChange="render" />
+    <field id="placeholder" type="string" onChange="render" />
+    <field id="iconUri" type="string" onChange="render" />
+    <field id="secure" type="boolean" value="false" onChange="render" />
+    <field id="revealed" type="boolean" value="false" onChange="render" />
+    <field id="error" type="boolean" value="false" onChange="render" />
+    <field id="disabled" type="boolean" value="false" onChange="render" />
+    <field id="fieldWidth" type="integer" value="760" onChange="layout" />
+    <field id="submitted" type="boolean" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/AuthTextField.brs" />
+  <children>
+    <Group id="body">
+      <Poster id="bg" uri="pkg:/images/ui/r16.9.png" height="84" />
+      <Poster id="ring" uri="pkg:/images/ui/r16_ring2.9.png" height="84" />
+      <Poster id="icon" width="32" height="32" translation="[30, 26]" />
+      <Label id="value" height="84" vertAlign="center" horizAlign="left" maxLines="1" ellipsizeOnBoundary="false">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="26" />
+      </Label>
+    </Group>
+  </children>
+</component>

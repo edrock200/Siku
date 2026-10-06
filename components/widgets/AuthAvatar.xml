@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Round profile avatar (Android MarqueeProfileAvatar): the profile's image in a circle
+  mask, else its initial on its palette tint (stable per profile id, DJB2 like Android),
+  with a lock badge for PIN profiles.
+  Fields:
+    profile      the /api/v2/profiles item ({id, name, avatar_url, has_pin, is_child})
+    size         diameter in px (default 220)
+    showBadges   lock / KIDS badges (default true)
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="AuthAvatar" extends="Group">
+  <interface>
+    <field id="profile" type="assocarray" onChange="render" />
+    <field id="size" type="integer" value="220" onChange="layout" />
+    <field id="showBadges" type="boolean" value="true" onChange="layout" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/AuthAvatar.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
+  <children>
+    <Poster id="tint" uri="pkg:/images/ui/circle.png" />
+    <Label id="initial" horizAlign="center" vertAlign="center" color="0xFFFFFFF2" />
+    <MaskGroup id="mask" maskUri="pkg:/images/ui/mask_circle.png">
+      <Poster id="image" loadDisplayMode="scaleToZoom" />
+    </MaskGroup>
+    <Poster id="edge" uri="pkg:/images/ui/circle_ring.png" blendColor="0xFFFFFF24" />
+    <Group id="lock" visible="false">
+      <Poster id="lockBg" uri="pkg:/images/ui/circle.png" blendColor="0x1C1C1EFF" />
+      <Poster id="lockIcon" uri="pkg:/images/icons/lock.png" blendColor="0xEDEDEDBF" />
+    </Group>
+    <Group id="kids" visible="false">
+      <Poster id="kidsBg" uri="pkg:/images/ui/r14.9.png" blendColor="0xFFFFFFFF" />
+      <Label id="kidsLabel" text="KIDS" color="0x000000FF" horizAlign="center" vertAlign="center" />
+    </Group>
+  </children>
+</component>

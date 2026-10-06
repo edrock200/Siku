@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  "Who's watching?" profile picker (Android TvProfileSelectionScreen). Centered header,
+  then up to six 220 px round avatars per row (focused: larger with an Ink ring, name
+  drops lower and brightens), then "Change server" and "Sign out" glass buttons.
+  A single profile without a PIN is picked automatically unless params.switching = true.
+  PIN profiles open AuthPinDialog and POST /api/v2/profiles/{id}/verify-pin.
+  Params: { switching: bool }
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="ProfileScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/screens/ProfileScreen.brs" />
+  <children>
+    <AuthMarqueeChrome id="chrome" backdropUri="pkg:/images/marquee_profiles.jpg" showLogo="false" />
+    <Group id="content" visible="false">
+      <Label id="title" width="1920" horizAlign="center" color="0xEDEDEDFF" text="Who's watching?">
+        <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="55" />
+      </Label>
+      <Label id="subtitle" width="1920" translation="[0, 78]" horizAlign="center" color="0xEDEDED9E">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+      </Label>
+      <Group id="grid" translation="[0, 194]" />
+      <Label id="error" width="1920" horizAlign="center" wrap="true" color="0xFF6961FF" visible="false">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+      </Label>
+    </Group>
+    <Group id="buttons" visible="false">
+      <PillButton id="retryButton" text="Retry" variant="glass" iconUri="pkg:/images/icons/refresh.png" height="61" fontSize="21" padX="28" visible="false" />
+      <PillButton id="changeServerButton" text="Change server" variant="glass" iconUri="pkg:/images/icons/dns.png" height="61" fontSize="21" padX="28" />
+      <PillButton id="signOutButton" text="Sign out" variant="glass" iconUri="pkg:/images/icons/logout.png" height="61" fontSize="21" padX="28" />
+    </Group>
+    <LoadingSpinner id="spinner" size="72" translation="[924, 504]" visible="false" />
+  </children>
+</component>
