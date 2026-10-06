@@ -85,7 +85,7 @@ function Auth_refresh(tokenUsed as string) as boolean
         return true ' someone already refreshed
     end if
     auth.refreshRequest = { token: tokenUsed }
-    msg = Wait(30000, port)
+    Wait(30000, port) ' only the wake-up matters; the session itself tells us the outcome
     auth.unobserveField("generation")
     return not Str_isEmpty(m.global.session.accessToken) and m.global.session.accessToken <> tokenUsed
 end function

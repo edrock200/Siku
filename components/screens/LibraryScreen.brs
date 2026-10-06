@@ -28,5 +28,7 @@ end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
     ' The page handles its own panels and collection drill-down; anything else (Back) pops this screen.
+    ' Parameters are part of the SceneGraph signature; this screen handles no keys itself.
+    if key = "" and press then return false
     return false
 end function

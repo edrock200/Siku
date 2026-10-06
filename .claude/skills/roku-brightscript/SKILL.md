@@ -66,7 +66,12 @@ Video/Audio node cannot change them mid-stream. The access token is refreshed ri
 playback starts (`ensureFreshToken`); don't add logic that assumes it can be refreshed during a
 stream.
 
-**9. Things the simulator cannot test.** Video and audio never leave the buffering state; keyboard
+**9. Keep the device compile log free of warnings.** Roku prints `WARNING: unused variable` for
+every declared-but-unread variable or parameter; bsc does not. Seventeen of them buried a real
+error once. Remove dead assignments; where a signature forces an unused parameter (`onKeyEvent`,
+callback hooks, `catch e`), reference it once with a comment saying why.
+
+**10. Things the simulator cannot test.** Video and audio never leave the buffering state; keyboard
 dialogs can't be typed into; key *hold* can't be simulated. Anything in those areas needs a real
 Roku. Say so in your report instead of claiming it works.
 

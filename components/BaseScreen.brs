@@ -21,4 +21,6 @@ sub onScreenHidden()
 end sub
 
 sub onChildResult(result as object)
+    ' Overridden by screens that expect a result; the base ignores it.
+    if result = invalid then return
 end sub

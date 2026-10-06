@@ -411,5 +411,7 @@ sub onMutation(event as object)
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
+    ' Parameters are part of the SceneGraph signature; this screen handles no keys itself.
+    if key = "" and press then return false
     return false
 end function

@@ -157,6 +157,8 @@ sub onDetail(event as object)
 end sub
 
 sub onRequestsListLoaded(tag as string, ok as boolean, items as object, resp as object)
+    ' resp is part of the RequestsApi callback signature; this screen only needs ok/items.
+    if resp = invalid then resp = {}
     if m.pendingReads = invalid or not m.pendingReads.DoesExist(tag) then return
     m.pendingReads.Delete(tag)
     if tag = "mine" then
