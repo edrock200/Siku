@@ -29,6 +29,9 @@ ICONS = {
     "play_circle": "play_circle", "fast_forward": "fast_forward", "fast_rewind": "fast_rewind",
     "volume": "volume_up", "sort": "sort", "filter": "filter_list", "refresh": "refresh",
     "language": "language", "key": "key",
+    # Audio (AudioDetailScreen / AudioPlayerScreen)
+    "rewind_30": "replay_30", "forward_10": "forward_10", "sleep": "bedtime", "album": "album",
+    "chapters": "format_list_numbered", "equalizer": "equalizer",
 }
 
 
