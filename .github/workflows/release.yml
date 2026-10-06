@@ -65,9 +65,11 @@ jobs:
             echo
             echo "## Install"
             echo
-            echo "Side-loadable Roku package. Install it on a Roku in developer mode: open \`http://<roku-ip>\`,"
-            echo "sign in as \`rokudev\`, choose **Upload**, pick the zip, then **Install**."
-            echo "See the README for enabling developer mode."
+            echo "1. Download the \`.zip\` below (do not unzip it)."
+            echo "2. With developer mode on, open \`http://<roku-ip>\` in a browser and sign in as \`rokudev\`."
+            echo "3. Click **Upload**, pick the zip, then **Install** (or **Replace** to update)."
+            echo ""
+            echo "First time? The [step-by-step guide](https://github.com/${GITHUB_REPOSITORY}#install-on-your-roku-side-load) shows how to turn on developer mode."
           } > out/release-notes.md
           if ! grep -q '^- ' out/release-notes.md; then
             echo "::warning::CHANGELOG.md has no section for $tag; add one so the release has notes."
