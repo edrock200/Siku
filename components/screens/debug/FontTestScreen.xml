@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Developer diagnostic: renders the same text several ways to find out which Label
+     configurations draw on a real Roku. Open with the deep link debugScreen=FontTestScreen.
+     SPDX-License-Identifier: AGPL-3.0-or-later -->
+<component name="FontTestScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/screens/debug/FontTestScreen.brs" />
+  <children>
+    <Rectangle width="1920" height="1080" color="0x000000FF" />
+    <Label id="t1" translation="[100, 80]" text="1 XML font, no width" color="0xEDEDEDFF">
+      <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="30" />
+    </Label>
+    <Label id="t2" translation="[100, 140]" text="2 XML font, width 600, center" width="600" horizAlign="center" color="0xEDEDEDFF">
+      <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="30" />
+    </Label>
+    <Rectangle translation="[100, 200]" width="600" height="60" color="0x333333FF" />
+    <Label id="t3" translation="[100, 200]" color="0xEDEDEDFF" />
+    <Rectangle translation="[100, 280]" width="600" height="60" color="0x333333FF" />
+    <Label id="t4" translation="[100, 280]" color="0xEDEDEDFF" />
+    <Rectangle translation="[100, 360]" width="600" height="60" color="0x333333FF" />
+    <Label id="t5" translation="[100, 360]" color="0xEDEDEDFF" />
+    <Rectangle translation="[100, 440]" width="600" height="60" color="0x333333FF" />
+    <Label id="t6" translation="[100, 440]" color="0xEDEDEDFF" />
+    <Rectangle translation="[100, 520]" width="600" height="60" color="0x333333FF" />
+    <Label id="t7" translation="[100, 520]" color="0xEDEDEDFF" />
+    <Rectangle translation="[100, 600]" width="600" height="60" color="0x333333FF" />
+    <Label id="t8" translation="[100, 600]" color="0xEDEDEDFF" />
+    <Label id="report" translation="[100, 700]" width="1700" wrap="true" color="0xEDEDED9E">
+      <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+    </Label>
+  </children>
+</component>
