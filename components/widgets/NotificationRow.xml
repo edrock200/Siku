@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  One notifications-inbox card (Android TV TvInboxScreen: TvInboxRow / MarkAllReadCard).
+  card (in): the model built by NotificationsScreen (Notif_cardModel):
+    { kind: "row"|"markAll"|"error", title, subtitle, posterUrl, isRich, isUnread, relativeTime }
+  width (in), focused (in); rowHeight (out) is the laid-out height.
+  Card: 14 dp (28 px) corners, ElevatedSurface (#15171C at 80%; rows 92% unread / 60% read).
+  Focus: scale 1.02 with a white ring. Rich rows show a 56x84 dp poster.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="NotificationRow" extends="Group">
+  <interface>
+    <field id="card" type="assocarray" onChange="layout" />
+    <field id="width" type="float" value="1760" onChange="layout" />
+    <field id="focused" type="boolean" onChange="applyFocus" />
+    <field id="rowHeight" type="float" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/NotificationRow.brs" />
+  <children>
+    <Group id="body">
+      <Poster id="bg" uri="pkg:/images/ui/r28.9.png" blendColor="0x15171CCC" />
+      <Poster id="posterBg" uri="pkg:/images/ui/r16.9.png" blendColor="0x15171CFF" width="112" height="168" visible="false" />
+      <MaskGroup id="posterMask" maskUri="pkg:/images/ui/mask_poster.png" maskSize="[112, 168]" visible="false">
+        <Poster id="poster" width="112" height="168" loadDisplayMode="scaleToZoom" />
+      </MaskGroup>
+      <Label id="title" maxLines="1" color="0xFFFFFFFF">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="34" />
+      </Label>
+      <Label id="subtitle" wrap="true" maxLines="2" lineSpacing="6" color="0xFFFFFFB8">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="31" />
+      </Label>
+      <Label id="time" horizAlign="right" color="0xFFFFFF8F">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="28" />
+      </Label>
+      <Poster id="dot" uri="pkg:/images/ui/circle.png" width="20" height="20" blendColor="0xEDEDEDFF" visible="false" />
+      <Poster id="ring" uri="pkg:/images/ui/r28_ring4.9.png" blendColor="0xFFFFFFFF" visible="false" />
+    </Group>
+  </children>
+</component>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Notifications inbox, ported from Android TV TvInboxScreen.kt / TvInboxFormatters.kt.
+  "NOTIFICATIONS" eyebrow + "Your Inbox", then a newest-first list of cards: a "Mark all read"
+  card first while anything is unread, then one card per delivery (episode deliveries are rich
+  poster cards; every other type is a posterless fallback card). OK marks the delivery read and
+  opens its series / episode. Scrolling near the end loads the next page (25 per page).
+  Failed reads keep the cached rows and show a focusable "<error> Retry" card.
+  params: none
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="NotificationsScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/screens/NotificationsScreen.brs" />
+  <children>
+    <Rectangle id="bg" width="1920" height="1080" color="0x000000FF" />
+    <Group id="list" translation="[80, 329]" />
+    <Rectangle id="headerBg" width="1920" height="329" color="0x000000FF" />
+    <Label id="eyebrow" text="NOTIFICATIONS" translation="[80, 188]" color="0xEDEDEDEB">
+      <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="28" />
+    </Label>
+    <Label id="heading" text="Your Inbox" translation="[80, 238]" color="0xEDEDEDFF">
+      <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="48" />
+    </Label>
+    <NotificationRow id="errorCard" translation="[80, 329]" width="1760" visible="false" />
+    <LoadingSpinner id="spinner" size="128" translation="[896, 641]" visible="false" />
+    <Group id="empty" visible="false">
+      <Poster id="emptyIcon" uri="pkg:/images/icons/notifications_none.png" width="60" height="60" translation="[930, 595]" blendColor="0xFFFFFF9E" />
+      <Label id="emptyTitle" text="You're all caught up" width="1920" horizAlign="center" translation="[0, 687]" color="0xFFFFFFFF">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="38" />
+      </Label>
+      <Label id="emptyBody" text="New episode and request notifications will show up here." width="1920" horizAlign="center" translation="[0, 767]" color="0xFFFFFF9E">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="34" />
+      </Label>
+    </Group>
+    <Animation id="scrollAnim" duration="0.2" easeFunction="outCubic">
+      <Vector2DFieldInterpolator id="scrollInterp" key="[0.0, 1.0]" fieldToInterp="list.translation" />
+    </Animation>
+  </children>
+</component>

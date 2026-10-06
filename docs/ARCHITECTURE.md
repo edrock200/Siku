@@ -92,6 +92,7 @@ A screen is `<component name="XScreen" extends="BaseScreen">` (`components/BaseS
 | `SearchScreen` | `{ query? }` |
 | `RequestDetailScreen` | `{ mediaType: "movie"\|"series", tmdbId, title?, moderationRequestId? }`. A TMDB title to request (or its request's status); `moderationRequestId` pins the page to one request, as from an admin's approval row |
 | `SettingsScreen` | none |
+| `NotificationsScreen` | none. Notifications inbox (Android TV `TvInboxScreen`): Mark all read card, newest-first delivery cards, OK marks read and opens the series/episode, pages of 25. Android TV has no route to it, so Siku has no entry point either (deep link `debugScreen=NotificationsScreen`) |
 | `PlayerScreen` | `{ itemId, fileId?, startPosition?, title?, audioTrackId?/audioTrackIndex?, subtitleTrackId?/subtitleTrackIndex? (-1 = off), shuffleId?, shuffle? }`. With `shuffleId` the player runs a shuffle session: picks start at 0, Up Next shows the server's random pick with Pick Another / Stop shuffling |
 | `AudioDetailScreen` | `{ itemId, itemType }` for `album`, `artist`, `audiobook`, `track`. Use `Nav_openItem(id, type)`, which picks this or `DetailScreen` |
 | `AudioPlayerScreen` | Music `{ queue: [{contentId, fileId?, title?, artist?, album?, posterUrl?, durationSeconds?}], index?, startPosition?, shuffle? }`; audiobook `{ itemId, startPosition? }` (whole-book seconds). `Nav_play` routes audio types here |
