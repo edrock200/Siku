@@ -82,4 +82,6 @@ Soku talks to a Silo server over the same HTTP API as the Android clients. The s
 
 ## License
 
-To be decided. Because Soku ports logic and UI from the AGPL-3.0 Silo Android client, it will most likely be released under **AGPL-3.0-or-later**.
+Soku is free software, released under the **GNU Affero General Public License v3.0 or later** (`AGPL-3.0-or-later`). See [LICENSE](LICENSE). It ports logic and UI from the AGPL-3.0 [Silo Android client](https://github.com/Silo-Server/silo-android).
+
+The Silo name and logo are trademarks of Silo Media L.L.C. and are not covered by this license. Soku uses its own logo.

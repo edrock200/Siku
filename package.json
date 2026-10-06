@@ -2,6 +2,7 @@
   "name": "soku",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "description": "Soku, a Roku client for the Silo media server",
   "scripts": {
     "lint": "bsc --project bsconfig.json",
