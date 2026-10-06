@@ -4,5 +4,5 @@ set -e
 cd "$(dirname "$0")/.."
 mkdir -p out
 rm -f out/soku.zip
-zip -qr out/soku.zip manifest source components images $( [ -d fonts ] && ls fonts | grep -q . && echo fonts ) -x '*.DS_Store'
+zip -qrD out/soku.zip manifest source components images $( [ -d fonts ] && ls fonts | grep -q . && echo fonts ) -x '*.DS_Store'
 echo "Wrote out/soku.zip"

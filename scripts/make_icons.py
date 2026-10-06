@@ -28,6 +28,7 @@ ICONS = {
     "trailer": "smart_display", "collections": "collections_bookmark", "watched": "done_all",
     "play_circle": "play_circle", "fast_forward": "fast_forward", "fast_rewind": "fast_rewind",
     "volume": "volume_up", "sort": "sort", "filter": "filter_list", "refresh": "refresh",
+    "language": "language", "key": "key",
 }
 
 
