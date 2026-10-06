@@ -4,7 +4,7 @@
 
 Siku brings your Silo library to Roku TVs and streaming players. It is a port of the official [Silo Android TV client](https://github.com/Silo-Server/silo-android) to Roku SceneGraph and BrightScript, and aims to look, feel and behave like it on a 10-foot, remote-driven screen.
 
-> **Status:** alpha. Siku installs and runs on a real Roku against a real Silo server: sign-in, Home, browsing, detail pages, Settings and video playback work on device. Subtitle tools, audiobooks and music have been exercised only in a simulator so far. The checklist below tracks progress.
+> **Status:** alpha. Siku installs and runs on a real Roku against a real Silo server: sign-in, Home, browsing, detail pages, Settings, video playback, resume and Skip Intro work on device. Subtitle tools, audiobooks and music have been exercised only in a simulator so far. The checklist below tracks progress.
 >
 > **Want to try it?** Jump to [Install on your Roku](#install-on-your-roku-side-load).
 >
@@ -26,7 +26,8 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Detail | Movies, series (seasons and episodes), episodes, cast, person pages | ✅ |
 | Discover | Search, For You (Watchlist and Favorites), release Calendar | ✅ |
 | Playback | Direct Play, Remux or Transcode chosen by the server from the Roku's capabilities | ✅ |
-| Playback | Resume, progress sync, mark watched, audio and subtitle selection, Skip Intro, Up Next | 🟡 needs device testing |
+| Playback | Resume and Skip Intro | ✅ |
+| Playback | Progress sync, mark watched, audio selection, automatic subtitles (Off / Auto / Always), Up Next | 🟡 needs device testing |
 | Settings | Android TV's General, Playback, Subtitles and Server pages (quality and bandwidth, Dolby Vision, skip intro/credits, auto-play, home sections, cards), synced with your Silo profile | ✅ |
 | Audio | Audiobooks (chapters, parts, resume, sleep timer) and music albums/artists with a now-playing screen | 🟡 needs device testing; music waits on server support |
 | Requests | Request movies and series, track their status, approve or decline as a moderator (when the server enables it) | ✅ |
