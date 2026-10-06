@@ -50,14 +50,33 @@ jobs:
       - name: Name the zip after the version
         if: steps.exists.outputs.released == 'false'
         run: cp out/siku.zip "out/siku-${{ steps.version.outputs.tag }}.zip"
+      - name: Build the release notes from CHANGELOG.md
+        if: steps.exists.outputs.released == 'false'
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          {
+            echo "## What's new"
+            echo
+            # The section for this version: from its "## vX.Y.Z" heading up to the next "## " heading.
+            awk -v tag="$tag" '
+              $0 ~ "^## " { if (found) exit; if ($2 == tag) { found = 1; next } }
+              found { print }
+            ' CHANGELOG.md | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'
+            echo
+            echo "## Install"
+            echo
+            echo "Side-loadable Roku package. Install it on a Roku in developer mode: open \`http://<roku-ip>\`,"
+            echo "sign in as \`rokudev\`, choose **Upload**, pick the zip, then **Install**."
+            echo "See the README for enabling developer mode."
+          } > out/release-notes.md
+          if ! grep -q '^- ' out/release-notes.md; then
+            echo "::warning::CHANGELOG.md has no section for $tag; add one so the release has notes."
+          fi
+          cat out/release-notes.md
       - uses: softprops/action-gh-release@v2
         if: steps.exists.outputs.released == 'false'
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: Siku ${{ steps.version.outputs.tag }}
           files: out/siku-${{ steps.version.outputs.tag }}.zip
-          generate_release_notes: true
-          body: |
-            Side-loadable Roku package. Install it on a Roku in developer mode: open `http://<roku-ip>`,
-            sign in as `rokudev`, choose **Upload**, pick the zip, then **Install**.
-            See the README for enabling developer mode.
+          body_path: out/release-notes.md

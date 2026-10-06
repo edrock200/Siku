@@ -21,7 +21,9 @@ API spec.
 - Before finishing any change: lint clean, then run the affected screen in the simulator against
   the mock server. See the `roku-brightscript` skill for the exact commands.
 - Pushes to the default branch publish a GitHub Release automatically when `build_version` in
-  `manifest` changes. Bump it (and nothing else) to ship a build.
+  `manifest` changes. To ship a build: bump `build_version` AND add a `## vX.Y.Z` section to
+  `CHANGELOG.md` written for users in plain language (what they will notice, not how it was
+  done). The release page shows that section as its notes; the workflow warns if it is missing.
 
 ## The one rule that matters most
 Code that passes lint and runs in the simulator can still crash a real Roku. Several did.
