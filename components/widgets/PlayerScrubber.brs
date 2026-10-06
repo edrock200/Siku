@@ -63,39 +63,59 @@ sub redraw()
     m.puck.height = puckS
     m.puck.translation = [Int(trackW * frac) - puckS / 2, (h - puckS) / 2]
 
-    ' Marker ranges (intro / credits / recap) and chapter ticks.
-    m.ranges.removeChildrenIndex(m.ranges.getChildCount(), 0)
-    m.ticks.removeChildrenIndex(m.ticks.getChildCount(), 0)
+    ' Marker ranges (intro / credits / recap) and chapter ticks. redraw() runs on every position
+    ' tick, so the Rectangles are reused and only re-laid out; they are created or removed only
+    ' when the number of marks changes.
+    rangeSpecs = []
+    tickSpecs = []
     if dur > 0 then
         for each mk in Arr_or(m.top.markers)
             s = mk.start
             e = mk["end"]
             if s <> invalid and e <> invalid and e > s then
-                r = m.ranges.createChild("Rectangle")
                 x0 = Int(trackW * (s / dur))
                 x1 = Int(trackW * (e / dur))
-                r.translation = [x0, trackY]
-                r.width = x1 - x0
-                r.height = trackH
-                r.color = "0xFFFFFF66"
+                rangeSpecs.Push({ x: x0, w: x1 - x0 })
             end if
         end for
         for each ch in Arr_or(m.top.chapters)
             s = ch.start_seconds
-            if s <> invalid and s > 0 and s < dur then
-                tick = m.ticks.createChild("Rectangle")
-                tick.translation = [Int(trackW * (s / dur)), trackY - 3]
-                tick.width = 3
-                tick.height = trackH + 6
-                tick.color = "0xFFFFFFCC"
-            end if
+            if s <> invalid and s > 0 and s < dur then tickSpecs.Push({ x: Int(trackW * (s / dur)), w: 3 })
         end for
     end if
+    fitMarks(m.ranges, rangeSpecs.Count(), "0xFFFFFF66")
+    fitMarks(m.ticks, tickSpecs.Count(), "0xFFFFFFCC")
+    for i = 0 to rangeSpecs.Count() - 1
+        r = m.ranges.getChild(i)
+        r.translation = [rangeSpecs[i].x, trackY]
+        r.width = rangeSpecs[i].w
+        r.height = trackH
+    end for
+    for i = 0 to tickSpecs.Count() - 1
+        tick = m.ticks.getChild(i)
+        tick.translation = [tickSpecs[i].x, trackY - 3]
+        tick.width = 3
+        tick.height = trackH + 6
+    end for
 
     rl = m.top.rateLabel
     m.rateChip.visible = scrubbing and rl <> ""
     if m.rateChip.visible then
         m.rateText.text = rl
         m.rateChip.translation = [trackX + Int(trackW * frac) - 32, -44]
+    end if
+end sub
+
+' Keeps exactly `count` Rectangle children under `parent`, creating or dropping as needed.
+sub fitMarks(parent as object, count as integer, color as string)
+    n = parent.getChildCount()
+    if n > count then
+        parent.removeChildrenIndex(n - count, count)
+    else
+        while n < count
+            r = parent.createChild("Rectangle")
+            r.color = color
+            n = n + 1
+        end while
     end if
 end sub

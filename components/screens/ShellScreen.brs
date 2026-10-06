@@ -431,8 +431,7 @@ sub onProfileAction(id as string)
         Nav_reset("ServerConnectScreen", {})
     else if id = "sign_out" then
         closePanel()
-        Api_fire("POST", "/api/v2/auth/logout")
-        Session_signOutLocal(m.global.session)
+        Api_signOut()
         Nav_reset("@start", {})
     else
         closePanel()
@@ -467,6 +466,8 @@ sub onScreenShown()
         return
     end if
     updateProfile()
+    ' Settings may have toggled the Audiobooks tab; the tab set keeps its selection by id.
+    buildTabs()
     if m.currentPage <> invalid then m.currentPage.active = true
     if m.focusArea = "content" then
         focusContent()

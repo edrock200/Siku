@@ -135,6 +135,9 @@ sub showBackdropLayers(show as boolean)
     m.bdB.opacity = 0
     m.currentBackdrop = ""
     m.firstBackdrop = true
+    ' Forget the marquee card too, so a reload shows the new first card (and its backdrop)
+    ' instead of keeping the old text with a blank backdrop until focus moves.
+    m.marqueeCard = invalid
 end sub
 
 sub takeFocus()

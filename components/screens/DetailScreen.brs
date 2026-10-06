@@ -112,7 +112,7 @@ end sub
 sub onItem(event as object)
     resp = Api_result(event)
     m.loading = false
-    if not resp.ok or resp.data = invalid then
+    if not resp.ok or resp.data = invalid or Type(resp.data) <> "roAssociativeArray" then
         showError(Api_errorText(resp))
         return
     end if

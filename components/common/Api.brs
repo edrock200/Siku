@@ -66,6 +66,17 @@ sub Api_onFired(event as object)
     end if
 end sub
 
+' Signs out: revokes the login session on the server (best effort, with the token we still hold)
+' and clears the local tokens and profile. Callers then route with Nav_reset("@start").
+sub Api_signOut()
+    s = m.global.session
+    token = Str_orEmpty(s.accessToken)
+    if token <> "" then
+        Api_call({ method: "POST", path: "/api/v2/auth/logout", auth: false, profile: false, headers: { Authorization: "Bearer " + token }, timeout: 8 }, "Api_onFired")
+    end if
+    Session_signOutLocal(s)
+end sub
+
 ' Cancels all in-flight tasks this component started (call when leaving a screen).
 sub Api_cancelAll()
     if m.apiTasks = invalid then return

@@ -23,7 +23,7 @@ function AudioTimeline_build(versions as dynamic, serverTotal as dynamic, prefer
             for each ch in Arr_or(part.chapters)
                 s = AudioTimeline_num(ch.start_seconds)
                 e = AudioTimeline_num(ch.end_seconds)
-                chapters.Push({ index: 0, title: Str_orEmpty(ch.title), start: offset + s, end: offset + e, trackIndex: idx })
+                chapters.Push({ index: 0, title: Str_orEmpty(ch.title), start: offset + s, "end": offset + e, trackIndex: idx })
             end for
             offset = offset + dur
         end if

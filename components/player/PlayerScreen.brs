@@ -7,6 +7,7 @@ sub init()
     m.videoFrame = m.top.findNode("videoFrame")
     m.focusSink = m.top.findNode("focusSink")
     m.bufferingGroup = m.top.findNode("bufferingGroup")
+    m.bufferSpinner = m.top.findNode("bufferSpinner")
     m.feedbackGroup = m.top.findNode("feedbackGroup")
     m.feedbackLabel = m.top.findNode("feedbackLabel")
     m.controls = m.top.findNode("controls")
@@ -169,7 +170,7 @@ sub startPipeline()
     if p = invalid then p = {}
     m.itemId = Str_orEmpty(p.itemId)
     m.errorGroup.visible = false
-    m.bufferingGroup.visible = true
+    setBuffering(true)
     m.focusSink.setFocus(true)
     m.titleLabel.text = Str_orEmpty(p.title)
     if m.itemId = "" then
@@ -483,7 +484,7 @@ sub applyPlan(plan as object)
 
     m.video.content = content
     m.video.control = "play"
-    m.bufferingGroup.visible = true
+    setBuffering(true)
     m.progressTimer.control = "start"
     updateHudQualityLabel()
 end sub
@@ -493,9 +494,9 @@ end sub
 sub onVideoState()
     st = m.video.state
     if st = "buffering" then
-        m.bufferingGroup.visible = true
+        setBuffering(true)
     else if st = "playing" then
-        m.bufferingGroup.visible = false
+        setBuffering(false)
         m.isPaused = false
         m.playPauseBtn.iconUri = "pkg:/images/icons/pause.png"
         if m.resumeAfterStart <> invalid then
@@ -626,6 +627,20 @@ sub exitPlayer()
     end if
 end sub
 
+' Covered or removed without going through Back (e.g. a stack reset after the session
+' expired): stop the video and close the server playback session.
+sub onScreenHidden()
+    if m.closing then return
+    m.closing = true
+    m.closed = true
+    m.global.homeDirty = true
+    m.countdownTimer.control = "stop"
+    m.holdTimer.control = "stop"
+    m.hideTimer.control = "stop"
+    m.video.control = "stop"
+    stopSession()
+end sub
+
 sub finishClose()
     if m.closed = true then return
     m.closed = true
@@ -633,8 +648,15 @@ sub finishClose()
     Nav_close()
 end sub
 
+' Shows or hides the buffering overlay. The spinner's own `visible` is toggled too, so its
+' repeating Animation stops while video plays (hiding only the parent would leave it running).
+sub setBuffering(on as boolean)
+    m.bufferingGroup.visible = on
+    m.bufferSpinner.visible = on
+end sub
+
 sub showError(msg as string)
-    m.bufferingGroup.visible = false
+    setBuffering(false)
     m.controls.visible = false
     m.hud.visible = false
     m.skipGroup.visible = false
@@ -1489,7 +1511,7 @@ sub requestQualityChange(label as string)
     selected = {}
     if m.plan.selected_tracks <> invalid then selected = m.plan.selected_tracks
     body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, "quality_change", label, m.position, selected)
-    m.bufferingGroup.visible = true
+    setBuffering(true)
     Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/replan", body, "onReplan")
 end sub
 
@@ -1497,14 +1519,14 @@ sub onReplan(event as object)
     resp = Api_result(event)
     if m.closing then return
     if not resp.ok or resp.data = invalid or resp.data.outcome <> "playable" or resp.data.playback_plan = invalid then
-        m.bufferingGroup.visible = false
+        setBuffering(false)
         m.global.toast = "Couldn't change the quality"
         if m.plan <> invalid then m.qualityPref = PlaybackCaps_qualityPreference()
         return
     end if
     plan = resp.data.playback_plan
     if PlaybackCaps_planProblem(resp.data) <> "" then
-        m.bufferingGroup.visible = false
+        setBuffering(false)
         m.global.toast = "Couldn't change the quality"
         return
     end if

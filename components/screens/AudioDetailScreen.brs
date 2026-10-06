@@ -332,7 +332,7 @@ sub renderAudiobook()
         for i = 0 to chapters.Count() - 1
             ch = chapters[i]
             sub2 = ""
-            if ch.end > ch.start then sub2 = Time_runtime(ch.end - ch.start)
+            if ch["end"] > ch.start then sub2 = Time_runtime(ch["end"] - ch.start)
             AudioList_rowNode(root, { id: i.ToStr(), title: ch.title, number: (i + 1).ToStr(), subtitle: sub2, trailing: Time_clock(ch.start), isCurrent: i = current })
         end for
         m.list.content = root

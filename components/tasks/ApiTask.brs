@@ -9,10 +9,14 @@ sub execute()
     if req = invalid then req = {}
     resp = perform(req)
     ' A 401 means the access token was rejected: refresh once (single-flight via AuthTask) and retry.
-    if resp.status = 401 and req.auth <> false then
+    ' With no token at all (signed out meanwhile, e.g. the logout call itself) there is nothing to refresh.
+    if resp.status = 401 and req.auth <> false and not Str_isEmpty(m.global.session.accessToken) then
         if Auth_refresh(m.global.session.accessToken) then
             resp = perform(req)
-        else
+        else if Str_isEmpty(m.global.session.refreshToken) then
+            ' Nothing to refresh with: the user has to sign in again. A refresh token the server
+            ' rejected is flagged by AuthTask itself; a refresh that merely failed to reach the
+            ' server keeps the session (the caller just sees the 401).
             m.global.authExpired = true
         end if
     end if

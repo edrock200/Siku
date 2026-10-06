@@ -327,7 +327,7 @@ sub setupAudiobook(it as object)
         dur = AudioTimeline_partDuration(v)
         chapters = []
         for each ch in Arr_or(v.chapters)
-            chapters.Push({ index: chapters.Count(), title: Str_orEmpty(ch.title), start: AudioTimeline_num(ch.start_seconds), end: AudioTimeline_num(ch.end_seconds), trackIndex: 0 })
+            chapters.Push({ index: chapters.Count(), title: Str_orEmpty(ch.title), start: AudioTimeline_num(ch.start_seconds), "end": AudioTimeline_num(ch.end_seconds), trackIndex: 0 })
         end for
         m.timeline = { tracks: [{ index: 0, fileId: Str_orEmpty(v.file_id), duration: dur, offset: 0.0 }], chapters: chapters, total: dur, isSingle: true }
     end if
@@ -1078,7 +1078,7 @@ sub setSleep(mode as string)
         ci = AudioTimeline_chapterAt(m.timeline.chapters, m.globalPos)
         if ci >= 0 then
             ch = m.timeline.chapters[ci]
-            m.sleepChapterEnd = ch.end
+            m.sleepChapterEnd = ch["end"]
             if m.sleepChapterEnd <= ch.start then
                 if ci < m.timeline.chapters.Count() - 1 then m.sleepChapterEnd = m.timeline.chapters[ci + 1].start else m.sleepChapterEnd = m.timeline.total
             end if

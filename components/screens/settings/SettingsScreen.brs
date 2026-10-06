@@ -214,7 +214,8 @@ sub choosePicker()
     p = AA_copy(m.global.prefs)
     p[m.pickerRow.id] = o.value
     Prefs_save(p)
-    if m.pickerRow.id = "showAudiobooks" then m.global.homeDirty = true
+    ' Home rebuilds its rows (card size) and the shell its tabs on the next show.
+    if m.pickerRow.id = "showAudiobooks" or m.pickerRow.id = "posterSize" then m.global.homeDirty = true
     m.picker.visible = false
     refreshValues()
 end sub
@@ -230,8 +231,7 @@ sub activateRow(row as object)
         Session_clearServer()
         Nav_reset("ServerConnectScreen")
     else if row.id = "signOut" then
-        Api_fire("POST", "/api/v2/auth/logout")
-        Session_signOutLocal(m.global.session)
+        Api_signOut()
         Nav_reset("@start")
     end if
 end sub
