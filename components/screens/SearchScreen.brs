@@ -16,6 +16,9 @@ sub init()
     m.statusBody = m.top.findNode("statusBody")
     m.retryBtn = m.top.findNode("retryBtn")
     m.debounce = m.top.findNode("debounce")
+    m.reqSection = m.top.findNode("reqSection")
+    m.reqFeedback = m.top.findNode("reqFeedback")
+    m.reqRow = m.top.findNode("reqRow")
 
     m.chipDefs = [
         { id: "all", label: "All", scope: "video" },
@@ -43,6 +46,14 @@ sub init()
     m.debounce.observeField("fire", "onDebounce")
     m.people.observeField("rowItemSelected", "onPersonSelected")
     m.grid.observeField("itemSelected", "onTitleSelected")
+    m.reqRow.observeField("rowItemSelected", "onRequestSelected")
+    m.reqSeq = 0
+    m.reqQuery = ""
+    m.reqResults = []
+    m.reqState = ""        ' "" (hidden) | loading | ready | error
+    m.reqError = ""
+    ' Opened before the shell's probe answered (or without the shell): ask the server ourselves.
+    if Req_gate().resolved <> true then Api_get("/api/v2/requests/status", invalid, "onRequestsStatus")
     m.retryBtn.observeField("buttonSelected", "retry")
     buildChips()
     showIdle()
@@ -61,6 +72,9 @@ sub onScreenShown()
         m.query = p.query
         updateField()
         runSearch()
+    else if m.reqQuery <> "" and m.reqState = "ready" then
+        ' Back from a request detail: the statuses on these cards may have changed.
+        runRequestSearch(true)
     end if
     focusArea(m.focusArea)
 end sub
@@ -152,10 +166,13 @@ sub focusArea(area as string)
         m.grid.setFocus(true)
     else if area = "retry" and m.retryBtn.visible then
         m.retryBtn.setFocus(true)
+    else if area = "requests" and requestRowFocusable() then
+        m.reqRow.setFocus(true)
     else
         if area <> "field" and area <> "chips" then m.focusArea = "field"
         m.top.setFocus(true)
     end if
+    layoutRequests()
     applyFocusVisuals()
 end sub
 
@@ -229,6 +246,7 @@ sub runSearch()
     ctx = { seq: m.searchSeq }
     Api_get("/api/v2/catalog", params, "onTitles", ctx)
     Api_get("/api/v2/catalog/people", { q: q, limit: 20, media_scope: chip.scope }, "onPeople", ctx)
+    runRequestSearch(false)
 end sub
 
 sub retry()
@@ -266,6 +284,10 @@ sub onPeople(event as object)
 end sub
 
 sub showIdle()
+    m.reqSeq = m.reqSeq + 1
+    m.reqState = ""
+    m.reqQuery = ""
+    m.reqResults = []
     m.spinner.visible = false
     m.people.visible = false
     m.grid.visible = false
@@ -274,9 +296,16 @@ sub showIdle()
     m.statusTitle.text = "Search your library"
     m.statusBody.text = "Find " + Mid(placeholder(), 8) + " in one place."
     m.retryBtn.visible = false
+    layoutRequests()
 end sub
 
 sub render()
+    renderResults()
+    layoutRequests()
+    if m.focusArea = "requests" and not requestRowFocusable() then focusArea(firstResultsArea())
+end sub
+
+sub renderResults()
     if not m.titlesDone then return
     m.spinner.visible = false
     if not Str_isEmpty(m.titlesError) and m.titles.Count() = 0 and m.peopleItems.Count() = 0 then
@@ -358,17 +387,41 @@ function firstResultsArea() as string
     if m.people.visible then return "people"
     if m.grid.visible then return "grid"
     if m.retryBtn.visible then return "retry"
+    if requestRowFocusable() then return "requests"
     return ""
 end function
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
+    if m.reqRow.hasFocus() then
+        if key = "up" then
+            ' Same precedence as Android TV: the results, else "Try again", else people, else the chips.
+            if m.grid.visible then
+                focusArea("grid")
+            else if m.retryBtn.visible then
+                focusArea("retry")
+            else if m.people.visible then
+                focusArea("people")
+            else
+                focusArea("chips")
+            end if
+            return true
+        else if key = "back" then
+            focusArea("field")
+            return true
+        end if
+        return false
+    end if
     if m.people.hasFocus() then
         if key = "up" then
             focusArea("chips")
             return true
         else if key = "down" then
-            if m.grid.visible then focusArea("grid")
+            if m.grid.visible then
+                focusArea("grid")
+            else if requestRowFocusable() then
+                focusArea("requests")
+            end if
             return true
         else if key = "back" then
             focusArea("field")
@@ -380,6 +433,10 @@ function onKeyEvent(key as string, press as boolean) as boolean
         if key = "up" then
             if m.people.visible then focusArea("people") else focusArea("chips")
             return true
+        else if key = "down" then
+            ' Down past the last grid row reaches the request row.
+            if requestRowFocusable() then focusArea("requests")
+            return true
         else if key = "back" then
             focusArea("field")
             return true
@@ -389,6 +446,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
     if m.retryBtn.hasFocus() then
         if key = "up" then
             focusArea("chips")
+            return true
+        else if key = "down" then
+            if requestRowFocusable() then focusArea("requests")
             return true
         else if key = "back" then
             focusArea("field")
@@ -438,3 +498,140 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
     return false
 end function
+
+' ---------- Available to request (Android TV TvRequestSearchSection) ----------
+
+' The chip's request media type: All → all (omitted), Movies → movie, Series → series.
+' The v2 request search accepts only movie | series | all, so the Audiobooks chip has no request row.
+function requestMediaType() as string
+    id = m.chipDefs[m.chipIndex].id
+    if id = "movie" or id = "series" then return id
+    if id = "all" then return "all"
+    return ""
+end function
+
+sub runRequestSearch(inPlace as boolean)
+    q = m.query.Trim()
+    mt = requestMediaType()
+    m.reqSeq = m.reqSeq + 1
+    if Req_gate().enabled <> true or Len(q) < 2 or mt = "" then
+        m.reqState = ""
+        m.reqQuery = ""
+        m.reqResults = []
+        layoutRequests()
+        return
+    end if
+    m.reqQuery = q
+    if not inPlace then
+        m.reqResults = []
+        m.reqState = "loading"
+    end if
+    params = { q: q, page: 1 }
+    if mt <> "all" then params.media_type = mt
+    Api_get("/api/v2/requests/search", params, "onRequestSearch", { seq: m.reqSeq, mediaType: mt })
+    layoutRequests()
+end sub
+
+sub onRequestSearch(event as object)
+    resp = Api_result(event)
+    if resp.context = invalid or resp.context.seq <> m.reqSeq then return
+    if not resp.ok or resp.data = invalid then
+        if m.reqState = "ready" and m.reqResults.Count() > 0 then return
+        m.reqState = "error"
+        m.reqError = Req_failureText(resp, "Search is unavailable")
+        m.reqResults = []
+        layoutRequests()
+        return
+    end if
+    mt = resp.context.mediaType
+    results = []
+    for each r in Arr_or(resp.data.results)
+        rmt = Str_orEmpty(r.media_type)
+        if Req_isSupportedType(rmt) and (mt = "all" or rmt = mt) then results.Push(r)
+    end for
+    sig = FormatJson(results)
+    changed = sig <> FormatJson(m.reqResults) or m.reqState <> "ready"
+    m.reqResults = results
+    m.reqState = "ready"
+    if changed and results.Count() > 0 then
+        cards = []
+        for each r in results
+            cards.Push(Req_card("result", r, "search-requests"))
+        end for
+        m.reqRow.content = Content_rows([{ id: "search-requests", title: "", style: "poster", items: cards }])
+    end if
+    layoutRequests()
+end sub
+
+sub onRequestsStatus(event as object)
+    resp = Api_result(event)
+    if Req_gate().resolved = true or not resp.ok then return
+    g = AA_copy(Req_gate())
+    g.enabled = Req_statusAvailable(resp.data)
+    g.resolved = true
+    Req_setGate(g)
+    if g.enabled and m.query.Trim() <> "" then runRequestSearch(false)
+end sub
+
+function requestRowFocusable() as boolean
+    return m.reqState = "ready" and m.reqResults.Count() > 0 and m.reqSection.visible
+end function
+
+' Places the section below whatever the page shows; while its row has focus it moves up to the
+' results area and the results above it step aside (the page "scrolls" to the footer).
+sub layoutRequests()
+    shown = m.reqState <> ""
+    m.reqSection.visible = shown
+    if not shown then
+        setResultsDimmed(false)
+        return
+    end if
+    m.reqRow.visible = m.reqState = "ready" and m.reqResults.Count() > 0
+    m.reqFeedback.visible = not m.reqRow.visible
+    if m.reqState = "loading" then
+        m.reqFeedback.text = "Checking requestable titles..."
+    else if m.reqState = "error" then
+        m.reqFeedback.text = m.reqError
+    else
+        m.reqFeedback.text = "No requestable matches found."
+    end if
+    focused = m.focusArea = "requests" and m.reqRow.visible
+    if focused then
+        y = 412
+    else if m.grid.visible then
+        y = m.grid.translation[1] + 2 * 486 + 40 + 24
+    else if m.people.visible then
+        y = 740
+    else if m.retryBtn.visible then
+        y = 790
+    else if m.status.visible then
+        y = 720
+    else
+        y = 420
+    end if
+    m.reqSection.translation = [0, y]
+    setResultsDimmed(focused)
+end sub
+
+sub setResultsDimmed(hidden as boolean)
+    op = 1.0
+    if hidden then op = 0.0
+    m.people.opacity = op
+    m.grid.opacity = op
+    m.status.opacity = op
+end sub
+
+' The routing rule every request card shares: "In library" opens the library item, anything else
+' opens the request detail.
+sub onRequestSelected()
+    sel = m.reqRow.rowItemSelected
+    if sel = invalid or sel.Count() < 2 or sel[1] >= m.reqResults.Count() then return
+    r = m.reqResults[sel[1]]
+    mt = Str_orEmpty(r.media_type)
+    cid = Req_libraryItemToOpen(Req_displayOfAnnotation(r.availability, r.request), r.library_content_id)
+    if cid <> "" then
+        Nav_openItem(cid, mt)
+    else
+        Nav_push("RequestDetailScreen", { mediaType: mt, tmdbId: r.tmdb_id, title: Str_orEmpty(r.title) })
+    end if
+end sub

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Requests tab (design-spec §4.8, Android TV TvRequestsPage): the Skyline feed with rows
+  "Waiting for your approval" (admins who can moderate), "Your requests", "Failed requests" (admins),
+  then the "Discover" carousels ("Trending now", "Crowd favorites").
+  The feed's own marquee is replaced by a request marquee: title, "year · Movie · Requested Sep 24",
+  synopsis, and the status line with its four-step stage track.
+  Options (*) on a request card: Cancel Request / Approve / Decline / Retry.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="RequestsPage" extends="ShellPage">
+  <script type="text/brightscript" uri="pkg:/components/screens/requests/RequestsPage.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Requests.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/RequestsApi.brs" />
+  <children>
+    <HomeSkylineFeed id="feed" emptyTitle="Nothing here yet"
+                     emptyBody="Use Search to find a movie or series to request"
+                     emptyAction="Refresh" />
+    <Group id="reqMarquee" translation="[88, 0]" visible="false">
+      <Label id="mqTitle" width="880" wrap="true" maxLines="2" color="0xEDEDEDFF" lineSpacing="0">
+        <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="76" />
+      </Label>
+      <Label id="mqMeta" color="0xEDEDEDBF" maxLines="1" width="880" height="36" vertAlign="center">
+        <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />
+      </Label>
+      <Label id="mqSynopsis" color="0xEDEDEDBF" width="780" wrap="true" maxLines="2" lineSpacing="8">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="27" />
+      </Label>
+      <Group id="mqStatus">
+        <Poster id="mqDot" uri="pkg:/images/ui/circle.png" width="12" height="12" translation="[0, 12]" />
+        <Label id="mqStatusText" color="0xEDEDEDFF" maxLines="1" height="36" vertAlign="center" translation="[24, 0]">
+          <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="24" />
+        </Label>
+        <RequestStageTrack id="mqTrack" trackWidth="240" trackHeight="6" />
+      </Group>
+    </Group>
+    <ShellActionMenu id="menu" visible="false" />
+  </children>
+</component>

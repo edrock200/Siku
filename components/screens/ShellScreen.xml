@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Root shell (design-spec §3): top bar with tabs, cascade / For You / profile dropdown panels,
-  and a content area that hosts the root pages (HomePage, LibraryPage, ForYouPage, CalendarPage).
+  and a content area that hosts the root pages (HomePage, LibraryPage, ForYouPage, CalendarPage,
+  RequestsPage). The Requests tab appears only when GET /api/v2/requests/status enables it.
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="ShellScreen" extends="BaseScreen">
   <script type="text/brightscript" uri="pkg:/components/screens/ShellScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Requests.brs" />
   <children>
     <Group id="content" />
     <ShellTopBar id="bar" />

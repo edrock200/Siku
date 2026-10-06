@@ -82,11 +82,12 @@ A screen is `<component name="XScreen" extends="BaseScreen">` (`components/BaseS
 | `ServerConnectScreen` | none |
 | `LoginScreen` | none |
 | `ProfileScreen` | `{ switching: bool }` |
-| `ShellScreen` | none. Top bar and root tabs: Home, Movies, Series, Music, Audiobooks, For You, Calendar |
+| `ShellScreen` | none. Top bar and root tabs: Home, Movies, Series, Music, Audiobooks, For You, Calendar, Requests (only when `GET /api/v2/requests/status` enables it; page `RequestsPage`) |
 | `LibraryScreen` | `{ libraryId, libraryName, mode, section: "browse"\|"collections"\|..., title, source?, collectionId? }` |
 | `DetailScreen` | `{ itemId, itemType?, libraryId? }`. Movie, series, season and episode |
 | `PersonScreen` | `{ personId, name? }` |
 | `SearchScreen` | `{ query? }` |
+| `RequestDetailScreen` | `{ mediaType: "movie"\|"series", tmdbId, title?, moderationRequestId? }`. A TMDB title to request (or its request's status); `moderationRequestId` pins the page to one request, as from an admin's approval row |
 | `SettingsScreen` | none |
 | `PlayerScreen` | `{ itemId, fileId?, startPosition?, title?, ... }` |
 | `AudioDetailScreen` | `{ itemId, itemType }` for `album`, `artist`, `audiobook`, `track`. Use `Nav_openItem(id, type)`, which picks this or `DetailScreen` |
@@ -103,6 +104,7 @@ Music: the Silo v2 contract has no album/artist/track types yet, and Android TV 
 | `toast` | Set a string to show a toast, e.g. `m.global.toast = "Added to Watchlist"`. |
 | `authExpired` | Set by the network layer. MainScene then signs out and routes to the login screen. |
 | `homeDirty` | Set to `true` after playback or after watched/favorite/watchlist changes, so Home and the details reload on show. |
+| `requests` | `{enabled, canModerate, resolved}`: the media-requests gate, set by `ShellScreen` from `/api/v2/requests/status` and `/api/v2/admin/requests/capabilities`. Read it with `Req_gate()` (`components/common/Requests.brs`). |
 
 ## Calling the API
 

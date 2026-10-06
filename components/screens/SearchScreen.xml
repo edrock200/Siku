@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Search (design-spec §4.5): big field at the top (OK opens the keyboard), filter chips
-  All · Movies · Series (· Audiobooks), a People row and a poster grid. params: { query? }
+  All · Movies · Series (· Audiobooks), a People row, a poster grid and, when the server enables
+  requests, an "Available to request" row. params: { query? }
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="SearchScreen" extends="BaseScreen">
   <script type="text/brightscript" uri="pkg:/components/screens/SearchScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Requests.brs" />
   <children>
     <Group id="field" translation="[88, 164]">
       <Poster id="fieldBg" uri="pkg:/images/ui/r28.9.png" width="1040" height="104" blendColor="0xFFFFFF0E" />
@@ -28,6 +30,20 @@
     <MarkupGrid id="grid" translation="[74, 420]" itemComponentName="MediaCardItem" numColumns="6" numRows="2"
                 itemSize="[264, 486]" itemSpacing="[28, 40]" drawFocusFeedback="false"
                 vertFocusAnimationStyle="floatingFocus" visible="false" />
+    <!-- "Available to request" (requests enabled, query of 2+ characters): TMDB titles from
+         GET /api/v2/requests/search, below the results; it moves up to the results area while focused. -->
+    <Group id="reqSection" visible="false">
+      <Label id="reqHeader" text="Available to request" translation="[88, 0]" color="0xEDEDEDFF">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+      </Label>
+      <Label id="reqFeedback" translation="[88, 64]" width="1600" color="0xEDEDEDAD" visible="false">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="27" />
+      </Label>
+      <RowList id="reqRow" translation="[68, 64]" itemComponentName="MediaCardItem"
+               drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus"
+               itemSize="[1852, 380]" numRows="1" focusXOffset="[20]" rowItemSize="[[176, 380]]" rowItemSpacing="[[40, 0]]"
+               showRowLabel="[false]" visible="false" />
+    </Group>
     <LoadingSpinner id="spinner" translation="[924, 600]" visible="false" />
     <Group id="status" visible="false">
       <Label id="statusTitle" width="1920" horizAlign="center" color="0xEDEDEDFF" translation="[0, 560]">

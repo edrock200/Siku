@@ -29,9 +29,11 @@ sub init()
     m.profileId = Str_orEmpty(m.global.session.profileId)
 
     updateProfile()
+    resetRequestsGate()
     buildTabs()
     showHome()
     loadLibraries()
+    loadRequestsGate()
 end sub
 
 ' ---------- Tabs ----------
@@ -51,6 +53,51 @@ sub onLibraries(event as object)
     if not resp.ok or resp.data = invalid then return
     m.libraries = Arr_or(resp.data.items)
     buildTabs()
+end sub
+
+' Requests feature gate (RequestsFeatureStore): the tab and the search row appear only when the
+' server enables requests for this profile; admins who can moderate also get the approval rows.
+' A transient failure keeps the previous answer.
+sub loadRequestsGate()
+    Api_get("/api/v2/requests/status", invalid, "onRequestsStatus", { profileId: m.profileId })
+end sub
+
+sub resetRequestsGate()
+    Req_setGate({ enabled: false, canModerate: false, resolved: false })
+end sub
+
+sub onRequestsStatus(event as object)
+    resp = Api_result(event)
+    if resp.context = invalid or resp.context.profileId <> m.profileId then return
+    prev = Req_gate()
+    enabled = prev.enabled = true
+    if resp.ok then enabled = Req_statusAvailable(resp.data)
+    if not enabled then
+        applyRequestsGate({ enabled: false, canModerate: false, resolved: true })
+        return
+    end if
+    Api_get("/api/v2/admin/requests/capabilities", invalid, "onRequestsCapabilities", { profileId: m.profileId })
+end sub
+
+sub onRequestsCapabilities(event as object)
+    resp = Api_result(event)
+    if resp.context = invalid or resp.context.profileId <> m.profileId then return
+    moderates = false
+    if resp.ok and resp.data <> invalid then
+        moderates = resp.data.available = true
+    else if resp.status = 0 then
+        moderates = Req_gate().canModerate = true
+    end if
+    applyRequestsGate({ enabled: true, canModerate: moderates, resolved: true })
+end sub
+
+sub applyRequestsGate(g as object)
+    Req_setGate(g)
+    if (tabIndex("requests") >= 0) <> (g.enabled = true) then buildTabs()
+    if not g.enabled and m.currentKey = "requests" then
+        showHome()
+        m.bar.selectedIndex = 0
+    end if
 end sub
 
 sub buildTabs()
@@ -81,6 +128,7 @@ sub buildTabs()
     end for
     tabs.Push({ id: "foryou", label: "For You", kind: "foryou", hasPanel: true })
     tabs.Push({ id: "calendar", label: "Calendar", kind: "calendar", hasPanel: false })
+    if Req_gate().enabled = true then tabs.Push({ id: "requests", label: "Requests", kind: "requests", hasPanel: false })
     ' Keep the selected tabDef by id across rebuilds.
     selectedId = "home"
     if m.tabs.Count() > 0 and m.bar.selectedIndex < m.tabs.Count() then selectedId = m.tabs[m.bar.selectedIndex].id
@@ -150,6 +198,8 @@ sub commitTab(index as integer)
         showHome()
     else if tabDef.kind = "calendar" then
         showPage("calendar", "CalendarPage", {})
+    else if tabDef.kind = "requests" then
+        showPage("requests", "RequestsPage", {})
     else if tabDef.kind = "foryou" then
         showPage("foryou", "ForYouPage", {})
     else if tabDef.kind = "library" then
@@ -458,9 +508,11 @@ sub onScreenShown()
         m.currentLibraryId = ""
         m.libraries = []
         m.bar.selectedIndex = 0
+        resetRequestsGate()
         buildTabs()
         showHome()
         loadLibraries()
+        loadRequestsGate()
         m.global.homeDirty = false
         focusBar(0)
         return

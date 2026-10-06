@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Four-segment request stage track (RequestStageTrack): steps behind the request are solid,
+  the step it is on carries the status tint, the rest stay dim. Optional step labels underneath
+  (the request detail page's labeled track).
+  Fields:
+    progress    {completed, current, tint} from Req_progress (components/common/Requests.brs)
+    trackWidth  total width in px (default 240)
+    trackHeight segment height in px (default 6)
+    showLabels  draw "Requested · Approved · Downloading · In your library" under the track
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="RequestStageTrack" extends="Group">
+  <interface>
+    <field id="progress" type="assocarray" onChange="layout" />
+    <field id="trackWidth" type="integer" value="240" onChange="layout" />
+    <field id="trackHeight" type="integer" value="6" onChange="layout" />
+    <field id="showLabels" type="boolean" value="false" onChange="layout" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/RequestStageTrack.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Theme.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Requests.brs" />
+  <children>
+    <Group id="segments" />
+    <Group id="labels" />
+  </children>
+</component>

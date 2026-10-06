@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import io
 import json
+import random
 import re
 import threading
 import time
@@ -26,7 +27,7 @@ except ImportError:  # artwork is optional
     Image = None
 
 FONT = "/usr/share/fonts/opentype/inter/Inter-Bold.otf"
-STATE = {"devices": {}, "sessions": {}, "watchlist": set(), "favorites": set(), "watched": set(), "progress": {}}
+STATE = {"devices": {}, "sessions": {}, "watchlist": set(), "favorites": set(), "watched": set(), "progress": {}, "shuffles": {}}
 LOCK = threading.Lock()
 LOG = []
 
@@ -154,6 +155,16 @@ def detail(cid):
                       "duration": d.get("duration_seconds", 3000), "bitrate": 8000, "file_size": 1, "added_at": "2026-01-01T00:00:00Z",
                       "audio_tracks": [{"index": 0, "language": "eng", "codec": "aac", "channels": 2, "default": True, "title": "English"}],
                       "subtitle_tracks": [{"index": 0, "language": "eng", "codec": "srt", "forced": False, "default": False, "external": True, "title": "English"}]}]
+    if d["type"] == "movie" and h(cid) % 3 == 0:
+        # A second, richer version so the detail page's Version / Audio / Subtitles selectors appear.
+        d["versions"].insert(0, {"file_id": "43", "resolution": "2160p", "codec_video": "hevc", "codec_audio": "eac3", "container": "mkv", "hdr": True,
+                                 "duration": d.get("duration_seconds", 3000), "bitrate": 24000, "file_size": 9000000000, "added_at": "2026-02-01T00:00:00Z",
+                                 "audio_tracks": [{"index": 0, "language": "eng", "codec": "eac3", "channels": 6, "layout": "5.1", "default": True, "title": "English"},
+                                                  {"index": 1, "language": "spa", "codec": "aac", "channels": 2, "default": False, "title": "Español"},
+                                                  {"index": 2, "language": "eng", "codec": "aac", "channels": 2, "default": False, "title": "Commentary"}],
+                                 "subtitle_tracks": [{"index": 0, "language": "eng", "codec": "srt", "forced": False, "default": False, "external": True, "title": "English"},
+                                                     {"index": 1, "language": "eng", "codec": "srt", "forced": False, "default": False, "external": False, "hearing_impaired": True, "title": "English SDH"},
+                                                     {"index": 2, "language": "spa", "codec": "srt", "forced": True, "default": False, "external": False, "title": "Español (Forced)"}]})
     return d
 
 
@@ -429,6 +440,299 @@ for _bi in range(len(AUDIOBOOKS)):
     audiobook_detail(_bi)
 
 
+# ---------------------------------------------------------------- media requests (/api/v2/requests)
+# Shapes follow contracts/api/v2/openapi.json + fixtures (request_status_ok, list_my_requests_ok,
+# create_request_ok, cancel_request_ok, admin_requests_ok). TMDB titles are synthetic; their
+# poster_path/backdrop_path are absolute mock-img URLs (the client passes absolute URLs through).
+# User "1" (laura, admin) owns r-1..r-3 and r-6; user "2" asked for r-4 (pending) and r-5 (failed).
+REQ_TITLES = [
+    # (media_type, tmdb_id, title, year, genre, library_content_id or None)
+    ("movie", 9001, "Starfall", 2025, "Science Fiction", None),
+    ("movie", 9002, "The Glass Archive", 2024, "Thriller", None),
+    ("movie", 9003, "Harbor of Ghosts", 2023, "Drama", None),
+    ("movie", 9004, "Red Meridian", 2022, "Western", None),
+    ("movie", 9005, "Paper Lanterns", 2026, "Animation", None),
+    ("movie", 9006, "Cold Engines", 2021, "Action", None),
+    ("movie", 9007, "Northern Lights", 2003, "Drama", "movie:northern-lights"),
+    ("movie", 9008, "A Field in Winter", 2026, "Romance", None),
+    ("series", 9101, "Lowland", 2024, "Crime", None),
+    ("series", 9102, "The Understudy", 2025, "Comedy", None),
+    ("series", 9103, "Deep Water", 2023, "Documentary", None),
+    ("series", 9104, "Orbital", 2016, "Science Fiction", "series:orbital"),
+    ("series", 9105, "Signal & Noise", 2026, "Drama", None),
+]
+REQ_STATE = {"requests": [], "seq": 10}
+
+
+def req_ts(days_ago):
+    return time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() - days_ago * 86400))
+
+
+def req_title(mt, tid):
+    for t in REQ_TITLES:
+        if t[0] == mt and t[1] == tid:
+            return t
+    return None
+
+
+def req_record(rid, mt, tid, user, status, outcome, state, days_ago, targets=(), **extra):
+    t = req_title(mt, tid)
+    rec = {
+        "id": rid, "provider": "tmdb", "media_type": mt, "tmdb_id": tid, "title": t[2], "year": t[3],
+        "overview": req_overview(t), "poster_path": None, "backdrop_path": None,
+        "status": status, "outcome": outcome, "state": state, "seasons": [], "season_progress": [], "source": "direct",
+        "requested_by_user_id": user, "requested_by_profile_id": "p-owner" if user == "1" else "p-other",
+        "is_anime": False, "targets": [], "created_at": req_ts(days_ago), "updated_at": req_ts(days_ago / 2.0),
+    }
+    for i, (quality, tstatus) in enumerate(targets):
+        rec["targets"].append({"id": "%s-t%d" % (rid, i), "request_id": rid, "quality": quality, "is_anime": False,
+                               "status": tstatus, "created_at": rec["created_at"], "updated_at": rec["updated_at"]})
+    if status in ("approved", "queued", "downloading", "completed"):
+        rec["approved_at"] = rec["updated_at"]
+    rec.update(extra)
+    return rec
+
+
+def req_seed():
+    REQ_STATE["requests"] = [
+        req_record("r-1", "movie", 9001, "1", "pending", "active", "pending", 2, [("1080p", "pending")]),
+        req_record("r-2", "movie", 9002, "1", "downloading", "active", "processing", 6, [("1080p", "downloading"), ("4K", "queued")]),
+        req_record("r-3", "series", 9104, "1", "completed", "active", "available", 30, [("1080p", "completed")],
+                   library_content_id="series:orbital", completed_at=req_ts(20)),
+        req_record("r-4", "series", 9102, "2", "pending", "active", "pending", 1),
+        req_record("r-5", "movie", 9003, "2", "failed", "failed", "failed", 4, [("1080p", "failed")],
+                   last_error="one or more fulfillment targets failed"),
+        req_record("r-6", "movie", 9004, "1", "pending", "declined", "declined", 9, outcome_reason="Not available in your region"),
+    ]
+
+
+def req_overview(t):
+    return "%s is a %s %s from %d. Mock TMDB entry #%d, available to request on this server." % (
+        t[2], t[4].lower(), "film" if t[0] == "movie" else "series", t[3], t[1])
+
+
+req_seed()
+
+
+def req_images(handler, rec):
+    host = handler.headers.get("Host", "127.0.0.1:8097")
+    key = "tmdb-%s-%s_%s" % (rec["media_type"], rec["tmdb_id"], slug(rec["title"]))
+    rec["poster_path"] = "http://%s%s" % (host, img("poster", key))
+    rec["backdrop_path"] = "http://%s%s" % (host, img("backdrop", key))
+    return rec
+
+
+def req_for_title(mt, tid):
+    recs = [r for r in REQ_STATE["requests"] if r["media_type"] == mt and r["tmdb_id"] == tid]
+    recs.sort(key=lambda r: r["created_at"], reverse=True)
+    active = [r for r in recs if r["outcome"] == "active"]
+    return (active[0] if active else (recs[0] if recs else None))
+
+
+def req_annotation(t):
+    mt, tid, lib = t[0], t[1], t[5]
+    r = req_for_title(mt, tid)
+    state = {"requestable": True, "following": False, "requested_by_viewer": False}
+    if r is not None and r["outcome"] != "cancelled":
+        state.update({"status": r["status"], "state": r["state"], "request_id": r["id"],
+                      "requested_by_viewer": r["requested_by_user_id"] == "1"})
+        state["requestable"] = r["outcome"] in ("declined", "failed")
+    if lib and (r is None or r["outcome"] != "active" or r["state"] == "available"):
+        state["requestable"] = False
+        state["reason"] = "already_available"
+    return state
+
+
+def req_result(handler, t):
+    res = {"media_type": t[0], "tmdb_id": t[1], "title": t[2], "year": t[3], "overview": req_overview(t),
+           "release_date": "%d-05-01" % t[3], "popularity": 50.0 + t[1] % 50, "vote_average": round(6.0 + (t[1] % 30) / 10.0, 1),
+           "availability": "available" if t[5] else "missing", "request": req_annotation(t), "in_watchlist": False}
+    if t[5]:
+        res["library_content_id"] = t[5]
+    return req_images(handler, res)
+
+
+def req_page(handler, titles):
+    return {"page": 1, "total_pages": 1, "total_results": len(titles), "results": [req_result(handler, t) for t in titles]}
+
+
+def req_collection(handler, recs, q):
+    recs = [req_images(handler, dict(r)) for r in recs]
+    limit = int((q.get("limit") or ["50"])[0])
+    cursor = (q.get("cursor") or ["o0"])[0]
+    offset = int(cursor[1:]) if cursor.startswith("o") and cursor[1:].isdigit() else 0
+    chunk = recs[offset:offset + limit]
+    page = {"has_more": offset + limit < len(recs)}
+    if page["has_more"]:
+        page["next_cursor"] = "o%d" % (offset + limit)
+    return {"items": chunk, "page": page}
+
+
+def req_filter(recs, q):
+    st = (q.get("status") or [None])[0]
+    oc = (q.get("outcome") or [None])[0]
+    mt = (q.get("media_type") or [None])[0]
+    text = (q.get("q") or [None])[0]
+    view = (q.get("view") or [None])[0]
+    out = []
+    for r in recs:
+        if st and r["status"] != st:
+            continue
+        if oc and r["outcome"] != oc:
+            continue
+        if mt and r["media_type"] != mt:
+            continue
+        if text and not (text.lower() in r["title"].lower() or text == str(r["tmdb_id"])):
+            continue
+        if view == "needs_approval" and not (r["status"] == "pending" and r["outcome"] == "active"):
+            continue
+        if view == "failed" and r["outcome"] != "failed":
+            continue
+        out.append(r)
+    return sorted(out, key=lambda r: r["created_at"], reverse=True)
+
+
+def req_find(rid):
+    for r in REQ_STATE["requests"]:
+        if r["id"] == rid:
+            return r
+    return None
+
+
+def requests_route(handler, method, p, q, b):
+    if not p.startswith("/api/v2/requests") and not p.startswith("/api/v2/admin/requests"):
+        return False
+    if p == "/api/v2/requests/status":
+        handler.send(200, {"revision": "mock-requests-1", "state": "available", "allowed": True, "requests_enabled": True,
+                           "rating_restrictions_enforced": False, "follow_supported": True, "season_requests_supported": True,
+                           "missing_seasons_requestable": False, "download_progress_supported": True,
+                           "watchlist_titles_supported": False, "watchlist_requests": False})
+        return True
+    if p == "/api/v2/admin/requests/capabilities":
+        handler.send(200, {"available": True, "guarded_configuration": False, "routing": False,
+                           "revision": "mock-cap-1", "state": "available", "allowed": True})
+        return True
+    if p == "/api/v2/requests/discover":
+        movies = [t for t in REQ_TITLES if t[0] == "movie"]
+        series_ = [t for t in REQ_TITLES if t[0] == "series"]
+        sections = [("trending_movies", "Trending Movies", movies[:6]), ("trending_series", "Trending Series", series_[:4]),
+                    ("popular_movies", "Popular Movies", movies[3:]), ("popular_series", "Popular Series", series_[1:]),
+                    ("upcoming_movies", "Upcoming Movies", [t for t in movies if t[3] >= 2026])]
+        items = []
+        for key, title, ts in sections:
+            sec = req_page(handler, ts)
+            sec.update({"key": key, "title": title})
+            items.append(sec)
+        handler.send(200, {"items": items})
+        return True
+    m = re.match(r"^/api/v2/requests/discover/([a-z_]+)$", p)
+    if m:
+        mt = "movie" if m.group(1).endswith("movies") else "series"
+        sec = req_page(handler, [t for t in REQ_TITLES if t[0] == mt])
+        sec.update({"key": m.group(1), "title": m.group(1).replace("_", " ").title()})
+        handler.send(200, sec)
+        return True
+    if p == "/api/v2/requests/search":
+        text = ((q.get("q") or [""])[0]).strip().lower()
+        mt = (q.get("media_type") or ["all"])[0]
+        if not text:
+            handler.problem(422, "validation_failed", "q is required")
+            return True
+        if mt not in ("movie", "series", "all"):
+            handler.problem(422, "validation_failed", "media_type must be movie, series or all")
+            return True
+        # Any query matches something, so the simulator (which cannot type) still shows the row.
+        hits = [t for t in REQ_TITLES if text in t[2].lower()] or list(REQ_TITLES[:6])
+        hits = [t for t in hits if mt == "all" or t[0] == mt]
+        handler.send(200, req_page(handler, hits))
+        return True
+    m = re.match(r"^/api/v2/requests/detail/(movie|series)/(\d+)$", p)
+    if m:
+        t = req_title(m.group(1), int(m.group(2)))
+        if t is None:
+            handler.problem(404, "not_found", "Title not found")
+            return True
+        d = req_result(handler, t)
+        d.update({"imdb_id": "tt%07d" % t[1], "original_title": t[2], "tagline": "Some stories are worth the wait.",
+                  "genres": [t[4], "Drama" if t[4] != "Drama" else "Mystery"], "vote_count": 1200 + t[1] % 900,
+                  "status": "Released", "homepage": "", "content_rating": "PG-13" if t[0] == "movie" else "TV-14",
+                  "production_companies": ["Mock Pictures"], "networks": [] if t[0] == "movie" else ["Mock Network"],
+                  "cast": [{"name": PEOPLE[i % len(PEOPLE)], "character": "Role %d" % (i + 1), "order": i} for i in range(4)],
+                  "creators": [] if t[0] == "movie" else [PEOPLE[t[1] % len(PEOPLE)]],
+                  "director": PEOPLE[(t[1] + 3) % len(PEOPLE)] if t[0] == "movie" else "",
+                  "recommendations": [req_result(handler, o) for o in REQ_TITLES if o[1] != t[1]][:6], "seasons": []})
+        if t[0] == "movie":
+            d["runtime"] = 95 + t[1] % 50
+        else:
+            d.update({"number_of_seasons": 1 + t[1] % 3, "number_of_episodes": 8 * (1 + t[1] % 3), "first_air_date": "%d-01-10" % t[3]})
+        handler.send(200, d)
+        return True
+    if p == "/api/v2/requests" and method == "POST":
+        mt, tid = b.get("media_type"), b.get("tmdb_id")
+        t = req_title(mt, tid) if isinstance(tid, int) else None
+        if t is None or not b.get("title"):
+            handler.problem(422, "validation_failed", "media_type, tmdb_id and title are required")
+            return True
+        cur = req_for_title(mt, tid)
+        if cur is not None and cur["outcome"] == "active":
+            handler.problem(409, "conflict", "This title has already been requested")
+            return True
+        REQ_STATE["seq"] += 1
+        rec = req_record("r-%d" % REQ_STATE["seq"], mt, tid, "1", "pending", "active", "pending", 0)
+        REQ_STATE["requests"].append(rec)
+        handler.send(201, req_images(handler, dict(rec)))
+        return True
+    if p == "/api/v2/requests/mine":
+        mine = req_filter([r for r in REQ_STATE["requests"] if r["requested_by_user_id"] == "1"], q)
+        handler.send(200, req_collection(handler, mine, q))
+        return True
+    if p == "/api/v2/admin/requests":
+        handler.send(200, req_collection(handler, req_filter(REQ_STATE["requests"], q), q))
+        return True
+    m = re.match(r"^/api/v2/requests/([^/]+)(/cancel)?$", p)
+    if m:
+        r = req_find(m.group(1))
+        if r is None or r["requested_by_user_id"] != "1":
+            handler.problem(404, "not_found", "Request not found")
+            return True
+        if m.group(2):
+            if method != "POST":
+                return False
+            if not (r["status"] == "pending" and r["outcome"] == "active"):
+                handler.problem(409, "invalid_state", "This request can no longer be changed")
+                return True
+            r.update({"outcome": "cancelled", "state": "cancelled", "updated_at": req_ts(0)})
+        handler.send(200, req_images(handler, dict(r)))
+        return True
+    m = re.match(r"^/api/v2/admin/requests/([^/]+)/(approve|decline|retry)$", p)
+    if m and method == "POST":
+        r = req_find(m.group(1))
+        if r is None:
+            handler.problem(404, "not_found", "Request not found")
+            return True
+        action = m.group(2)
+        if action in ("approve", "decline") and not (r["status"] == "pending" and r["outcome"] == "active"):
+            handler.problem(409, "invalid_state", "This request can no longer be changed")
+            return True
+        if action == "retry" and r["outcome"] != "failed":
+            handler.problem(409, "invalid_state", "This request can no longer be changed")
+            return True
+        now = req_ts(0)
+        if action == "approve":
+            r.update({"status": "approved", "state": "approved", "approved_at": now, "updated_at": now})
+        elif action == "decline":
+            r.update({"outcome": "declined", "state": "declined", "updated_at": now})
+            if b.get("reason"):
+                r["outcome_reason"] = b["reason"]
+        else:
+            r.update({"status": "queued", "outcome": "active", "state": "approved", "last_error": "", "updated_at": now})
+            for tg in r["targets"]:
+                tg["status"] = "queued"
+        handler.send(200, req_images(handler, dict(r)))
+        return True
+    return False
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -539,6 +843,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if not self.authed():
             return self.problem(401, "invalid_token", "Authentication required")
+        if requests_route(self, method, p, q, b):
+            return
 
         if p == "/api/v2/account/me":
             return self.send(200, tokens()["user"])
@@ -656,9 +962,13 @@ class Handler(BaseHTTPRequestHandler):
             d = detail(m.group(1))
             if not d:
                 return self.problem(404, "not_found", "Not found")
-            v = dict(d["versions"][0])
-            v["marker_segments"] = [{"kind": "intro", "start_seconds": 30, "end_seconds": 90}]
-            return self.send(200, {"content_id": d["content_id"], "type": d["type"], "title": d["title"], "versions": [v],
+            vs = []
+            for v in d["versions"]:
+                v = dict(v)
+                v["marker_segments"] = [{"kind": "intro", "start_seconds": 30, "end_seconds": 90}]
+                vs.append(v)
+            return self.send(200, {"content_id": d["content_id"], "type": d["type"], "title": d["title"], "versions": vs,
+                                   "series_title": d.get("series_title"),
                                    "user_data": d["user_data"], "series_id": d.get("series_id"), "season_number": d.get("season_number"),
                                    "episode_number": d.get("episode_number"), "intro": {"start_seconds": 30, "end_seconds": 90}})
         if p == "/api/v2/playback/capabilities":
@@ -692,9 +1002,97 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(204)
         if p.startswith("/api/v2/home/dismissals/"):
             return self.send(204)
+        if p == "/api/v2/shuffles/capabilities":
+            return self.send(200, {"state": "available", "allowed": True, "revision": "1",
+                                   "scope_kinds": ["library", "series", "season", "library_collection", "user_collection"]})
+        if p == "/api/v2/shuffles" and method == "POST":
+            scope = b.get("scope") or {}
+            pool = shuffle_pool(scope.get("kind", ""), str(scope.get("id", "")))
+            if pool is None:
+                return self.problem(404, "not_found", "Unknown shuffle scope")
+            if not pool:
+                return self.problem(409, "conflict", "Nothing in this scope can play")
+            sid = str(len(STATE["shuffles"]) + 1)
+            order = [c["content_id"] for c in pool]
+            random.shuffle(order)
+            STATE["shuffles"][sid] = {"id": sid, "scope": shuffle_scope(scope.get("kind", ""), str(scope.get("id", ""))), "order": order, "pos": 0,
+                                      "created_at": "2026-10-06T00:00:00.000Z"}
+            LOG.append("SHUFFLE CREATE " + json.dumps(b))
+            return self.send(201, shuffle_view(STATE["shuffles"][sid]))
+        m = re.match(r"^/api/v2/shuffles/([^/]+)(/advance|/skip)?$", p)
+        if m:
+            sh = STATE["shuffles"].get(m.group(1))
+            if sh is None:
+                if method == "DELETE":
+                    return self.send(204)
+                return self.problem(404, "not_found", "Unknown shuffle")
+            if method == "DELETE":
+                del STATE["shuffles"][m.group(1)]
+                LOG.append("SHUFFLE DELETE " + m.group(1))
+                return self.send(204)
+            if m.group(2) == "/advance" and method == "POST":
+                cur = sh["order"][sh["pos"] % len(sh["order"])]
+                if b.get("from_content_id") == cur:
+                    sh["pos"] += 1
+                LOG.append("SHUFFLE ADVANCE " + json.dumps(b))
+            elif m.group(2) == "/skip" and method == "POST":
+                nxt_i = (sh["pos"] + 1) % len(sh["order"])
+                if b.get("next_content_id") == sh["order"][nxt_i] and len(sh["order"]) > 2:
+                    swap = (sh["pos"] + 2) % len(sh["order"])
+                    sh["order"][nxt_i], sh["order"][swap] = sh["order"][swap], sh["order"][nxt_i]
+                LOG.append("SHUFFLE SKIP " + json.dumps(b))
+            return self.send(200, shuffle_view(sh))
         if p == "/api/v2/settings/values/effective":
             return self.send(200, {"items": [{"key": "playback.intro_skip_mode", "value": "ask"}], "revision": 1})
         return self.problem(404, "not_found", "Mock: no route for " + p)
+
+
+def shuffle_pool(kind, sid):
+    """Movies and episodes a shuffle scope draws from; None for an unknown scope."""
+    if kind == "library":
+        if sid == "1":
+            return all_movies()
+        if sid == "2":
+            return [episode(i, s, e) for i in range(len(SERIES)) for s in range(1, SERIES[i][1] + 1) for e in range(1, SERIES[i][2] + 1)]
+        return None
+    if kind == "series":
+        for i, s in enumerate(all_series()):
+            if s["content_id"] == sid:
+                return [episode(i, sn, e) for sn in range(1, SERIES[i][1] + 1) for e in range(1, SERIES[i][2] + 1)]
+        return None
+    if kind == "season":
+        for i, s in enumerate(all_series()):
+            for sn in range(1, SERIES[i][1] + 1):
+                if sid == "season:%s-%d" % (s["content_id"], sn):
+                    return [episode(i, sn, e) for e in range(1, SERIES[i][2] + 1)]
+        return None
+    if kind in ("library_collection", "user_collection"):
+        return all_movies()[h(sid) % 6:][:10]
+    return None
+
+
+def shuffle_scope(kind, sid):
+    title = {"1": "Movies", "2": "Shows"}.get(sid, sid)
+    parent = None
+    item = find(sid)
+    if item is not None:
+        title = item["title"]
+        if kind == "season":
+            parent = item.get("series_title")
+    elif kind in ("library_collection", "user_collection"):
+        title = {"c0": "Award Winners", "c1": "Night Owls", "c2": "Comfort Picks"}.get(sid, "Collection")
+    out = {"kind": kind, "id": sid, "title": title}
+    if parent:
+        out["parent_title"] = parent
+    return out
+
+
+def shuffle_view(sh):
+    n = len(sh["order"])
+    cur = find(sh["order"][sh["pos"] % n])
+    nxt = find(sh["order"][(sh["pos"] + 1) % n]) if n > 1 else cur
+    return {"id": sh["id"], "scope": sh["scope"], "current": cur, "next": nxt,
+            "created_at": sh["created_at"], "updated_at": "2026-10-06T00:00:00.000Z"}
 
 
 def tokens(username="laura"):

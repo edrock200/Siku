@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Request detail (Android TV TvRequestDetailScreen): a title from TMDB discovery or search, on the
+  library detail page's hero. Backdrop, title, genres + rating chip, tagline, overview, facts
+  ("2026 · 2h 25m · TMDB 7.9"), "Directed by …"; when a request exists a STATUS / REQUESTED / QUALITY
+  strip with the labeled stage track; one primary pill that morphs in place (Request → Requesting… →
+  "Requested · Pending", Request Again, Open in Library), admin Approve / Decline / Retry, Cancel Request,
+  and a "More like this" row.
+  params: { mediaType: "movie"|"series", tmdbId, title?, moderationRequestId? }
+          (or itemId "movie:603" for debug deep links). moderationRequestId pins the page to that
+          request, as when an admin opens it from an approval queue.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="RequestDetailScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/screens/requests/RequestDetailScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Requests.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/RequestsApi.brs" />
+  <children>
+    <Rectangle id="bg" width="1920" height="1080" color="0x040D0FFF" />
+    <Group id="page">
+      <MaskGroup id="backdropMask" maskUri="pkg:/images/ui/mask_backdrop.png" maskSize="[1229, 756]" translation="[691, 0]">
+        <Poster id="backdrop" width="1229" height="756" loadDisplayMode="scaleToZoom" />
+      </MaskGroup>
+      <Group id="hero" translation="[100, 116]" visible="false">
+        <Label id="heroTitle" width="1080" wrap="true" maxLines="2" color="0xEDEDEDFF">
+          <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="72" />
+        </Label>
+        <Group id="metaRow">
+          <Label id="metaLabel" color="0xEDEDEDEB" maxLines="1" height="34" vertAlign="center">
+            <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />
+          </Label>
+          <Group id="ratingChip" visible="false">
+            <Poster id="ratingRing" uri="pkg:/images/ui/r6_ring2.9.png" blendColor="0xFFFFFFB3" height="34" />
+            <Label id="ratingLabel" color="0xEDEDEDEB" height="34" vertAlign="center" horizAlign="center">
+              <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="21" />
+            </Label>
+          </Group>
+        </Group>
+        <Label id="tagline" width="1080" maxLines="1" color="0xEDEDEDBF">
+          <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="27" />
+        </Label>
+        <Label id="overview" width="1080" wrap="true" maxLines="3" lineSpacing="6" color="0xEDEDEDBF">
+          <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="28" />
+        </Label>
+        <Label id="facts" width="1080" maxLines="1" color="0xEDEDEDE0">
+          <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />
+        </Label>
+        <Label id="credit" width="1080" maxLines="1" color="0xEDEDEDE0">
+          <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />
+        </Label>
+        <Group id="statusStrip" visible="false">
+          <Group id="fieldStatus">
+            <Label id="fieldStatusLabel" text="STATUS" color="0xFFFFFF7A">
+              <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="24" />
+            </Label>
+            <Poster id="fieldStatusDot" uri="pkg:/images/ui/circle.png" width="12" height="12" translation="[0, 46]" />
+            <Label id="fieldStatusValue" translation="[22, 34]" width="560" maxLines="1" color="0xFFFFFFE6">
+              <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="24" />
+            </Label>
+          </Group>
+          <Group id="fieldRequested" translation="[308, 0]">
+            <Label text="REQUESTED" color="0xFFFFFF7A">
+              <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="24" />
+            </Label>
+            <Label id="fieldRequestedValue" translation="[0, 34]" width="290" maxLines="1" color="0xFFFFFFE6">
+              <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="24" />
+            </Label>
+          </Group>
+          <Group id="fieldQuality" translation="[616, 0]">
+            <Label text="QUALITY" color="0xFFFFFF7A">
+              <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="24" />
+            </Label>
+            <Label id="fieldQualityValue" translation="[0, 34]" width="460" maxLines="1" color="0xFFFFFFE6">
+              <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="24" />
+            </Label>
+          </Group>
+          <RequestStageTrack id="track" translation="[0, 86]" trackWidth="840" trackHeight="6" showLabels="true" />
+        </Group>
+        <Group id="actions">
+          <PillButton id="primaryBtn" text="Request" variant="solid" iconUri="pkg:/images/icons/add.png" height="76" padX="40" fontSize="27" />
+          <PillButton id="approveBtn" text="Approve" iconUri="pkg:/images/icons/check.png" height="76" padX="36" fontSize="27" visible="false" />
+          <PillButton id="declineBtn" text="Decline" iconUri="pkg:/images/icons/close.png" height="76" padX="36" fontSize="27" visible="false" />
+          <PillButton id="retryBtn" text="Retry" iconUri="pkg:/images/icons/refresh.png" height="76" padX="36" fontSize="27" visible="false" />
+          <PillButton id="cancelBtn" text="Cancel Request" iconUri="pkg:/images/icons/close.png" height="76" padX="36" fontSize="27" visible="false" />
+          <Label id="actionError" width="560" wrap="true" maxLines="2" color="0xEDEDEDB8" visible="false">
+            <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+          </Label>
+        </Group>
+      </Group>
+      <Group id="moreSection" visible="false">
+        <Label id="moreHeader" text="More like this" color="0xEDEDEDFF" translation="[100, 0]">
+          <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+        </Label>
+        <RowList id="moreRow" translation="[80, 60]" itemComponentName="MediaCardItem"
+                 itemSize="[1820, 380]" rowItemSize="[[176, 380]]" rowItemSpacing="[[40, 0]]" numRows="1"
+                 drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" showRowLabel="[false]" focusXOffset="[20]" />
+      </Group>
+    </Group>
+    <LoadingSpinner id="spinner" translation="[924, 504]" visible="false" />
+    <Group id="errorGroup" visible="false">
+      <Label id="errorTitle" text="Something went wrong" width="1920" horizAlign="center" color="0xEDEDEDFF" translation="[0, 430]">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="41" />
+      </Label>
+      <Label id="errorBody" width="1920" horizAlign="center" color="0xEDEDED9E" translation="[0, 492]">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="27" />
+      </Label>
+      <PillButton id="errorRetry" text="Retry" height="64" fontSize="24" translation="[0, 560]" />
+    </Group>
+    <ShellActionMenu id="menu" visible="false" />
+    <Animation id="scrollAnim" duration="0.25" easeFunction="outCubic">
+      <Vector2DFieldInterpolator id="scrollInterp" key="[0.0, 1.0]" keyValue="[[0, 0], [0, 0]]" fieldToInterp="page.translation" />
+    </Animation>
+  </children>
+</component>
