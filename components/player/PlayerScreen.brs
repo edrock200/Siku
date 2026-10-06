@@ -1507,7 +1507,8 @@ sub selectHudTab(i as integer)
     end for
     m.hudTabs[i].setFocus(true)
     buildHudRows()
-    if hudTabNames()[i] = "Subtitles" then Subs_onPaneShown()
+    tabNames = hudTabNames()
+    if tabNames[i] = "Subtitles" then Subs_onPaneShown()
 end sub
 
 function currentAudioName() as string
@@ -1547,7 +1548,8 @@ function qualityLabel() as string
 end function
 
 sub updateHudQualityLabel()
-    if m.hud.visible and hudTabNames()[m.hudTab] = "Video" then buildHudRows()
+    tabNames = hudTabNames()
+    if m.hud.visible and tabNames[m.hudTab] = "Video" then buildHudRows()
 end sub
 
 ' Rows: [{id, label, value, actionable}]

@@ -253,7 +253,8 @@ function Subs_aiAvailable() as boolean
 end function
 
 sub Subs_refreshHud()
-    if m.hud.visible and hudTabNames()[m.hudTab] = "Subtitles" then buildHudRows()
+    tabNames = hudTabNames()
+    if m.hud.visible and tabNames[m.hudTab] = "Subtitles" then buildHudRows()
 end sub
 
 ' Rows under "Track" in the Subtitles pane: Delay, Timing (+ its detail line), Search, Translate.

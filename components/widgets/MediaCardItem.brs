@@ -149,7 +149,8 @@ sub onFocus()
         m.title.color = "0xEDEDEDC7"
     end if
     ' Keep the caption below the scaled image.
-    h = imageSize()[1]
+    size = imageSize()
+    h = size[1]
     grow = h * 0.05 * p
     m.title.translation = [0, h + 22 + grow]
     m.subtitle.translation = [0, h + 56 + grow]

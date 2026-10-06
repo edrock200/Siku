@@ -304,7 +304,8 @@ sub focusContent()
     else if m.chips.visible and m.chipNodes.Count() > 0 then
         focusChip(m.chipFocus)
     else if visiblePills().Count() > 0 then
-        visiblePills()[0].setFocus(true)
+        pills = visiblePills()
+        pills[0].setFocus(true)
     else
         m.top.setFocus(true)
     end if
@@ -701,7 +702,8 @@ sub showEmpty()
     m.statusBody.text = body
     if m.top.hasFocus() or m.grid.hasFocus() then
         if visiblePills().Count() > 0 then
-            visiblePills()[0].setFocus(true)
+            pills = visiblePills()
+            pills[0].setFocus(true)
         else if m.chips.visible and m.chipNodes.Count() > 0 then
             focusChip(m.chipFocus)
         else
@@ -779,7 +781,8 @@ sub onRailExit()
     if m.grid.visible and m.cards.Count() > 0 then
         m.grid.setFocus(true)
     else if visiblePills().Count() > 0 then
-        visiblePills()[0].setFocus(true)
+        pills = visiblePills()
+        pills[0].setFocus(true)
     else
         m.top.setFocus(true)
     end if
@@ -1278,7 +1281,8 @@ function onKeyEvent(key as string, press as boolean) as boolean
     if m.grid.hasFocus() then
         if key = "up" then
             if visiblePills().Count() > 0 then
-                visiblePills()[0].setFocus(true)
+                pills = visiblePills()
+                pills[0].setFocus(true)
                 return true
             else if m.chips.visible and m.chipNodes.Count() > 0 then
                 focusChip(m.chipFocus)
@@ -1299,7 +1303,8 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
     if m.retryBtn.hasFocus() and key = "up" then
         if visiblePills().Count() > 0 then
-            visiblePills()[0].setFocus(true)
+            pills = visiblePills()
+            pills[0].setFocus(true)
             return true
         else if m.chips.visible and m.chipNodes.Count() > 0 then
             focusChip(m.chipFocus)

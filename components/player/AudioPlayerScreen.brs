@@ -1131,7 +1131,8 @@ sub restoreFocus()
         btns[m.uIndex].setFocus(true)
     else
         m.zone = "transport"
-        transportButtons()[m.tIndex].setFocus(true)
+        tbtns = transportButtons()
+        tbtns[m.tIndex].setFocus(true)
     end if
 end sub
 

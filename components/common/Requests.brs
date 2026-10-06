@@ -370,9 +370,13 @@ function Req_currentRecord(records as object) as dynamic
     for each r in records
         if Str_orEmpty(r.outcome) = "active" then active.Push(r)
     end for
-    if active.Count() > 0 then return Req_sortByTime(active, "created_at", true)[0]
+    if active.Count() > 0 then
+        sortedActive = Req_sortByTime(active, "created_at", true)
+        return sortedActive[0]
+    end if
     if records.Count() = 0 then return invalid
-    newest = Req_sortByTime(records, "created_at", true)[0]
+    sortedRecords = Req_sortByTime(records, "created_at", true)
+    newest = sortedRecords[0]
     if Str_orEmpty(newest.outcome) = "cancelled" then return invalid
     return newest
 end function
