@@ -396,7 +396,7 @@ sub setBadges(labels as object)
         lbl = g.findNode("label")
         lbl.text = labels[i]
         lbl.width = 0
-        w = Int(lbl.boundingRect().width) + 24
+        w = Int(Label_width(lbl)) + 24
         lbl.width = w
         g.findNode("bg").width = w
         g.findNode("ring").width = w

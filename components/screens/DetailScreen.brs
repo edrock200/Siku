@@ -319,12 +319,12 @@ sub layoutHero()
     if m.metaRow.visible then
         m.metaRow.translation = [x, y]
         m.metaLabel.width = 0
-        mw = m.metaLabel.boundingRect().width
+        mw = Label_width(m.metaLabel)
         m.metaLabel.height = 34
         m.metaLabel.vertAlign = "center"
         if m.ratingChip.visible then
             m.ratingLabel.width = 0
-            rw = m.ratingLabel.boundingRect().width + 20
+            rw = Label_width(m.ratingLabel) + 20
             m.ratingLabel.width = rw
             m.ratingRing.width = rw
             cx = 0

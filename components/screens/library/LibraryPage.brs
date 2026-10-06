@@ -203,7 +203,7 @@ sub layoutPage()
     end if
     m.titleLabel.translation = [80, titleY]
     m.titleLabel.width = 0
-    tw = Int(m.titleLabel.boundingRect().width)
+    tw = Int(Label_width(m.titleLabel))
     m.titleLabel.width = 1400
     m.countLabel.translation = [80 + tw + 20, titleY + 14]
     hasControls = showsControls()

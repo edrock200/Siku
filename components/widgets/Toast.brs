@@ -12,8 +12,7 @@ end sub
 sub onMessage()
     m.label.text = m.top.message
     m.label.width = 0
-    rect = m.label.boundingRect()
-    w = rect.width + 72
+    w = Label_width(m.label) + 72
     if w > 1400 then
         w = 1400
     end if

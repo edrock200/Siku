@@ -159,15 +159,15 @@ sub renderServerCard()
         m.scPillRing.blendColor = "0xF4C86959"
     end if
     m.scPillLabel.width = 0
-    pillW = Int(m.scPillLabel.boundingRect().width) + 32
+    pillW = Int(Label_width(m.scPillLabel)) + 32
     m.scPillLabel.width = pillW - 32 + 2
     m.scPillBg.width = pillW
     m.scPillRing.width = pillW
 
     m.scName.width = 0
     m.scHost.width = 0
-    textW = m.scName.boundingRect().width
-    hostW = m.scHost.boundingRect().width
+    textW = Label_width(m.scName)
+    hostW = Label_width(m.scHost)
     if hostW > textW then textW = hostW
     if textW > 560 then textW = 560
     textW = Int(textW) + 2
@@ -305,7 +305,7 @@ end sub
 
 sub layoutStatusRow()
     m.statusLabel.width = 0
-    tw = m.statusLabel.boundingRect().width
+    tw = Label_width(m.statusLabel)
     if tw > 536 then tw = 536
     m.statusLabel.width = tw + 2
     w = tw

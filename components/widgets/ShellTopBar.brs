@@ -76,7 +76,7 @@ sub rebuild()
         lbl.font = m.fontSemibold
         lbl.text = Str_orEmpty(tabs[i].label)
         lbl.width = 0
-        textWidths.Push(Int(lbl.boundingRect().width))
+        textWidths.Push(Int(Label_width(lbl)))
     end for
     padX = m.tabPadX
     while true

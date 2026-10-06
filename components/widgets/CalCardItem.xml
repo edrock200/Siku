@@ -15,6 +15,7 @@
     <field id="gridHasFocus" type="boolean" onChange="forward" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/CalCardItem.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
   <children>
     <MediaCardItem id="inner" />
     <Group id="badge" visible="false" translation="[12, 12]">

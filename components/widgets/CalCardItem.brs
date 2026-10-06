@@ -19,7 +19,7 @@ sub onContent()
         m.badge.visible = true
         m.badgeLabel.text = text
         m.badgeLabel.width = 0
-        w = Int(m.badgeLabel.boundingRect().width) + 24
+        w = Int(Label_width(m.badgeLabel)) + 24
         m.badgeLabel.width = w
         m.badgeBg.width = w
         m.badgeRing.width = w

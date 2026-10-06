@@ -1301,7 +1301,7 @@ sub renderUpNext()
     if scopeLabel <> "" then
         m.unScopeLabel.text = "Shuffling " + scopeLabel
         m.unScopeLabel.width = 0
-        w = Int(m.unScopeLabel.boundingRect().width) + 48 + 16
+        w = Int(Label_width(m.unScopeLabel)) + 48 + 16
         if w > 640 then w = 640
         m.unScopeLabel.width = w - 48 - 16
         m.unScopeBg.width = w

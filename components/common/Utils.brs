@@ -58,9 +58,26 @@ function Str_joinDots(parts as object, sep = " · " as string) as string
     return out
 end function
 
+' Percent-encodes a URL component (RFC 3986 unreserved characters pass through).
+' Written by hand because roUrlTransfer cannot be created in SceneGraph components on a
+' real Roku (CreateObject returns invalid there); it is only available in Tasks.
 function Str_urlEncode(s as string) as string
-    t = CreateObject("roUrlTransfer")
-    return t.Escape(s)
+    if s = "" then return ""
+    ba = CreateObject("roByteArray")
+    ba.FromAsciiString(s)
+    hexDigits = "0123456789ABCDEF"
+    out = ""
+    for i = 0 to ba.Count() - 1
+        b = ba[i]
+        isAlpha = (b >= 65 and b <= 90) or (b >= 97 and b <= 122)
+        isDigit = b >= 48 and b <= 57
+        if isAlpha or isDigit or b = 45 or b = 46 or b = 95 or b = 126 then
+            out = out + Chr(b)
+        else
+            out = out + "%" + Mid(hexDigits, Int(b / 16) + 1, 1) + Mid(hexDigits, (b mod 16) + 1, 1)
+        end if
+    end for
+    return out
 end function
 
 ' Builds "a=1&b=2" from an associative array (skips invalid values).
@@ -192,4 +209,54 @@ end function
 function App_version() as string
     ai = CreateObject("roAppInfo")
     return ai.GetVersion()
+end function
+
+' ---------- Text measurement ----------
+' Label.boundingRect() can report 0 on a real Roku when it runs before the label's font is
+' ready (seen on device: top-bar tabs and badges collapsed to dots). Measure with
+' roFontRegistry from the font file instead, which is synchronous, and keep the larger value.
+function Text_width(text as string, fontUri as string, sizePx as integer) as float
+    if text = "" then return 0
+    if m.soku_fontReg = invalid then
+        m.soku_fontReg = CreateObject("roFontRegistry")
+        m.soku_fonts = {}
+        for each w in ["regular", "medium", "semibold", "bold", "black"]
+            m.soku_fontReg.Register("pkg:/fonts/Inter-" + w + ".otf")
+        end for
+    end if
+    u = LCase(fontUri)
+    family = "Inter"
+    bold = false
+    if Instr(1, u, "semibold") > 0 then
+        family = "Inter SemiBold"
+    else if Instr(1, u, "medium") > 0 then
+        family = "Inter Medium"
+    else if Instr(1, u, "black") > 0 then
+        family = "Inter Black"
+    else if Instr(1, u, "bold") > 0 then
+        bold = true
+    end if
+    key = family + "|" + sizePx.ToStr() + "|" + bold.ToStr()
+    f = m.soku_fonts[key]
+    if f = invalid then
+        f = m.soku_fontReg.GetFont(family, sizePx, bold, false)
+        if f = invalid then return 0
+        m.soku_fonts[key] = f
+    end if
+    return f.GetOneLineWidth(text, 100000)
+end function
+
+' One-line width of a Label's text.
+function Label_width(lbl as object) as float
+    if lbl = invalid then return 0
+    caption = lbl.text
+    if Str_isEmpty(caption) then return 0
+    measured = 0
+    fnt = lbl.font
+    if fnt <> invalid then
+        if not Str_isEmpty(fnt.uri) then measured = Text_width(caption, fnt.uri, fnt.size)
+    end if
+    rectW = lbl.boundingRect().width
+    if rectW > measured then return rectW
+    return measured
 end function

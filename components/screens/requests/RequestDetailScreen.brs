@@ -365,13 +365,13 @@ sub render()
     m.metaLabel.text = Str_joinDots(genres)
     m.metaLabel.width = 0
     mw = 0
-    if m.metaLabel.text <> "" then mw = Int(m.metaLabel.boundingRect().width)
+    if m.metaLabel.text <> "" then mw = Int(Label_width(m.metaLabel))
     rating = Str_orEmpty(d.content_rating)
     m.ratingChip.visible = rating <> ""
     if rating <> "" then
         m.ratingLabel.text = rating
         m.ratingLabel.width = 0
-        rw = Int(m.ratingLabel.boundingRect().width) + 20
+        rw = Int(Label_width(m.ratingLabel)) + 20
         m.ratingLabel.width = rw
         m.ratingRing.width = rw
         cx = 0

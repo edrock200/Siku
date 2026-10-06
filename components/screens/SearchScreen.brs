@@ -102,7 +102,7 @@ sub buildChips()
         lbl = CreateObject("roSGNode", "Label")
         lbl.font = m.fontChip
         lbl.text = m.chipDefs[i].label
-        w = Int(lbl.boundingRect().width) + 80
+        w = Int(Label_width(lbl)) + 80
         bg = g.createChild("Poster")
         bg.id = "bg"
         bg.uri = "pkg:/images/ui/r28.9.png"

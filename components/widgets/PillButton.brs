@@ -33,7 +33,7 @@ sub layout()
     m.font.size = m.top.fontSize
     m.label.text = m.top.text
     m.label.width = 0
-    textW = m.label.boundingRect().width
+    textW = Label_width(m.label)
     iconSize = Int(h * 0.42)
     hasIcon = not Str_isEmpty(m.top.iconUri)
     contentW = textW

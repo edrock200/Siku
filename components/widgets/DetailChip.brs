@@ -30,7 +30,7 @@ sub layout()
     m.font.size = m.top.fontSize
     m.label.text = m.top.text
     m.label.width = 0
-    textW = m.label.boundingRect().width
+    textW = Label_width(m.label)
     w = textW + m.top.padX * 2
     m.bg.uri = chipUri(h, false)
     m.ring.uri = chipUri(h, true)

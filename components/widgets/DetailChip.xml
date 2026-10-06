@@ -16,6 +16,7 @@
     <field id="buttonSelected" type="boolean" alwaysNotify="true" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/DetailChip.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
   <children>
     <Poster id="bg" />
     <Poster id="ring" />

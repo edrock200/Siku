@@ -18,6 +18,7 @@
     <field id="showLogo" type="boolean" value="true" onChange="render" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/AuthMarqueeChrome.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
   <children>
     <Poster id="backdrop" width="1920" height="1080" />
     <Poster id="logo" uri="pkg:/images/logo_wordmark.png" width="150" height="40" translation="[90, 72]" />

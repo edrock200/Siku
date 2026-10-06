@@ -6,6 +6,7 @@
     <field id="message" type="string" alwaysNotify="true" onChange="onMessage" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/Toast.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
   <children>
     <Poster id="bg" uri="pkg:/images/ui/r32.9.png" height="64" blendColor="0x23252CF2" />
     <Label id="label" height="64" vertAlign="center" horizAlign="center" color="0xEDEDEDFF">

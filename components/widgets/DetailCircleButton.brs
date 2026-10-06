@@ -36,7 +36,7 @@ sub applyState()
     if focused and not Str_isEmpty(m.top.label) then
         m.label.text = m.top.label
         m.label.width = 0
-        textW = m.label.boundingRect().width
+        textW = Label_width(m.label)
         padX = Int(s * 0.3)
         w = padX + iconSize + 14 + textW + padX
         m.bg.uri = circleCapsuleUri(s)

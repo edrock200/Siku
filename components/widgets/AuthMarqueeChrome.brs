@@ -31,7 +31,7 @@ sub render()
     end if
     m.chipLabel.text = t
     m.chipLabel.width = 0
-    textW = m.chipLabel.boundingRect().width
+    textW = Label_width(m.chipLabel)
     if textW > 600 then textW = 600
     m.chipLabel.width = textW + 2
     m.chipLabel.translation = [x, 0]

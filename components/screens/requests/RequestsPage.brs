@@ -240,7 +240,7 @@ sub showMarquee(rowIndex as integer, itemIndex as integer)
         m.mqDot.blendColor = progress.tint
         m.mqStatusText.text = statusText
         m.mqStatusText.width = 0
-        w = Int(m.mqStatusText.boundingRect().width)
+        w = Int(Label_width(m.mqStatusText))
         if w > 560 then w = 560
         m.mqStatusText.width = w
         m.mqTrack.progress = progress

@@ -125,7 +125,7 @@ sub onPerson(event as object)
         f.uri = "pkg:/fonts/Inter-medium.otf"
         f.size = 24
         lbl.font = f
-        w = lbl.boundingRect().width + 40
+        w = Label_width(lbl) + 40
         bgp = g.createChild("Poster")
         bgp.uri = "pkg:/images/ui/r22.9.png"
         bgp.blendColor = "0xFFFFFF14"
