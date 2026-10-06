@@ -369,7 +369,7 @@ end sub
 
 sub setRail(cards as object, subtitleKind as string)
     m.railSection.visible = true
-    root = Content_rows([{ id: "rail", title: "", style: "poster", items: cards }])
+    root = Content_rows([{ id: "rail", title: "", style: "poster", items: cards }], 32)
     row = root.getChild(0)
     for i = 0 to row.getChildCount() - 1
         node = row.getChild(i)

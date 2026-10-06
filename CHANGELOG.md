@@ -3,6 +3,12 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.9
+
+- **Fixed:** the highlighted poster was cut off at the top of each row on Home, and in the cast,
+  "More like this", search and request rows. The enlarged poster and its outline now show in
+  full.
+
 ## v0.1.8
 
 - **New:** Settings now matches the Android TV app. The General, Playback, Subtitles and

@@ -10,11 +10,15 @@ sub init()
     m.border = m.top.findNode("border")
     m.title = m.top.findNode("title")
     m.subtitle = m.top.findNode("subtitle")
+    m.padY = 0
 end sub
 
 sub onContent()
     c = m.top.itemContent
     if c = invalid then return
+    ' cardInsetY: headroom in the cell so the focused 1.10 card is not clipped (see Content_rows).
+    m.padY = 0
+    if c.hasField("cardInsetY") and c.cardInsetY <> invalid then m.padY = c.cardInsetY
     m.image.uri = c.HDPosterUrl
     m.title.text = c.title
     sub2 = ""
@@ -32,6 +36,7 @@ sub layout()
     w = m.top.width
     if w <= 0 then w = 264
     m.card.scaleRotateCenter = [w / 2, w / 2]
+    m.card.translation = [0, m.padY]
     m.mask.maskSize = [w, w]
     m.placeholder.width = w
     m.placeholder.height = w
@@ -62,7 +67,7 @@ sub onFocus()
     w = m.top.width
     if w <= 0 then w = 264
     grow = w * 0.05 * p
-    m.title.translation = [0, w + 22 + grow]
-    m.subtitle.translation = [0, w + 56 + grow]
+    m.title.translation = [0, m.padY + w + 22 + grow]
+    m.subtitle.translation = [0, m.padY + w + 56 + grow]
     m.subtitle.visible = m.subtitle.text <> ""
 end sub

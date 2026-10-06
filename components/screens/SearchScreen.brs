@@ -346,7 +346,7 @@ sub renderResults()
         m.statusLine.text = "No matching titles"
     end if
     if hasPeople then
-        m.people.content = Content_rows([{ id: "people", title: "People", style: "circle", items: m.peopleItems }])
+        m.people.content = Content_rows([{ id: "people", title: "People", style: "circle", items: m.peopleItems }], 20)
         m.people.visible = true
         gridY = 740
     else
@@ -558,7 +558,7 @@ sub onRequestSearch(event as object)
         for each r in results
             cards.Push(Req_card("result", r, "search-requests"))
         end for
-        m.reqRow.content = Content_rows([{ id: "search-requests", title: "", style: "poster", items: cards }])
+        m.reqRow.content = Content_rows([{ id: "search-requests", title: "", style: "poster", items: cards }], 32)
     end if
     layoutRequests()
 end sub

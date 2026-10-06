@@ -75,8 +75,8 @@
          titles at full width instead. -->
     <RowList id="rowList" translation="[40, 540]" itemComponentName="MediaCardItem"
              drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" vertFocusAnimationStyle="fixedFocus"
-             itemSize="[1880, 354]" itemSpacing="[0, 28]" numRows="2" focusXOffset="[48]"
-             showRowLabel="[true]" rowLabelOffset="[[48, 44]]" rowLabelColor="0x00000000" visible="false">
+             itemSize="[1880, 386]" itemSpacing="[0, 28]" numRows="2" focusXOffset="[48]"
+             showRowLabel="[true]" rowLabelOffset="[[48, 12]]" rowLabelColor="0x00000000" visible="false">
       <Font role="rowLabelFont" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
     </RowList>
     <Group id="rowTitles" translation="[88, 540]" visible="false" />

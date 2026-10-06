@@ -84,6 +84,13 @@ blank, their backgrounds are never sized and show as small white circles. Use
 `m.top.findNode(id)` is fine for ids declared once in the component's XML.
 Check with `grep -rn '\.findNode(' components --include=*.brs | grep -v 'm\.top\.findNode'`.
 
+**12. List items are clipped to their cell.** On device, `RowList` (and `MarkupGrid`) items cannot
+draw outside their item cell; brs-engine does not clip. The focused card's 1.10 scale, ring and
+glow were cut flat at the top of every row. Give the card headroom inside a taller cell: pass the
+padding to `Content_rows(rows, insetY)` (or `cardInsetX/Y` on grid nodes), add the same amount
+to `itemSize` / `rowItemSize`, and move the list up (or shrink `rowLabelOffset.y`) by it so the
+layout does not shift. Anything that scales or overflows inside an item component needs this.
+
 ## Project conventions (short version; `docs/ARCHITECTURE.md` has the full one)
 - 1920×1080 canvas, pixel coordinates. Android dp × 2 = px; Android sp × 1.72 = px.
 - Every component is an XML file plus a sibling `.brs` referenced by `<script uri>`. No inline
@@ -151,3 +158,4 @@ released version is missing here.
 - **v0.1.6** Sharing one `Font` node across Labels was *not* the cause of blank capsules (theory disproved on device); the cause is still being isolated with `FontTestScreen`. Lesson: when the simulator agrees with every hypothesis, build a diagnostic screen and let the device decide.
 - **v0.1.7** `findNode` on a runtime-built group searches the whole enclosing component (pitfall 11). That, not fonts or `boundingRect`, caused the white top-bar circles, the blank Search chips and the stuck subtitle highlight. Found by logging every tab's resolved label on device.
 - **v0.1.8** Settings ported to the server-synced cascade (`Settings.brs`). Two things learned in the simulator while building it: a component cannot rely on `m.global.observeField` firing in brs-engine (the screen declares its own `settingsLoaded` field and the loader sets it instead), and a one-line `' comment` inside a multi-line AA literal is accepted by bsc but the simulator dropped the entry that followed it; keep comments at the end of a line. The device has not run this build yet: the pane scrolling (`clippingRect`), the picker windowing and the Home Sections editor's rotated arrow icons need a real-Roku check.
+- **v0.1.9** RowList clips items to their cell on device (pitfall 12): the focused card's zoom was cut at the top of every row. Cards now sit 32 px down inside taller cells.

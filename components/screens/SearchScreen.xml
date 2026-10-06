@@ -23,8 +23,8 @@
     </Label>
     <RowList id="people" translation="[68, 412]" itemComponentName="MediaCardItem"
              drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus"
-             itemSize="[1852, 290]" numRows="1" focusXOffset="[20]" rowItemSize="[[200, 290]]" rowItemSpacing="[[44, 0]]"
-             showRowLabel="[true]" rowLabelOffset="[[20, 20]]" rowLabelColor="0xEDEDEDFF" visible="false">
+             itemSize="[1852, 310]" numRows="1" focusXOffset="[20]" rowItemSize="[[200, 310]]" rowItemSpacing="[[44, 0]]"
+             showRowLabel="[true]" rowLabelOffset="[[20, 0]]" rowLabelColor="0xEDEDEDFF" visible="false">
       <Font role="rowLabelFont" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
     </RowList>
     <MarkupGrid id="grid" translation="[74, 420]" itemComponentName="MediaCardItem" numColumns="6" numRows="2"
@@ -39,9 +39,9 @@
       <Label id="reqFeedback" translation="[88, 64]" width="1600" color="0xEDEDEDAD" visible="false">
         <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="27" />
       </Label>
-      <RowList id="reqRow" translation="[68, 64]" itemComponentName="MediaCardItem"
+      <RowList id="reqRow" translation="[68, 32]" itemComponentName="MediaCardItem"
                drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus"
-               itemSize="[1852, 380]" numRows="1" focusXOffset="[20]" rowItemSize="[[176, 380]]" rowItemSpacing="[[40, 0]]"
+               itemSize="[1852, 412]" numRows="1" focusXOffset="[20]" rowItemSize="[[176, 412]]" rowItemSpacing="[[40, 0]]"
                showRowLabel="[false]" visible="false" />
     </Group>
     <LoadingSpinner id="spinner" translation="[924, 600]" visible="false" />

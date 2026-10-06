@@ -525,7 +525,7 @@ sub renderMore(top as integer)
             for each r in recs
                 cards.Push(Req_card("result", r, "more"))
             end for
-            m.moreRow.content = Content_rows([{ id: "more", title: "", style: "poster", items: cards }])
+            m.moreRow.content = Content_rows([{ id: "more", title: "", style: "poster", items: cards }], 32)
         end if
     end if
     m.moreSection.visible = recs.Count() > 0

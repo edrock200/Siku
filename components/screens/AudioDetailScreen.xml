@@ -79,8 +79,8 @@
           <Label id="railHeader" text="Albums" color="0xEDEDEDFF">
             <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
           </Label>
-          <RowList id="rail" translation="[0, 64]" itemComponentName="AudioCardItem"
-                   itemSize="[1820, 380]" rowItemSize="[[264, 380]]" rowItemSpacing="[[40, 0]]" numRows="1"
+          <RowList id="rail" translation="[0, 32]" itemComponentName="AudioCardItem"
+                   itemSize="[1820, 412]" rowItemSize="[[264, 412]]" rowItemSpacing="[[40, 0]]" numRows="1"
                    drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" showRowLabel="[false]" />
         </Group>
       </Group>

@@ -926,6 +926,7 @@ sub appendPerson(row as object, p as object, role as string)
     node.title = Str_orEmpty(p.name)
     node.subtitle = role
     node.cardStyle = "circle"
+    node.cardInsetY = 32
     node.HDPosterUrl = Url_resolve(p.photo_url)
     node.contentId = Str_orEmpty(p.person_id)
     node.itemType = "person"
@@ -949,7 +950,7 @@ sub onSimilar(event as object)
     m.similar = items
     if items.Count() = 0 then return
     if m.itemType = "series" then m.relatedHeader.text = "Recommended Series" else m.relatedHeader.text = "Related Movies"
-    m.relatedRow.content = Content_rows([{ id: "similar", title: "", style: "poster", items: items }])
+    m.relatedRow.content = Content_rows([{ id: "similar", title: "", style: "poster", items: items }], 32)
     m.relatedSection.visible = true
     layoutBody()
     buildZones()

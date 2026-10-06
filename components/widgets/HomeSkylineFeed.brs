@@ -22,7 +22,11 @@ sub init()
     probe = m.top.findNode("labelProbe")
     m.titleH = Int(Label_height(probe))
     if m.titleH <= 0 then m.titleH = 38
-    m.labelBlock = m.titleH + 44
+    ' Cards sit cellPad px down inside a taller cell so the focused card's scale, ring and glow
+    ' stay inside it (a real Roku clips RowList items to their cell). rowLabelOffset.y in the XML
+    ' is 44 - cellPad, so the title-to-card gap on screen is still 44.
+    m.cellPad = 32
+    m.labelBlock = m.titleH + 12
     m.rowTitleFont = ThemeFont("semibold", 31)
     m.titleNodes = []
     m.rowTops = []
@@ -76,7 +80,7 @@ sub onRows()
         m.rowTitles.visible = false
         return
     end if
-    m.rowList.content = Content_rows(specs)
+    m.rowList.content = Content_rows(specs, m.cellPad)
     m.focusRow = 0
     syncRowMetrics()
     m.top.hasRows = true
@@ -118,16 +122,16 @@ sub syncRowMetrics()
             style = Str_orEmpty(row.rowStyle)
             if style = "" then style = "poster"
             size = rowCardSize(style)
-            sizes.Push(size)
-            rowH = size[1] + m.labelBlock
+            sizes.Push([size[0], size[1] + m.cellPad])
+            rowH = size[1] + m.cellPad + m.labelBlock
             heights.Push(rowH)
             spacing.Push([40, 0])
             tops.Push(y)
             y = y + rowH + 28
         end for
     end if
-    if sizes.Count() = 0 then sizes.Push([176, 354])
-    if heights.Count() = 0 then heights.Push(354 + m.labelBlock)
+    if sizes.Count() = 0 then sizes.Push([176, 354 + m.cellPad])
+    if heights.Count() = 0 then heights.Push(354 + m.cellPad + m.labelBlock)
     if spacing.Count() = 0 then spacing.Push([40, 0])
     m.rowList.rowItemSize = sizes
     m.rowList.rowHeights = heights

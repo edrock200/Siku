@@ -113,14 +113,19 @@ function Content_seShort(season as dynamic, episode as dynamic) as string
 end function
 
 ' Builds a RowList content tree: rows = [{title, items: [card...], style}]
-function Content_rows(rows as object) as object
+' insetY pads each card down inside its cell. A real Roku clips RowList items to their cell, so
+' without it the focused card's 1.10 scale and glow are cut off at the top (the simulator does not
+' clip). Lists that pass it add the same amount to their item height.
+function Content_rows(rows as object, insetY = 0 as integer) as object
     root = CreateObject("roSGNode", "ContentNode")
     for each r in rows
         row = root.createChild("ContentNode")
         row.title = r.title
         row.addFields({ rowId: Str_orEmpty(r.id), rowStyle: r.style, raw: r })
         for each c in r.items
-            row.appendChild(Content_cardNode(c, r.style))
+            node = Content_cardNode(c, r.style)
+            if insetY > 0 then node.cardInsetY = insetY
+            row.appendChild(node)
         end for
     end for
     return root

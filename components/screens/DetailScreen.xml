@@ -75,16 +75,16 @@
           <Label id="castHeader" text="Cast &amp; Crew" color="0xEDEDEDFF">
             <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
           </Label>
-          <RowList id="castRow" translation="[0, 60]" itemComponentName="MediaCardItem"
-                   itemSize="[1820, 300]" rowItemSize="[[200, 300]]" rowItemSpacing="[[44, 0]]" numRows="1"
+          <RowList id="castRow" translation="[0, 28]" itemComponentName="MediaCardItem"
+                   itemSize="[1820, 332]" rowItemSize="[[200, 332]]" rowItemSpacing="[[44, 0]]" numRows="1"
                    drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" showRowLabel="[false]" />
         </Group>
         <Group id="relatedSection" visible="false">
           <Label id="relatedHeader" text="Related Movies" color="0xEDEDEDFF">
             <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
           </Label>
-          <RowList id="relatedRow" translation="[0, 60]" itemComponentName="MediaCardItem"
-                   itemSize="[1820, 364]" rowItemSize="[[176, 364]]" rowItemSpacing="[[40, 0]]" numRows="1"
+          <RowList id="relatedRow" translation="[0, 28]" itemComponentName="MediaCardItem"
+                   itemSize="[1820, 396]" rowItemSize="[[176, 396]]" rowItemSpacing="[[40, 0]]" numRows="1"
                    drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" showRowLabel="[false]" />
         </Group>
         <Group id="detailsSection" visible="false">

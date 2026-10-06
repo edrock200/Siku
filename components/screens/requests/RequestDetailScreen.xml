@@ -91,8 +91,8 @@
         <Label id="moreHeader" text="More like this" color="0xEDEDEDFF" translation="[100, 0]">
           <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
         </Label>
-        <RowList id="moreRow" translation="[80, 60]" itemComponentName="MediaCardItem"
-                 itemSize="[1820, 380]" rowItemSize="[[176, 380]]" rowItemSpacing="[[40, 0]]" numRows="1"
+        <RowList id="moreRow" translation="[80, 28]" itemComponentName="MediaCardItem"
+                 itemSize="[1820, 412]" rowItemSize="[[176, 412]]" rowItemSpacing="[[40, 0]]" numRows="1"
                  drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" showRowLabel="[false]" focusXOffset="[20]" />
       </Group>
     </Group>
