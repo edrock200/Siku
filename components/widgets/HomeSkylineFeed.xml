@@ -10,7 +10,7 @@
     itemPatch        (in, alwaysNotify) {rowIndex, itemIndex, watched?, favorite?, inWatchlist?, progress?, remove?}
   Outputs (alwaysNotify):
     itemSelected  {rowIndex, itemIndex, rowId, card}   OK on a card
-    itemOptions   {rowIndex, itemIndex, rowId, card}   options (*) key on a card
+    itemOptions   {rowIndex, itemIndex, rowId, card}   options (*) key or a long OK press on a card
     actionSelected  the Retry / Refresh button
     focusedCard   {rowIndex, itemIndex} after the focus rested (150 ms)
   SPDX-License-Identifier: AGPL-3.0-or-later
@@ -88,5 +88,6 @@
       <PillButton id="actionBtn" text="Refresh" height="64" fontSize="24" translation="[0, 560]" />
     </Group>
     <Timer id="restTimer" duration="0.15" repeat="false" />
+    <Timer id="pressTimer" duration="0.6" repeat="false" />
   </children>
 </component>

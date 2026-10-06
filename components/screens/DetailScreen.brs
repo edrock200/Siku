@@ -19,6 +19,9 @@ sub init()
     m.actions = m.top.findNode("actions")
     m.playBtn = m.top.findNode("playBtn")
     m.startOverBtn = m.top.findNode("startOverBtn")
+    m.versionBtn = m.top.findNode("versionBtn")
+    m.audioBtn = m.top.findNode("audioBtn")
+    m.subtitlesBtn = m.top.findNode("subtitlesBtn")
     m.watchlistBtn = m.top.findNode("watchlistBtn")
     m.favBtn = m.top.findNode("favBtn")
     m.moreBtn = m.top.findNode("moreBtn")
@@ -60,14 +63,22 @@ sub init()
     m.chips = []
     m.chipIndex = 0
     m.heroBottom = 690
-    m.menuContext = ""
+    m.menuKind = "more"
+    ' Playback selections for the title the selectors describe (the item, or a series' next-up episode).
+    m.selFileId = ""            ' "" = Auto
+    m.selAudio = invalid        ' ordinal into audio_tracks; invalid = Auto
+    m.selSubtitle = invalid     ' combined subtitle index; invalid = Auto; -1 = Off
+    m.playDetail = invalid      ' the next-up episode's item detail (series/season pages)
 
     m.playBtn.observeField("buttonSelected", "onPlay")
     m.startOverBtn.observeField("buttonSelected", "onStartOver")
     m.watchlistBtn.observeField("buttonSelected", "onWatchlistToggle")
     m.favBtn.observeField("buttonSelected", "onFavoriteToggle")
     m.moreBtn.observeField("buttonSelected", "onMore")
-    for each b in [m.startOverBtn, m.watchlistBtn, m.favBtn, m.moreBtn]
+    m.versionBtn.observeField("buttonSelected", "onVersionButton")
+    m.audioBtn.observeField("buttonSelected", "onAudioButton")
+    m.subtitlesBtn.observeField("buttonSelected", "onSubtitlesButton")
+    for each b in [m.startOverBtn, m.versionBtn, m.audioBtn, m.subtitlesBtn, m.watchlistBtn, m.favBtn, m.moreBtn]
         b.observeField("width", "layoutActions")
     end for
     m.playBtn.observeField("width", "layoutActions")
@@ -143,6 +154,12 @@ sub onItem(event as object)
     if m.itemType = "movie" or m.itemType = "series" then
         Api_get("/api/v2/recommendations/similar/" + Str_urlEncode(Str_orEmpty(m.item.content_id)), { limit: 12, image_size: "medium" }, "onSimilar")
     end if
+    ' Shuffle entry points in the More menu depend on the server's capability.
+    Shuffle_refreshCaps("onShuffleCaps")
+end sub
+
+sub onShuffleCaps(event as object)
+    Shuffle_storeCaps(event)
 end sub
 
 ' After playback or a state change elsewhere: refetch user state silently.
@@ -340,7 +357,7 @@ sub layoutActions()
     x = 0
     gap = 18
     m.actionButtons = []
-    for each b in [m.playBtn, m.startOverBtn, m.watchlistBtn, m.favBtn, m.moreBtn]
+    for each b in [m.playBtn, m.startOverBtn, m.versionBtn, m.audioBtn, m.subtitlesBtn, m.watchlistBtn, m.favBtn, m.moreBtn]
         if b.visible then
             b.translation = [x, 0]
             x = x + b.width + gap
@@ -389,7 +406,196 @@ sub updatePrimary()
     m.playBtn.text = label
     m.playBtn.disabled = not canPlay
     m.startOverBtn.visible = resume > 0
+    updateSelectors()
+end sub
+
+' ---------- Version / Audio / Subtitles selectors (design-spec §4.3) ----------
+
+' The item whose playback the selectors describe: the title itself, or a series' next-up episode.
+function selectorTargetId() as string
+    if m.itemType = "series" or m.itemType = "season" then
+        if m.nextUp = invalid then return ""
+        return Str_orEmpty(m.nextUp.content_id)
+    end if
+    return Str_orEmpty(m.item.content_id)
+end function
+
+function playVersions() as object
+    if m.itemType = "series" or m.itemType = "season" then
+        if m.playDetail = invalid or Str_orEmpty(m.playDetail.content_id) <> selectorTargetId() then return []
+        return Arr_or(m.playDetail.versions)
+    end if
+    return Arr_or(m.item.versions)
+end function
+
+' The version the selectors show: the chosen file, else the last played file, else the default
+' variant, else the first version.
+function displayVersion() as dynamic
+    versions = playVersions()
+    if versions.Count() = 0 then return invalid
+    src = m.item
+    if m.itemType = "series" or m.itemType = "season" then src = m.playDetail
+    want = m.selFileId
+    if want = "" and src <> invalid and src.user_data <> invalid then want = Str_orEmpty(src.user_data.last_file_id)
+    if want = "" and src <> invalid then
+        for each pv in Arr_or(src.playback_variants)
+            if want = "" and not Str_isEmpty(pv.default_file_id) then want = Str_orEmpty(pv.default_file_id)
+        end for
+    end if
+    if want <> "" then
+        for each v in versions
+            if Str_orEmpty(v.file_id) = want then return v
+        end for
+    end if
+    return versions[0]
+end function
+
+' Fetches the next-up episode's detail (its versions and tracks) for series/season pages.
+sub loadPlayDetail()
+    target = selectorTargetId()
+    if target = "" then return
+    if m.playDetail <> invalid and Str_orEmpty(m.playDetail.content_id) = target then return
+    m.playDetail = invalid
+    m.selFileId = ""
+    m.selAudio = invalid
+    m.selSubtitle = invalid
+    updateSelectors()
+    Api_get("/api/v2/catalog/items/" + Str_urlEncode(target), { image_size: "small" }, "onPlayDetail", { target: target })
+end sub
+
+sub onPlayDetail(event as object)
+    resp = Api_result(event)
+    if not resp.ok or resp.data = invalid or Type(resp.data) <> "roAssociativeArray" then return
+    if resp.context = invalid or resp.context.target <> selectorTargetId() then return
+    m.playDetail = resp.data
+    updateSelectors()
+end sub
+
+function audioValueLabel(v as object) as string
+    tracks = Arr_or(v.audio_tracks)
+    if m.selAudio <> invalid and m.selAudio >= 0 and m.selAudio < tracks.Count() then return Tracks_audioSummary(tracks[m.selAudio], m.selAudio)
+    o = Tracks_autoAudioOrdinal(v)
+    if o < 0 then return "Auto"
+    return "Auto · " + Tracks_audioSummary(tracks[o], o)
+end function
+
+function subtitleValueLabel(v as object) as string
+    tracks = Arr_or(v.subtitle_tracks)
+    if m.selSubtitle = invalid then return "Auto"
+    if m.selSubtitle = -1 then return "Off"
+    o = Tracks_subtitleOrdinal(tracks, m.selSubtitle)
+    if o < 0 then return "On"
+    return Tracks_subtitleSummary(tracks[o], o)
+end function
+
+' Each selector shows only when there is more than one real choice ("Auto" and "Off" don't count).
+sub updateSelectors()
+    versions = playVersions()
+    v = displayVersion()
+    m.versionBtn.visible = versions.Count() > 1
+    if v <> invalid then
+        compact = Tracks_versionCompact(v)
+        if m.selFileId = "" and compact <> "Auto" then compact = "Auto · " + compact
+        m.versionBtn.label = "Version · " + compact
+        audio = Arr_or(v.audio_tracks)
+        m.audioBtn.visible = audio.Count() > 1
+        m.audioBtn.label = "Audio · " + audioValueLabel(v)
+        subs = Arr_or(v.subtitle_tracks)
+        m.subtitlesBtn.visible = subs.Count() > 1
+        m.subtitlesBtn.label = "Subtitles · " + subtitleValueLabel(v)
+    else
+        m.audioBtn.visible = false
+        m.subtitlesBtn.visible = false
+    end if
     layoutActions()
+end sub
+
+sub openSelectorMenu(kind as string, title as string, acts as object)
+    m.menuKind = kind
+    m.menu.title = title
+    m.menu.actions = acts
+    m.menu.visible = true
+    m.menu.setFocus(true)
+end sub
+
+sub onVersionButton()
+    acts = [{ id: "auto", label: "Auto", detail: "Best match for this device", checked: m.selFileId = "" }]
+    for each v in playVersions()
+        fid = Str_orEmpty(v.file_id)
+        acts.Push({ id: "v:" + fid, label: Tracks_versionShort(v), detail: Tracks_versionDetail(v), checked: fid = m.selFileId })
+    end for
+    openSelectorMenu("version", "Version", acts)
+end sub
+
+sub onAudioButton()
+    v = displayVersion()
+    if v = invalid then return
+    acts = [{ id: "auto", label: "Auto", detail: "Use your Playback audio preference", checked: m.selAudio = invalid }]
+    tracks = Arr_or(v.audio_tracks)
+    for i = 0 to tracks.Count() - 1
+        t = tracks[i]
+        acts.Push({ id: "a:" + i.ToStr(), label: Tracks_audioTitle(t, i), detail: Tracks_audioDetail(t), checked: m.selAudio = i })
+    end for
+    openSelectorMenu("audio", "Audio", acts)
+end sub
+
+sub onSubtitlesButton()
+    v = displayVersion()
+    if v = invalid then return
+    acts = [
+        { id: "auto", label: "Auto", detail: "Use your subtitle preferences", checked: m.selSubtitle = invalid }
+        { id: "off", label: "Off", detail: "Start without subtitles", checked: m.selSubtitle = -1 }
+    ]
+    tracks = Arr_or(v.subtitle_tracks)
+    comb = Tracks_subtitleCombined(tracks)
+    for i = 0 to tracks.Count() - 1
+        t = tracks[i]
+        acts.Push({ id: "s:" + comb[i].ToStr(), label: Tracks_subtitleTitle(t, i), detail: Tracks_subtitleDetail(t), checked: m.selSubtitle = comb[i] })
+    end for
+    openSelectorMenu("subtitle", "Subtitles", acts)
+end sub
+
+sub onSelectorChosen(kind as string, id as string)
+    if kind = "version" then
+        if id = "auto" then
+            m.selFileId = ""
+        else if Left(id, 2) = "v:" then
+            m.selFileId = Mid(id, 3)
+            ' Tracks are per file; a new file starts from Auto again.
+            m.selAudio = invalid
+            m.selSubtitle = invalid
+        end if
+    else if kind = "audio" then
+        if id = "auto" then m.selAudio = invalid else if Left(id, 2) = "a:" then m.selAudio = Int(Val(Mid(id, 3)))
+    else if kind = "subtitle" then
+        if id = "auto" then
+            m.selSubtitle = invalid
+        else if id = "off" then
+            m.selSubtitle = -1
+        else if Left(id, 2) = "s:" then
+            m.selSubtitle = Int(Val(Mid(id, 3)))
+        end if
+    end if
+    updateSelectors()
+end sub
+
+' Adds the selectors' choices to player params when `targetId` is the title they describe.
+' The player turns indexes into "file:<id>:audio:<n>" / "file:<id>:subtitle:<n>" ids; Off sends nothing.
+sub applySelections(params as object, targetId as string)
+    if targetId = "" or targetId <> selectorTargetId() then return
+    v = displayVersion()
+    if v = invalid then return
+    fid = Str_orEmpty(v.file_id)
+    hasTrack = m.selAudio <> invalid or (m.selSubtitle <> invalid and m.selSubtitle >= 0)
+    if m.selFileId <> "" or hasTrack then params.fileId = fid
+    if m.selAudio <> invalid then
+        params.audioTrackIndex = m.selAudio
+        params.audioTrackId = Tracks_audioId(fid, m.selAudio)
+    end if
+    if m.selSubtitle <> invalid then
+        params.subtitleTrackIndex = m.selSubtitle
+        if m.selSubtitle >= 0 then params.subtitleTrackId = Tracks_subtitleId(fid, m.selSubtitle)
+    end if
 end sub
 
 sub updateToggles()
@@ -639,6 +845,7 @@ sub onEpisodes(event as object)
         m.nextUp = found
         m.currentEpisodeId = Str_orEmpty(found.content_id)
         updatePrimary()
+        loadPlayDetail()
         if m.itemType = "series" then
             m.episodeLine.text = Str_joinDots([Content_seShort(found.season_number, found.episode_number), found.title])
             m.episodeLine.visible = m.episodeLine.text <> ""
@@ -686,6 +893,7 @@ sub playEpisode(ep as object)
     params = { itemId: Str_orEmpty(ep.content_id), title: Str_orEmpty(ep.title) }
     r = resumeOf(ep)
     if r > 0 then params.startPosition = r
+    applySelections(params, params.itemId)
     Nav_play(params)
 end sub
 
@@ -845,13 +1053,16 @@ sub onPlay()
         r = resumeOf(m.item)
     end if
     if r > 0 then params.startPosition = r
+    applySelections(params, id)
     Nav_play(params)
 end sub
 
 sub onStartOver()
     id = playTargetId()
     if id = "" then return
-    Nav_play({ itemId: id, title: playTitle(), startPosition: 0 })
+    params = { itemId: id, title: playTitle(), startPosition: 0 }
+    applySelections(params, id)
+    Nav_play(params)
 end sub
 
 sub onWatchlistToggle()
@@ -908,9 +1119,35 @@ function typeNoun() as string
     return ""
 end function
 
+' The selected season's entry in m.seasons, or invalid.
+function selectedSeasonEntry() as dynamic
+    if m.selectedSeason = invalid then return invalid
+    for each s in m.seasons
+        if toInt(s.season_number) = m.selectedSeason then return s
+    end for
+    return invalid
+end function
+
+' A season shuffles only when it has two or more playable episodes.
+function canShuffleSeason() as boolean
+    n = 0
+    for each ep in m.episodes
+        if toInt(ep.season_number) = m.selectedSeason and Arr_or(ep.files).Count() > 0 then n = n + 1
+    end for
+    return n > 1
+end function
+
 sub onMore()
     acts = []
     noun = typeNoun()
+    ' Shuffle leads the menu (shuffle-api-v2.md): the series, then the season on screen.
+    if seriesIdOf() <> "" and Shuffle_supports("series") then
+        acts.Push({ id: "shuffle_series", label: "Shuffle Series" })
+    end if
+    season = selectedSeasonEntry()
+    if season <> invalid and not Str_isEmpty(season.content_id) and Shuffle_supports("season") and canShuffleSeason() then
+        acts.Push({ id: "shuffle_season", label: "Shuffle " + seasonLabel(season) })
+    end if
     if isPlayed() then
         acts.Push({ id: "unwatched", label: ("Mark " + noun + " Unwatched").Replace("  ", " ").Trim() })
     else
@@ -936,10 +1173,16 @@ sub onMore()
     if (m.itemType = "episode" or m.itemType = "season") and not Str_isEmpty(m.item.series_id) then
         acts.Push({ id: "series", label: "Go to Series" })
     end if
+    m.menuKind = "more"
     m.menu.title = "More Actions"
     m.menu.actions = acts
     m.menu.visible = true
     m.menu.setFocus(true)
+end sub
+
+sub onShuffleStarted(event as object)
+    resp = Api_result(event)
+    Shuffle_play(resp)
 end sub
 
 sub closeMenu()
@@ -954,8 +1197,17 @@ end sub
 sub onMenuChosen()
     id = m.menu.chosen
     closeMenu()
+    if m.menuKind <> "more" then
+        onSelectorChosen(m.menuKind, id)
+        return
+    end if
     cid = Str_urlEncode(Str_orEmpty(m.item.content_id))
-    if id = "watched" or id = "unwatched" then
+    if id = "shuffle_series" then
+        Shuffle_start("series", seriesIdOf(), "onShuffleStarted")
+    else if id = "shuffle_season" then
+        season = selectedSeasonEntry()
+        if season <> invalid then Shuffle_start("season", Str_orEmpty(season.content_id), "onShuffleStarted")
+    else if id = "watched" or id = "unwatched" then
         if m.item.user_state = invalid then m.item.user_state = {}
         if id = "watched" then
             Api_fire("POST", "/api/v2/watched/" + cid)

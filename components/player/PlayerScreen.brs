@@ -37,8 +37,13 @@ sub init()
     m.unMeta = m.top.findNode("unMeta")
     m.unOverview = m.top.findNode("unOverview")
     m.unPlayBtn = m.top.findNode("unPlayBtn")
+    m.unPickBtn = m.top.findNode("unPickBtn")
     m.unKeepBtn = m.top.findNode("unKeepBtn")
     m.unBackBtn = m.top.findNode("unBackBtn")
+    m.unStopBtn = m.top.findNode("unStopBtn")
+    m.unScope = m.top.findNode("unScope")
+    m.unScopeBg = m.top.findNode("unScopeBg")
+    m.unScopeLabel = m.top.findNode("unScopeLabel")
     m.errorGroup = m.top.findNode("errorGroup")
     m.errorLabel = m.top.findNode("errorLabel")
     m.retryBtn = m.top.findNode("retryBtn")
@@ -55,6 +60,10 @@ sub init()
 
     m.di = CreateObject("roDeviceInfo")
     m.started = false
+    ' The running shuffle this player plays picks from ({id, latest, exhausted}); invalid outside a
+    ' shuffle. It outlives resetPlaybackState() because it spans every chained pick.
+    m.shuffle = invalid
+    m.upNextButtons = []
     resetPlaybackState()
 
     m.video.observeField("state", "onVideoState")
@@ -78,8 +87,10 @@ sub init()
     m.closeBtn.observeField("buttonSelected", "exitPlayer")
     m.skipBtn.observeField("buttonSelected", "onSkipPill")
     m.unPlayBtn.observeField("buttonSelected", "playNext")
+    m.unPickBtn.observeField("buttonSelected", "pickAnother")
     m.unKeepBtn.observeField("buttonSelected", "keepWatching")
     m.unBackBtn.observeField("buttonSelected", "exitPlayer")
+    m.unStopBtn.observeField("buttonSelected", "stopShuffling")
     m.retryBtn.observeField("buttonSelected", "retry")
     m.errorCloseBtn.observeField("buttonSelected", "exitPlayer")
     m.picker.observeField("chosen", "onPickerChosen")
@@ -111,7 +122,12 @@ sub resetPlaybackState()
     m.autoSkipped = {}
     m.activeMarker = invalid
     m.nextEpisode = invalid
+    m.nextIsEpisode = true
     m.seriesTitle = ""
+    m.shuffleRefreshed = false
+    m.shuffleAdvancing = false
+    m.shufflePicking = false
+    m.forceSubtitlesOff = false
     m.upNextShown = false
     m.upNextDismissed = false
     m.countdown = -1
@@ -151,7 +167,7 @@ sub restoreFocus()
     else if m.picker.visible then
         m.picker.setFocus(true)
     else if m.upNext.visible then
-        m.unPlayBtn.setFocus(true)
+        focusUpNext()
     else if m.hud.visible then
         focusHud()
     else if m.controls.visible then
@@ -169,6 +185,12 @@ sub startPipeline()
     p = m.top.params
     if p = invalid then p = {}
     m.itemId = Str_orEmpty(p.itemId)
+    ' A shuffle pick: remember the shuffle (and the Shuffle the start returned, so the first pick's
+    ' `next` is known without another read).
+    if not Str_isEmpty(p.shuffleId) then
+        if m.shuffle = invalid or m.shuffle.id <> p.shuffleId then m.shuffle = { id: Str_orEmpty(p.shuffleId), latest: p.shuffle, exhausted: false }
+    end if
+    m.forceSubtitlesOff = p.subtitleTrackIndex <> invalid and p.subtitleTrackIndex = -1
     m.errorGroup.visible = false
     setBuffering(true)
     m.focusSink.setFocus(true)
@@ -248,7 +270,12 @@ sub onWatch(event as object)
     if m.duration = 0 and w.user_data <> invalid and w.user_data.duration_seconds <> invalid then m.duration = w.user_data.duration_seconds
     m.scrubber.duration = m.duration
 
-    if m.isEpisode then resolveNextEpisode()
+    if m.shuffle <> invalid then
+        ' A shuffle replaces the series order: the server names what plays next.
+        resolveShuffleNext()
+    else if m.isEpisode then
+        resolveNextEpisode()
+    end if
     ensureFreshToken()
 end sub
 
@@ -365,7 +392,17 @@ sub startSession(installation as string)
         spv = p.startPosition
         if (Type(spv) = "roInt" or Type(spv) = "Integer" or Type(spv) = "roFloat" or Type(spv) = "Float" or Type(spv) = "Double" or Type(spv) = "roDouble") and spv >= 0 then startPos = spv * 1.0
     end if
-    body = PlaybackCaps_startBody(installation, m.fileId, m.attemptId, startPos, p.audioTrackId, p.subtitleTrackId)
+    ' Track choices from the detail page, as ids ("file:<id>:audio:<n>" / "file:<id>:subtitle:<n>").
+    ' Indexes are turned into ids for the file that actually plays; ids for another file are dropped,
+    ' Off (-1) and Auto send nothing so the profile preference applies. Never send -1.
+    audioId = Str_orEmpty(p.audioTrackId)
+    if audioId = "" and p.audioTrackIndex <> invalid and p.audioTrackIndex >= 0 then audioId = Tracks_audioId(m.fileId, Int(p.audioTrackIndex))
+    subId = Str_orEmpty(p.subtitleTrackId)
+    if subId = "" and p.subtitleTrackIndex <> invalid and p.subtitleTrackIndex >= 0 then subId = Tracks_subtitleId(m.fileId, Int(p.subtitleTrackIndex))
+    prefix = "file:" + m.fileId + ":"
+    if audioId <> "" and Left(audioId, Len(prefix)) <> prefix then audioId = ""
+    if subId <> "" and Left(subId, Len(prefix)) <> prefix then subId = ""
+    body = PlaybackCaps_startBody(installation, m.fileId, m.attemptId, startPos, audioId, subId)
     Api_send("POST", "/api/v2/playback/start", body, "onStart")
 end sub
 
@@ -478,7 +515,9 @@ sub applyPlan(plan as object)
 
     ' Default subtitle: what the plan selected, if we can render it.
     m.pendingSubtitleTrackId = ""
-    if plan.subtitle <> invalid and Str_orEmpty(plan.subtitle.mode) <> "off" and plan.selected_tracks <> invalid and plan.selected_tracks.subtitle <> invalid then
+    if m.forceSubtitlesOff then
+        ' The detail page chose "Off · Start without subtitles".
+    else if plan.subtitle <> invalid and Str_orEmpty(plan.subtitle.mode) <> "off" and plan.selected_tracks <> invalid and plan.selected_tracks.subtitle <> invalid then
         m.pendingSubtitleTrackId = Str_orEmpty(plan.selected_tracks.subtitle.id)
     end if
 
@@ -555,12 +594,21 @@ sub onFinished()
     if m.finished then return
     m.finished = true
     m.progressTimer.control = "stop"
-    if m.isEpisode and m.nextEpisode <> invalid and not m.upNextDismissed then
+    if m.upNextDismissed then
+        exitPlayer()
+        return
+    end if
+    if (m.isEpisode or m.shuffle <> invalid) and m.nextEpisode <> invalid then
         if not m.upNext.visible then showUpNext()
-        if m.countdown < 0 then
+        if m.countdown < 0 and m.shuffle = invalid then
             ' No auto-play: wait for the user on the overlay.
             m.unEyebrow.text = "FINISHED"
         end if
+        return
+    end if
+    if m.shuffle <> invalid then
+        ' Nothing else in the shuffle can play: the card shows Finished with Stop shuffling.
+        if not m.upNext.visible then showUpNext() else renderUpNext()
         return
     end if
     exitPlayer()
@@ -746,7 +794,8 @@ sub layoutTransport()
 end sub
 
 sub showControls()
-    m.upNextBtn.visible = m.nextEpisode <> invalid
+    ' A shuffle offers no sequential next on the transport row.
+    m.upNextBtn.visible = m.nextEpisode <> invalid and m.shuffle = invalid
     layoutTransport()
     m.controls.visible = true
     positionSkipPill()
@@ -800,7 +849,7 @@ sub onTuneButton()
 end sub
 
 sub onUpNextButton()
-    if m.nextEpisode = invalid then return
+    if m.nextEpisode = invalid or m.shuffle <> invalid then return
     m.upNextDismissed = false
     showUpNext()
 end sub
@@ -1033,14 +1082,137 @@ sub onNextEpisodes(event as object)
         end if
     end for
     m.nextEpisode = best
+    m.nextIsEpisode = true
     if m.controls.visible then
         m.upNextBtn.visible = best <> invalid
         layoutTransport()
     end if
 end sub
 
+' ---------- Shuffle (shuffle-api-v2.md "Player rules") ----------
+
+function shufflePath() as string
+    return "/api/v2/shuffles/" + Str_urlEncode(m.shuffle.id)
+end function
+
+' Records a shuffle response: a success replaces the last pick; 409 means nothing in the scope
+' can play any more; other failures keep the last pick.
+sub shuffleRecord(resp as object)
+    if m.shuffle = invalid then return
+    if resp.ok and resp.data <> invalid and Type(resp.data) = "roAssociativeArray" then
+        m.shuffle.latest = resp.data
+        m.shuffle.exhausted = false
+    else if resp.status = 409 then
+        m.shuffle.exhausted = true
+    end if
+end sub
+
+' The advance that started this item already returned its next pick; otherwise read the shuffle.
+sub resolveShuffleNext()
+    sh = m.shuffle
+    if sh = invalid then return
+    if sh.latest <> invalid and sh.latest.current <> invalid and Str_orEmpty(sh.latest.current.content_id) = m.itemId then
+        publishShuffleNext()
+        return
+    end if
+    Api_get(shufflePath(), { image_size: "large" }, "onShuffleRead", { forItem: m.itemId })
+end sub
+
+sub onShuffleRead(event as object)
+    resp = Api_result(event)
+    if m.closing or m.shuffle = invalid then return
+    if resp.context <> invalid and resp.context.forItem <> m.itemId then return
+    shuffleRecord(resp)
+    publishShuffleNext()
+end sub
+
+' Publishes the shuffle's pick after the item playing, or the finished state when there is none.
+sub publishShuffleNext()
+    sh = m.shuffle
+    if sh = invalid then return
+    nxt = invalid
+    if not sh.exhausted then nxt = Shuffle_nextAfter(sh.latest, m.itemId)
+    m.nextEpisode = nxt
+    m.nextIsEpisode = nxt <> invalid and LCase(Str_orEmpty(nxt.type)) = "episode"
+    if m.upNext.visible then
+        renderUpNext()
+        if nxt = invalid then
+            m.countdownTimer.control = "stop"
+            m.countdown = -1
+        else if m.finished and m.countdown < 0 and autoPlayNext() then
+            ' A new pick at the end restarts the countdown.
+            startCountdown()
+        end if
+    end if
+end sub
+
+' Up Next "Play Now" / countdown in a shuffle: move the shuffle past the item that played and play
+' the returned `current` from the beginning. The server moves on only while that item is still
+' current, so a repeated press plays the same pick.
+sub advanceShuffle()
+    if m.shuffle = invalid or m.nextEpisode = invalid then return
+    if m.shuffleAdvancing or m.shufflePicking then return
+    m.shuffleAdvancing = true
+    m.countdownTimer.control = "stop"
+    m.countdown = -1
+    m.unPlayBtn.text = "Play Now"
+    Api_send("POST", shufflePath() + "/advance", { from_content_id: m.itemId }, "onShuffleAdvanced", { forItem: m.itemId })
+end sub
+
+sub onShuffleAdvanced(event as object)
+    resp = Api_result(event)
+    m.shuffleAdvancing = false
+    if m.closing or m.shuffle = invalid then return
+    if resp.context <> invalid and resp.context.forItem <> m.itemId then return
+    shuffleRecord(resp)
+    if resp.ok and resp.data <> invalid and resp.data.current <> invalid then
+        cur = resp.data.current
+        playInPlace({ itemId: Str_orEmpty(cur.content_id), title: Str_orEmpty(cur.title), itemType: Str_orEmpty(cur.type), startPosition: 0, shuffleId: m.shuffle.id })
+    else if m.shuffle.exhausted then
+        publishShuffleNext()
+    else
+        m.global.toast = "Couldn't continue the shuffle."
+    end if
+end sub
+
+' Up Next "Pick Another": the server replaces the announced pick.
+sub pickAnother()
+    sh = m.shuffle
+    if sh = invalid or sh.latest = invalid or sh.latest.next = invalid then return
+    if m.shufflePicking or m.shuffleAdvancing then return
+    m.shufflePicking = true
+    m.unPickBtn.text = "Picking…"
+    Api_send("POST", shufflePath() + "/skip", { next_content_id: Str_orEmpty(sh.latest.next.content_id) }, "onShufflePicked", { forItem: m.itemId })
+end sub
+
+sub onShufflePicked(event as object)
+    resp = Api_result(event)
+    m.shufflePicking = false
+    m.unPickBtn.text = "Pick Another"
+    if m.closing or m.shuffle = invalid then return
+    if resp.context <> invalid and resp.context.forItem <> m.itemId then return
+    shuffleRecord(resp)
+    if not resp.ok and not m.shuffle.exhausted then
+        m.global.toast = "Couldn't pick another."
+        return
+    end if
+    publishShuffleNext()
+end sub
+
+' Up Next "Stop shuffling": ends the shuffle on the server and leaves the player, back to where
+' the shuffle started. (Back keeps the shuffle on the server.)
+sub stopShuffling()
+    sh = m.shuffle
+    if sh = invalid then return
+    m.shuffle = invalid
+    m.nextEpisode = invalid
+    m.countdownTimer.control = "stop"
+    Api_fire("DELETE", "/api/v2/shuffles/" + Str_urlEncode(sh.id))
+    exitPlayer()
+end sub
+
 sub checkUpNext()
-    if not m.isEpisode or m.nextEpisode = invalid or m.upNextShown or m.upNextDismissed then return
+    if (not m.isEpisode and m.shuffle = invalid) or m.nextEpisode = invalid or m.upNextShown or m.upNextDismissed then return
     if m.duration <= 0 then return
     trigger = m.duration - 30
     for each mk in m.markers
@@ -1049,9 +1221,20 @@ sub checkUpNext()
     if m.position >= trigger then showUpNext()
 end sub
 
+function autoPlayNext() as boolean
+    if m.global.prefs <> invalid and m.global.prefs.autoPlayNext = false then return false
+    return true
+end function
+
+sub startCountdown()
+    m.countdown = 10
+    m.unPlayBtn.text = "Play Now · " + m.countdown.ToStr()
+    m.countdownTimer.control = "stop"
+    m.countdownTimer.control = "start"
+end sub
+
 sub showUpNext()
-    ep = m.nextEpisode
-    if ep = invalid then return
+    if m.nextEpisode = invalid and m.shuffle = invalid then return
     m.upNextShown = true
     hideControlsNow()
     m.hud.visible = false
@@ -1065,30 +1248,105 @@ sub showUpNext()
     m.videoFrame.translation = [152, 284]
     m.videoFrame.visible = true
 
-    m.unEyebrow.text = "UP NEXT"
-    m.unSeries.text = m.seriesTitle
-    m.unSeries.visible = m.seriesTitle <> ""
-    tag = Content_seShort(ep.season_number, ep.episode_number).Replace(" · ", "·")
-    title = Str_orEmpty(ep.title)
-    if title = "" then title = "Next Episode"
-    m.unEpisode.text = Str_joinDots([tag, title], "  ")
-    meta = ""
-    if ep.runtime <> invalid and ep.runtime > 0 then meta = Str_orEmpty(Int(ep.runtime)) + " min"
-    m.unMeta.text = meta
-    m.unOverview.text = Str_orEmpty(ep.overview)
-    autoPlay = true
-    if m.global.prefs <> invalid and m.global.prefs.autoPlayNext = false then autoPlay = false
-    if autoPlay then
-        m.countdown = 10
-        m.unPlayBtn.text = "Play Now · " + m.countdown.ToStr()
-        m.countdownTimer.control = "start"
+    if m.nextEpisode <> invalid and autoPlayNext() then
+        startCountdown()
     else
         m.countdown = -1
         m.unPlayBtn.text = "Play Now"
     end if
+    renderUpNext()
     m.upNext.visible = true
     m.upNextIndex = 0
-    m.unPlayBtn.setFocus(true)
+    focusUpNext()
+    ' As the card opens, read the shuffle again so the server can replace a pick that can no longer play.
+    if m.shuffle <> invalid and not m.shuffleRefreshed then
+        m.shuffleRefreshed = true
+        Api_get(shufflePath(), { image_size: "large" }, "onShuffleRead", { forItem: m.itemId })
+    end if
+end sub
+
+' Fills the Up Next panel from m.nextEpisode (a next episode, or a shuffle's random pick).
+sub renderUpNext()
+    ep = m.nextEpisode
+    sh = m.shuffle
+    scopeLabel = ""
+    if sh <> invalid then scopeLabel = Shuffle_scopeLabel(sh.latest)
+    m.unScope.visible = scopeLabel <> ""
+    if scopeLabel <> "" then
+        m.unScopeLabel.text = "Shuffling " + scopeLabel
+        m.unScopeLabel.width = 0
+        w = Int(m.unScopeLabel.boundingRect().width) + 48 + 16
+        if w > 640 then w = 640
+        m.unScopeLabel.width = w - 48 - 16
+        m.unScopeBg.width = w
+    end if
+
+    if ep = invalid then
+        ' Nothing follows.
+        if m.finished then m.unEyebrow.text = "FINISHED" else m.unEyebrow.text = "MORE TO WATCH"
+        m.unSeries.visible = false
+        if m.finished then m.unEpisode.text = "End of playback" else m.unEpisode.text = "Almost finished"
+        m.unMeta.text = ""
+        if sh <> invalid then m.unOverview.text = "Nothing else in this shuffle can play." else m.unOverview.text = "No next episode is available."
+    else
+        if sh <> invalid then
+            m.unEyebrow.text = "UP NEXT AT RANDOM"
+        else if m.finished and m.countdown >= 0 then
+            m.unEyebrow.text = "PLAYING NEXT"
+        else
+            m.unEyebrow.text = "UP NEXT"
+        end if
+        title = Str_orEmpty(ep.title)
+        if m.nextIsEpisode then
+            series = Str_orEmpty(ep.series_title)
+            if series = "" then series = m.seriesTitle
+            m.unSeries.text = series
+            m.unSeries.visible = series <> ""
+            tag = Content_seShort(ep.season_number, ep.episode_number).Replace(" · ", "·")
+            if title = "" then title = "Next Episode"
+            m.unEpisode.text = Str_joinDots([tag, title], "  ")
+        else
+            ' A shuffled movie has no series line; its own title heads the panel.
+            m.unSeries.visible = false
+            m.unEpisode.text = title
+        end if
+        meta = ""
+        if ep.runtime <> invalid and ep.runtime > 0 then meta = Str_orEmpty(Int(ep.runtime)) + " min"
+        m.unMeta.text = meta
+        m.unOverview.text = Str_orEmpty(ep.overview)
+    end if
+    m.unPlayBtn.visible = ep <> invalid
+    m.unPickBtn.visible = sh <> invalid and ep <> invalid
+    m.unKeepBtn.visible = not m.finished
+    m.unStopBtn.visible = sh <> invalid
+    layoutUpNextButtons()
+end sub
+
+' Stacks the visible buttons; the list drives Up/Down on the overlay.
+sub layoutUpNextButtons()
+    btns = []
+    for each b in [m.unPlayBtn, m.unPickBtn, m.unKeepBtn, m.unBackBtn, m.unStopBtn]
+        if b.visible then btns.Push(b)
+    end for
+    y = 420
+    stepY = 94
+    if btns.Count() > 3 then
+        y = 400
+        stepY = 86
+    end if
+    for each b in btns
+        b.translation = [0, y]
+        y = y + stepY
+    end for
+    m.upNextButtons = btns
+    if m.upNextIndex = invalid or m.upNextIndex >= btns.Count() then m.upNextIndex = 0
+end sub
+
+sub focusUpNext()
+    if m.upNextButtons.Count() = 0 then layoutUpNextButtons()
+    if m.upNextButtons.Count() = 0 then return
+    if m.upNextIndex >= m.upNextButtons.Count() then m.upNextIndex = 0
+    m.upNextButtons[m.upNextIndex].setFocus(true)
 end sub
 
 sub onCountdownTick()
@@ -1127,13 +1385,21 @@ end sub
 sub playNext()
     ep = m.nextEpisode
     if ep = invalid then return
+    if m.shuffle <> invalid then
+        advanceShuffle()
+        return
+    end if
+    playInPlace({ itemId: Str_orEmpty(ep.content_id), title: Str_orEmpty(ep.title) })
+end sub
+
+' Replaces the mounted item in place with another one, from the beginning.
+sub playInPlace(newParams as object)
     m.countdownTimer.control = "stop"
     m.upNext.visible = false
     restoreVideoPane()
     stopSession()
     m.video.control = "stop"
     m.video.visible = true
-    newParams = { itemId: Str_orEmpty(ep.content_id), title: Str_orEmpty(ep.title) }
     m.top.params = newParams
     resetPlaybackState()
     m.scrubber.position = 0
@@ -1570,16 +1836,16 @@ function onKeyEvent(key as string, press as boolean) as boolean
 end function
 
 function handleUpNextKey(key as string) as boolean
-    btns = [m.unPlayBtn, m.unKeepBtn, m.unBackBtn]
+    btns = m.upNextButtons
     if key = "down" then
-        if m.upNextIndex < 2 then m.upNextIndex = m.upNextIndex + 1
-        btns[m.upNextIndex].setFocus(true)
+        if m.upNextIndex < btns.Count() - 1 then m.upNextIndex = m.upNextIndex + 1
+        focusUpNext()
         m.countdownTimer.control = "stop"
         m.unPlayBtn.text = "Play Now"
         m.countdown = -1
     else if key = "up" then
         if m.upNextIndex > 0 then m.upNextIndex = m.upNextIndex - 1
-        btns[m.upNextIndex].setFocus(true)
+        focusUpNext()
     else if key = "back" then
         keepWatching()
     end if

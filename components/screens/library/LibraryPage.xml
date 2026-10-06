@@ -16,6 +16,7 @@
 <component name="LibraryPage" extends="ShellPage">
   <script type="text/brightscript" uri="pkg:/components/screens/library/LibraryPage.brs" />
   <script type="text/brightscript" uri="pkg:/components/widgets/HomeCardActions.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Shuffle.brs" />
   <children>
     <Label id="titleLabel" translation="[80, 128]" color="0xEDEDEDFF" maxLines="1" width="1400">
       <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="38" />
@@ -27,7 +28,7 @@
       <PillButton id="sortPill" text="Sort · Title" height="56" fontSize="24" padX="28" scaleOnFocus="1.04" />
       <PillButton id="filterPill" text="Filter" height="56" fontSize="24" padX="28" scaleOnFocus="1.04" />
       <PillButton id="clearPill" text="Clear filters" height="56" fontSize="24" padX="28" scaleOnFocus="1.04" visible="false" />
-      <PillButton id="shufflePill" text="Shuffle" iconUri="pkg:/images/icons/shuffle.png" height="56" fontSize="24" padX="28" scaleOnFocus="1.04" />
+      <PillButton id="shufflePill" text="Shuffle" iconUri="pkg:/images/icons/shuffle.png" height="56" fontSize="24" padX="28" scaleOnFocus="1.04" visible="false" />
     </Group>
     <MarkupGrid id="grid" translation="[70, 284]" itemComponentName="MediaCardItem" numColumns="6" numRows="2"
                 itemSize="[269, 493]" itemSpacing="[40, 60]" drawFocusFeedback="false"
@@ -46,5 +47,6 @@
     <ShellPanel id="filterPanel" visible="false" />
     <ShellPanel id="filterFly" width="320" visible="false" />
     <ShellActionMenu id="menu" />
+    <Timer id="pressTimer" duration="0.6" repeat="false" />
   </children>
 </component>

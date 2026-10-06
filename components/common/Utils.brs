@@ -150,6 +150,32 @@ function AA_copy(aa as object) as object
     return out
 end function
 
+' ---------- Long OK press ----------
+' Roku's RowList / MarkupGrid set rowItemSelected / itemSelected on the OK *press* and return true,
+' so the host never sees that press and cannot time it from the key down. What the host can see is
+' the OK *release* (press = false), which the lists don't consume. The scheme used by the Skyline
+' feed and the library grid:
+'   1. The list's selection event parks the selection as "pending" and starts a 600 ms timer.
+'   2. The OK release before the timer fires performs the normal action (open the detail), so a
+'      short press costs only the time the finger rests on the key.
+'   3. The timer firing first means the key is still held: the card menu opens and the release
+'      that follows finds nothing pending.
+' A platform that never delivers key releases to the host would turn every press into a menu, so
+' the scheme is armed only after one key release has been observed while a list had focus
+' (m.global.keyReleaseSeen). Until then OK opens the detail immediately, as before. The options
+' (*) key always opens the menu.
+sub LongPress_init()
+    if not m.global.hasField("keyReleaseSeen") then m.global.addFields({ keyReleaseSeen: false })
+end sub
+
+function LongPress_enabled() as boolean
+    return m.global.hasField("keyReleaseSeen") and m.global.keyReleaseSeen = true
+end function
+
+sub LongPress_sawRelease()
+    if m.global.hasField("keyReleaseSeen") and m.global.keyReleaseSeen <> true then m.global.keyReleaseSeen = true
+end sub
+
 ' ---------- Device ----------
 
 function Device_info() as object

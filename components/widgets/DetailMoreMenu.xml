@@ -4,7 +4,7 @@
   Usage: set title and actions, make it visible, then setFocus(true). Observe chosen / dismissed.
   Fields:
     title            header text (rendered uppercase, muted)
-    actions          [{id, label, checked?}]
+    actions          [{id, label, checked?, detail?}]  (detail: a muted second line, e.g. "Start without subtitles")
     menuWidth        default 720
     chosen (out)     the id of the selected action
     dismissed (out)  true when Back is pressed

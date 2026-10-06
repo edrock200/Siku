@@ -21,6 +21,9 @@ sub init()
     m.statusBody = m.top.findNode("statusBody")
     m.actionBtn = m.top.findNode("actionBtn")
     m.restTimer = m.top.findNode("restTimer")
+    m.pressTimer = m.top.findNode("pressTimer")
+    m.pendingSelect = invalid
+    LongPress_init()
 
     m.badgeNodes = []
     m.badgeFont = ThemeFont("semibold", 19)
@@ -34,6 +37,7 @@ sub init()
     m.rowList.observeField("rowItemFocused", "onRowItemFocused")
     m.rowList.observeField("rowItemSelected", "onRowItemSelected")
     m.restTimer.observeField("fire", "onRest")
+    m.pressTimer.observeField("fire", "onPressHeld")
     m.actionBtn.observeField("buttonSelected", "onAction")
     m.imgA.observeField("loadStatus", "onBackdropLoaded")
     m.imgB.observeField("loadStatus", "onBackdropLoaded")
@@ -181,13 +185,38 @@ function cardAt(rowIndex as integer, itemIndex as integer) as dynamic
     return row.getChild(itemIndex)
 end function
 
+' OK on a card. RowList sets rowItemSelected on the OK *press* and consumes that key, so a long
+' press is detected from the OK *release* (see LongPress_* in HomeCardActions.brs): the selection
+' waits as `pendingSelect`; the release within 600 ms opens the detail, the timer opens the menu.
 sub onRowItemSelected()
     sel = m.rowList.rowItemSelected
     if sel = invalid or sel.Count() < 2 then return
     node = cardAt(sel[0], sel[1])
     if node = invalid then return
     row = m.rowList.content.getChild(sel[0])
-    m.top.itemSelected = { rowIndex: sel[0], itemIndex: sel[1], rowId: row.rowId, card: node.raw }
+    payload = { rowIndex: sel[0], itemIndex: sel[1], rowId: row.rowId, card: node.raw }
+    if LongPress_enabled() then
+        m.pendingSelect = payload
+        m.pressTimer.control = "stop"
+        m.pressTimer.control = "start"
+    else
+        m.top.itemSelected = payload
+    end if
+end sub
+
+' The OK key was held: open the card menu instead of the detail page.
+sub onPressHeld()
+    payload = m.pendingSelect
+    m.pendingSelect = invalid
+    if payload <> invalid then m.top.itemOptions = payload
+end sub
+
+' A short press ended (or another key arrived): perform the normal selection now.
+sub flushPendingSelect()
+    m.pressTimer.control = "stop"
+    payload = m.pendingSelect
+    m.pendingSelect = invalid
+    if payload <> invalid then m.top.itemSelected = payload
 end sub
 
 sub showCard(node as object)
@@ -456,7 +485,13 @@ end sub
 ' ---------- Keys ----------
 
 function onKeyEvent(key as string, press as boolean) as boolean
-    if not press then return false
+    if not press then
+        if m.rowList.hasFocus() then LongPress_sawRelease()
+        if key = "OK" then flushPendingSelect()
+        return false
+    end if
+    ' Any other key while a selection is pending ends the press as a short one.
+    if m.pendingSelect <> invalid and key <> "OK" then flushPendingSelect()
     if key = "options" and m.rowList.hasFocus() then
         rf = m.rowList.rowItemFocused
         if rf <> invalid and rf.Count() >= 2 then

@@ -4,10 +4,14 @@
   params: { itemId, itemType?, libraryId? }
   The whole page scrolls: `page` is translated with `scrollAnim` as focus moves between zones
   (actions → season chips → episode rail → cast → related → details).
+  The action row also holds the Version / Audio / Subtitles selectors (§4.3) and the More menu
+  leads with Shuffle Series / Shuffle Season N when the server offers shuffles (Shuffle.brs).
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="DetailScreen" extends="BaseScreen">
   <script type="text/brightscript" uri="pkg:/components/screens/DetailScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Shuffle.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />
   <children>
     <Rectangle id="bg" width="1920" height="1080" color="0x040D0FFF" />
     <Group id="page">
@@ -45,6 +49,10 @@
         <Group id="actions" visible="false">
           <PillButton id="playBtn" text="Play" variant="solid" iconUri="pkg:/images/icons/play.png" height="76" padX="54" fontSize="27" />
           <DetailCircleButton id="startOverBtn" iconUri="pkg:/images/icons/start_over.png" label="Start Over" visible="false" />
+          <!-- Version / Audio / Subtitles selectors: shown only when the title offers a real choice. -->
+          <DetailCircleButton id="versionBtn" iconUri="pkg:/images/icons/video.png" label="Version" visible="false" />
+          <DetailCircleButton id="audioBtn" iconUri="pkg:/images/icons/audio.png" label="Audio" visible="false" />
+          <DetailCircleButton id="subtitlesBtn" iconUri="pkg:/images/icons/subtitles.png" label="Subtitles" visible="false" />
           <DetailCircleButton id="watchlistBtn" iconUri="pkg:/images/icons/bookmark.png" activeIconUri="pkg:/images/icons/bookmark_filled.png" label="Watchlist" />
           <DetailCircleButton id="favBtn" iconUri="pkg:/images/icons/heart.png" activeIconUri="pkg:/images/icons/heart_filled.png" label="Favorite" />
           <DetailCircleButton id="moreBtn" iconUri="pkg:/images/icons/more.png" label="More" />

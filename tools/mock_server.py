@@ -978,6 +978,7 @@ class Handler(BaseHTTPRequestHandler):
             sid = uuid.uuid4().hex
             STATE["sessions"][sid] = b
             LOG.append("START " + json.dumps(b)[:400])
+            print("START", json.dumps({k: b.get(k) for k in ("file_id", "audio_track_id", "subtitle_track_id", "start_position")}), flush=True)
             return self.send(201, {"protocol_version": 3, "server_features": ["playback_plan_v3", "neutral_playback_v3_contract_v1", "sequenced_progress_v1"],
                                    "outcome": "playable", "session_id": sid,
                                    "playback_plan": {"protocol_version": 3, "plan_id": "plan:1", "plan_attempt_key": "v3:1", "session_id": sid,

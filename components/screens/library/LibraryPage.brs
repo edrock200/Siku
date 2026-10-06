@@ -23,6 +23,9 @@ sub init()
     m.filterPanel = m.top.findNode("filterPanel")
     m.filterFly = m.top.findNode("filterFly")
     m.menu = m.top.findNode("menu")
+    m.pressTimer = m.top.findNode("pressTimer")
+    m.pendingSelect = invalid
+    LongPress_init()
 
     m.grid.observeField("itemFocused", "onGridFocused")
     m.grid.observeField("itemSelected", "onGridSelected")
@@ -39,6 +42,7 @@ sub init()
     m.filterFly.observeField("exitLeft", "leaveFilterFly")
     m.menu.observeField("chosen", "onMenuChosen")
     m.menu.observeField("dismissed", "onMenuDismissed")
+    m.pressTimer.observeField("fire", "onPressHeld")
     m.top.observeField("params", "onParams")
 
     m.sortOptions = [
@@ -135,7 +139,7 @@ sub layoutPage()
         m.controls.translation = [80, titleY + 68]
         gridY = titleY + 68 + 56 + 32
         m.filterPill.visible = m.mode = "browse"
-        m.shufflePill.visible = m.mode = "browse" or m.mode = "collection"
+        m.shufflePill.visible = shuffleOffered()
         layoutPills()
     else
         gridY = titleY + 88
@@ -166,6 +170,24 @@ end function
 
 sub onPageShown()
     if not m.loaded and not m.loading then reload()
+    ' The Shuffle pill follows the server's capability (hidden until it says available).
+    Shuffle_refreshCaps("onShuffleCaps")
+    updateShufflePill()
+end sub
+
+sub onShuffleCaps(event as object)
+    Shuffle_storeCaps(event)
+    updateShufflePill()
+end sub
+
+sub updateShufflePill()
+    if not m.controls.visible then return
+    show = shuffleOffered()
+    if show <> m.shufflePill.visible then
+        if m.shufflePill.hasFocus() and not show then m.sortPill.setFocus(true)
+        m.shufflePill.visible = show
+        layoutPills()
+    end if
 end sub
 
 sub focusContent()
@@ -461,6 +483,9 @@ sub onGridFocused()
     end if
 end sub
 
+' OK on a card. MarkupGrid sets itemSelected on the OK *press* and consumes the key, so a long press
+' is detected from the OK *release* (LongPress_* in Utils.brs): the selection waits as `pendingSelect`;
+' a release within 600 ms opens the detail, the timer firing first opens the card menu.
 sub onGridSelected()
     idx = m.grid.itemSelected
     if idx < 0 or idx >= m.cards.Count() then return
@@ -475,7 +500,26 @@ sub onGridSelected()
         m.top.setFocus(true)
         return
     end if
-    CardActions_openDetail(card)
+    if LongPress_enabled() then
+        m.pendingSelect = idx
+        m.pressTimer.control = "stop"
+        m.pressTimer.control = "start"
+    else
+        CardActions_openDetail(card)
+    end if
+end sub
+
+sub onPressHeld()
+    idx = m.pendingSelect
+    m.pendingSelect = invalid
+    if idx <> invalid then openOptionsFor(idx)
+end sub
+
+sub flushPendingSelect()
+    m.pressTimer.control = "stop"
+    idx = m.pendingSelect
+    m.pendingSelect = invalid
+    if idx <> invalid and idx >= 0 and idx < m.cards.Count() then CardActions_openDetail(m.cards[idx])
 end sub
 
 ' Back from a collection's items to the Collections list.
@@ -762,45 +806,45 @@ function panelsOpen() as boolean
     return m.sortPanel.visible or m.filterPanel.visible
 end function
 
-' ---------- Shuffle ----------
+' ---------- Shuffle (shuffle-api-v2.md) ----------
 
+' The shuffle scope this page browses: a movie/TV library, or a library collection.
+function shuffleScope() as dynamic
+    if m.drill <> invalid then return { kind: "library_collection", id: Str_orEmpty(m.drill.collectionId) }
+    if m.mode = "collection" then return { kind: "library_collection", id: Str_orEmpty(prm("collectionId")) }
+    if m.mode = "browse" and Shuffle_libraryMode(prm("mode")) then return { kind: "library", id: Str_orEmpty(prm("libraryId")) }
+    return invalid
+end function
+
+' Movie, TV and mixed libraries (and collections) shuffle when the server offers it.
+function shuffleOffered() as boolean
+    sc = shuffleScope()
+    if sc = invalid or sc.id = "" then return false
+    return Shuffle_supports(sc.kind)
+end function
+
+' The server picks every item: POST /api/v2/shuffles, then play its first pick from the start.
 sub shuffle()
-    q = { source: "query", sort: "random", limit: 1 }
-    if m.drill <> invalid then
-        q.source = "library_collection"
-        q.collection_id = m.drill.collectionId
-    else if m.mode = "collection" then
-        q.source = "library_collection"
-        q.collection_id = Str_orEmpty(prm("collectionId"))
-    end if
-    if not Str_isEmpty(prm("libraryId")) then q.library_id = prm("libraryId")
-    mt = Str_orEmpty(prm("mediaType"))
-    if mt <> "" then q["type"] = mt
-    m.global.toast = "Picking something…"
-    Api_get("/api/v2/catalog", q, "onShuffle")
+    sc = shuffleScope()
+    if sc = invalid then return
+    if m.shuffleStarting = true then return
+    m.shuffleStarting = true
+    Shuffle_start(sc.kind, sc.id, "onShuffleStarted")
 end sub
 
-sub onShuffle(event as object)
+sub onShuffleStarted(event as object)
     resp = Api_result(event)
-    if not resp.ok or resp.data = invalid then
-        m.global.toast = Api_errorText(resp)
-        return
-    end if
-    items = Arr_or(resp.data.items)
-    if items.Count() = 0 then
-        m.global.toast = "Nothing to shuffle"
-        return
-    end if
-    card = items[0]
-    playId = Str_orEmpty(card.play_content_id)
-    if playId = "" then playId = Str_orEmpty(card.content_id)
-    Nav_play({ itemId: playId, title: Str_orEmpty(card.title), itemType: Str_orEmpty(card.type) })
+    m.shuffleStarting = false
+    Shuffle_play(resp)
 end sub
 
 ' ---------- Options menu ----------
 
 sub openOptions()
-    idx = m.grid.itemFocused
+    openOptionsFor(m.grid.itemFocused)
+end sub
+
+sub openOptionsFor(idx as integer)
     if idx < 0 or idx >= m.cards.Count() then return
     card = m.cards[idx]
     if LCase(Str_orEmpty(card.type)) = "collection" then return
@@ -839,7 +883,12 @@ end sub
 ' ---------- Keys ----------
 
 function onKeyEvent(key as string, press as boolean) as boolean
-    if not press then return false
+    if not press then
+        if m.grid.hasFocus() then LongPress_sawRelease()
+        if key = "OK" then flushPendingSelect()
+        return false
+    end if
+    if m.pendingSelect <> invalid and key <> "OK" then flushPendingSelect()
     if panelsOpen() then
         if key = "back" then
             closePanels()

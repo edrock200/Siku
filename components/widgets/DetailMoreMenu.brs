@@ -45,13 +45,16 @@ sub rebuild()
     y = m.pad + titleH
     for i = 0 to acts.Count() - 1
         a = acts[i]
+        detail = Str_orEmpty(a.detail)
+        rowH = m.rowH
+        if detail <> "" then rowH = 96
         row = m.rows.createChild("Group")
         row.translation = [m.pad, y]
         bg = row.createChild("Poster")
         bg.id = "bg"
         bg.uri = "pkg:/images/ui/r14.9.png"
         bg.width = rowW
-        bg.height = m.rowH
+        bg.height = rowH
         bg.blendColor = "0xEDEDEDFF"
         bg.visible = false
         lbl = row.createChild("Label")
@@ -59,23 +62,40 @@ sub rebuild()
         lbl.text = Str_orEmpty(a.label)
         lbl.translation = [24, 0]
         lbl.width = rowW - 48 - 48
-        lbl.height = m.rowH
-        lbl.vertAlign = "center"
         lbl.color = "0xEDEDEDFF"
         f = CreateObject("roSGNode", "Font")
         f.uri = "pkg:/fonts/Inter-medium.otf"
         f.size = 27
         lbl.font = f
+        if detail <> "" then
+            ' Two-line row: the label sits on top and a muted detail line below it.
+            lbl.height = 50
+            lbl.vertAlign = "bottom"
+            sub_ = row.createChild("Label")
+            sub_.id = "detail"
+            sub_.text = detail
+            sub_.translation = [24, 52]
+            sub_.width = rowW - 48 - 48
+            sub_.height = 30
+            sub_.color = "0xEDEDED9E"
+            sf = CreateObject("roSGNode", "Font")
+            sf.uri = "pkg:/fonts/Inter-regular.otf"
+            sf.size = 22
+            sub_.font = sf
+        else
+            lbl.height = rowH
+            lbl.vertAlign = "center"
+        end if
         chk = row.createChild("Poster")
         chk.id = "check"
         chk.uri = "pkg:/images/icons/check.png"
         chk.width = 36
         chk.height = 36
-        chk.translation = [rowW - 24 - 36, (m.rowH - 36) / 2]
+        chk.translation = [rowW - 24 - 36, (rowH - 36) / 2]
         chk.blendColor = "0xEDEDEDFF"
         chk.visible = a.checked = true
         m.rowNodes.Push(row)
-        y = y + m.rowH
+        y = y + rowH
     end for
     h = y + m.pad
     m.cardBg.width = w
@@ -92,12 +112,15 @@ sub applyFocus()
         row = m.rowNodes[i]
         focused = (i = m.index)
         row.findNode("bg").visible = focused
+        det = row.findNode("detail")
         if focused then
             row.findNode("label").color = "0x000000FF"
             row.findNode("check").blendColor = "0x000000FF"
+            if det <> invalid then det.color = "0x000000B3"
         else
             row.findNode("label").color = "0xEDEDEDFF"
             row.findNode("check").blendColor = "0xEDEDEDFF"
+            if det <> invalid then det.color = "0xEDEDED9E"
         end if
     end for
 end sub
