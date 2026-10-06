@@ -24,6 +24,14 @@ sub init()
     ' H: tab clone with the ring poster removed.
     y = addRow(y, "H tab clone without ring", "tabNoRing", "H no ring")
 
+    ' Round 3: the real screens re-run applyState on every focus change, replacing each label's
+    ' Font with a new node each time. Mutate rows A and E the same way once a second.
+    m.mutants = m.top.findNode("mutants")
+    m.tick = 0
+    m.timer = m.top.findNode("mutateTimer")
+    m.timer.observeField("fire", "onMutate")
+    m.timer.control = "start"
+
     di = CreateObject("roDeviceInfo")
     m.top.findNode("report").translation = [100, y + 20]
     m.top.findNode("report").text = "OS " + di.GetOSVersion().major + "." + di.GetOSVersion().minor + " model " + di.GetModel() + ". Photograph this screen."
@@ -42,6 +50,7 @@ function addRow(y as integer, caption as string, kind as string, text as string)
 
     g = m.top.createChild("Group")
     g.translation = [900, y]
+    g.id = "row_" + kind
     h = 60
     if kind = "tab" or kind = "tabNoZero" or kind = "tabSelected" or kind = "tabWidthFirst" or kind = "tabNoRing" then
         bg = g.createChild("Poster")
@@ -148,3 +157,30 @@ function onKeyEvent(key as string, press as boolean) as boolean
     if key = "" and press then return false
     return false
 end function
+
+' Re-fonts and recolours the tab and chip clones every second, like the live top bar does
+' on each focus change. If they go blank after a few ticks, repeated Font replacement is the bug.
+sub onMutate()
+    m.tick = m.tick + 1
+    c = Theme().colors
+    for each kind in ["tab", "tabNoZero", "tabWidthFirst", "tabNoRing", "chip"]
+        g = m.top.findNode("row_" + kind)
+        if g <> invalid then
+            lbl = invalid
+            for i = 0 to g.getChildCount() - 1
+                ch = g.getChild(i)
+                if ch.subtype() = "Label" then lbl = ch
+            end for
+            if lbl <> invalid then
+                if (m.tick mod 2) = 0 then
+                    Label_setFont(lbl, "semibold", 26)
+                    lbl.color = c.ink
+                else
+                    Label_setFont(lbl, "medium", 26)
+                    lbl.color = c.inkMuted
+                end if
+            end if
+        end if
+    end for
+    m.top.findNode("hdr").text = "Round 3: rows re-fonted " + m.tick.ToStr() + " times (live app does this per focus move)."
+end sub
