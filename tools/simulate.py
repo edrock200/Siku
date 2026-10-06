@@ -34,15 +34,20 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--steps", required=True)
     ap.add_argument("--brs-cli", default=shutil.which("brs-cli") or "brs-cli")
+    ap.add_argument("--deep-link", default="", help="e.g. debugScreen=SettingsScreen")
     ap.add_argument("--app", default=os.path.join(ROOT, "out", "soku.zip"))
     args = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
     log = open(os.path.join(OUT, "console.log"), "wb")
 
+    subprocess.run(["sh", os.path.join(ROOT, "scripts", "package.sh")], check=True, stdout=subprocess.DEVNULL)
     pid, fd = pty.fork()
     if pid == 0:
         os.chdir(OUT)
-        os.execvp(args.brs_cli, [args.brs_cli, args.app, "-s", "-c", "0", "-y"])
+        cmd = [args.brs_cli, args.app, "-s", "-c", "0", "-y"]
+        if args.deep_link:
+            cmd += ["-k", args.deep_link]
+        os.execvp(args.brs_cli, cmd)
 
     def pump(seconds):
         end = time.time() + seconds

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings: left rail of categories, right pane of rows (docs/design-spec.md §4.9).
+     Device-local preferences live in m.global.prefs (Prefs_save).
+     SPDX-License-Identifier: AGPL-3.0-or-later -->
+<component name="SettingsScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/screens/settings/SettingsScreen.brs" />
+  <children>
+    <Rectangle width="1920" height="1080" color="0x000000FF" />
+    <Label id="title" text="Settings" translation="[88, 80]" color="0xEDEDEDFF">
+      <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="41" />
+    </Label>
+    <Group id="account" translation="[88, 160]">
+      <MaskGroup id="avatarMask" maskUri="pkg:/images/ui/mask_circle.png" maskSize="[72, 72]">
+        <Poster id="avatarBg" uri="pkg:/images/ui/circle.png" width="72" height="72" blendColor="0xFFFFFF2E" />
+        <Poster id="avatar" width="72" height="72" loadDisplayMode="scaleToZoom" />
+      </MaskGroup>
+      <Label id="avatarInitials" width="72" height="72" horizAlign="center" vertAlign="center" color="0xEDEDEDFF">
+        <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="28" />
+      </Label>
+      <Label id="accountName" translation="[92, 6]" color="0xEDEDEDFF">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="27" />
+      </Label>
+      <Label id="accountSub" translation="[92, 42]" color="0xEDEDED9E">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="22" />
+      </Label>
+    </Group>
+    <Group id="rail" translation="[88, 268]" />
+    <Label id="version" translation="[88, 980]" color="0xEDEDED80">
+      <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+    </Label>
+    <Group id="pane" translation="[630, 160]" />
+    <Group id="picker" visible="false">
+      <Rectangle width="1920" height="1080" color="0x000000B3" />
+      <Poster id="pickerBg" uri="pkg:/images/ui/r22.9.png" blendColor="0x1A1B20FF" />
+      <Poster id="pickerRing" uri="pkg:/images/ui/r22_ring2.9.png" blendColor="0xFFFFFF24" />
+      <Label id="pickerTitle" color="0xEDEDED61">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="24" />
+      </Label>
+      <Group id="pickerRows" />
+    </Group>
+  </children>
+</component>

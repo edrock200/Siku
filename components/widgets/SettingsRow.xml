@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A settings row: label left, value + chevron right. Focused rows invert to #EDEDED.
+     Also used for the rail (with `icon` and `description`).
+     SPDX-License-Identifier: AGPL-3.0-or-later -->
+<component name="SettingsRow" extends="Group">
+  <interface>
+    <field id="label" type="string" onChange="layout" />
+    <field id="value" type="string" onChange="layout" />
+    <field id="description" type="string" onChange="layout" />
+    <field id="iconUri" type="string" onChange="layout" />
+    <field id="rowWidth" type="integer" value="1080" onChange="layout" />
+    <field id="rowHeight" type="integer" value="76" onChange="layout" />
+    <field id="showChevron" type="boolean" value="true" onChange="layout" />
+    <field id="highlighted" type="boolean" value="false" onChange="applyState" />
+    <field id="focusedState" type="boolean" value="false" onChange="applyState" />
+    <field id="destructive" type="boolean" value="false" onChange="applyState" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/SettingsRow.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <children>
+    <Poster id="bg" uri="pkg:/images/ui/r14.9.png" />
+    <Poster id="ring" uri="pkg:/images/ui/r14_ring2.9.png" blendColor="0xFFFFFF1A" visible="false" />
+    <Poster id="icon" width="40" height="40" visible="false" />
+    <Label id="labelText" vertAlign="center">
+      <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="26" />
+    </Label>
+    <Label id="descText" vertAlign="center" visible="false">
+      <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="22" />
+    </Label>
+    <Label id="valueText" vertAlign="center" horizAlign="right">
+      <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="25" />
+    </Label>
+    <Poster id="chevron" uri="pkg:/images/icons/chevron_right.png" width="36" height="36" />
+  </children>
+</component>

@@ -164,6 +164,11 @@ end sub
 
 sub handleDeepLink(args as dynamic)
     if args = invalid then return
+    ' Developer aid for the simulator (tools/simulate.py): open a screen directly.
+    if not Str_isEmpty(args.debugScreen) then
+        resetTo(args.debugScreen, {})
+        return
+    end if
     if Str_isEmpty(args.contentId) then return
     if Str_isEmpty(m.global.session.profileId) then return
     mediaType = LCase(Str_orEmpty(args.mediaType))
