@@ -70,21 +70,21 @@ sub layout()
     ' Copy column: stacked, then centered vertically in the body area (124..1020).
     y = 0
     m.headline.translation = [0, y]
-    y = y + Int(m.headline.boundingRect().height) + 22
+    y = y + Int(Label_height(m.headline)) + 22
     m.body.translation = [0, y]
-    y = y + Int(m.body.boundingRect().height) + 40
+    y = y + Int(Label_height(m.body)) + 40
     m.field.translation = [0, y]
     y = y + 84
     if m.errorLabel.visible then
         y = y + 16
         m.errorLabel.translation = [0, y]
-        y = y + Int(m.errorLabel.boundingRect().height)
+        y = y + Int(Label_height(m.errorLabel))
     end if
     y = y + 22
     m.chipsGroup.translation = [0, y]
     y = y + 61 + 18
     m.note.translation = [0, y]
-    y = y + Int(m.note.boundingRect().height) + 40
+    y = y + Int(Label_height(m.note)) + 40
     m.connectButton.translation = [0, y]
     y = y + 76
     top = 124 + (896 - y) \ 2
@@ -96,7 +96,7 @@ sub layout()
         h = 158 + m.rows.Count() * 96 + (m.rows.Count() - 1) * 14 + 52
     else
         m.infoBody.translation = [52, 198 + Int(infoTitleHeight()) + 18]
-        h = 198 + Int(infoTitleHeight()) + 18 + Int(m.infoBody.boundingRect().height) + 52
+        h = 198 + Int(infoTitleHeight()) + 18 + Int(Label_height(m.infoBody)) + 52
     end if
     m.cardBg.height = h
     m.cardRing.height = h
@@ -105,7 +105,7 @@ end sub
 
 function infoTitleHeight() as float
     t = m.top.findNode("infoTitle")
-    return t.boundingRect().height
+    return Label_height(t)
 end function
 
 sub buildSavedRows(saved as object)

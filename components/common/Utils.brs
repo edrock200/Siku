@@ -213,37 +213,52 @@ end function
 
 ' ---------- Text measurement ----------
 ' Label.boundingRect() can report 0 on a real Roku when it runs before the label's font is
-' ready (seen on device: top-bar tabs and badges collapsed to dots). Measure with
-' roFontRegistry from the font file instead, which is synchronous, and keep the larger value.
+' ready (seen on device: top-bar tabs and badges collapsed to dots). The SceneGraph Font
+' node measures synchronously via getOneLineWidth, and unlike roFontRegistry it may be used
+' on the render thread. Keep the larger of the two measurements.
+' Font.getOneLineWidth/getOneLineHeight exist on Roku OS; the brs-engine simulator lacks
+' them, so the calls are guarded and fall back to 0 (callers then use boundingRect).
 function Text_width(text as string, fontUri as string, sizePx as integer) as float
     if text = "" then return 0
-    if m.soku_fontReg = invalid then
-        m.soku_fontReg = CreateObject("roFontRegistry")
-        m.soku_fonts = {}
-        for each w in ["regular", "medium", "semibold", "bold", "black"]
-            m.soku_fontReg.Register("pkg:/fonts/Inter-" + w + ".otf")
-        end for
+    fnt = Text_font(fontUri, sizePx)
+    if fnt = invalid then return 0
+    w = 0
+    try
+        w = fnt.getOneLineWidth(text, 100000)
+    catch e
+        w = 0
+    end try
+    if w = invalid then return 0
+    return w
+end function
+
+function Text_height(fontUri as string, sizePx as integer) as float
+    fnt = Text_font(fontUri, sizePx)
+    if fnt = invalid then return sizePx * 1.3
+    h = 0
+    try
+        h = fnt.getOneLineHeight()
+    catch e
+        h = 0
+    end try
+    if h = invalid or h <= 0 then return sizePx * 1.3
+    return h
+end function
+
+' Cached Font nodes keyed by uri and size (creating one per measurement would churn nodes).
+function Text_font(fontUri as string, sizePx as integer) as object
+    if Str_isEmpty(fontUri) then return invalid
+    if m.soku_fonts = invalid then m.soku_fonts = {}
+    key = fontUri + "|" + sizePx.ToStr()
+    fnt = m.soku_fonts[key]
+    if fnt = invalid then
+        fnt = CreateObject("roSGNode", "Font")
+        if fnt = invalid then return invalid
+        fnt.uri = fontUri
+        fnt.size = sizePx
+        m.soku_fonts[key] = fnt
     end if
-    u = LCase(fontUri)
-    family = "Inter"
-    bold = false
-    if Instr(1, u, "semibold") > 0 then
-        family = "Inter SemiBold"
-    else if Instr(1, u, "medium") > 0 then
-        family = "Inter Medium"
-    else if Instr(1, u, "black") > 0 then
-        family = "Inter Black"
-    else if Instr(1, u, "bold") > 0 then
-        bold = true
-    end if
-    key = family + "|" + sizePx.ToStr() + "|" + bold.ToStr()
-    f = m.soku_fonts[key]
-    if f = invalid then
-        f = m.soku_fontReg.GetFont(family, sizePx, bold, false)
-        if f = invalid then return 0
-        m.soku_fonts[key] = f
-    end if
-    return f.GetOneLineWidth(text, 100000)
+    return fnt
 end function
 
 ' One-line width of a Label's text.
@@ -259,4 +274,24 @@ function Label_width(lbl as object) as float
     rectW = lbl.boundingRect().width
     if rectW > measured then return rectW
     return measured
+end function
+
+' Height of a Label's text block, with a font-based fallback when boundingRect reports 0
+' (single line, or an estimate from the wrap width when the label wraps).
+function Label_height(lbl as object) as float
+    if lbl = invalid then return 0
+    rectH = lbl.boundingRect().height
+    if rectH > 0 then return rectH
+    caption = lbl.text
+    if Str_isEmpty(caption) then return 0
+    fnt = lbl.font
+    if fnt = invalid or Str_isEmpty(fnt.uri) then return 0
+    lineH = Text_height(fnt.uri, fnt.size)
+    lines = 1
+    if lbl.wrap = true and lbl.width > 0 then
+        textW = Text_width(caption, fnt.uri, fnt.size)
+        lines = Int(textW / lbl.width) + 1
+        if lbl.maxLines > 0 and lines > lbl.maxLines then lines = lbl.maxLines
+    end if
+    return lineH * lines
 end function

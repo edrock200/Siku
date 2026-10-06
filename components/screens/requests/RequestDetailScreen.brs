@@ -353,7 +353,7 @@ sub render()
     gap = 18
     m.titleLabel.text = Str_orEmpty(d.title)
     m.titleLabel.translation = [0, y]
-    th = m.titleLabel.boundingRect().height
+    th = Label_height(m.titleLabel)
     if th < 80 then th = 80
     y = y + th + gap
 
@@ -431,7 +431,7 @@ function placeLabel(lbl as object, text as string, y as integer, gap as integer)
     lbl.visible = text <> ""
     if text = "" then return y
     lbl.translation = [0, y]
-    h = Int(lbl.boundingRect().height)
+    h = Int(Label_height(lbl))
     if h < 30 then h = 30
     return y + h + gap
 end function

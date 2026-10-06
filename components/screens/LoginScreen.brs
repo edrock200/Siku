@@ -234,18 +234,18 @@ sub layout()
         m.codeCopy.translation = [0, y]
         cy = 0
         m.codeHeadline.translation = [0, cy]
-        cy = cy + Int(m.codeHeadline.boundingRect().height) + 26
+        cy = cy + Int(Label_height(m.codeHeadline)) + 26
         m.codeBody.translation = [0, cy]
-        cy = cy + Int(m.codeBody.boundingRect().height) + 48
+        cy = cy + Int(Label_height(m.codeBody)) + 48
         m.codeActions.translation = [0, cy]
         total = y + cy + 76
     else
         m.passwordCopy.translation = [0, y]
         cy = 0
         m.pwHeadline.translation = [0, cy]
-        cy = cy + Int(m.pwHeadline.boundingRect().height) + 22
+        cy = cy + Int(Label_height(m.pwHeadline)) + 22
         m.pwBody.translation = [0, cy]
-        cy = cy + Int(m.pwBody.boundingRect().height) + 40
+        cy = cy + Int(Label_height(m.pwBody)) + 40
         m.usernameField.translation = [0, cy]
         cy = cy + 84 + 20
         m.passwordField.translation = [0, cy]
@@ -254,7 +254,7 @@ sub layout()
         if m.pwError.visible then
             cy = cy + 16
             m.pwError.translation = [0, cy]
-            cy = cy + Int(m.pwError.boundingRect().height)
+            cy = cy + Int(Label_height(m.pwError))
         end if
         cy = cy + 40
         m.pwActions.translation = [0, cy]
@@ -287,7 +287,7 @@ sub layoutCard()
         if m.activateLabel.visible and m.activateLabel.text <> "" then
             y = y + 18
             m.activateLabel.translation = [52, y]
-            y = y + Int(m.activateLabel.boundingRect().height)
+            y = y + Int(Label_height(m.activateLabel))
         end if
         y = y + 24
         layoutStatusRow()
@@ -296,7 +296,7 @@ sub layoutCard()
         h = y
     else
         m.phoneBody.translation = [52, 256]
-        h = 256 + Int(m.phoneBody.boundingRect().height) + 52
+        h = 256 + Int(Label_height(m.phoneBody)) + 52
     end if
     m.cardBg.height = h
     m.cardRing.height = h

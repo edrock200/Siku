@@ -160,7 +160,7 @@ sub onPerson(event as object)
     bioY = 156
     if not hasBadges then bioY = 100
     m.bioBox.translation = [-24, bioY]
-    bioH = m.bio.boundingRect().height
+    bioH = Label_height(m.bio)
     m.bioBg.height = bioH + 32
     headerBottom = 116 + bioY + bioH + 32
     if headerBottom < 116 + 450 then headerBottom = 116 + 450

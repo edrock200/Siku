@@ -1204,11 +1204,11 @@ end sub
 ' Up Next "Pick Another": the server replaces the announced pick.
 sub pickAnother()
     sh = m.shuffle
-    if sh = invalid or sh.latest = invalid or sh.latest.next = invalid then return
+    if sh = invalid or sh.latest = invalid or sh.latest["next"] = invalid then return
     if m.shufflePicking or m.shuffleAdvancing then return
     m.shufflePicking = true
     m.unPickBtn.text = "Picking…"
-    Api_send("POST", shufflePath() + "/skip", { next_content_id: Str_orEmpty(sh.latest.next.content_id) }, "onShufflePicked", { forItem: m.itemId })
+    Api_send("POST", shufflePath() + "/skip", { next_content_id: Str_orEmpty(sh.latest["next"].content_id) }, "onShufflePicked", { forItem: m.itemId })
 end sub
 
 sub onShufflePicked(event as object)

@@ -415,7 +415,7 @@ sub buildShelves(total as integer)
         items = []
         if m.eventsByDate.DoesExist(ymd) then items = m.eventsByDate[ymd]
         if items.Count() = 0 then
-            stub = Content_cardNode({ content_id: "", type: "stub", title: "Nothing scheduled" }, "poster")
+            stub = Content_cardNode({ content_id: "", "type": "stub", title: "Nothing scheduled" }, "poster")
             stub.raw = { stub: true }
             row.appendChild(stub)
         else

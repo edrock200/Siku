@@ -94,7 +94,7 @@ sub rebuild()
         m.profileName.text = Str_orEmpty(prof.name)
         m.profileName.translation = [84, 4]
         m.profileName.width = w - m.padX * 2 - 84
-        m.profileSub.text = UCase(Str_orEmpty(prof.sub))
+        m.profileSub.text = UCase(Str_orEmpty(prof["sub"]))
         m.profileSub.translation = [84, 36]
         m.profileSub.width = w - m.padX * 2 - 84
         m.profileDivider.translation = [0, 84]
@@ -158,7 +158,7 @@ sub rebuild()
             lbl.text = Str_orEmpty(r.label)
             lbl.translation = [x, 0]
             lbl.width = w - m.padX * 2 - x - 60
-            subText = Str_orEmpty(r.sub)
+            subText = Str_orEmpty(r["sub"])
             sub1.visible = subText <> ""
             sub1.text = subText
             sub1.width = 200
@@ -193,7 +193,7 @@ sub rebuild()
         m.footerLabel.text = m.top.footer
         m.footerLabel.translation = [m.padX, y]
         m.footerLabel.width = w - m.padX * 2
-        y = y + m.footerLabel.boundingRect().height + 4
+        y = y + Label_height(m.footerLabel) + 4
     else
         m.footerDivider.visible = false
         m.footerLabel.visible = false

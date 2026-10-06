@@ -163,7 +163,7 @@ function Content_groupCard(group as object, groupField as string) as object
     for each p in posters
         if poster = "" and not Str_isEmpty(p) then poster = p
     end for
-    return { content_id: "group:" + groupField + ":" + name, type: "audiobook_group", group_by: groupField, title: name, poster_url: poster, group: group }
+    return { content_id: "group:" + groupField + ":" + name, "type": "audiobook_group", group_by: groupField, title: name, poster_url: poster, group: group }
 end function
 
 ' "3 books · 2h 5m · 1 in progress" (TvLibraryDetailScreen.audiobookGroupSubtitle).

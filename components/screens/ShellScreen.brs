@@ -418,7 +418,7 @@ sub openProfilePanel()
     m.panelMain.width = 480
     m.panelMain.header = ""
     m.panelMain.footer = ""
-    m.panelMain.profile = { name: Str_orEmpty(s.profileName), sub: role + " · " + server, avatar: Str_orEmpty(s.profileAvatar) }
+    m.panelMain.profile = { name: Str_orEmpty(s.profileName), "sub": role + " · " + server, avatar: Str_orEmpty(s.profileAvatar) }
     m.panelMain.rows = [
         { id: "switch_profile", label: "Switch Profile", icon: "people" },
         { id: "watchlist", label: "Watchlist", icon: "bookmark" },

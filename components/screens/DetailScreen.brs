@@ -310,7 +310,7 @@ sub layoutHero()
         y = y + 160 + gap
     else
         m.titleLabel.translation = [x, y]
-        y = y + m.titleLabel.boundingRect().height + gap
+        y = y + Label_height(m.titleLabel) + gap
     end if
     if m.episodeLine.visible then
         m.episodeLine.translation = [x, y]
@@ -339,7 +339,7 @@ sub layoutHero()
     end if
     if m.overview.visible then
         m.overview.translation = [x, y]
-        y = y + m.overview.boundingRect().height + gap
+        y = y + Label_height(m.overview) + gap
     end if
     if m.facts.visible then
         m.facts.translation = [x, y]
@@ -1014,7 +1014,7 @@ sub renderDetails()
             vf.uri = "pkg:/fonts/Inter-regular.otf"
             vf.size = 27
             v.font = vf
-            h = v.boundingRect().height
+            h = Label_height(v)
             if h < 36 then h = 36
             y = y + h + 16
         end if

@@ -20,7 +20,7 @@ sub init()
     m.titlesInterp = m.top.findNode("titlesInterp")
     ' Row title metrics: RowList reserves (label height + rowLabelOffset.y) above each row's items.
     probe = m.top.findNode("labelProbe")
-    m.titleH = Int(probe.boundingRect().height)
+    m.titleH = Int(Label_height(probe))
     if m.titleH <= 0 then m.titleH = 38
     m.labelBlock = m.titleH + 44
     m.rowTitleFont = ThemeFont("semibold", 31)
@@ -441,7 +441,7 @@ sub layoutMarquee()
     y = bottom
     hasSyn = m.synopsis.text <> ""
     if hasSyn then
-        h = m.synopsis.boundingRect().height
+        h = Label_height(m.synopsis)
         if h < 36 then h = 36
         y = y - h
         m.synopsis.translation = [0, y]
@@ -465,7 +465,7 @@ sub layoutMarquee()
         y = y - m.logo.height
         m.logo.translation = [0, y]
     else if m.titleLabel.visible then
-        th = m.titleLabel.boundingRect().height
+        th = Label_height(m.titleLabel)
         if th < 80 then th = 80
         y = y - th
         m.titleLabel.translation = [0, y]

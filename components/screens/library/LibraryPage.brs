@@ -629,7 +629,7 @@ sub onCollections(event as object)
             cid = Str_orEmpty(c.id)
             if cid <> "" and not seen.DoesExist(cid) then
                 seen[cid] = true
-                cards.Push({ content_id: "collection:" + cid, collection_id: cid, type: "collection", title: Str_orEmpty(c.title), poster_url: c.poster_url, item_count: c.item_count })
+                cards.Push({ content_id: "collection:" + cid, collection_id: cid, "type": "collection", title: Str_orEmpty(c.title), poster_url: c.poster_url, item_count: c.item_count })
             end if
         end for
     end for
@@ -912,7 +912,7 @@ sub openSortPanel()
     if personal then rows.Push({ id: "__list", label: "Recently Saved", trailing: trailingFor("") })
     if collectionLike then rows.Push({ id: "__list", label: "Collection Order", trailing: trailingFor("") })
     for each o in m.sortOptions
-        rows.Push({ id: o.id, label: o.label, trailing: trailingFor(o.id), sub: subFor(o.id) })
+        rows.Push({ id: o.id, label: o.label, trailing: trailingFor(o.id), "sub": subFor(o.id) })
     end for
     m.sortPanel.header = "SORT BY"
     m.sortPanel.footer = "Press again to flip the direction · Menu closes"
@@ -958,8 +958,8 @@ end sub
 sub openFilterPanel()
     loadFacets()
     rows = [
-        { id: "genre", label: "Genre", trailing: "chevron", sub: m.genre },
-        { id: "status", label: "Watch Status", trailing: "chevron", sub: watchStatusLabel() },
+        { id: "genre", label: "Genre", trailing: "chevron", "sub": m.genre },
+        { id: "status", label: "Watch Status", trailing: "chevron", "sub": watchStatusLabel() },
         { id: "-" },
         { id: "reset", label: "Reset filters" },
         { id: "done", label: "Done" }

@@ -118,8 +118,8 @@ end function
 ' The pick that plays after `playingId`, or invalid when the shuffle is finished: a scope with
 ' one playable item announces that item again, and playing it would only restart what just played.
 function Shuffle_nextAfter(sh as dynamic, playingId as string) as dynamic
-    if sh = invalid or sh.next = invalid then return invalid
-    nxt = sh.next
+    if sh = invalid or sh["next"] = invalid then return invalid
+    nxt = sh["next"]
     if Str_orEmpty(nxt.content_id) = playingId then return invalid
     return nxt
 end function

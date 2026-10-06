@@ -305,7 +305,7 @@ function buildText(node as object, spec as object, rowW as integer) as integer
     color = Str_orEmpty(spec.color)
     if color = "" then color = "0xEDEDEDA8"
     lbl.color = color
-    h = Int(lbl.boundingRect().height)
+    h = Int(Label_height(lbl))
     if h < 30 then h = 30
     return h + 8
 end function
@@ -348,7 +348,7 @@ function buildProgress(node as object, spec as object, rowW as integer) as integ
         ml.maxLines = 2
         ml.font = makeFont("regular", 23)
         ml.color = "0xEDEDEDA8"
-        h = 76 + Int(ml.boundingRect().height) + 6
+        h = 76 + Int(Label_height(ml)) + 6
     end if
     return h
 end function

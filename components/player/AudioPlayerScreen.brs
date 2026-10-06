@@ -832,7 +832,7 @@ end sub
 
 ' Stacks title (1–2 lines) and the two lines under it.
 sub layoutInfo()
-    th = Int(m.titleLabel.boundingRect().height)
+    th = Int(Label_height(m.titleLabel))
     if th < 70 then th = 70
     y = 278 + th + 14
     m.line2.translation = [0, y]

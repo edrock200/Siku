@@ -262,7 +262,7 @@ sub layoutMarquee()
     hasSyn = m.mqSynopsis.text <> ""
     m.mqSynopsis.visible = hasSyn
     if hasSyn then
-        sh = m.mqSynopsis.boundingRect().height
+        sh = Label_height(m.mqSynopsis)
         if sh < 36 then sh = 36
         y = y - sh
         m.mqSynopsis.translation = [0, y]
@@ -274,7 +274,7 @@ sub layoutMarquee()
         m.mqMeta.translation = [0, y]
         y = y - gap
     end if
-    th = m.mqTitle.boundingRect().height
+    th = Label_height(m.mqTitle)
     if th < 80 then th = 80
     m.mqTitle.translation = [0, y - th]
 end sub

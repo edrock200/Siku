@@ -423,7 +423,7 @@ sub layoutColumn()
     m.eyebrow.translation = [0, y]
     y = y + 46
     m.titleLabel.translation = [0, y]
-    th = Int(m.titleLabel.boundingRect().height)
+    th = Int(Label_height(m.titleLabel))
     if th < 80 then th = 80
     y = y + th + 8
     if m.subtitleLabel.text <> "" then
@@ -444,7 +444,7 @@ sub layoutColumn()
     if m.overview.text <> "" then
         m.overview.visible = true
         m.overview.translation = [0, y]
-        y = y + Int(m.overview.boundingRect().height) + 28
+        y = y + Int(Label_height(m.overview)) + 28
     else
         m.overview.visible = false
     end if

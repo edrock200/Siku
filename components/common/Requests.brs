@@ -431,7 +431,7 @@ function Req_card(kind as string, data as object, rowId as string) as object
     end if
     card = {
         content_id: rowId + "|" + key
-        type: "request"
+        "type": "request"
         title: Str_orEmpty(data.title)
         poster_url: Req_posterUrl(data.poster_path)
         backdrop_url: Req_backdropUrl(data.backdrop_path)
