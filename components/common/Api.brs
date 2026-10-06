@@ -13,6 +13,14 @@ function Api_call(request as object, callback as string) as object
     m.apiSeq = m.apiSeq + 1
     task = CreateObject("roSGNode", "ApiTask")
     task.id = "api" + m.apiSeq.ToStr()
+    ' Keep the caller's context here instead of round-tripping it through the Task
+    ' (nested values in a Task field did not always come back in the simulator).
+    if m.apiContexts = invalid then m.apiContexts = {}
+    if request.context <> invalid then
+        m.apiContexts[task.id] = request.context
+        request = AA_copy(request)
+        request.Delete("context")
+    end if
     task.request = request
     task.observeField("response", callback)
     m.apiTasks[task.id] = task
@@ -32,11 +40,17 @@ end function
 function Api_result(event as object) as object
     resp = event.getData()
     task = event.getRoSGNode()
+    context = invalid
     if task <> invalid and m.apiTasks <> invalid then
         task.unobserveField("response")
         m.apiTasks.Delete(task.id)
+        if m.apiContexts <> invalid then
+            context = m.apiContexts[task.id]
+            m.apiContexts.Delete(task.id)
+        end if
     end if
     if resp = invalid then resp = { ok: false, status: 0, error: { title: "No response" } }
+    if context <> invalid then resp.context = context
     return resp
 end function
 

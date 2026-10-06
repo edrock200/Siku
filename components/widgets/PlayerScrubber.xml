@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Player scrubber (design-spec §4.10): a glass capsule with the elapsed time, a track with the played
+  fill, intro/credits/recap ranges and chapter ticks, a puck, and the remaining time ("-1:23:45").
+  Fields: duration, position (source seconds), scrubPosition, scrubbing, markers [{kind,start,end}],
+          chapters [{start_seconds}], width (default 1600). Make it focusable; the screen handles keys.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="PlayerScrubber" extends="Group">
+  <interface>
+    <field id="duration" type="float" value="0" onChange="redraw" />
+    <field id="position" type="float" value="0" onChange="redraw" />
+    <field id="scrubPosition" type="float" value="0" onChange="redraw" />
+    <field id="scrubbing" type="boolean" value="false" onChange="redraw" />
+    <field id="markers" type="array" onChange="redraw" />
+    <field id="chapters" type="array" onChange="redraw" />
+    <field id="width" type="integer" value="1600" onChange="redraw" />
+    <field id="rateLabel" type="string" onChange="redraw" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/PlayerScrubber.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <children>
+    <Poster id="capsule" uri="pkg:/images/ui/r42.9.png" blendColor="0x0A0A0A99" height="84" />
+    <Poster id="capsuleRing" uri="pkg:/images/ui/r42_ring2.9.png" blendColor="0xFFFFFF24" height="84" />
+    <Label id="elapsed" color="0xEDEDEDFF" height="84" vertAlign="center" horizAlign="right" width="130">
+      <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="26" />
+    </Label>
+    <Group id="trackGroup">
+      <Rectangle id="track" color="0xFFFFFF3D" />
+      <Group id="ranges" />
+      <Group id="ticks" />
+      <Rectangle id="fill" color="0xEDEDEDFF" />
+      <Poster id="puck" uri="pkg:/images/ui/circle.png" blendColor="0xFFFFFFFF" />
+    </Group>
+    <Label id="remaining" color="0xEDEDEDFF" height="84" vertAlign="center" horizAlign="left" width="130">
+      <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="26" />
+    </Label>
+    <Group id="rateChip" visible="false">
+      <Poster id="rateBg" uri="pkg:/images/ui/r14.9.png" blendColor="0xEDEDEDFF" width="64" height="36" />
+      <Label id="rateText" color="0x000000FF" width="64" height="36" horizAlign="center" vertAlign="center">
+        <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="22" />
+      </Label>
+    </Group>
+  </children>
+</component>

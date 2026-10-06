@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Circular action button for the detail hero (design-spec §1.5 TvSquareToggleButton).
+  At rest: a 76 px circle, white 10% fill with a white 34% ring and a white glyph.
+  Focused: solid #EDEDED and the circle widens into a capsule that shows `label` in black.
+  Fields:
+    iconUri, activeIconUri (used while `active`, e.g. a filled bookmark), label, active
+    size (default 76), width (out: current width so the row can re-flow), buttonSelected (out)
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="DetailCircleButton" extends="Group">
+  <interface>
+    <field id="iconUri" type="string" onChange="applyState" />
+    <field id="activeIconUri" type="string" onChange="applyState" />
+    <field id="label" type="string" onChange="applyState" />
+    <field id="active" type="boolean" value="false" onChange="applyState" />
+    <field id="size" type="integer" value="76" onChange="applyState" />
+    <field id="width" type="integer" value="76" />
+    <field id="buttonSelected" type="boolean" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/DetailCircleButton.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <children>
+    <Poster id="bg" uri="pkg:/images/ui/circle.png" blendColor="0xFFFFFF1A" />
+    <Poster id="ring" uri="pkg:/images/ui/circle_ring.png" blendColor="0xFFFFFF57" />
+    <Poster id="icon" blendColor="0xEDEDEDFF" />
+    <Label id="label" visible="false" color="0x000000FF" vertAlign="center">
+      <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="22" />
+    </Label>
+  </children>
+</component>

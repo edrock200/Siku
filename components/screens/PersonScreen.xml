@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Person detail (docs/design-spec.md §4.4): portrait, name, badges, 7-line biography (OK opens the
+  full bio), then "Filmography" with All / Movies / Series chips and a 6-column poster grid.
+  params: { personId, name? }
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="PersonScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/screens/PersonScreen.brs" />
+  <children>
+    <Rectangle id="bg" width="1920" height="1080" color="0x000000FF" />
+    <Group id="page">
+      <Group id="header" translation="[88, 116]">
+        <Poster id="portraitPlaceholder" uri="pkg:/images/ui/r12.9.png" blendColor="0x15171CFF" width="300" height="450" />
+        <Poster id="portraitIcon" uri="pkg:/images/icons/person.png" blendColor="0xEDEDED40" width="96" height="96" translation="[102, 177]" />
+        <MaskGroup id="portraitMask" maskUri="pkg:/images/ui/mask_poster.png" maskSize="[300, 450]">
+          <Poster id="portrait" width="300" height="450" loadDisplayMode="scaleToZoom" />
+        </MaskGroup>
+        <Group id="textCol" translation="[348, 0]">
+          <Label id="nameLabel" width="1200" maxLines="1" color="0xEDEDEDFF">
+            <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="62" />
+          </Label>
+          <Group id="badges" translation="[0, 92]" />
+          <Group id="bioBox" translation="[-24, 156]" focusable="true">
+            <Poster id="bioBg" uri="pkg:/images/ui/r20.9.png" blendColor="0xFFFFFF0F" width="1108" visible="false" />
+            <Label id="bio" translation="[24, 16]" width="1060" wrap="true" maxLines="7" lineSpacing="8" color="0xEDEDEDBF">
+              <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="26" />
+            </Label>
+          </Group>
+        </Group>
+      </Group>
+      <Group id="filmSection" translation="[88, 640]">
+        <Label id="filmHeader" text="Filmography" color="0xEDEDEDFF">
+          <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+        </Label>
+        <Group id="chips" translation="[0, 50]">
+          <DetailChip id="chipAll" text="All" selected="true" />
+          <DetailChip id="chipMovies" text="Movies" />
+          <DetailChip id="chipSeries" text="Series" />
+        </Group>
+        <MarkupGrid id="grid" translation="[0, 130]" itemComponentName="MediaCardItem"
+                    itemSize="[236, 440]" itemSpacing="[65, 24]" numColumns="6" numRows="2"
+                    drawFocusFeedback="false" vertFocusAnimationStyle="fixedFocus" />
+        <Label id="emptyLabel" text="No titles found." translation="[0, 150]" color="0xEDEDED9E" visible="false">
+          <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="27" />
+        </Label>
+        <LoadingSpinner id="gridSpinner" size="56" translation="[0, 150]" visible="false" />
+      </Group>
+    </Group>
+    <LoadingSpinner id="spinner" translation="[924, 504]" />
+    <Group id="errorGroup" visible="false">
+      <Poster id="errorIcon" uri="pkg:/images/icons/error.png" width="72" height="72" translation="[924, 400]" blendColor="0xEDEDED9E" />
+      <Label id="errorLabel" width="1200" translation="[360, 500]" horizAlign="center" wrap="true" color="0xEDEDEDBF">
+        <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="30" />
+      </Label>
+      <PillButton id="retryBtn" text="Retry" translation="[890, 600]" />
+    </Group>
+    <Group id="bioModal" visible="false">
+      <Rectangle width="1920" height="1080" color="0x000000B3" />
+      <Poster id="bioCard" uri="pkg:/images/ui/r38.9.png" blendColor="0x15171CF8" width="1240" height="820" translation="[340, 130]" />
+      <Poster uri="pkg:/images/ui/r38_ring2.9.png" blendColor="0xFFFFFF24" width="1240" height="820" translation="[340, 130]" />
+      <Label id="bioTitle" translation="[400, 180]" width="1120" color="0xEDEDEDFF">
+        <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="40" />
+      </Label>
+      <ScrollableText id="fullBio" translation="[400, 250]" width="1120" height="640" color="0xEDEDEDD9">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="28" />
+      </ScrollableText>
+    </Group>
+    <Animation id="scrollAnim" duration="0.32" easeFunction="outCubic">
+      <Vector2DFieldInterpolator id="scrollInterp" key="[0.0, 1.0]" fieldToInterp="page.translation" />
+    </Animation>
+  </children>
+</component>

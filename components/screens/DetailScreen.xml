@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Movie / series / season / episode detail (docs/design-spec.md §4.3).
+  params: { itemId, itemType?, libraryId? }
+  The whole page scrolls: `page` is translated with `scrollAnim` as focus moves between zones
+  (actions → season chips → episode rail → cast → related → details).
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="DetailScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/screens/DetailScreen.brs" />
+  <children>
+    <Rectangle id="bg" width="1920" height="1080" color="0x040D0FFF" />
+    <Group id="page">
+      <Group id="hero">
+        <MaskGroup id="backdropMask" maskUri="pkg:/images/ui/mask_backdrop.png" maskSize="[1229, 756]" translation="[691, 0]">
+          <Poster id="backdrop" width="1229" height="756" loadDisplayMode="scaleToZoom" />
+        </MaskGroup>
+        <Poster id="logo" width="650" height="160" loadDisplayMode="limitSize" visible="false" />
+        <Label id="titleLabel" width="1080" wrap="true" maxLines="2" color="0xEDEDEDFF" visible="false">
+          <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="72" />
+        </Label>
+        <Label id="episodeLine" width="1080" maxLines="1" color="0xEDEDEDE6" visible="false">
+          <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="34" />
+        </Label>
+        <Group id="metaRow" visible="false">
+          <Label id="metaLabel" color="0xEDEDEDEB" maxLines="1">
+            <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />
+          </Label>
+          <Group id="ratingChip" visible="false">
+            <Poster id="ratingRing" uri="pkg:/images/ui/r6_ring2.9.png" blendColor="0xFFFFFFB3" height="34" />
+            <Label id="ratingLabel" color="0xEDEDEDEB" height="34" vertAlign="center" horizAlign="center">
+              <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="21" />
+            </Label>
+          </Group>
+        </Group>
+        <Label id="tagline" width="1080" maxLines="1" color="0xEDEDEDBF" visible="false">
+          <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="27" />
+        </Label>
+        <Label id="overview" width="1080" wrap="true" maxLines="3" lineSpacing="6" color="0xEDEDEDBF" visible="false">
+          <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="28" />
+        </Label>
+        <Label id="facts" width="1080" maxLines="1" color="0xEDEDEDE0" visible="false">
+          <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />
+        </Label>
+        <Group id="actions" visible="false">
+          <PillButton id="playBtn" text="Play" variant="solid" iconUri="pkg:/images/icons/play.png" height="76" padX="54" fontSize="27" />
+          <DetailCircleButton id="startOverBtn" iconUri="pkg:/images/icons/start_over.png" label="Start Over" visible="false" />
+          <DetailCircleButton id="watchlistBtn" iconUri="pkg:/images/icons/bookmark.png" activeIconUri="pkg:/images/icons/bookmark_filled.png" label="Watchlist" />
+          <DetailCircleButton id="favBtn" iconUri="pkg:/images/icons/heart.png" activeIconUri="pkg:/images/icons/heart_filled.png" label="Favorite" />
+          <DetailCircleButton id="moreBtn" iconUri="pkg:/images/icons/more.png" label="More" />
+        </Group>
+      </Group>
+      <Group id="body">
+        <Group id="episodesSection" visible="false">
+          <Label id="episodesHeader" text="Episodes" color="0xEDEDEDFF">
+            <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+          </Label>
+          <Group id="chips" translation="[0, 50]" />
+          <Label id="episodesMsg" text="Loading episodes…" color="0xEDEDED9E" translation="[0, 150]" visible="false">
+            <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="27" />
+          </Label>
+          <RowList id="episodeRow" translation="[0, 130]" itemComponentName="DetailEpisodeItem"
+                   itemSize="[1820, 420]" rowItemSize="[[360, 420]]" rowItemSpacing="[[40, 0]]" numRows="1"
+                   drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" showRowLabel="[false]" />
+        </Group>
+        <Group id="castSection" visible="false">
+          <Label id="castHeader" text="Cast &amp; Crew" color="0xEDEDEDFF">
+            <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+          </Label>
+          <RowList id="castRow" translation="[0, 60]" itemComponentName="MediaCardItem"
+                   itemSize="[1820, 300]" rowItemSize="[[200, 300]]" rowItemSpacing="[[44, 0]]" numRows="1"
+                   drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" showRowLabel="[false]" />
+        </Group>
+        <Group id="relatedSection" visible="false">
+          <Label id="relatedHeader" text="Related Movies" color="0xEDEDEDFF">
+            <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+          </Label>
+          <RowList id="relatedRow" translation="[0, 60]" itemComponentName="MediaCardItem"
+                   itemSize="[1820, 364]" rowItemSize="[[176, 364]]" rowItemSpacing="[[40, 0]]" numRows="1"
+                   drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" showRowLabel="[false]" />
+        </Group>
+        <Group id="detailsSection" visible="false">
+          <Label id="detailsHeader" text="Details" color="0xEDEDEDFF">
+            <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+          </Label>
+          <Group id="detailsBox" translation="[-24, 50]" focusable="true">
+            <Poster id="detailsBg" uri="pkg:/images/ui/r38.9.png" blendColor="0xFFFFFF0F" width="1440" visible="false" />
+            <Group id="factRows" translation="[24, 24]" />
+          </Group>
+        </Group>
+      </Group>
+    </Group>
+    <LoadingSpinner id="spinner" translation="[924, 504]" />
+    <Group id="errorGroup" visible="false">
+      <Poster id="errorIcon" uri="pkg:/images/icons/error.png" width="72" height="72" translation="[924, 400]" blendColor="0xEDEDED9E" />
+      <Label id="errorLabel" width="1200" translation="[360, 500]" horizAlign="center" wrap="true" color="0xEDEDEDBF">
+        <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="30" />
+      </Label>
+      <PillButton id="retryBtn" text="Retry" translation="[890, 600]" />
+    </Group>
+    <DetailMoreMenu id="menu" visible="false" />
+    <Animation id="scrollAnim" duration="0.32" easeFunction="outCubic">
+      <Vector2DFieldInterpolator id="scrollInterp" key="[0.0, 1.0]" fieldToInterp="page.translation" />
+    </Animation>
+  </children>
+</component>

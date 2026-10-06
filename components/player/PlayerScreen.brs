@@ -1,0 +1,1702 @@
+' Video player: v3 sequenced playback pipeline, custom controls, HUD, skip markers and Up Next.
+' See PlayerScreen.xml for the contract and docs/api-spec.md §8 for the protocol.
+' SPDX-License-Identifier: AGPL-3.0-or-later
+
+sub init()
+    m.video = m.top.findNode("video")
+    m.videoFrame = m.top.findNode("videoFrame")
+    m.focusSink = m.top.findNode("focusSink")
+    m.bufferingGroup = m.top.findNode("bufferingGroup")
+    m.feedbackGroup = m.top.findNode("feedbackGroup")
+    m.feedbackLabel = m.top.findNode("feedbackLabel")
+    m.controls = m.top.findNode("controls")
+    m.titleLabel = m.top.findNode("titleLabel")
+    m.epTag = m.top.findNode("epTag")
+    m.scrubber = m.top.findNode("scrubber")
+    m.transport = m.top.findNode("transport")
+    m.skipBackBtn = m.top.findNode("skipBackBtn")
+    m.playPauseBtn = m.top.findNode("playPauseBtn")
+    m.skipFwdBtn = m.top.findNode("skipFwdBtn")
+    m.upNextBtn = m.top.findNode("upNextBtn")
+    m.subtitlesBtn = m.top.findNode("subtitlesBtn")
+    m.tuneBtn = m.top.findNode("tuneBtn")
+    m.closeBtn = m.top.findNode("closeBtn")
+    m.skipGroup = m.top.findNode("skipGroup")
+    m.skipBtn = m.top.findNode("skipBtn")
+    m.skippedCaption = m.top.findNode("skippedCaption")
+    m.hud = m.top.findNode("hud")
+    m.hudTabsGroup = m.top.findNode("hudTabs")
+    m.hudBg = m.top.findNode("hudBg")
+    m.hudRing = m.top.findNode("hudRing")
+    m.hudRowsGroup = m.top.findNode("hudRows")
+    m.upNext = m.top.findNode("upNext")
+    m.unEyebrow = m.top.findNode("unEyebrow")
+    m.unSeries = m.top.findNode("unSeries")
+    m.unEpisode = m.top.findNode("unEpisode")
+    m.unMeta = m.top.findNode("unMeta")
+    m.unOverview = m.top.findNode("unOverview")
+    m.unPlayBtn = m.top.findNode("unPlayBtn")
+    m.unKeepBtn = m.top.findNode("unKeepBtn")
+    m.unBackBtn = m.top.findNode("unBackBtn")
+    m.errorGroup = m.top.findNode("errorGroup")
+    m.errorLabel = m.top.findNode("errorLabel")
+    m.retryBtn = m.top.findNode("retryBtn")
+    m.errorCloseBtn = m.top.findNode("errorCloseBtn")
+    m.picker = m.top.findNode("picker")
+    m.progressTimer = m.top.findNode("progressTimer")
+    m.hideTimer = m.top.findNode("hideTimer")
+    m.feedbackTimer = m.top.findNode("feedbackTimer")
+    m.countdownTimer = m.top.findNode("countdownTimer")
+    m.holdTimer = m.top.findNode("holdTimer")
+    m.refreshTimeout = m.top.findNode("refreshTimeout")
+    m.stopTimeout = m.top.findNode("stopTimeout")
+    m.captionTimer = m.top.findNode("captionTimer")
+
+    m.di = CreateObject("roDeviceInfo")
+    m.started = false
+    resetPlaybackState()
+
+    m.video.observeField("state", "onVideoState")
+    m.video.observeField("position", "onVideoPosition")
+    m.video.observeField("duration", "onVideoDuration")
+    m.progressTimer.observeField("fire", "onProgressTick")
+    m.hideTimer.observeField("fire", "hideControls")
+    m.feedbackTimer.observeField("fire", "hideFeedback")
+    m.countdownTimer.observeField("fire", "onCountdownTick")
+    m.holdTimer.observeField("fire", "onHoldTick")
+    m.refreshTimeout.observeField("fire", "onTokenRefreshed")
+    m.stopTimeout.observeField("fire", "finishClose")
+    m.captionTimer.observeField("fire", "hideCaption")
+
+    m.skipBackBtn.observeField("buttonSelected", "onSkipBack")
+    m.playPauseBtn.observeField("buttonSelected", "togglePlay")
+    m.skipFwdBtn.observeField("buttonSelected", "onSkipForward")
+    m.upNextBtn.observeField("buttonSelected", "onUpNextButton")
+    m.subtitlesBtn.observeField("buttonSelected", "onSubtitlesButton")
+    m.tuneBtn.observeField("buttonSelected", "onTuneButton")
+    m.closeBtn.observeField("buttonSelected", "exitPlayer")
+    m.skipBtn.observeField("buttonSelected", "onSkipPill")
+    m.unPlayBtn.observeField("buttonSelected", "playNext")
+    m.unKeepBtn.observeField("buttonSelected", "keepWatching")
+    m.unBackBtn.observeField("buttonSelected", "exitPlayer")
+    m.retryBtn.observeField("buttonSelected", "retry")
+    m.errorCloseBtn.observeField("buttonSelected", "exitPlayer")
+    m.picker.observeField("chosen", "onPickerChosen")
+    m.picker.observeField("dismissed", "onPickerDismissed")
+end sub
+
+' State for one playback attempt (reset again when Up Next chains to another episode).
+sub resetPlaybackState()
+    m.watch = invalid
+    m.fileId = ""
+    m.version = invalid
+    m.plan = invalid
+    m.sessionId = ""
+    m.sequence = 0
+    m.stopId = ""
+    m.attemptId = m.di.GetRandomUUID()
+    m.retriedInstall = false
+    m.timelineOffset = 0.0
+    m.duration = 0.0
+    m.position = 0.0
+    m.isPaused = false
+    m.markers = []
+    m.chapters = []
+    m.subtitleTracks = []
+    m.subtitleIndex = -1
+    m.pendingSubtitleTrackId = ""
+    m.qualityPref = PlaybackCaps_qualityPreference()
+    m.skipShownFor = ""
+    m.autoSkipped = {}
+    m.activeMarker = invalid
+    m.nextEpisode = invalid
+    m.seriesTitle = ""
+    m.upNextShown = false
+    m.upNextDismissed = false
+    m.countdown = -1
+    m.scrubbing = false
+    m.scrubPos = 0.0
+    m.holdTicks = 0
+    m.controlsZone = "transport"
+    m.transportIndex = 1
+    m.hudTab = 0
+    m.hudFocus = "tabs"
+    m.hudRow = 0
+    m.hudRows = []
+    m.hudTabs = []
+    m.hudChoices = []
+    m.pickerKind = ""
+    m.closing = false
+    m.finished = false
+    m.resumeAfterStart = invalid
+    m.watchBackTarget = invalid
+    m.waitingForToken = false
+end sub
+
+' ---------- Lifecycle ----------
+
+sub onScreenShown()
+    if not m.started then
+        m.started = true
+        startPipeline()
+        return
+    end if
+    restoreFocus()
+end sub
+
+sub restoreFocus()
+    if m.errorGroup.visible then
+        m.retryBtn.setFocus(true)
+    else if m.picker.visible then
+        m.picker.setFocus(true)
+    else if m.upNext.visible then
+        m.unPlayBtn.setFocus(true)
+    else if m.hud.visible then
+        focusHud()
+    else if m.controls.visible then
+        focusControls()
+    else if m.skipGroup.visible and m.skipBtn.visible then
+        m.skipBtn.setFocus(true)
+    else
+        m.focusSink.setFocus(true)
+    end if
+end sub
+
+' ---------- Pipeline ----------
+
+sub startPipeline()
+    p = m.top.params
+    if p = invalid then p = {}
+    m.itemId = Str_orEmpty(p.itemId)
+    m.errorGroup.visible = false
+    m.bufferingGroup.visible = true
+    m.focusSink.setFocus(true)
+    m.titleLabel.text = Str_orEmpty(p.title)
+    if m.itemId = "" then
+        showError("Nothing to play.")
+        return
+    end if
+    Api_get("/api/v2/watch/" + Str_urlEncode(m.itemId), { image_size: "medium" }, "onWatch")
+end sub
+
+sub retry()
+    m.errorGroup.visible = false
+    stopSession()
+    m.video.control = "stop"
+    resetPlaybackState()
+    startPipeline()
+end sub
+
+sub onWatch(event as object)
+    resp = Api_result(event)
+    if m.closing then return
+    if not resp.ok or resp.data = invalid then
+        showError(Api_errorText(resp))
+        return
+    end if
+    w = resp.data
+    m.watch = w
+    p = m.top.params
+    if Str_isEmpty(m.titleLabel.text) then m.titleLabel.text = Str_orEmpty(w.title)
+    m.isEpisode = LCase(Str_orEmpty(w.type)) = "episode"
+    m.seriesTitle = Str_orEmpty(w.series_title)
+    if m.isEpisode then
+        tag = Content_seShort(w.season_number, w.episode_number).Replace(" · ", "·")
+        if m.seriesTitle <> "" then
+            m.titleLabel.text = m.seriesTitle
+            m.epTag.text = Str_joinDots([tag, w.title])
+        else
+            m.epTag.text = tag
+        end if
+    else
+        m.epTag.text = ""
+    end if
+    m.epTag.visible = m.epTag.text <> ""
+
+    ' Choose the file: explicit param, the user's last file, the default variant, else the first version.
+    versions = Arr_or(w.versions)
+    fileId = Str_orEmpty(p.fileId)
+    if fileId = "" and w.user_data <> invalid then fileId = Str_orEmpty(w.user_data.last_file_id)
+    if fileId <> "" then
+        ok = false
+        for each v in versions
+            if Str_orEmpty(v.file_id) = fileId then ok = true
+        end for
+        if not ok then fileId = ""
+    end if
+    if fileId = "" then
+        for each pv in Arr_or(w.playback_variants)
+            if fileId = "" and not Str_isEmpty(pv.default_file_id) then fileId = Str_orEmpty(pv.default_file_id)
+        end for
+    end if
+    if fileId = "" and versions.Count() > 0 then fileId = Str_orEmpty(versions[0].file_id)
+    if fileId = "" then
+        showError("This title has no playable file.")
+        return
+    end if
+    m.fileId = fileId
+    m.version = invalid
+    for each v in versions
+        if Str_orEmpty(v.file_id) = fileId then m.version = v
+    end for
+    collectMarkers()
+    if m.version <> invalid then m.chapters = Arr_or(m.version.chapters)
+    m.scrubber.markers = m.markers
+    m.scrubber.chapters = m.chapters
+    if m.version <> invalid and m.version.duration_seconds <> invalid then m.duration = m.version.duration_seconds
+    if m.duration = 0 and w.user_data <> invalid and w.user_data.duration_seconds <> invalid then m.duration = w.user_data.duration_seconds
+    m.scrubber.duration = m.duration
+
+    if m.isEpisode then resolveNextEpisode()
+    ensureFreshToken()
+end sub
+
+' Markers in {kind, start, end} form; marker_segments preferred, then per-version and top-level fields.
+sub collectMarkers()
+    out = []
+    w = m.watch
+    segs = []
+    if m.version <> invalid then segs = Arr_or(m.version.marker_segments)
+    if segs.Count() > 0 then
+        for each s in segs
+            if s.start_seconds <> invalid and s.end_seconds <> invalid then
+                out.Push({ kind: LCase(Str_orEmpty(s.kind)), start: s.start_seconds * 1.0, "end": s.end_seconds * 1.0 })
+            end if
+        end for
+    else
+        for each kind in ["intro", "recap", "credits"]
+            mk = invalid
+            if m.version <> invalid and m.version[kind] <> invalid then mk = m.version[kind]
+            if mk = invalid then mk = w[kind]
+            if mk <> invalid then
+                s = mk.start_seconds
+                e = mk.end_seconds
+                if s = invalid then s = mk.start
+                if e = invalid then e = mk["end"]
+                if s <> invalid and e <> invalid then out.Push({ kind: kind, start: s * 1.0, "end": e * 1.0 })
+            end if
+        end for
+    end if
+    m.markers = out
+end sub
+
+' Refresh the token first when it is about to expire: the Video node can't refresh headers mid-stream.
+sub ensureFreshToken()
+    s = m.global.session
+    if not Str_isEmpty(s.refreshToken) and s.expiresAt > 0 and s.expiresAt - Time_nowSeconds() < 300 then
+        auth = m.global.authTask
+        if auth <> invalid then
+            m.waitingForToken = true
+            auth.observeField("generation", "onTokenRefreshed")
+            m.refreshTimeout.control = "start"
+            auth.refreshRequest = { token: s.accessToken }
+            return
+        end if
+    end if
+    fetchCapabilities()
+end sub
+
+sub onTokenRefreshed()
+    if m.waitingForToken <> true then return
+    m.waitingForToken = false
+    m.refreshTimeout.control = "stop"
+    auth = m.global.authTask
+    if auth <> invalid then auth.unobserveField("generation")
+    if m.closing then return
+    fetchCapabilities()
+end sub
+
+function cachedCaps() as dynamic
+    if not m.global.hasField("playbackCaps") then return invalid
+    c = m.global.playbackCaps
+    if c = invalid or Str_isEmpty(c.installation_id) then return invalid
+    return c
+end function
+
+sub fetchCapabilities()
+    c = cachedCaps()
+    if c <> invalid then
+        startSession(c.installation_id)
+        return
+    end if
+    Api_get("/api/v2/playback/capabilities", invalid, "onCapabilities")
+end sub
+
+sub onCapabilities(event as object)
+    resp = Api_result(event)
+    if m.closing then return
+    if not resp.ok or resp.data = invalid then
+        showError(Api_errorText(resp))
+        return
+    end if
+    caps = resp.data
+    hasV3 = false
+    for each v in Arr_or(caps.protocol_versions)
+        if v = 3 then hasV3 = true
+    end for
+    hasSeq = false
+    for each f in Arr_or(caps.features)
+        if f = "sequenced_progress_v1" then hasSeq = true
+    end for
+    if caps.state <> "available" or caps.allowed <> true or not hasV3 or not hasSeq or Str_isEmpty(caps.installation_id) then
+        showError("Playback isn't available on this server.")
+        return
+    end if
+    entry = { installation_id: caps.installation_id, features: Arr_or(caps.features), fetchedAt: Time_nowSeconds() }
+    if m.global.hasField("playbackCaps") then
+        m.global.playbackCaps = entry
+    else
+        m.global.addFields({ playbackCaps: entry })
+    end if
+    startSession(caps.installation_id)
+end sub
+
+function installationId() as string
+    c = cachedCaps()
+    if c = invalid then return ""
+    return c.installation_id
+end function
+
+sub startSession(installation as string)
+    p = m.top.params
+    startPos = invalid
+    if p.startPosition <> invalid then
+        spv = p.startPosition
+        if (Type(spv) = "roInt" or Type(spv) = "Integer" or Type(spv) = "roFloat" or Type(spv) = "Float" or Type(spv) = "Double" or Type(spv) = "roDouble") and spv >= 0 then startPos = spv * 1.0
+    end if
+    body = PlaybackCaps_startBody(installation, m.fileId, m.attemptId, startPos, p.audioTrackId, p.subtitleTrackId)
+    Api_send("POST", "/api/v2/playback/start", body, "onStart")
+end sub
+
+sub onStart(event as object)
+    resp = Api_result(event)
+    if m.closing then return
+    if resp.status = 409 and not m.retriedInstall then
+        ' installation_changed: refetch capabilities once and start a fresh attempt.
+        m.retriedInstall = true
+        m.attemptId = m.di.GetRandomUUID()
+        if m.global.hasField("playbackCaps") then m.global.playbackCaps = {}
+        fetchCapabilities()
+        return
+    end if
+    if resp.status = 426 then
+        showError("This server needs an update before it can stream to Roku.")
+        return
+    end if
+    if not resp.ok or resp.data = invalid then
+        showError(Api_errorText(resp))
+        return
+    end if
+    d = resp.data
+    if d.outcome <> "playable" then
+        msg = ""
+        if d.terminal <> invalid then msg = Str_orEmpty(d.terminal.message)
+        if msg = "" then msg = "This title can't be played right now."
+        showError(msg)
+        return
+    end if
+    problem = PlaybackCaps_planProblem(d)
+    if problem <> "" then
+        showError(problem)
+        return
+    end if
+    m.sessionId = Str_orEmpty(d.session_id)
+    if m.sessionId = "" then m.sessionId = Str_orEmpty(d.playback_plan.session_id)
+    m.sequence = 0
+    m.stopId = ""
+    applyPlan(d.playback_plan)
+end sub
+
+' Hands a plan to the Video node (also used after a replan).
+sub applyPlan(plan as object)
+    m.plan = plan
+    s = m.global.session
+    stream = plan.stream
+    tl = plan.timeline
+    if tl = invalid then tl = {}
+    m.timelineOffset = 0.0
+    if tl.timeline_offset_seconds <> invalid then m.timelineOffset = tl.timeline_offset_seconds * 1.0
+    if plan.source <> invalid and plan.source.duration_seconds <> invalid and plan.source.duration_seconds > 0 then
+        m.duration = plan.source.duration_seconds * 1.0
+        m.scrubber.duration = m.duration
+    end if
+
+    content = CreateObject("roSGNode", "ContentNode")
+    url = Url_resolve(stream.url)
+    content.Url = url
+    content.Title = m.titleLabel.text
+    fmt = "mp4"
+    proto = LCase(Str_orEmpty(stream.protocol))
+    container = LCase(Str_orEmpty(stream.container))
+    if proto = "hls" or Instr(1, LCase(url), ".m3u8") > 0 then
+        fmt = "hls"
+    else if container = "mkv" or container = "matroska" then
+        fmt = "mkv"
+    else if container = "mp4" or container = "m4v" or container = "mov" then
+        fmt = "mp4"
+    else if container <> "" then
+        fmt = container
+    end if
+    content.StreamFormat = fmt
+    headers = ["Authorization:Bearer " + s.accessToken]
+    if stream.headers <> invalid then
+        for each k in stream.headers
+            headers.Push(k + ":" + Str_orEmpty(stream.headers[k]))
+        end for
+    end if
+    content.HttpHeaders = headers
+    if LCase(Left(url, 5)) = "https" then content.HttpCertificatesFile = "common:/certs/ca-bundle.crt"
+    if m.duration > 0 then content.Length = Int(m.duration)
+    if tl.player_start_seconds <> invalid and tl.player_start_seconds > 0 then content.PlayStart = Int(tl.player_start_seconds)
+
+    ' Subtitles: only WebVTT/SRT sidecars can be rendered by the Video node. Sidecar routes have no
+    ' signed `st`, and we can't be sure the Video node forwards HttpHeaders to sidecar fetches, so we
+    ' append the documented `token=` fallback (docs/api-spec.md §8.2, auth.go:320).
+    m.subtitleTracks = []
+    tracks = []
+    subInv = []
+    if plan.subtitle <> invalid then subInv = Arr_or(plan.subtitle.inventory)
+    for each t in subInv
+        if Str_orEmpty(t.delivery) = "sidecar" and not Str_isEmpty(t.url) then
+            path = LCase(t.url)
+            q = Instr(1, path, "?")
+            if q > 0 then path = Left(path, q - 1)
+            if Right(path, 4) = ".vtt" or Right(path, 4) = ".srt" then
+                su = Url_resolve(t.url)
+                if Instr(1, su, "?") > 0 then su = su + "&token=" + s.accessToken else su = su + "?token=" + s.accessToken
+                label = Str_orEmpty(t.label)
+                if label = "" then label = Str_orEmpty(t.language)
+                if t.forced = true then label = label + " (Forced)"
+                if t.hearing_impaired = true then label = label + " (SDH)"
+                m.subtitleTracks.Push({ label: label, url: su, language: Str_orEmpty(t.language), trackId: Str_orEmpty(t.track_id) })
+                tracks.Push({ Language: Str_orEmpty(t.language), TrackName: su, Description: label })
+            end if
+        end if
+    end for
+    if tracks.Count() > 0 then content.SubtitleTracks = tracks
+
+    ' Default subtitle: what the plan selected, if we can render it.
+    m.pendingSubtitleTrackId = ""
+    if plan.subtitle <> invalid and Str_orEmpty(plan.subtitle.mode) <> "off" and plan.selected_tracks <> invalid and plan.selected_tracks.subtitle <> invalid then
+        m.pendingSubtitleTrackId = Str_orEmpty(plan.selected_tracks.subtitle.id)
+    end if
+
+    m.video.content = content
+    m.video.control = "play"
+    m.bufferingGroup.visible = true
+    m.progressTimer.control = "start"
+    updateHudQualityLabel()
+end sub
+
+' ---------- Video events ----------
+
+sub onVideoState()
+    st = m.video.state
+    if st = "buffering" then
+        m.bufferingGroup.visible = true
+    else if st = "playing" then
+        m.bufferingGroup.visible = false
+        m.isPaused = false
+        m.playPauseBtn.iconUri = "pkg:/images/icons/pause.png"
+        if m.resumeAfterStart <> invalid then
+            seekToSource(m.resumeAfterStart)
+            m.resumeAfterStart = invalid
+        end if
+        if m.pendingSubtitleTrackId <> "" then
+            for i = 0 to m.subtitleTracks.Count() - 1
+                if m.subtitleTracks[i].trackId = m.pendingSubtitleTrackId then setSubtitle(i)
+            end for
+            m.pendingSubtitleTrackId = ""
+        end if
+    else if st = "paused" then
+        m.isPaused = true
+        m.playPauseBtn.iconUri = "pkg:/images/icons/play.png"
+        sendProgress()
+    else if st = "finished" then
+        onFinished()
+    else if st = "error" then
+        msg = Str_orEmpty(m.video.errorMsg)
+        if msg = "" then msg = Str_orEmpty(m.video.errorStr)
+        if msg = "" then msg = "The video could not be played."
+        if m.video.errorCode <> invalid and m.video.errorCode <> 0 then msg = msg + " (" + Str_orEmpty(m.video.errorCode) + ")"
+        showError(msg)
+    end if
+end sub
+
+sub onVideoDuration()
+    if m.duration <= 0 and m.video.duration > 0 then
+        m.duration = m.video.duration
+        m.scrubber.duration = m.duration
+    end if
+end sub
+
+sub onVideoPosition()
+    if m.plan = invalid then return
+    m.position = m.video.position + m.timelineOffset
+    if not m.scrubbing then m.scrubber.position = m.position
+    checkMarkers()
+    checkUpNext()
+end sub
+
+function sourcePosition() as float
+    return m.position
+end function
+
+sub seekToSource(seconds as float)
+    if seconds < 0 then seconds = 0
+    if m.duration > 0 and seconds > m.duration - 1 then seconds = m.duration - 1
+    m.video.seek = seconds - m.timelineOffset
+    m.position = seconds
+    m.scrubber.position = seconds
+end sub
+
+sub onFinished()
+    if m.finished then return
+    m.finished = true
+    m.progressTimer.control = "stop"
+    if m.isEpisode and m.nextEpisode <> invalid and not m.upNextDismissed then
+        if not m.upNext.visible then showUpNext()
+        if m.countdown < 0 then
+            ' No auto-play: wait for the user on the overlay.
+            m.unEyebrow.text = "FINISHED"
+        end if
+        return
+    end if
+    exitPlayer()
+end sub
+
+' ---------- Progress and stop ----------
+
+sub onProgressTick()
+    if m.isPaused then return
+    sendProgress()
+end sub
+
+sub sendProgress()
+    if m.sessionId = "" or m.closing then return
+    inst = installationId()
+    if inst = "" then return
+    m.sequence = m.sequence + 1
+    body = { installation_id: inst, sequence: m.sequence, position: m.position, is_paused: m.isPaused }
+    Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/progress", body, "onProgressResult")
+end sub
+
+sub onProgressResult(event as object)
+    resp = Api_result(event)
+    if resp.status = 404 or resp.status = 410 then
+        ' The session is gone on the server; stop reporting.
+        m.sessionId = ""
+    end if
+end sub
+
+' DELETE the session with a final sample. Safe to call twice.
+sub stopSession()
+    if m.sessionId = "" then return
+    inst = installationId()
+    sid = m.sessionId
+    m.sessionId = ""
+    m.progressTimer.control = "stop"
+    if inst = "" then return
+    if m.stopId = "" then m.stopId = m.di.GetRandomUUID()
+    m.sequence = m.sequence + 1
+    body = { installation_id: inst, stop_id: m.stopId, sequence: m.sequence, position: m.position, is_paused: true }
+    Api_send("DELETE", "/api/v2/playback/" + Str_urlEncode(sid), body, "onStopped")
+end sub
+
+sub onStopped(event as object)
+    Api_result(event)
+    if m.closing then finishClose()
+end sub
+
+sub exitPlayer()
+    if m.closing then return
+    m.closing = true
+    m.global.homeDirty = true
+    m.countdownTimer.control = "stop"
+    m.holdTimer.control = "stop"
+    m.hideTimer.control = "stop"
+    hadSession = m.sessionId <> ""
+    m.video.control = "stop"
+    m.video.visible = false
+    stopSession()
+    if hadSession then
+        m.stopTimeout.control = "start"
+    else
+        finishClose()
+    end if
+end sub
+
+sub finishClose()
+    if m.closed = true then return
+    m.closed = true
+    m.stopTimeout.control = "stop"
+    Nav_close()
+end sub
+
+sub showError(msg as string)
+    m.bufferingGroup.visible = false
+    m.controls.visible = false
+    m.hud.visible = false
+    m.skipGroup.visible = false
+    m.progressTimer.control = "stop"
+    m.errorLabel.text = msg
+    m.errorGroup.visible = true
+    m.retryBtn.setFocus(true)
+end sub
+
+' ---------- Transport ----------
+
+sub togglePlay()
+    st = m.video.state
+    if st = "paused" then
+        m.video.control = "resume"
+    else if st = "playing" or st = "buffering" then
+        m.video.control = "pause"
+    end if
+    rearmHide()
+end sub
+
+function skipBackSeconds() as integer
+    v = 10
+    if m.global.prefs <> invalid and m.global.prefs.skipBack <> invalid then v = Int(m.global.prefs.skipBack)
+    if v <= 0 then v = 10
+    return v
+end function
+
+function skipForwardSeconds() as integer
+    v = 30
+    if m.global.prefs <> invalid and m.global.prefs.skipForward <> invalid then v = Int(m.global.prefs.skipForward)
+    if v <= 0 then v = 30
+    return v
+end function
+
+sub onSkipBack()
+    skipBy(-skipBackSeconds())
+end sub
+
+sub onSkipForward()
+    skipBy(skipForwardSeconds())
+end sub
+
+sub skipBy(delta as integer)
+    if m.plan = invalid then return
+    seekToSource(m.position + delta)
+    if delta < 0 then
+        showFeedback("-" + Abs(delta).ToStr() + "s")
+    else
+        showFeedback("+" + delta.ToStr() + "s")
+    end if
+    rearmHide()
+end sub
+
+sub showFeedback(text as string)
+    m.feedbackLabel.text = text
+    m.feedbackGroup.visible = true
+    m.feedbackTimer.control = "stop"
+    m.feedbackTimer.control = "start"
+end sub
+
+sub hideFeedback()
+    m.feedbackGroup.visible = false
+end sub
+
+' ---------- Controls overlay ----------
+
+function transportButtons() as object
+    out = []
+    for each b in [m.skipBackBtn, m.playPauseBtn, m.skipFwdBtn, m.upNextBtn, m.subtitlesBtn, m.tuneBtn, m.closeBtn]
+        if b.visible then out.Push(b)
+    end for
+    return out
+end function
+
+sub layoutTransport()
+    ' Left group at x 0; right group right-aligned at 1600.
+    x = 1600
+    rightBtns = []
+    for each b in [m.closeBtn, m.tuneBtn, m.subtitlesBtn, m.upNextBtn]
+        if b.visible then
+            x = x - 88
+            b.translation = [x, 0]
+            x = x - 10
+        end if
+    end for
+end sub
+
+sub showControls()
+    m.upNextBtn.visible = m.nextEpisode <> invalid
+    layoutTransport()
+    m.controls.visible = true
+    positionSkipPill()
+    focusControls()
+    rearmHide()
+end sub
+
+sub focusControls()
+    if m.controlsZone = "scrubber" then
+        m.scrubber.setFocus(true)
+    else if m.controlsZone = "skip" and m.skipGroup.visible then
+        m.skipBtn.setFocus(true)
+    else
+        m.controlsZone = "transport"
+        btns = transportButtons()
+        if m.transportIndex >= btns.Count() then m.transportIndex = 0
+        if btns.Count() > 0 then btns[m.transportIndex].setFocus(true)
+    end if
+end sub
+
+sub hideControls()
+    if m.scrubbing then
+        ' Don't hide mid-scrub; just re-arm.
+        rearmHide()
+        return
+    end if
+    m.controls.visible = false
+    m.hideTimer.control = "stop"
+    positionSkipPill()
+    if not m.hud.visible and not m.upNext.visible and not m.errorGroup.visible and not m.picker.visible then
+        if m.skipGroup.visible and m.skipBtn.visible then
+            m.skipBtn.setFocus(true)
+        else
+            m.focusSink.setFocus(true)
+        end if
+    end if
+end sub
+
+sub rearmHide()
+    if not m.controls.visible then return
+    m.hideTimer.control = "stop"
+    m.hideTimer.control = "start"
+end sub
+
+sub onSubtitlesButton()
+    openPicker("subtitle")
+end sub
+
+sub onTuneButton()
+    openHud(0)
+end sub
+
+sub onUpNextButton()
+    if m.nextEpisode = invalid then return
+    m.upNextDismissed = false
+    showUpNext()
+end sub
+
+' Scrubber: Left/Right nudge ±10 s; holding accelerates; OK commits.
+sub beginScrub()
+    if not m.scrubbing then
+        m.scrubbing = true
+        m.scrubPos = m.position
+        m.scrubber.scrubPosition = m.scrubPos
+        m.scrubber.scrubbing = true
+    end if
+end sub
+
+sub nudgeScrub(direction as integer)
+    beginScrub()
+    m.holdDirection = direction
+    m.holdTicks = 0
+    m.scrubber.rateLabel = ""
+    applyScrubDelta(direction * 10)
+    m.holdTimer.control = "start"
+    rearmHide()
+end sub
+
+sub onHoldTick()
+    m.holdTicks = m.holdTicks + 1
+    stepSec = 10
+    rate = ""
+    if m.holdTicks > 12 then
+        stepSec = 120
+        rate = "8x"
+    else if m.holdTicks > 6 then
+        stepSec = 60
+        rate = "4x"
+    else if m.holdTicks > 2 then
+        stepSec = 30
+        rate = "2x"
+    end if
+    m.scrubber.rateLabel = rate
+    applyScrubDelta(m.holdDirection * stepSec)
+    rearmHide()
+end sub
+
+sub applyScrubDelta(delta as integer)
+    p = m.scrubPos + delta
+    if p < 0 then p = 0
+    if m.duration > 0 and p > m.duration then p = m.duration
+    m.scrubPos = p
+    m.scrubber.scrubPosition = p
+end sub
+
+sub endHold()
+    m.holdTimer.control = "stop"
+    m.scrubber.rateLabel = ""
+end sub
+
+sub commitScrub()
+    endHold()
+    if m.scrubbing then
+        m.scrubbing = false
+        m.scrubber.scrubbing = false
+        seekToSource(m.scrubPos)
+    end if
+    rearmHide()
+end sub
+
+sub cancelScrub()
+    endHold()
+    m.scrubbing = false
+    m.scrubber.scrubbing = false
+    m.scrubber.position = m.position
+end sub
+
+' ---------- Skip intro / credits ----------
+
+function markerLabel(kind as string) as string
+    if kind = "credits" then return "Skip Credits"
+    if kind = "recap" then return "Skip Recap"
+    return "Skip Intro"
+end function
+
+sub checkMarkers()
+    mode = "ask"
+    if m.global.prefs <> invalid and not Str_isEmpty(m.global.prefs.skipIntro) then mode = m.global.prefs.skipIntro
+    active = invalid
+    for each mk in m.markers
+        if mk.kind <> "preview" and m.position >= mk.start and m.position < mk["end"] - 1 then active = mk
+    end for
+    if active = invalid then
+        if m.activeMarker <> invalid and m.watchBackTarget = invalid then hideSkipPill()
+        m.activeMarker = invalid
+        return
+    end if
+    key = active.kind + ":" + Str_orEmpty(active.start)
+    m.activeMarker = active
+    if mode = "never" then return
+    if mode = "always" and active.kind <> "credits" then
+        if m.autoSkipped[key] <> true then
+            m.autoSkipped[key] = true
+            seekToSource(active["end"])
+            showSkippedCaption(active)
+        end if
+        return
+    end if
+    if m.skipShownFor <> key then
+        m.skipShownFor = key
+        m.skipBtn.text = markerLabel(active.kind)
+        m.skipBtn.visible = true
+        m.skippedCaption.visible = false
+        m.skipGroup.visible = true
+        positionSkipPill()
+        if not m.controls.visible and not m.hud.visible and not m.upNext.visible and not m.picker.visible then
+            m.skipBtn.setFocus(true)
+        end if
+    end if
+end sub
+
+sub showSkippedCaption(mk as object)
+    kindText = "Intro skipped"
+    if mk.kind = "recap" then kindText = "Recap skipped"
+    m.skippedCaption.text = kindText
+    m.skippedCaption.visible = true
+    m.skipBtn.text = "Watch Intro"
+    if mk.kind = "recap" then m.skipBtn.text = "Watch Recap"
+    m.skipBtn.visible = true
+    m.skipGroup.visible = true
+    m.skipShownFor = "watch:" + Str_orEmpty(mk.start)
+    m.watchBackTarget = mk.start
+    positionSkipPill()
+    if not m.controls.visible and not m.hud.visible and not m.upNext.visible then m.skipBtn.setFocus(true)
+    m.captionTimer.control = "start"
+end sub
+
+sub hideCaption()
+    if m.skippedCaption.visible then hideSkipPill()
+end sub
+
+sub hideSkipPill()
+    hadFocus = m.skipBtn.hasFocus()
+    m.skipGroup.visible = false
+    m.skippedCaption.visible = false
+    m.watchBackTarget = invalid
+    m.skipShownFor = ""
+    if hadFocus then
+        if m.controls.visible then
+            m.controlsZone = "transport"
+            focusControls()
+        else
+            m.focusSink.setFocus(true)
+        end if
+    end if
+end sub
+
+sub positionSkipPill()
+    bottom = 112
+    if m.controls.visible then bottom = 400
+    w = m.skipBtn.width
+    x = 1920 - 64 - w
+    y = 1080 - bottom - 72
+    m.skipBtn.translation = [x, y]
+    m.skippedCaption.translation = [1920 - 64 - 400, y - 40]
+end sub
+
+sub onSkipPill()
+    if m.watchBackTarget <> invalid then
+        seekToSource(m.watchBackTarget)
+        m.captionTimer.control = "stop"
+        hideSkipPill()
+        return
+    end if
+    if m.activeMarker <> invalid then
+        seekToSource(m.activeMarker["end"])
+    end if
+    hideSkipPill()
+    rearmHide()
+end sub
+
+' ---------- Next episode (docs/api-spec.md §8.6) ----------
+
+sub resolveNextEpisode()
+    w = m.watch
+    sid = Str_orEmpty(w.series_id)
+    if sid = "" or w.season_number = invalid or w.episode_number = invalid then return
+    m.nextSeriesId = sid
+    m.nextPool = []
+    m.nextPending = 0
+    Api_get("/api/v2/catalog/series/" + Str_urlEncode(sid) + "/seasons", { include_artwork: "false" }, "onNextSeasons")
+end sub
+
+sub onNextSeasons(event as object)
+    resp = Api_result(event)
+    if m.closing or not resp.ok or resp.data = invalid then return
+    cur = Int(m.watch.season_number)
+    seasons = Arr_or(resp.data.items)
+    toLoad = [cur]
+    ' The next regular season (never specials unless we're already in specials).
+    nextNum = invalid
+    for each s in seasons
+        n = s.season_number
+        if n <> invalid and n > cur and (n <> 0) then
+            if nextNum = invalid or n < nextNum then nextNum = n
+        end if
+    end for
+    if nextNum <> invalid then toLoad.Push(Int(nextNum))
+    m.nextPending = toLoad.Count()
+    for each n in toLoad
+        Api_get("/api/v2/catalog/series/" + Str_urlEncode(m.nextSeriesId) + "/seasons/" + n.ToStr() + "/episodes", { image_size: "medium" }, "onNextEpisodes")
+    end for
+end sub
+
+sub onNextEpisodes(event as object)
+    resp = Api_result(event)
+    m.nextPending = m.nextPending - 1
+    if resp.ok and resp.data <> invalid then
+        for each ep in Arr_or(resp.data.items)
+            m.nextPool.Push(ep)
+        end for
+    end if
+    if m.nextPending > 0 then return
+    cs = Int(m.watch.season_number)
+    ce = Int(m.watch.episode_number)
+    best = invalid
+    for each ep in m.nextPool
+        sn = ep.season_number
+        en = ep.episode_number
+        if sn <> invalid and en <> invalid then
+            if sn > cs or (sn = cs and en > ce) then
+                if best = invalid or sn < best.season_number or (sn = best.season_number and en < best.episode_number) then best = ep
+            end if
+        end if
+    end for
+    m.nextEpisode = best
+    if m.controls.visible then
+        m.upNextBtn.visible = best <> invalid
+        layoutTransport()
+    end if
+end sub
+
+sub checkUpNext()
+    if not m.isEpisode or m.nextEpisode = invalid or m.upNextShown or m.upNextDismissed then return
+    if m.duration <= 0 then return
+    trigger = m.duration - 30
+    for each mk in m.markers
+        if mk.kind = "credits" and mk.start < trigger and mk.start > m.duration * 0.5 then trigger = mk.start
+    end for
+    if m.position >= trigger then showUpNext()
+end sub
+
+sub showUpNext()
+    ep = m.nextEpisode
+    if ep = invalid then return
+    m.upNextShown = true
+    hideControlsNow()
+    m.hud.visible = false
+    m.skipGroup.visible = false
+    ' Shrink the video into a 16:9 pane on the left.
+    m.video.width = 880
+    m.video.height = 495
+    m.video.translation = [160, 292]
+    m.videoFrame.width = 896
+    m.videoFrame.height = 511
+    m.videoFrame.translation = [152, 284]
+    m.videoFrame.visible = true
+
+    m.unEyebrow.text = "UP NEXT"
+    m.unSeries.text = m.seriesTitle
+    m.unSeries.visible = m.seriesTitle <> ""
+    tag = Content_seShort(ep.season_number, ep.episode_number).Replace(" · ", "·")
+    title = Str_orEmpty(ep.title)
+    if title = "" then title = "Next Episode"
+    m.unEpisode.text = Str_joinDots([tag, title], "  ")
+    meta = ""
+    if ep.runtime <> invalid and ep.runtime > 0 then meta = Str_orEmpty(Int(ep.runtime)) + " min"
+    m.unMeta.text = meta
+    m.unOverview.text = Str_orEmpty(ep.overview)
+    autoPlay = true
+    if m.global.prefs <> invalid and m.global.prefs.autoPlayNext = false then autoPlay = false
+    if autoPlay then
+        m.countdown = 10
+        m.unPlayBtn.text = "Play Now · " + m.countdown.ToStr()
+        m.countdownTimer.control = "start"
+    else
+        m.countdown = -1
+        m.unPlayBtn.text = "Play Now"
+    end if
+    m.upNext.visible = true
+    m.upNextIndex = 0
+    m.unPlayBtn.setFocus(true)
+end sub
+
+sub onCountdownTick()
+    if not m.upNext.visible then
+        m.countdownTimer.control = "stop"
+        return
+    end if
+    m.countdown = m.countdown - 1
+    if m.countdown <= 0 then
+        m.countdownTimer.control = "stop"
+        playNext()
+        return
+    end if
+    m.unPlayBtn.text = "Play Now · " + m.countdown.ToStr()
+end sub
+
+sub restoreVideoPane()
+    m.video.width = 1920
+    m.video.height = 1080
+    m.video.translation = [0, 0]
+    m.videoFrame.visible = false
+end sub
+
+sub keepWatching()
+    m.countdownTimer.control = "stop"
+    m.upNext.visible = false
+    m.upNextDismissed = true
+    restoreVideoPane()
+    if m.finished then
+        exitPlayer()
+        return
+    end if
+    m.focusSink.setFocus(true)
+end sub
+
+sub playNext()
+    ep = m.nextEpisode
+    if ep = invalid then return
+    m.countdownTimer.control = "stop"
+    m.upNext.visible = false
+    restoreVideoPane()
+    stopSession()
+    m.video.control = "stop"
+    m.video.visible = true
+    newParams = { itemId: Str_orEmpty(ep.content_id), title: Str_orEmpty(ep.title) }
+    m.top.params = newParams
+    resetPlaybackState()
+    m.scrubber.position = 0
+    m.scrubber.duration = 0
+    m.scrubber.markers = []
+    m.scrubber.chapters = []
+    m.playPauseBtn.iconUri = "pkg:/images/icons/pause.png"
+    startPipeline()
+end sub
+
+sub hideControlsNow()
+    m.controls.visible = false
+    m.hideTimer.control = "stop"
+    cancelScrub()
+end sub
+
+' ---------- HUD ----------
+
+function hudTabNames() as object
+    names = ["Info", "Video", "Audio", "Subtitles"]
+    if m.chapters.Count() > 0 then names.Push("Chapters")
+    return names
+end function
+
+sub openHud(tabIndex as integer)
+    hideControlsNow()
+    m.skipGroup.visible = false
+    names = hudTabNames()
+    if tabIndex < 0 then tabIndex = 0
+    if tabIndex >= names.Count() then tabIndex = names.Count() - 1
+    m.hudTab = tabIndex
+    m.hudTabsGroup.removeChildrenIndex(m.hudTabsGroup.getChildCount(), 0)
+    m.hudTabs = []
+    x = 0
+    for i = 0 to names.Count() - 1
+        chip = m.hudTabsGroup.createChild("DetailChip")
+        chip.text = names[i]
+        chip.height = 76
+        chip.padX = 36
+        chip.fontSize = 27
+        chip.translation = [x, 0]
+        chip.selected = (i = tabIndex)
+        x = x + chip.width + 12
+        m.hudTabs.Push(chip)
+    end for
+    m.hudTabsGroup.translation = [Int((1920 - x + 12) / 2), 100]
+    buildHudRows()
+    m.hudFocus = "tabs"
+    m.hudRow = 0
+    m.hud.visible = true
+    focusHud()
+end sub
+
+sub closeHud()
+    m.hud.visible = false
+    m.picker.visible = false
+    if m.skipShownFor <> "" then m.skipGroup.visible = true
+    m.focusSink.setFocus(true)
+end sub
+
+sub focusHud()
+    if m.hudFocus = "rows" and m.hudRows.Count() > 0 then
+        if m.hudRow >= m.hudRows.Count() then m.hudRow = m.hudRows.Count() - 1
+        applyHudRowFocus()
+        m.focusSink.setFocus(true)
+    else
+        m.hudFocus = "tabs"
+        applyHudRowFocus()
+        if m.hudTabs.Count() > 0 then m.hudTabs[m.hudTab].setFocus(true)
+    end if
+end sub
+
+sub selectHudTab(i as integer)
+    if i < 0 or i >= m.hudTabs.Count() then return
+    m.hudTab = i
+    for j = 0 to m.hudTabs.Count() - 1
+        m.hudTabs[j].selected = (j = i)
+    end for
+    m.hudTabs[i].setFocus(true)
+    buildHudRows()
+end sub
+
+function currentAudioName() as string
+    cur = m.video.audioTrack
+    for each t in Arr_or(m.video.availableAudioTracks)
+        if Str_orEmpty(t.Track) = Str_orEmpty(cur) then return audioTrackLabel(t)
+    end for
+    tracks = Arr_or(m.video.availableAudioTracks)
+    if tracks.Count() > 0 then return audioTrackLabel(tracks[0])
+    return "Default"
+end function
+
+function audioTrackLabel(t as object) as string
+    n = Str_orEmpty(t.Name)
+    l = Str_orEmpty(t.Language)
+    if n <> "" and l <> "" and LCase(n) <> LCase(l) then return n + " (" + l + ")"
+    if n <> "" then return n
+    if l <> "" then return l
+    return "Track"
+end function
+
+function currentSubtitleName() as string
+    if m.subtitleIndex < 0 or m.subtitleIndex >= m.subtitleTracks.Count() then return "Off"
+    return m.subtitleTracks[m.subtitleIndex].label
+end function
+
+function qualityLabel() as string
+    q = m.qualityPref
+    if q = "" or q = "auto" then return "Auto"
+    return q
+end function
+
+sub updateHudQualityLabel()
+    if m.hud.visible and hudTabNames()[m.hudTab] = "Video" then buildHudRows()
+end sub
+
+' Rows: [{id, label, value, actionable}]
+function hudRowSpecs() as object
+    names = hudTabNames()
+    tabName = names[m.hudTab]
+    rows = []
+    if tabName = "Info" then
+        rows.Push({ id: "np", label: "Now Playing", value: m.titleLabel.text, actionable: false })
+        if m.epTag.text <> "" then rows.Push({ id: "ep", label: "Episode", value: m.epTag.text, actionable: false })
+        route = ""
+        if m.plan <> invalid then
+            route = Str_orEmpty(m.plan.delivery)
+            r = m.plan.effective_recipe
+            if r <> invalid then
+                bits = []
+                if not Str_isEmpty(r.video_codec) then bits.Push(UCase(r.video_codec))
+                if r.height <> invalid then bits.Push(Str_orEmpty(r.height) + "p")
+                if not Str_isEmpty(r.audio_codec) then bits.Push(UCase(r.audio_codec))
+                if not Str_isEmpty(r.audio_layout) then bits.Push(r.audio_layout)
+                route = Str_joinDots([route, Str_joinDots(bits, " ")])
+            end if
+        end if
+        if route <> "" then rows.Push({ id: "route", label: "Stream", value: route, actionable: false })
+        if m.version <> invalid then
+            vbits = []
+            if not Str_isEmpty(m.version.resolution) then vbits.Push(m.version.resolution)
+            if not Str_isEmpty(m.version.container) then vbits.Push(UCase(m.version.container))
+            if m.version.hdr = true then vbits.Push("HDR")
+            if vbits.Count() > 0 then rows.Push({ id: "file", label: "Source file", value: Str_joinDots(vbits), actionable: false })
+        end if
+    else if tabName = "Video" then
+        rows.Push({ id: "quality", label: "Quality", value: qualityLabel(), actionable: true })
+        auto = "On"
+        if m.global.prefs <> invalid and m.global.prefs.autoPlayNext = false then auto = "Off"
+        rows.Push({ id: "autoplay", label: "Auto-play next", value: auto, actionable: true })
+        if m.plan <> invalid and m.plan.effective_recipe <> invalid and not Str_isEmpty(m.plan.effective_recipe.dynamic_range) then
+            rows.Push({ id: "range", label: "Dynamic range", value: UCase(m.plan.effective_recipe.dynamic_range), actionable: false })
+        end if
+    else if tabName = "Audio" then
+        rows.Push({ id: "audio", label: "Track", value: currentAudioName(), actionable: true })
+        if m.plan <> invalid and m.plan.effective_recipe <> invalid then
+            r = m.plan.effective_recipe
+            if not Str_isEmpty(r.audio_codec) then rows.Push({ id: "acodec", label: "Codec", value: UCase(r.audio_codec), actionable: false })
+            if r.audio_channels <> invalid then rows.Push({ id: "ach", label: "Channels", value: Str_orEmpty(r.audio_channels), actionable: false })
+        end if
+    else if tabName = "Subtitles" then
+        rows.Push({ id: "subtitle", label: "Track", value: currentSubtitleName(), actionable: true })
+        if m.subtitleTracks.Count() = 0 then rows.Push({ id: "nosub", label: "No text subtitles for this stream", value: "", actionable: false })
+    else if tabName = "Chapters" then
+        for i = 0 to m.chapters.Count() - 1
+            ch = m.chapters[i]
+            t = Str_orEmpty(ch.title)
+            if t = "" then t = "Chapter " + (i + 1).ToStr()
+            rows.Push({ id: "chapter:" + i.ToStr(), label: t, value: Time_clock(ch.start_seconds), actionable: true })
+        end for
+        if rows.Count() = 0 then rows.Push({ id: "noch", label: "No chapters in this title", value: "", actionable: false })
+    end if
+    return rows
+end function
+
+sub buildHudRows()
+    m.hudRowsGroup.removeChildrenIndex(m.hudRowsGroup.getChildCount(), 0)
+    m.hudRows = []
+    specs = hudRowSpecs()
+    m.hudSpecs = specs
+    rowW = 1440 - 80
+    rowH = 68
+    y = 0
+    maxRows = 8
+    n = specs.Count()
+    if n > maxRows then n = maxRows
+    for i = 0 to n - 1
+        spec = specs[i]
+        row = m.hudRowsGroup.createChild("Group")
+        row.translation = [0, y]
+        bg = row.createChild("Poster")
+        bg.id = "bg"
+        bg.uri = "pkg:/images/ui/r14.9.png"
+        bg.width = rowW
+        bg.height = rowH
+        bg.blendColor = "0xEDEDEDFF"
+        bg.visible = false
+        lbl = row.createChild("Label")
+        lbl.id = "label"
+        lbl.text = spec.label
+        lbl.translation = [24, 0]
+        lbl.width = 560
+        lbl.height = rowH
+        lbl.vertAlign = "center"
+        lbl.color = "0xEDEDEDFF"
+        lf = CreateObject("roSGNode", "Font")
+        lf.uri = "pkg:/fonts/Inter-medium.otf"
+        lf.size = 27
+        lbl.font = lf
+        val = row.createChild("Label")
+        val.id = "value"
+        val.text = spec.value
+        val.translation = [600, 0]
+        val.width = rowW - 600 - 24 - 48
+        val.height = rowH
+        val.vertAlign = "center"
+        val.horizAlign = "right"
+        val.color = "0xEDEDEDBF"
+        vf = CreateObject("roSGNode", "Font")
+        vf.uri = "pkg:/fonts/Inter-regular.otf"
+        vf.size = 27
+        val.font = vf
+        chev = row.createChild("Poster")
+        chev.id = "chevron"
+        chev.uri = "pkg:/images/icons/chevron_right.png"
+        chev.width = 36
+        chev.height = 36
+        chev.translation = [rowW - 24 - 36, (rowH - 36) / 2]
+        chev.blendColor = "0xEDEDED9E"
+        chev.visible = spec.actionable = true
+        m.hudRows.Push(row)
+        y = y + rowH + 4
+    end for
+    h = y + 80
+    if h < 312 then h = 312
+    m.hudBg.height = h
+    m.hudRing.height = h
+    if m.hudRow >= m.hudRows.Count() then m.hudRow = 0
+    applyHudRowFocus()
+end sub
+
+sub applyHudRowFocus()
+    for i = 0 to m.hudRows.Count() - 1
+        row = m.hudRows[i]
+        f = (m.hudFocus = "rows" and i = m.hudRow)
+        row.findNode("bg").visible = f
+        if f then
+            row.findNode("label").color = "0x000000FF"
+            row.findNode("value").color = "0x000000CC"
+            row.findNode("chevron").blendColor = "0x000000FF"
+        else
+            row.findNode("label").color = "0xEDEDEDFF"
+            row.findNode("value").color = "0xEDEDEDBF"
+            row.findNode("chevron").blendColor = "0xEDEDED9E"
+        end if
+    end for
+end sub
+
+sub activateHudRow()
+    if m.hudSpecs = invalid or m.hudRow >= m.hudSpecs.Count() then return
+    spec = m.hudSpecs[m.hudRow]
+    id = Str_orEmpty(spec.id)
+    if id = "audio" then
+        openPicker("audio")
+    else if id = "subtitle" then
+        openPicker("subtitle")
+    else if id = "quality" then
+        openPicker("quality")
+    else if id = "autoplay" then
+        p = AA_copy(m.global.prefs)
+        p.autoPlayNext = not (p.autoPlayNext <> false)
+        Prefs_save(p)
+        buildHudRows()
+    else if Left(id, 8) = "chapter:" then
+        idx = Int(Val(Mid(id, 9)))
+        if idx >= 0 and idx < m.chapters.Count() then
+            seekToSource(m.chapters[idx].start_seconds * 1.0)
+            closeHud()
+        end if
+    end if
+end sub
+
+' ---------- Pickers ----------
+
+sub openPicker(kind as string)
+    m.pickerKind = kind
+    acts = []
+    m.hudChoices = []
+    if kind = "audio" then
+        tracks = Arr_or(m.video.availableAudioTracks)
+        cur = Str_orEmpty(m.video.audioTrack)
+        for i = 0 to tracks.Count() - 1
+            t = tracks[i]
+            acts.Push({ id: i.ToStr(), label: audioTrackLabel(t), checked: Str_orEmpty(t.Track) = cur or (cur = "" and i = 0) })
+        end for
+        if acts.Count() = 0 then acts.Push({ id: "-1", label: "Default", checked: true })
+        m.picker.title = "Audio"
+    else if kind = "subtitle" then
+        acts.Push({ id: "-1", label: "Off", checked: m.subtitleIndex < 0 })
+        for i = 0 to m.subtitleTracks.Count() - 1
+            acts.Push({ id: i.ToStr(), label: m.subtitleTracks[i].label, checked: i = m.subtitleIndex })
+        end for
+        m.picker.title = "Subtitles"
+    else if kind = "quality" then
+        acts.Push({ id: "auto", label: "Auto", checked: m.qualityPref = "auto" or m.qualityPref = "" })
+        if m.plan <> invalid then
+            for each q in Arr_or(m.plan.available_qualities)
+                l = Str_orEmpty(q.label)
+                if l <> "" then
+                    text = l
+                    if q.height <> invalid and LCase(l) <> Str_orEmpty(q.height) + "p" then text = l + " · " + Str_orEmpty(q.height) + "p"
+                    acts.Push({ id: l, label: text, checked: LCase(m.qualityPref) = LCase(l) })
+                end if
+            end for
+        end if
+        m.picker.title = "Quality"
+    end if
+    m.picker.actions = acts
+    m.picker.visible = true
+    m.picker.setFocus(true)
+    m.hideTimer.control = "stop"
+end sub
+
+sub onPickerDismissed()
+    m.picker.visible = false
+    afterPicker()
+end sub
+
+sub afterPicker()
+    if m.hud.visible then
+        buildHudRows()
+        focusHud()
+    else if m.controls.visible then
+        focusControls()
+        rearmHide()
+    else
+        m.focusSink.setFocus(true)
+    end if
+end sub
+
+sub onPickerChosen()
+    id = m.picker.chosen
+    m.picker.visible = false
+    kind = m.pickerKind
+    if kind = "audio" then
+        idx = Int(Val(id))
+        tracks = Arr_or(m.video.availableAudioTracks)
+        if idx >= 0 and idx < tracks.Count() then m.video.audioTrack = tracks[idx].Track
+    else if kind = "subtitle" then
+        setSubtitle(Int(Val(id)))
+    else if kind = "quality" then
+        if LCase(id) <> LCase(m.qualityPref) then requestQualityChange(id)
+    end if
+    afterPicker()
+end sub
+
+sub setSubtitle(idx as integer)
+    if idx < 0 or idx >= m.subtitleTracks.Count() then
+        m.subtitleIndex = -1
+        m.video.subtitleTrack = ""
+        m.video.globalCaptionMode = "Off"
+    else
+        m.subtitleIndex = idx
+        m.video.globalCaptionMode = "On"
+        m.video.subtitleTrack = m.subtitleTracks[idx].url
+    end if
+end sub
+
+' Quality change: replan and hand the new plan to the player at the current position.
+sub requestQualityChange(label as string)
+    if m.plan = invalid or m.sessionId = "" then return
+    inst = installationId()
+    if inst = "" then return
+    m.qualityPref = label
+    selected = {}
+    if m.plan.selected_tracks <> invalid then selected = m.plan.selected_tracks
+    body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, "quality_change", label, m.position, selected)
+    m.bufferingGroup.visible = true
+    Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/replan", body, "onReplan")
+end sub
+
+sub onReplan(event as object)
+    resp = Api_result(event)
+    if m.closing then return
+    if not resp.ok or resp.data = invalid or resp.data.outcome <> "playable" or resp.data.playback_plan = invalid then
+        m.bufferingGroup.visible = false
+        m.global.toast = "Couldn't change the quality"
+        if m.plan <> invalid then m.qualityPref = PlaybackCaps_qualityPreference()
+        return
+    end if
+    plan = resp.data.playback_plan
+    if PlaybackCaps_planProblem(resp.data) <> "" then
+        m.bufferingGroup.visible = false
+        m.global.toast = "Couldn't change the quality"
+        return
+    end if
+    resumeAt = m.position
+    m.video.control = "stop"
+    applyPlan(plan)
+    ' The server anchors player_start_seconds to position_seconds; if it didn't, seek ourselves.
+    tl = plan.timeline
+    if tl = invalid or tl.player_start_seconds = invalid or Abs(tl.player_start_seconds + m.timelineOffset - resumeAt) > 5 then
+        m.resumeAfterStart = resumeAt
+    end if
+end sub
+
+' ---------- Keys ----------
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then
+        if (key = "left" or key = "right") and m.scrubbing then endHold()
+        return false
+    end if
+    if m.closing then return true
+    if m.errorGroup.visible then
+        if key = "back" then
+            exitPlayer()
+            return true
+        else if key = "left" or key = "right" then
+            if m.retryBtn.hasFocus() then m.errorCloseBtn.setFocus(true) else m.retryBtn.setFocus(true)
+            return true
+        end if
+        return true
+    end if
+    if m.picker.visible then return true
+    if m.upNext.visible then return handleUpNextKey(key)
+    if m.hud.visible then return handleHudKey(key)
+    if key = "play" then
+        togglePlay()
+        return true
+    end if
+    if m.controls.visible then return handleControlsKey(key)
+    return handleCleanKey(key)
+end function
+
+function handleUpNextKey(key as string) as boolean
+    btns = [m.unPlayBtn, m.unKeepBtn, m.unBackBtn]
+    if key = "down" then
+        if m.upNextIndex < 2 then m.upNextIndex = m.upNextIndex + 1
+        btns[m.upNextIndex].setFocus(true)
+        m.countdownTimer.control = "stop"
+        m.unPlayBtn.text = "Play Now"
+        m.countdown = -1
+    else if key = "up" then
+        if m.upNextIndex > 0 then m.upNextIndex = m.upNextIndex - 1
+        btns[m.upNextIndex].setFocus(true)
+    else if key = "back" then
+        keepWatching()
+    end if
+    return true
+end function
+
+function handleHudKey(key as string) as boolean
+    if key = "back" then
+        closeHud()
+        return true
+    end if
+    if m.hudFocus = "tabs" then
+        if key = "left" then
+            selectHudTab(m.hudTab - 1)
+        else if key = "right" then
+            selectHudTab(m.hudTab + 1)
+        else if key = "down" then
+            if m.hudRows.Count() > 0 then
+                m.hudFocus = "rows"
+                m.hudRow = 0
+                focusHud()
+            end if
+        else if key = "up" then
+            closeHud()
+        end if
+        return true
+    end if
+    ' Rows
+    if key = "up" then
+        if m.hudRow > 0 then
+            m.hudRow = m.hudRow - 1
+            applyHudRowFocus()
+        else
+            m.hudFocus = "tabs"
+            focusHud()
+        end if
+    else if key = "down" then
+        if m.hudRow < m.hudRows.Count() - 1 then
+            m.hudRow = m.hudRow + 1
+            applyHudRowFocus()
+        end if
+    else if key = "OK" then
+        activateHudRow()
+    end if
+    return true
+end function
+
+function handleControlsKey(key as string) as boolean
+    rearmHide()
+    if key = "back" then
+        cancelScrub()
+        hideControls()
+        return true
+    end if
+    zone = m.controlsZone
+    if m.skipBtn.hasFocus() and m.skipGroup.visible then zone = "skip"
+    if zone = "scrubber" then
+        if key = "left" then
+            nudgeScrub(-1)
+        else if key = "right" then
+            nudgeScrub(1)
+        else if key = "OK" then
+            commitScrub()
+        else if key = "down" then
+            cancelScrub()
+            m.controlsZone = "transport"
+            focusControls()
+        else if key = "up" then
+            if m.skipGroup.visible and m.skipBtn.visible then
+                cancelScrub()
+                m.controlsZone = "skip"
+                m.skipBtn.setFocus(true)
+            end if
+        else if key = "rewind" or key = "replay" then
+            onSkipBack()
+        else if key = "fastforward" then
+            onSkipForward()
+        end if
+        return true
+    else if zone = "skip" then
+        if key = "down" then
+            m.controlsZone = "scrubber"
+            focusControls()
+        end if
+        return true
+    end if
+    ' Transport row
+    btns = transportButtons()
+    if key = "left" then
+        if m.transportIndex > 0 then
+            m.transportIndex = m.transportIndex - 1
+            btns[m.transportIndex].setFocus(true)
+        end if
+    else if key = "right" then
+        if m.transportIndex < btns.Count() - 1 then
+            m.transportIndex = m.transportIndex + 1
+            btns[m.transportIndex].setFocus(true)
+        end if
+    else if key = "up" then
+        m.controlsZone = "scrubber"
+        focusControls()
+    else if key = "down" then
+        hideControls()
+    else if key = "rewind" or key = "replay" then
+        onSkipBack()
+    else if key = "fastforward" then
+        onSkipForward()
+    else if key = "options" then
+        openHud(1)
+    else if key = "OK" then
+        ' A focused button handles OK itself; this is the fallthrough when none is focused.
+        focusControls()
+    end if
+    return true
+end function
+
+function handleCleanKey(key as string) as boolean
+    if key = "back" then
+        if m.skipGroup.visible and m.skipBtn.hasFocus() then
+            hideSkipPill()
+            return true
+        end if
+        exitPlayer()
+        return true
+    else if key = "left" or key = "rewind" or key = "replay" then
+        onSkipBack()
+        return true
+    else if key = "right" or key = "fastforward" then
+        onSkipForward()
+        return true
+    else if key = "down" then
+        openHud(2)
+        return true
+    else if key = "options" then
+        openHud(1)
+        return true
+    else if key = "up" or key = "OK" then
+        if m.plan <> invalid then showControls()
+        return true
+    end if
+    return false
+end function

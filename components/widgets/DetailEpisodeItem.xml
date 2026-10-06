@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Episode rail card (design-spec §4.3 Episodes): a 16:9 still with a 10 px progress bar and a watched
+  check, then eyebrow "S1 · E1", title, meta line and a 3-line synopsis. Focus: 3 dp white ring, no scale.
+  The current episode (itemContent.isCurrent) gets a white 70% ring.
+  Expected ContentNode fields: title, HDPosterUrl, progress, watched, eyebrow, meta, synopsis, isCurrent.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="DetailEpisodeItem" extends="Group">
+  <interface>
+    <field id="itemContent" type="node" onChange="onContent" />
+    <field id="width" type="float" onChange="layout" />
+    <field id="height" type="float" onChange="layout" />
+    <field id="focusPercent" type="float" onChange="onFocus" />
+    <field id="itemHasFocus" type="boolean" onChange="onFocus" />
+    <field id="rowHasFocus" type="boolean" onChange="onFocus" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/DetailEpisodeItem.brs" />
+  <children>
+    <Poster id="placeholder" uri="pkg:/images/ui/r16.9.png" blendColor="0x15171CFF" />
+    <Poster id="placeholderIcon" uri="pkg:/images/icons/tv.png" blendColor="0xEDEDED40" />
+    <MaskGroup id="mask" maskUri="pkg:/images/ui/mask_landscape.png">
+      <Poster id="image" loadDisplayMode="scaleToZoom" />
+      <Rectangle id="progressTrack" color="0xFFFFFF33" visible="false" />
+      <Rectangle id="progressFill" color="0xEDEDEDFF" visible="false" />
+    </MaskGroup>
+    <Group id="watchedBadge" visible="false">
+      <Poster id="watchedBg" uri="pkg:/images/ui/circle.png" blendColor="0xEDEDEDFF" width="44" height="44" />
+      <Poster id="watchedIcon" uri="pkg:/images/icons/check.png" blendColor="0x000000FF" width="30" height="30" translation="[7, 7]" />
+    </Group>
+    <Poster id="currentRing" uri="pkg:/images/ui/r16_ring2.9.png" blendColor="0xFFFFFFB3" visible="false" />
+    <Poster id="focusRing" uri="pkg:/images/ui/r16_ring4.9.png" blendColor="0xFFFFFFE6" opacity="0" />
+    <Label id="eyebrow" color="0xEDEDED9E" maxLines="1">
+      <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="19" />
+    </Label>
+    <Label id="title" color="0xEDEDEDC7" maxLines="1">
+      <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+    </Label>
+    <Label id="meta" color="0xEDEDEDB3" maxLines="1">
+      <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+    </Label>
+    <Label id="synopsis" color="0xEDEDED9E" wrap="true" maxLines="3" lineSpacing="4">
+      <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="27" />
+    </Label>
+  </children>
+</component>

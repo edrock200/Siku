@@ -24,9 +24,10 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 OUT = os.path.join(ROOT, "out", "sim")
 
 KEYS = {
+    # Terminal sequences mapped by brs-cli to Roku remote keys.
     "up": "\x1b[A", "down": "\x1b[B", "right": "\x1b[C", "left": "\x1b[D",
-    "ok": "\r", "back": "\x7f", "home": "\x1b", "play": " ",
-    "rev": ",", "fwd": ".", "options": "*", "replay": "\x08",
+    "ok": "\r", "back": "\x1b[3~", "home": "\x1bOQ", "play": "\x1b[F",
+    "rev": "\x1b[5~", "fwd": "\x1b[6~", "options": "\x1b[2~", "replay": "\x7f",
 }
 
 

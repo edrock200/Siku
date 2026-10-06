@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Centered action dialog ("More Actions", pickers). Rows invert to #EDEDED with black text on focus.
+  Usage: set title and actions, make it visible, then setFocus(true). Observe chosen / dismissed.
+  Fields:
+    title            header text (rendered uppercase, muted)
+    actions          [{id, label, checked?}]
+    menuWidth        default 720
+    chosen (out)     the id of the selected action
+    dismissed (out)  true when Back is pressed
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="DetailMoreMenu" extends="Group">
+  <interface>
+    <field id="title" type="string" onChange="rebuild" />
+    <field id="actions" type="array" onChange="rebuild" />
+    <field id="menuWidth" type="integer" value="720" onChange="rebuild" />
+    <field id="chosen" type="string" alwaysNotify="true" />
+    <field id="dismissed" type="boolean" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/DetailMoreMenu.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <children>
+    <Rectangle id="dim" width="1920" height="1080" color="0x000000A6" />
+    <Group id="card">
+      <Poster id="cardBg" uri="pkg:/images/ui/r28.9.png" blendColor="0x1C1D22F5" />
+      <Poster id="cardRing" uri="pkg:/images/ui/r28_ring2.9.png" blendColor="0xFFFFFF24" />
+      <Label id="titleLabel" color="0xEDEDED9E">
+        <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="22" />
+      </Label>
+      <Group id="rows" />
+    </Group>
+  </children>
+</component>

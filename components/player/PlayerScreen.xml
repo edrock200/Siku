@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Video player (docs/design-spec.md §4.10, docs/api-spec.md §8).
+  params: { itemId, fileId?, startPosition? (seconds; 0 = start over; omitted = server resume),
+            title?, audioTrackId?, subtitleTrackId? }
+  Pipeline: GET /watch/{id} → GET /playback/capabilities (cached on m.global.playbackCaps)
+            → POST /playback/start → Video node → progress every 10 s → DELETE /playback/{session}.
+  The Video node never takes focus (enableUI=false); keys go to focusSink or our own controls so
+  this screen's onKeyEvent sees them.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="PlayerScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/player/PlayerScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/PlaybackCaps.brs" />
+  <children>
+    <Rectangle id="bg" width="1920" height="1080" color="0x000000FF" />
+    <Video id="video" width="1920" height="1080" enableUI="false" enableTrickPlay="false" notificationInterval="1" />
+    <Poster id="videoFrame" uri="pkg:/images/ui/r16_ring2.9.png" blendColor="0xFFFFFF29" visible="false" />
+    <Group id="focusSink" focusable="true" />
+
+    <Group id="bufferingGroup" visible="false">
+      <LoadingSpinner id="bufferSpinner" size="96" translation="[912, 472]" />
+      <Label id="bufferLabel" text="Buffering" width="1920" translation="[0, 590]" horizAlign="center" color="0xEDEDEDBF">
+        <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="27" />
+      </Label>
+    </Group>
+
+    <Group id="feedbackGroup" visible="false">
+      <Poster uri="pkg:/images/ui/r42.9.png" blendColor="0x000000A6" width="200" height="84" translation="[860, 498]" />
+      <Label id="feedbackLabel" width="200" height="84" translation="[860, 498]" horizAlign="center" vertAlign="center" color="0xEDEDEDFF">
+        <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="30" />
+      </Label>
+    </Group>
+
+    <Group id="controls" visible="false">
+      <Poster id="scrim" uri="pkg:/images/ui/scrim_bottom_player.png" width="1920" height="480" translation="[0, 600]" />
+      <Label id="titleLabel" translation="[160, 630]" width="1200" maxLines="1" color="0xEDEDEDFF">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="34" />
+      </Label>
+      <Label id="epTag" translation="[160, 676]" width="1200" maxLines="1" color="0xEDEDED9E">
+        <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="26" />
+      </Label>
+      <PlayerScrubber id="scrubber" translation="[160, 796]" width="1600" />
+      <Group id="transport" translation="[160, 912]">
+        <PlayerTransportButton id="skipBackBtn" iconUri="pkg:/images/icons/rewind.png" translation="[0, 0]" />
+        <PlayerTransportButton id="playPauseBtn" iconUri="pkg:/images/icons/pause.png" translation="[98, 0]" />
+        <PlayerTransportButton id="skipFwdBtn" iconUri="pkg:/images/icons/forward.png" translation="[196, 0]" />
+        <PlayerTransportButton id="upNextBtn" iconUri="pkg:/images/icons/skip_next.png" visible="false" />
+        <PlayerTransportButton id="subtitlesBtn" iconUri="pkg:/images/icons/subtitles.png" />
+        <PlayerTransportButton id="tuneBtn" iconUri="pkg:/images/icons/tune.png" />
+        <PlayerTransportButton id="closeBtn" iconUri="pkg:/images/icons/close.png" />
+      </Group>
+    </Group>
+
+    <Group id="skipGroup" visible="false">
+      <Label id="skippedCaption" text="Intro skipped" color="0xEDEDEDBF" horizAlign="right" width="400" visible="false">
+        <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />
+      </Label>
+      <PillButton id="skipBtn" text="Skip Intro" variant="glass" height="72" padX="48" fontSize="28" scaleOnFocus="1.0" />
+    </Group>
+
+    <Group id="hud" visible="false">
+      <Group id="hudTabs" translation="[240, 100]" />
+      <Poster id="hudBg" uri="pkg:/images/ui/r32.9.png" blendColor="0x0A0A0AF5" width="1440" height="400" translation="[240, 196]" />
+      <Poster id="hudRing" uri="pkg:/images/ui/r32_ring2.9.png" blendColor="0xFFFFFF24" width="1440" height="400" translation="[240, 196]" />
+      <Group id="hudRows" translation="[280, 236]" />
+    </Group>
+
+    <Group id="upNext" visible="false">
+      <Group id="upNextPanel" translation="[1136, 240]">
+        <Label id="unEyebrow" text="UP NEXT" color="0xEDEDED9E">
+          <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="24" />
+        </Label>
+        <Label id="unSeries" translation="[0, 44]" width="620" maxLines="1" color="0xEDEDEDBF">
+          <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="28" />
+        </Label>
+        <Label id="unEpisode" translation="[0, 90]" width="620" wrap="true" maxLines="2" color="0xEDEDEDFF">
+          <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="44" />
+        </Label>
+        <Label id="unMeta" translation="[0, 206]" width="620" maxLines="1" color="0xEDEDED9E">
+          <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />
+        </Label>
+        <Label id="unOverview" translation="[0, 246]" width="620" wrap="true" maxLines="4" lineSpacing="4" color="0xEDEDEDBF">
+          <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="26" />
+        </Label>
+        <PillButton id="unPlayBtn" text="Play Now" variant="solid" fixedWidth="440" translation="[0, 420]" scaleOnFocus="1.0" />
+        <PillButton id="unKeepBtn" text="Keep Watching" fixedWidth="520" translation="[0, 514]" scaleOnFocus="1.0" />
+        <PillButton id="unBackBtn" text="Back" fixedWidth="320" translation="[0, 608]" scaleOnFocus="1.0" />
+      </Group>
+    </Group>
+
+    <Group id="errorGroup" visible="false">
+      <Rectangle width="1920" height="1080" color="0x000000FF" />
+      <Poster uri="pkg:/images/icons/error.png" width="80" height="80" translation="[920, 380]" blendColor="0xEDEDED9E" />
+      <Label id="errorTitle" text="Something went wrong" width="1920" translation="[0, 480]" horizAlign="center" color="0xEDEDEDFF">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="38" />
+      </Label>
+      <Label id="errorLabel" width="1200" translation="[360, 540]" horizAlign="center" wrap="true" maxLines="3" color="0xEDEDEDBF">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="27" />
+      </Label>
+      <PillButton id="retryBtn" text="Try again" variant="solid" translation="[770, 680]" />
+      <PillButton id="errorCloseBtn" text="Close" translation="[990, 680]" />
+    </Group>
+
+    <DetailMoreMenu id="picker" visible="false" />
+
+    <Timer id="progressTimer" duration="10" repeat="true" />
+    <Timer id="hideTimer" duration="5" />
+    <Timer id="feedbackTimer" duration="1.2" />
+    <Timer id="countdownTimer" duration="1" repeat="true" />
+    <Timer id="holdTimer" duration="0.25" repeat="true" />
+    <Timer id="refreshTimeout" duration="12" />
+    <Timer id="stopTimeout" duration="2.5" />
+    <Timer id="captionTimer" duration="4" />
+  </children>
+</component>

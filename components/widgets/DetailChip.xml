@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Capsule chip (season picker, filmography filters, HUD tabs). 52 px tall, 24 px side padding.
+  selected: white fill, black text. focused: translucent fill, white text. rest: hairline ring.
+  Fields: text, selected, height, fontSize, width (out), buttonSelected (out)
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="DetailChip" extends="Group">
+  <interface>
+    <field id="text" type="string" onChange="layout" />
+    <field id="selected" type="boolean" value="false" onChange="applyState" />
+    <field id="height" type="integer" value="52" onChange="layout" />
+    <field id="padX" type="integer" value="24" onChange="layout" />
+    <field id="fontSize" type="integer" value="24" onChange="layout" />
+    <field id="width" type="integer" value="0" />
+    <field id="buttonSelected" type="boolean" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/DetailChip.brs" />
+  <children>
+    <Poster id="bg" />
+    <Poster id="ring" />
+    <Label id="label" vertAlign="center" horizAlign="center" />
+  </children>
+</component>
