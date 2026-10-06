@@ -295,3 +295,24 @@ function Label_height(lbl as object) as float
     end if
     return lineH * lines
 end function
+
+' ---------- Nodes ----------
+
+' Finds `id` in the subtree under `parent` (parent included). Use this instead of
+' parent.findNode(id) for anything created at runtime: on a real Roku, findNode searches from
+' the nearest enclosing *component*, not from the node it is called on, so rows built with
+' shared child ids ("label", "bg") all resolve to the first row's nodes. brs-engine searches
+' the subtree, which hides the bug in the simulator.
+function Node_find(parent as object, id as string) as object
+    if parent = invalid then return invalid
+    if parent.id = id then return parent
+    queue = [parent]
+    while queue.Count() > 0
+        n = queue.Shift()
+        for each kid in n.getChildren(-1, 0)
+            if kid.id = id then return kid
+            queue.Push(kid)
+        end for
+    end while
+    return invalid
+end function

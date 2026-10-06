@@ -85,9 +85,9 @@ sub relayout()
     for i = 0 to n - 1
         g = m.nodes[i]
         y = pad + Int(i * pitch + (pitch - chip) / 2)
-        dot = g.findNode("dot")
-        bg = g.findNode("bg")
-        lbl = g.findNode("label")
+        dot = Node_find(g, "dot")
+        bg = Node_find(g, "bg")
+        lbl = Node_find(g, "label")
         if m.expanded then
             dot.visible = false
             if i = 0 then
@@ -126,9 +126,9 @@ sub restyle()
     sel = selectedIndex()
     for i = 0 to m.nodes.Count() - 1
         g = m.nodes[i]
-        dot = g.findNode("dot")
-        bg = g.findNode("bg")
-        lbl = g.findNode("label")
+        dot = Node_find(g, "dot")
+        bg = Node_find(g, "bg")
+        lbl = Node_find(g, "label")
         focused = m.expanded and i = m.focusIndex
         isSel = i = sel
         if not m.expanded then

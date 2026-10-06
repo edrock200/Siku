@@ -72,7 +72,7 @@ sub rebuild()
     textWidths = []
     for i = 0 to tabs.Count() - 1
         g = tabNode(i)
-        lbl = g.findNode("label")
+        lbl = Node_find(g, "label")
         Label_setFont(lbl, "semibold", 26)
         lbl.text = Str_orEmpty(tabs[i].label)
         lbl.width = 0
@@ -103,9 +103,9 @@ sub rebuild()
         g.visible = true
         g.translation = [x, y]
         w = widths[i]
-        g.findNode("bg").width = w
-        g.findNode("ring").width = w
-        lbl = g.findNode("label")
+        Node_find(g, "bg").width = w
+        Node_find(g, "ring").width = w
+        lbl = Node_find(g, "label")
         lbl.width = w
         lbl.translation = [0, 0]
         frames.Push([x, w])
@@ -137,9 +137,9 @@ sub applyState()
     ' Tabs.
     for i = 0 to tabs.Count() - 1
         g = m.tabNodes[i]
-        bg = g.findNode("bg")
-        ring = g.findNode("ring")
-        lbl = g.findNode("label")
+        bg = Node_find(g, "bg")
+        ring = Node_find(g, "ring")
+        lbl = Node_find(g, "label")
         isF = (focused and fi = i) or m.top.activeTab = i
         isS = si = i
         if isF then

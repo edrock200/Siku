@@ -121,12 +121,12 @@ sub rebuild()
         r = rows[i]
         g = rowNode(i)
         g.visible = true
-        bg = g.findNode("bg")
-        divider = g.findNode("divider")
-        icon = g.findNode("icon")
-        lbl = g.findNode("label")
-        sub1 = g.findNode("sub")
-        trailing = g.findNode("trailing")
+        bg = Node_find(g, "bg")
+        divider = Node_find(g, "divider")
+        icon = Node_find(g, "icon")
+        lbl = Node_find(g, "label")
+        sub1 = Node_find(g, "sub")
+        trailing = Node_find(g, "trailing")
         if Str_orEmpty(r.id) = "-" then
             g.translation = [m.padX, y]
             divider.visible = true
@@ -233,11 +233,11 @@ sub applyFocus()
             ' nothing
         else
             isF = focused and i = fi
-            g.findNode("bg").visible = isF
-            lbl = g.findNode("label")
-            icon = g.findNode("icon")
-            trailing = g.findNode("trailing")
-            sub1 = g.findNode("sub")
+            Node_find(g, "bg").visible = isF
+            lbl = Node_find(g, "label")
+            icon = Node_find(g, "icon")
+            trailing = Node_find(g, "trailing")
+            sub1 = Node_find(g, "sub")
             if isF then
                 lbl.color = Theme().colors.onInk
                 Label_setFont(lbl, "semibold", 26)

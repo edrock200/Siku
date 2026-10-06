@@ -139,9 +139,9 @@ sub applyFocusVisuals()
     end if
     for i = 0 to m.chipDefs.Count() - 1
         g = m.chips.getChild(i)
-        bg = g.findNode("bg")
-        ring = g.findNode("ring")
-        lbl = g.findNode("label")
+        bg = Node_find(g, "bg")
+        ring = Node_find(g, "ring")
+        lbl = Node_find(g, "label")
         isF = pageFocused and m.focusArea = "chips" and m.chipFocus = i
         isS = m.chipIndex = i
         if isF or isS then

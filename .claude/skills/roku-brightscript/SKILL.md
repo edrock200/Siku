@@ -30,8 +30,8 @@ All network I/O goes through `components/tasks/ApiTask` via the `Api_*` helpers;
 a component.
 
 **3. Don't trust `Label.boundingRect()` for layout.**
-On device it can return width/height 0 before the font is ready. Tabs collapsed into white dots and
-badges into empty ovals. Measure with `Label_width(lbl)` and `Label_height(lbl)` from `Utils.brs`:
+On device it can return width/height 0 before the font is ready. (The blank white top-bar
+capsules were first blamed on this; the real cause was pitfall 11.) Measure with `Label_width(lbl)` and `Label_height(lbl)` from `Utils.brs`:
 they use a cached SceneGraph `Font` node (`getOneLineWidth` / `getOneLineHeight`, guarded with
 `try`/`catch` because the simulator's Font node lacks them) and fall back to `boundingRect`.
 If you add a layout that depends on text size, use those helpers, never `boundingRect()` alone.
@@ -74,6 +74,15 @@ callback hooks, `catch e`), reference it once with a comment saying why.
 **10. Things the simulator cannot test.** Video and audio never leave the buffering state; keyboard
 dialogs can't be typed into; key *hold* can't be simulated. Anything in those areas needs a real
 Roku. Say so in your report instead of claiming it works.
+
+**11. `node.findNode(id)` does not search that node's subtree.** On device it searches from the
+*nearest enclosing component* (Roku documents this; brs-engine searches the subtree, so the
+simulator hides it). Rows, tabs and chips built at runtime with shared child ids (`"label"`,
+`"bg"`, `"ring"`) all resolve to the *first* row's nodes: one label gets every text, the rest stay
+blank, their backgrounds are never sized and show as small white circles. Use
+`Node_find(parent, id)` from `Utils.brs`, or keep direct references when you create the children.
+`m.top.findNode(id)` is fine for ids declared once in the component's XML.
+Check with `grep -rn '\.findNode(' components --include=*.brs | grep -v 'm\.top\.findNode'`.
 
 ## Project conventions (short version; `docs/ARCHITECTURE.md` has the full one)
 - 1920×1080 canvas, pixel coordinates. Android dp × 2 = px; Android sp × 1.72 = px.
@@ -140,3 +149,4 @@ released version is missing here.
 - **v0.1.4** Neither can `roFontRegistry`. Text is measured with a SceneGraph `Font` node instead.
 - **v0.1.5** `.next`, `.sub`, `.end` are reserved on device; real-server payloads may send numbers as strings.
 - **v0.1.6** Sharing one `Font` node across Labels was *not* the cause of blank capsules (theory disproved on device); the cause is still being isolated with `FontTestScreen`. Lesson: when the simulator agrees with every hypothesis, build a diagnostic screen and let the device decide.
+- **v0.1.7** `findNode` on a runtime-built group searches the whole enclosing component (pitfall 11). That, not fonts or `boundingRect`, caused the white top-bar circles, the blank Search chips and the stuck subtitle highlight. Found by logging every tab's resolved label on device.

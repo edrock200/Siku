@@ -393,13 +393,13 @@ sub setBadges(labels as object)
     for i = 0 to labels.Count() - 1
         g = badgeNode(i)
         g.visible = true
-        lbl = g.findNode("label")
+        lbl = Node_find(g, "label")
         lbl.text = labels[i]
         lbl.width = 0
         w = Int(Label_width(lbl)) + 24
         lbl.width = w
-        g.findNode("bg").width = w
-        g.findNode("ring").width = w
+        Node_find(g, "bg").width = w
+        Node_find(g, "ring").width = w
         g.translation = [x, 0]
         x = x + w + 10
     end for

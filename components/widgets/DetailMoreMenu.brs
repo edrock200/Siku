@@ -111,15 +111,15 @@ sub applyFocus()
     for i = 0 to m.rowNodes.Count() - 1
         row = m.rowNodes[i]
         focused = (i = m.index)
-        row.findNode("bg").visible = focused
-        det = row.findNode("detail")
+        Node_find(row, "bg").visible = focused
+        det = Node_find(row, "detail")
         if focused then
-            row.findNode("label").color = "0x000000FF"
-            row.findNode("check").blendColor = "0x000000FF"
+            Node_find(row, "label").color = "0x000000FF"
+            Node_find(row, "check").blendColor = "0x000000FF"
             if det <> invalid then det.color = "0x000000B3"
         else
-            row.findNode("label").color = "0xEDEDEDFF"
-            row.findNode("check").blendColor = "0xEDEDEDFF"
+            Node_find(row, "label").color = "0xEDEDEDFF"
+            Node_find(row, "check").blendColor = "0xEDEDEDFF"
             if det <> invalid then det.color = "0xEDEDED9E"
         end if
     end for

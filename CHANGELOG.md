@@ -3,6 +3,16 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.7
+
+- **Fixed:** the empty white circles in the top bar. The tabs now show their names (Home,
+  Movies, Series and so on) and the highlight follows the selected tab.
+- **Fixed:** the empty buttons in Search now show their labels.
+- **Fixed:** the highlight in the subtitle menu now moves with your selection.
+- **Fixed:** the same cause was also affecting the player's settings menu, the More menu on
+  detail pages, the side panels and action menus, the Calendar day strip and the A to Z rail;
+  they now all show the right text and highlight the right row.
+
 ## v0.1.6
 
 - **Fixed:** the subtitle menu in the player now names tracks by language ("English") instead

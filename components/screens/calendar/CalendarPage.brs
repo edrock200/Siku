@@ -211,12 +211,12 @@ sub updateStrip()
     todayYmd = Cal_ymd(m.today)
     for i = 0 to 6
         dt = Cal_addDays(m.weekStart, i)
-        g = m.stripItems.findNode("day" + i.ToStr())
-        g.findNode("dow").text = UCase(Cal_dowName(dt))
-        g.findNode("num").text = dt.GetDayOfMonth().ToStr()
+        g = Node_find(m.stripItems, "day" + i.ToStr())
+        Node_find(g, "dow").text = UCase(Cal_dowName(dt))
+        Node_find(g, "num").text = dt.GetDayOfMonth().ToStr()
         ymd = m.weekDates[i]
-        g.findNode("dot").visible = m.eventsByDate.DoesExist(ymd) and m.eventsByDate[ymd].Count() > 0
-        g.findNode("ring").visible = ymd = todayYmd
+        Node_find(g, "dot").visible = m.eventsByDate.DoesExist(ymd) and m.eventsByDate[ymd].Count() > 0
+        Node_find(g, "ring").visible = ymd = todayYmd
     end for
     applyFocusVisuals()
 end sub
@@ -229,8 +229,8 @@ sub applyFocusVisuals()
     ' Segments
     for i = 0 to m.filters.Count() - 1
         g = m.segItems.getChild(i)
-        bg = g.findNode("bg")
-        lbl = g.findNode("label")
+        bg = Node_find(g, "bg")
+        lbl = Node_find(g, "label")
         isF = pageFocused and m.focusArea = "segments" and m.segFocus = i
         isS = m.filterIndex = i
         if isF then
@@ -249,7 +249,7 @@ sub applyFocusVisuals()
     ' Strip
     for i = 0 to 9
         g = stripNode(i)
-        bg = g.findNode("bg")
+        bg = Node_find(g, "bg")
         isF = pageFocused and m.focusArea = "strip" and m.stripFocus = i
         isDay = i >= 1 and i <= 7
         isSel = isDay and (i - 1) = m.selectedDay
@@ -269,24 +269,24 @@ sub applyFocusVisuals()
             tint = c.ink
             sub1 = c.inkMuted
         end if
-        icon = g.findNode("icon")
+        icon = Node_find(g, "icon")
         if icon <> invalid then icon.blendColor = tint
-        lbl = g.findNode("label")
+        lbl = Node_find(g, "label")
         if lbl <> invalid then lbl.color = tint
-        num = g.findNode("num")
+        num = Node_find(g, "num")
         if num <> invalid then num.color = tint
-        dow = g.findNode("dow")
+        dow = Node_find(g, "dow")
         if dow <> invalid then dow.color = sub1
-        dot = g.findNode("dot")
+        dot = Node_find(g, "dot")
         if dot <> invalid then dot.blendColor = tint
     end for
 end sub
 
 function stripNode(i as integer) as object
-    if i = 0 then return m.stripItems.findNode("prev")
-    if i = 8 then return m.stripItems.findNode("next")
-    if i = 9 then return m.stripItems.findNode("today")
-    return m.stripItems.findNode("day" + (i - 1).ToStr())
+    if i = 0 then return Node_find(m.stripItems, "prev")
+    if i = 8 then return Node_find(m.stripItems, "next")
+    if i = 9 then return Node_find(m.stripItems, "today")
+    return Node_find(m.stripItems, "day" + (i - 1).ToStr())
 end function
 
 ' ---------- Lifecycle ----------

@@ -73,8 +73,8 @@ sub rebuild()
         g = rowNode(i)
         g.visible = true
         g.translation = [pad, y]
-        icon = g.findNode("icon")
-        lbl = g.findNode("label")
+        icon = Node_find(g, "icon")
+        lbl = Node_find(g, "label")
         iconName = Str_orEmpty(a.icon)
         if iconName <> "" then
             icon.visible = true
@@ -114,9 +114,9 @@ sub applyFocus()
     for i = 0 to m.ids.Count() - 1
         g = m.rowNodes[i]
         isF = focused and i = m.focusIndex
-        g.findNode("bg").visible = isF
-        lbl = g.findNode("label")
-        icon = g.findNode("icon")
+        Node_find(g, "bg").visible = isF
+        lbl = Node_find(g, "label")
+        icon = Node_find(g, "icon")
         if isF then
             lbl.color = Theme().colors.onInk
             Label_setFont(lbl, "semibold", 27)

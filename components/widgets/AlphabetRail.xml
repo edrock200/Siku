@@ -23,6 +23,7 @@
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/AlphabetRail.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Theme.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
   <children>
     <Poster id="panelShadow" uri="pkg:/images/ui/r28.9.png" blendColor="0x0000008C" visible="false" />
     <Poster id="panelBg" uri="pkg:/images/ui/r22.9.png" blendColor="0x1A1C22F2" visible="false" />

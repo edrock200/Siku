@@ -1691,15 +1691,15 @@ sub applyHudRowFocus()
     for i = 0 to m.hudRows.Count() - 1
         row = m.hudRows[i]
         f = (m.hudFocus = "rows" and i = m.hudRow)
-        row.findNode("bg").visible = f
+        Node_find(row, "bg").visible = f
         if f then
-            row.findNode("label").color = "0x000000FF"
-            row.findNode("value").color = "0x000000CC"
-            row.findNode("chevron").blendColor = "0x000000FF"
+            Node_find(row, "label").color = "0x000000FF"
+            Node_find(row, "value").color = "0x000000CC"
+            Node_find(row, "chevron").blendColor = "0x000000FF"
         else
-            row.findNode("label").color = "0xEDEDEDFF"
-            row.findNode("value").color = "0xEDEDEDBF"
-            row.findNode("chevron").blendColor = "0xEDEDED9E"
+            Node_find(row, "label").color = "0xEDEDEDFF"
+            Node_find(row, "value").color = "0xEDEDEDBF"
+            Node_find(row, "chevron").blendColor = "0xEDEDED9E"
         end if
     end for
 end sub

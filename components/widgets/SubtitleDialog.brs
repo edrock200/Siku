@@ -382,13 +382,13 @@ sub applyFocus()
         e = m.entries[i]
         if e.focusable then
             f = (i = m.index)
-            bg = e.node.findNode("bg")
-            ring = e.node.findNode("ring")
-            lbl = e.node.findNode("label")
-            valLbl = e.node.findNode("value")
-            det = e.node.findNode("detail")
-            chk = e.node.findNode("check")
-            hi = e.node.findNode("hi")
+            bg = Node_find(e.node, "bg")
+            ring = Node_find(e.node, "ring")
+            lbl = Node_find(e.node, "label")
+            valLbl = Node_find(e.node, "value")
+            det = Node_find(e.node, "detail")
+            chk = Node_find(e.node, "check")
+            hi = Node_find(e.node, "hi")
             if f then
                 bg.blendColor = "0xEDEDEDFF"
                 ring.visible = true
