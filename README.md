@@ -27,8 +27,9 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Playback | Resume, progress sync, mark watched, audio and subtitle selection, Skip Intro, Up Next | 🟡 needs device testing |
 | Settings | Account, playback and subtitle preferences, sign out, switch server | ✅ |
 | Audio | Audiobooks (chapters, parts, resume, sleep timer) and music albums/artists with a now-playing screen | 🟡 needs device testing; music waits on server support |
+| Requests | Request movies and series, track their status, approve or decline as a moderator (when the server enables it) | ✅ |
 
-Not planned for v1: Watch Party, Requests, AI subtitle tools, ebooks (also absent from Android TV), and downloads or any offline/local-storage features (Android TV is streaming-only too).
+Not planned for v1: Watch Party, AI subtitle tools, ebooks (also absent from Android TV), and downloads or any offline/local-storage features (Android TV is streaming-only too).
 
 ## Install (side-load)
 
