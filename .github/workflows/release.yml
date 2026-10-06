@@ -72,6 +72,9 @@ jobs:
           if ! grep -q '^- ' out/release-notes.md; then
             echo "::warning::CHANGELOG.md has no section for $tag; add one so the release has notes."
           fi
+          if ! grep -q -- "\*\*$tag\*\*" .claude/skills/roku-brightscript/SKILL.md; then
+            echo "::warning::.claude/skills/roku-brightscript/SKILL.md has no Release log entry for $tag; record what this build taught."
+          fi
           cat out/release-notes.md
       - uses: softprops/action-gh-release@v2
         if: steps.exists.outputs.released == 'false'

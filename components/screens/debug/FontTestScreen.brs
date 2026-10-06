@@ -1,73 +1,143 @@
 ' SPDX-License-Identifier: AGPL-3.0-or-later
-' Each case changes one thing. Whichever rows are blank on a real Roku identify the culprit.
+' Round 2: exact clones of the capsule widgets that draw blank on a real Roku (top-bar tab,
+' Search chip, Calendar badge) next to the PillButton pattern that works, then one-property
+' variations of the tab. Whichever rows are blank isolate the failing property.
 
 sub init()
-    lines = []
+    y = 60
+    m.top.findNode("hdr").text = "Round 2: capsule clones. Blank text = failing setup."
 
-    ' 3: code Font, text set, width never touched (like PillButton minus the width dance).
-    l = m.top.findNode("t3")
-    Label_setFont(l, "semibold", 30)
-    l.text = "3 code font, no width"
-    lines.Push("t3 w=" + Str(l.boundingRect().width))
-
-    ' 4: code Font, width 0 then restored to a positive width, center aligned (tab pattern).
-    l = m.top.findNode("t4")
-    Label_setFont(l, "semibold", 30)
-    l.text = "4 code font, width 0 then 600, center"
-    l.width = 0
-    w = Label_width(l)
-    l.width = 600
-    l.horizAlign = "center"
-    l.height = 60
-    l.vertAlign = "center"
-    lines.Push("t4 measured=" + Str(w))
-
-    ' 5: as 4, but the Font is replaced AFTER width/text are set (applyState pattern).
-    l = m.top.findNode("t5")
-    Label_setFont(l, "medium", 30)
-    l.text = "5 code font replaced after layout"
-    l.width = 600
-    l.height = 60
-    l.horizAlign = "center"
-    l.vertAlign = "center"
-    Label_setFont(l, "semibold", 30)
-
-    ' 6: code Font set BEFORE text, left aligned, explicit positive width only.
-    l = m.top.findNode("t6")
-    Label_setFont(l, "semibold", 30)
-    l.width = 600
-    l.height = 60
-    l.vertAlign = "center"
-    l.text = "6 code font, width 600, left"
-
-    ' 7: Font created via CreateObject and assigned, then uri/size set AFTER assignment.
-    l = m.top.findNode("t7")
-    f = CreateObject("roSGNode", "Font")
-    l.font = f
-    f.uri = "pkg:/fonts/Inter-semibold.otf"
-    f.size = 30
-    l.text = "7 font props set after assignment"
-    l.width = 600
-    l.height = 60
-    l.vertAlign = "center"
-
-    ' 8: Label created in code (CreateObject) and appended, like the Search chips.
-    l = CreateObject("roSGNode", "Label")
-    Label_setFont(l, "semibold", 30)
-    l.text = "8 label created in code, appended"
-    l.width = 600
-    l.height = 60
-    l.horizAlign = "center"
-    l.vertAlign = "center"
-    l.color = "0xEDEDEDFF"
-    l.translation = [100, 600]
-    m.top.appendChild(l)
-    m.top.findNode("t8").visible = false
+    ' A: tab clone — exactly as ShellTopBar.tabNode + rebuild + applyState (unselected state).
+    y = addRow(y, "A tab clone (bg.height set before width; label width 0 then w)", "tab", "A tab clone")
+    ' B: tab clone but the label width is set only once (no width=0 step).
+    y = addRow(y, "B tab clone, no width=0 step", "tabNoZero", "B no zero")
+    ' C: tab clone, selected state (bg visible, solid fill) like the broken tabs showed.
+    y = addRow(y, "C tab clone, selected (solid bg)", "tabSelected", "C selected")
+    ' D: tab clone but bg.width set BEFORE bg.height.
+    y = addRow(y, "D tab clone, width before height", "tabWidthFirst", "D width first")
+    ' E: Search chip clone (label created with CreateObject, appended after posters).
+    y = addRow(y, "E search chip clone", "chip", "E chip")
+    ' F: PillButton pattern (XML-style: posters then label all pre-existing, widths set together).
+    y = addRow(y, "F pill pattern (known to work)", "pill", "F pill")
+    ' G: plain 9-patch fill stretched to 400x60 with NO label at all (does the capsule stretch?).
+    y = addRow(y, "G 9-patch alone, 400x60, no label", "patchOnly", "")
+    ' H: tab clone with the ring poster removed.
+    y = addRow(y, "H tab clone without ring", "tabNoRing", "H no ring")
 
     di = CreateObject("roDeviceInfo")
-    lines.Push("OS " + di.GetOSVersion().major + "." + di.GetOSVersion().minor + " model " + di.GetModel())
-    m.top.findNode("report").text = "Photograph this screen. Rows that are blank identify the failing Label setup. " + Str_joinDots(lines)
+    m.top.findNode("report").translation = [100, y + 20]
+    m.top.findNode("report").text = "OS " + di.GetOSVersion().major + "." + di.GetOSVersion().minor + " model " + di.GetModel() + ". Photograph this screen."
 end sub
+
+' Draws a caption on the left and the test capsule at x=900; returns the next y.
+function addRow(y as integer, caption as string, kind as string, text as string) as integer
+    cap = m.top.createChild("Label")
+    cap.translation = [100, y]
+    cap.width = 760
+    cap.height = 60
+    cap.vertAlign = "center"
+    cap.color = "0xEDEDED9E"
+    Label_setFont(cap, "regular", 22)
+    cap.text = caption
+
+    g = m.top.createChild("Group")
+    g.translation = [900, y]
+    h = 60
+    if kind = "tab" or kind = "tabNoZero" or kind = "tabSelected" or kind = "tabWidthFirst" or kind = "tabNoRing" then
+        bg = g.createChild("Poster")
+        bg.uri = "pkg:/images/ui/r30.9.png"
+        if kind = "tabWidthFirst" then bg.width = 300
+        bg.height = h
+        if kind <> "tabNoRing" then
+            ring = g.createChild("Poster")
+            ring.uri = "pkg:/images/ui/r30_ring2.9.png"
+            ring.height = h
+        end if
+        lbl = g.createChild("Label")
+        lbl.height = h
+        lbl.vertAlign = "center"
+        lbl.horizAlign = "center"
+        Label_setFont(lbl, "semibold", 26)
+        ' rebuild():
+        Label_setFont(lbl, "semibold", 26)
+        lbl.text = text
+        if kind <> "tabNoZero" then lbl.width = 0
+        tw = Int(Label_width(lbl))
+        w = tw + 29 * 2
+        bg.width = w
+        if kind <> "tabNoRing" then ring.width = w
+        lbl.width = w
+        lbl.translation = [0, 0]
+        ' applyState():
+        c = Theme().colors
+        if kind = "tabSelected" then
+            bg.visible = true
+            bg.blendColor = c.ink
+            if kind <> "tabNoRing" then ring.visible = false
+            lbl.color = c.onInk
+            Label_setFont(lbl, "semibold", 26)
+        else
+            bg.visible = false
+            if kind <> "tabNoRing" then ring.visible = false
+            lbl.color = c.inkMuted
+            Label_setFont(lbl, "medium", 26)
+        end if
+    else if kind = "chip" then
+        lbl = CreateObject("roSGNode", "Label")
+        Label_setFont(lbl, "medium", 24)
+        lbl.text = text
+        w = Int(Label_width(lbl)) + 80
+        bg = g.createChild("Poster")
+        bg.uri = "pkg:/images/ui/r28.9.png"
+        bg.width = w
+        bg.height = 56
+        bg.blendColor = "0xFFFFFF14"
+        ring = g.createChild("Poster")
+        ring.uri = "pkg:/images/ui/r28_ring2.9.png"
+        ring.width = w
+        ring.height = 56
+        ring.blendColor = "0xFFFFFF1F"
+        lbl.width = w
+        lbl.height = 56
+        lbl.horizAlign = "center"
+        lbl.vertAlign = "center"
+        lbl.color = "0xEDEDEDFF"
+        g.appendChild(lbl)
+    else if kind = "pill" then
+        bg = g.createChild("Poster")
+        ring = g.createChild("Poster")
+        lbl = g.createChild("Label")
+        lbl.vertAlign = "center"
+        lbl.horizAlign = "center"
+        f = CreateObject("roSGNode", "Font")
+        f.uri = "pkg:/fonts/Inter-semibold.otf"
+        lbl.font = f
+        f.size = 25
+        lbl.text = text
+        lbl.width = 0
+        tw = Label_width(lbl)
+        w = tw + 80
+        bg.uri = "pkg:/images/ui/r30.9.png"
+        ring.uri = "pkg:/images/ui/r30_ring2.9.png"
+        bg.width = w
+        bg.height = h
+        ring.width = w
+        ring.height = h
+        bg.blendColor = "0xFFFFFF14"
+        ring.blendColor = "0xFFFFFF24"
+        lbl.translation = [(w - tw) / 2, 0]
+        lbl.width = tw + 2
+        lbl.height = h
+        lbl.color = "0xEDEDEDFF"
+    else if kind = "patchOnly" then
+        bg = g.createChild("Poster")
+        bg.uri = "pkg:/images/ui/r30.9.png"
+        bg.width = 400
+        bg.height = h
+        bg.blendColor = "0xFFFFFF60"
+    end if
+    return y + 76
+end function
 
 sub onScreenShown()
     m.top.setFocus(true)

@@ -127,3 +127,16 @@ Roku. Say so in your report instead of claiming it works.
   invisible because its labels measured as zero (pitfall 3).
 - **Hangs on the splash screen:** a crash during `MainScene.init` or the first screen's `init`.
   The telnet log has the backtrace.
+
+## Release log
+
+One line per release: what that build taught about running on a real Roku. Add an entry for
+every release, even when the lesson is "nothing new". The release workflow warns when the
+released version is missing here.
+
+- **v0.1.1** First install on a device. Nothing was known yet; everything below came from it.
+- **v0.1.2** Roku's compiler rejects indexing a function result (`f()[i]`); bsc accepts it.
+- **v0.1.3** `roUrlTransfer` cannot be created on the render thread; URL encoding is now hand-rolled.
+- **v0.1.4** Neither can `roFontRegistry`. Text is measured with a SceneGraph `Font` node instead.
+- **v0.1.5** `.next`, `.sub`, `.end` are reserved on device; real-server payloads may send numbers as strings.
+- **v0.1.6** Sharing one `Font` node across Labels was *not* the cause of blank capsules (theory disproved on device); the cause is still being isolated with `FontTestScreen`. Lesson: when the simulator agrees with every hypothesis, build a diagnostic screen and let the device decide.

@@ -24,6 +24,10 @@ API spec.
   `manifest` changes. To ship a build: bump `build_version` AND add a `## vX.Y.Z` section to
   `CHANGELOG.md` written for users in plain language (what they will notice, not how it was
   done). The release page shows that section as its notes; the workflow warns if it is missing.
+- Every release also updates `.claude/skills/roku-brightscript/SKILL.md`: add what the build
+  taught (a new device pitfall, a verification step, a tool quirk) and append a line to its
+  "Release log" section naming the version and the lesson. The workflow warns when a released
+  version is absent from the skill. A release that taught nothing new still gets a one-line entry.
 
 ## The one rule that matters most
 Code that passes lint and runs in the simulator can still crash a real Roku. Several did.
