@@ -439,15 +439,15 @@ end function
 ' "2026 · 2h 25m · TMDB 7.9" (series: "3 seasons").
 function factsLine(d as object) as string
     parts = []
-    if d.year <> invalid and d.year > 0 then parts.Push(Str_orEmpty(d.year))
+    if Req_num(d.year) > 0 then parts.Push(Str_orEmpty(d.year))
     if Str_orEmpty(d.media_type) = "series" then
-        n = d.number_of_seasons
-        if n <> invalid and n > 0 then
+        n = Int(Req_num(d.number_of_seasons))
+        if n > 0 then
             if n = 1 then parts.Push("1 season") else parts.Push(n.ToStr() + " seasons")
         end if
     else
-        rt = d.runtime
-        if rt <> invalid and rt > 0 then
+        rt = Int(Req_num(d.runtime))
+        if rt > 0 then
             if rt >= 60 then
                 parts.Push(Int(rt / 60).ToStr() + "h " + (rt mod 60).ToStr() + "m")
             else

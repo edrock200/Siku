@@ -82,7 +82,9 @@ sub Content_fillCard(node as object, card as object, style as string)
         if posSec = invalid then posSec = card.user_data.position_seconds
         if dur = invalid then dur = card.user_data.duration_seconds
     end if
-    if posSec <> invalid and dur <> invalid and dur > 0 then progress = posSec / dur
+    posSec = Content_num(posSec)
+    dur = Content_num(dur)
+    if dur > 0 then progress = posSec / dur
     if progress < 0 then progress = 0
     if progress > 1 then progress = 1
     node.progress = progress
@@ -169,15 +171,14 @@ end function
 ' "3 books · 2h 5m · 1 in progress" (TvLibraryDetailScreen.audiobookGroupSubtitle).
 function Content_groupSubtitle(group as object) as string
     parts = []
-    n = 0
-    if group.item_count <> invalid then n = Int(group.item_count)
+    n = Int(Content_num(group.item_count))
     if n = 1 then
         parts.Push("1 book")
     else if n > 1 then
         parts.Push(n.ToStr() + " books")
     end if
-    if group.total_duration_seconds <> invalid and group.total_duration_seconds > 0 then parts.Push(Time_runtime(group.total_duration_seconds))
-    if group.in_progress_count <> invalid and Int(group.in_progress_count) > 0 then parts.Push(Str_orEmpty(group.in_progress_count) + " in progress")
+    if Content_num(group.total_duration_seconds) > 0 then parts.Push(Time_runtime(group.total_duration_seconds))
+    if Int(Content_num(group.in_progress_count)) > 0 then parts.Push(Str_orEmpty(group.in_progress_count) + " in progress")
     return Str_joinDots(parts)
 end function
 
@@ -193,15 +194,23 @@ function Content_metaLine(card as object) as string
         genres = Arr_or(card.genres)
         if genres.Count() > 0 then parts.Push(genres[0])
     end if
-    dur = card.duration_seconds
-    if dur = invalid and card.runtime <> invalid then dur = card.runtime * 60
-    if dur <> invalid then parts.Push(Time_runtime(dur))
-    if card.position_seconds <> invalid and dur <> invalid and dur > 0 and card.position_seconds > 0 then
-        remaining = dur - card.position_seconds
+    dur = Content_num(card.duration_seconds)
+    if dur <= 0 then dur = Content_num(card.runtime) * 60
+    if dur > 0 then parts.Push(Time_runtime(dur))
+    if dur > 0 and Content_num(card.position_seconds) > 0 then
+        remaining = dur - Content_num(card.position_seconds)
         if remaining > 60 then parts.Push(Time_runtime(remaining) + " left")
     end if
     if not Str_isEmpty(card.content_rating) then parts.Push(card.content_rating)
     return Str_joinDots(parts)
+end function
+
+' A JSON number as a float; 0 for anything else (a string, a bool, invalid).
+function Content_num(v as dynamic) as float
+    if v = invalid then return 0.0
+    t = Type(v)
+    if t = "roInt" or t = "roInteger" or t = "Integer" or t = "roFloat" or t = "Float" or t = "roDouble" or t = "Double" or t = "roLongInteger" or t = "LongInteger" then return v * 1.0
+    return 0.0
 end function
 
 ' Media modes from a library `type` string (docs/api-spec.md §4.1).

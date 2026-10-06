@@ -64,6 +64,7 @@ end function
 
 ' Clears tokens and profile but keeps the server.
 sub Session_signOutLocal(s as object)
+    Session_forgetPlaybackCaps()
     c = AA_copy(s)
     c.accessToken = ""
     c.refreshToken = ""
@@ -78,9 +79,17 @@ end sub
 
 ' Forgets the server entirely (Change server).
 sub Session_clearServer()
+    Session_forgetPlaybackCaps()
     s = Session_empty()
     s.deviceId = m.global.session.deviceId
     Session_save(s)
+end sub
+
+' The playback installation (GET /api/v2/playback/capabilities, cached on m.global.playbackCaps by
+' the players) belongs to one server and login; forget it so the next start probes again instead of
+' sending another server's installation_id.
+sub Session_forgetPlaybackCaps()
+    if m.global.hasField("playbackCaps") then m.global.playbackCaps = {}
 end sub
 
 ' Applies a token response {access_token, refresh_token, expires_in, user?}.

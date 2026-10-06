@@ -265,9 +265,9 @@ sub renderHero()
     tokens = []
     y = yearOf(it)
     if y <> "" then tokens.Push(y)
-    if it.runtime <> invalid and it.runtime > 0 then tokens.Push(Time_runtime(it.runtime * 60))
+    if toInt(it.runtime) > 0 then tokens.Push(Time_runtime(toInt(it.runtime) * 60))
     if t = "series" and it.season_count <> invalid then
-        sc = Int(it.season_count)
+        sc = toInt(it.season_count)
         if sc = 1 then tokens.Push("1 season") else tokens.Push(sc.ToStr() + " seasons")
     end if
     genres = namesOf(it.genres)
@@ -861,7 +861,7 @@ sub onEpisodes(event as object)
         node = Content_cardNode(ep, "landscape")
         node.title = Str_orEmpty(ep.title)
         metaParts = []
-        if ep.runtime <> invalid and ep.runtime > 0 then metaParts.Push(Time_runtime(ep.runtime * 60))
+        if toInt(ep.runtime) > 0 then metaParts.Push(Time_runtime(toInt(ep.runtime) * 60))
         metaParts.Push(airDateText(ep.air_date))
         node.addFields({
             eyebrow: Content_seShort(ep.season_number, ep.episode_number)

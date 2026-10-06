@@ -598,10 +598,10 @@ sub applyPlan(plan as object)
     content.Title = m.titleLabel.text
     fmt = AudioCaps_streamFormat(stream, url)
     if fmt <> "" then content.StreamFormat = fmt
-    headers = ["Authorization:Bearer " + s.accessToken]
+    headers = ["Authorization: Bearer " + s.accessToken]
     if stream.headers <> invalid then
         for each k in stream.headers
-            headers.Push(k + ":" + Str_orEmpty(stream.headers[k]))
+            headers.Push(k + ": " + Str_orEmpty(stream.headers[k]))
         end for
     end if
     content.HttpHeaders = headers

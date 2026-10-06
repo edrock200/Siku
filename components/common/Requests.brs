@@ -255,10 +255,18 @@ function Req_day(ts as dynamic) as string
     return months[mo - 1] + " " + d.GetDayOfMonth().ToStr()
 end function
 
+' A JSON number as a float; 0 for anything else (a string, invalid).
+function Req_num(v as dynamic) as float
+    if v = invalid then return 0.0
+    t = Type(v)
+    if t = "roInt" or t = "roInteger" or t = "Integer" or t = "roFloat" or t = "Float" or t = "roDouble" or t = "Double" or t = "roLongInteger" or t = "LongInteger" then return v * 1.0
+    return 0.0
+end function
+
 ' "TMDB 7.9" for a vote average, "" when absent.
 function Req_tmdbRating(v as dynamic) as string
     if v = invalid then return ""
-    f = v * 1.0
+    f = Req_num(v)
     if f <= 0 then return ""
     tenths = Int(f * 10 + 0.5)
     return "TMDB " + Int(tenths / 10).ToStr() + "." + (tenths mod 10).ToStr()
@@ -439,7 +447,7 @@ function Req_card(kind as string, data as object, rowId as string) as object
         req: data
     }
     if kind = "result" then
-        if data.year <> invalid and data.year > 0 then card.year = data.year
+        if Req_num(data.year) > 0 then card.year = data.year
     else
         ' A request card's caption is its status.
         card.year = Req_progressOfRecord(data).short

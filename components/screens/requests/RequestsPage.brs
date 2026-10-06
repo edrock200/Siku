@@ -218,7 +218,7 @@ sub showMarquee(rowIndex as integer, itemIndex as integer)
     meta = []
     progress = invalid
     statusText = ""
-    if data.year <> invalid and data.year > 0 then meta.Push(Str_orEmpty(data.year))
+    if Req_num(data.year) > 0 then meta.Push(Str_orEmpty(data.year))
     meta.Push(Req_mediaTypeLabel(data.media_type))
     if card.req_kind = "result" then
         progress = Req_progressOfAnnotation(data.availability, data.request)
