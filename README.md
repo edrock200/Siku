@@ -78,6 +78,13 @@ scripts/                 Packaging and deploy helpers
 
 Siku talks to a Silo server over the same HTTP API (v2) as the Android TV client. The server owns the library, metadata, transcoding decisions and accounts; Siku displays them and drives playback with Roku's native `Video` node. When playback starts, Siku describes what this Roku can decode (H.264, HEVC, AAC, AC3/EAC3, HLS…) so the server can pick Direct Play, Remux or Transcode.
 
+## Contributing
+
+Issues and pull requests are welcome. If you use Claude Code, the repo ships a `CLAUDE.md` with the
+project rules and a `roku-brightscript` skill (`.claude/skills/`) that lists the real-device
+pitfalls we have hit and the exact lint, mock-server and simulator commands to verify a change. Read
+`docs/ARCHITECTURE.md` first either way.
+
 ## References
 
 - Silo server: <https://github.com/Silo-Server/silo-server>
