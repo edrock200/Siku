@@ -190,7 +190,9 @@ sub handleDeepLink(args as dynamic)
     if Str_isEmpty(args.contentId) then return
     if Str_isEmpty(m.global.session.profileId) then return
     mediaType = LCase(Str_orEmpty(args.mediaType))
-    if mediaType = "movie" or mediaType = "episode" or mediaType = "series" or mediaType = "season" or mediaType = "" then
+    if mediaType = "album" or mediaType = "artist" or mediaType = "audiobook" or mediaType = "track" then
+        pushScreen("AudioDetailScreen", { itemId: args.contentId, itemType: mediaType })
+    else if mediaType = "movie" or mediaType = "episode" or mediaType = "series" or mediaType = "season" or mediaType = "" then
         pushScreen("DetailScreen", { itemId: args.contentId })
     end if
 end sub

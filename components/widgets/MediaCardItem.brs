@@ -117,7 +117,9 @@ end sub
 
 sub onFocus()
     p = m.top.focusPercent
-    listFocused = m.top.rowHasFocus or m.top.gridHasFocus
+    ' RowList sets rowHasFocus on the focused row even when the RowList itself is not
+    ' focused; rowListHasFocus (also set by RowList) tells us whether it is.
+    listFocused = (m.top.rowHasFocus and m.top.rowListHasFocus) or m.top.gridHasFocus
     if not listFocused then p = 0
     s = 1.0 + 0.10 * p
     m.card.scale = [s, s]

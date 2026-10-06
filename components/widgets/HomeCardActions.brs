@@ -43,7 +43,7 @@ function CardActions_perform(actionId as string, card as object, rowId as string
     if actionId = "play" or actionId = "resume" then
         playId = Str_orEmpty(card.play_content_id)
         if playId = "" then playId = id
-        params = { itemId: playId, title: Str_orEmpty(card.title) }
+        params = { itemId: playId, title: Str_orEmpty(card.title), itemType: Str_orEmpty(card.type) }
         if actionId = "resume" and card.position_seconds <> invalid then params.startPosition = card.position_seconds
         Nav_play(params)
         return invalid
@@ -95,5 +95,5 @@ end function
 sub CardActions_openDetail(card as object)
     id = Str_orEmpty(card.content_id)
     if id = "" then return
-    Nav_push("DetailScreen", { itemId: id, itemType: Str_orEmpty(card.type) })
+    Nav_openItem(id, card.type)
 end sub

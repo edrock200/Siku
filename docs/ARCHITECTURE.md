@@ -89,6 +89,10 @@ A screen is `<component name="XScreen" extends="BaseScreen">` (`components/BaseS
 | `SearchScreen` | `{ query? }` |
 | `SettingsScreen` | none |
 | `PlayerScreen` | `{ itemId, fileId?, startPosition?, title?, ... }` |
+| `AudioDetailScreen` | `{ itemId, itemType }` for `album`, `artist`, `audiobook`, `track`. Use `Nav_openItem(id, type)`, which picks this or `DetailScreen` |
+| `AudioPlayerScreen` | Music `{ queue: [{contentId, fileId?, title?, artist?, album?, posterUrl?, durationSeconds?}], index?, startPosition?, shuffle? }`; audiobook `{ itemId, startPosition? }` (whole-book seconds). `Nav_play` routes audio types here |
+
+Music: the Silo v2 contract has no album/artist/track types yet, and Android TV keeps music minimal. `AudioDetailScreen` reads a provisional shape (`tracks[]` on albums, `albums[]` on artists) that only `tools/mock_server.py` serves today. Audiobooks use the real contract.
 
 ## Global state (`m.global`)
 

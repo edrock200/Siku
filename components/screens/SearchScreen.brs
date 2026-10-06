@@ -349,7 +349,7 @@ sub onTitleSelected()
     idx = m.grid.itemSelected
     if idx < 0 or idx >= m.titles.Count() then return
     card = m.titles[idx]
-    Nav_push("DetailScreen", { itemId: Str_orEmpty(card.content_id), itemType: Str_orEmpty(card.type) })
+    Nav_openItem(Str_orEmpty(card.content_id), card.type)
 end sub
 
 ' ---------- Keys ----------

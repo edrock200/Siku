@@ -794,7 +794,7 @@ sub onShuffle(event as object)
     card = items[0]
     playId = Str_orEmpty(card.play_content_id)
     if playId = "" then playId = Str_orEmpty(card.content_id)
-    Nav_play({ itemId: playId, title: Str_orEmpty(card.title) })
+    Nav_play({ itemId: playId, title: Str_orEmpty(card.title), itemType: Str_orEmpty(card.type) })
 end sub
 
 ' ---------- Options menu ----------

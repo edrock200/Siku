@@ -268,7 +268,7 @@ sub onGridSelected()
     idx = m.grid.itemSelected
     if idx < 0 or idx >= m.items.Count() then return
     card = m.items[idx]
-    Nav_push("DetailScreen", { itemId: Str_orEmpty(card.content_id), itemType: Str_orEmpty(card.type) })
+    Nav_openItem(Str_orEmpty(card.content_id), card.type)
 end sub
 
 sub openBio()

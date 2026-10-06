@@ -16,6 +16,7 @@
     <field id="itemHasFocus" type="boolean" onChange="onFocus" />
     <field id="rowHasFocus" type="boolean" onChange="onFocus" />
     <field id="gridHasFocus" type="boolean" onChange="onFocus" />
+    <field id="rowListHasFocus" type="boolean" value="true" onChange="onFocus" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/MediaCardItem.brs" />
   <children>

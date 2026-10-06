@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Right-aligned overlay panel over a dimming scrim, for the audio player's Chapters / Up Next /
+  Sleep timer pickers (Android TV TvAudiobookOverlayScaffold: 320 dp column, #101010, black 55% scrim).
+  Usage: set title and rows, make it visible, then setFocus(true). Observe chosen / dismissed.
+  Fields:
+    title            header text
+    rows             [{id, title, number?, subtitle?, trailing?, isCurrent?}]
+    chosen (out)     the id of the selected row
+    dismissed (out)  true when Back (or Left) is pressed
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="AudioPanel" extends="Group">
+  <interface>
+    <field id="title" type="string" onChange="onTitle" />
+    <field id="rows" type="array" onChange="rebuild" />
+    <field id="chosen" type="string" alwaysNotify="true" />
+    <field id="dismissed" type="boolean" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/AudioPanel.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/AudioTimeline.brs" />
+  <children>
+    <Rectangle width="1920" height="1080" color="0x0000008C" />
+    <Rectangle id="panelBg" width="720" height="1080" translation="[1200, 0]" color="0x101010FF" />
+    <Rectangle width="2" height="1080" translation="[1200, 0]" color="0xFFFFFF14" />
+    <Label id="panelTitle" translation="[1240, 64]" width="640" maxLines="1" color="0xEDEDEDFF">
+      <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="38" />
+    </Label>
+    <MarkupList id="panelList" translation="[1236, 140]" itemComponentName="AudioListItem"
+                itemSize="[648, 84]" itemSpacing="[0, 6]" numRows="10"
+                drawFocusFeedback="false" vertFocusAnimationStyle="floatingFocus" />
+  </children>
+</component>

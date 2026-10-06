@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Detail page for albums, artists and audiobooks (and, generically, a single track / audio item).
+  params: { itemId (content_id), itemType? ("album" | "artist" | "audiobook" | "track"; inferred from the
+            fetched item when missing), libraryId? }
+  Data: GET /api/v2/catalog/items/{id}. Audiobooks read `audiobook` {authors, narrators,
+  total_duration_seconds, related} and stitch `versions` (presentation_kind "audiobook_part") into a
+  whole-book timeline (components/player/AudioTimeline.brs) for the Chapters and Parts lists.
+  Layout: square cover on the left of the hero, editorial column on the right, action row
+  (Play/Resume pill, Shuffle, Start Over, Favorite), then the body sections, which scroll into view as
+  focus moves down: Tracks | Chapters, Parts, Albums | More by Author.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="AudioDetailScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/screens/AudioDetailScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/AudioTimeline.brs" />
+  <children>
+    <Rectangle id="bg" width="1920" height="1080" color="0x040D0FFF" />
+    <Poster id="backdrop" width="1920" height="1080" loadDisplayMode="scaleToZoom" opacity="0.16" />
+    <Poster id="scrimLeft" uri="pkg:/images/ui/scrim_left.png" width="1300" height="1080" opacity="0.9" />
+    <Poster id="scrimBottom" uri="pkg:/images/ui/scrim_bottom.png" width="1920" height="700" translation="[0, 380]" />
+    <Group id="page">
+      <Group id="hero" visible="false">
+        <Group id="art" translation="[100, 116]">
+          <Poster id="artPlaceholder" uri="pkg:/images/ui/r16.9.png" blendColor="0x15171CFF" width="440" height="440" />
+          <Poster id="artIcon" uri="pkg:/images/icons/album.png" blendColor="0xEDEDED40" width="160" height="160" translation="[140, 140]" />
+          <MaskGroup id="artMask" maskUri="pkg:/images/ui/mask_square.png" maskSize="[440, 440]">
+            <Poster id="artImage" width="440" height="440" loadDisplayMode="scaleToZoom" />
+          </MaskGroup>
+        </Group>
+        <Group id="column" translation="[604, 116]">
+          <Group id="eyebrow">
+            <Rectangle width="34" height="4" translation="[0, 14]" color="0xFFFFFFD9" />
+            <Label id="eyebrowLabel" translation="[48, 0]" color="0xEDEDEDC7">
+              <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="24" />
+            </Label>
+          </Group>
+          <Label id="titleLabel" width="1216" wrap="true" maxLines="2" color="0xEDEDEDFF">
+            <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="72" />
+          </Label>
+          <Label id="subtitleLabel" width="1216" maxLines="1" color="0xEDEDEDE6">
+            <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="34" />
+          </Label>
+          <Label id="metaLabel" width="1216" maxLines="1" color="0xEDEDEDBF">
+            <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="25" />
+          </Label>
+          <Label id="overview" width="1160" wrap="true" maxLines="3" lineSpacing="6" color="0xEDEDEDBF">
+            <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="28" />
+          </Label>
+          <Group id="actions">
+            <PillButton id="playBtn" text="Play" variant="solid" iconUri="pkg:/images/icons/play.png" height="76" padX="54" fontSize="27" />
+            <DetailCircleButton id="shuffleBtn" iconUri="pkg:/images/icons/shuffle.png" label="Shuffle" visible="false" />
+            <DetailCircleButton id="startOverBtn" iconUri="pkg:/images/icons/start_over.png" label="Start Over" visible="false" />
+            <DetailCircleButton id="favBtn" iconUri="pkg:/images/icons/heart.png" activeIconUri="pkg:/images/icons/heart_filled.png" label="Favorite" />
+          </Group>
+        </Group>
+      </Group>
+      <Group id="body" translation="[100, 0]">
+        <Group id="listSection" visible="false">
+          <Label id="listHeader" text="Tracks" color="0xEDEDEDFF">
+            <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+          </Label>
+          <Label id="listMsg" translation="[0, 64]" color="0xEDEDED9E" visible="false">
+            <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="27" />
+          </Label>
+          <MarkupList id="list" translation="[-20, 60]" itemComponentName="AudioListItem"
+                      itemSize="[1760, 84]" itemSpacing="[0, 4]" numRows="8"
+                      drawFocusFeedback="false" vertFocusAnimationStyle="floatingFocus" />
+        </Group>
+        <Group id="partsSection" visible="false">
+          <Label id="partsHeader" text="Parts" color="0xEDEDEDFF">
+            <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+          </Label>
+          <MarkupList id="parts" translation="[-20, 60]" itemComponentName="AudioListItem"
+                      itemSize="[1760, 84]" itemSpacing="[0, 4]" numRows="6"
+                      drawFocusFeedback="false" vertFocusAnimationStyle="floatingFocus" />
+        </Group>
+        <Group id="railSection" visible="false">
+          <Label id="railHeader" text="Albums" color="0xEDEDEDFF">
+            <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+          </Label>
+          <RowList id="rail" translation="[0, 64]" itemComponentName="AudioCardItem"
+                   itemSize="[1820, 380]" rowItemSize="[[264, 380]]" rowItemSpacing="[[40, 0]]" numRows="1"
+                   drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" showRowLabel="[false]" />
+        </Group>
+      </Group>
+    </Group>
+    <LoadingSpinner id="spinner" translation="[924, 504]" />
+    <Group id="errorGroup" visible="false">
+      <Poster uri="pkg:/images/icons/error.png" width="72" height="72" translation="[924, 400]" blendColor="0xEDEDED9E" />
+      <Label id="errorLabel" width="1200" translation="[360, 500]" horizAlign="center" wrap="true" color="0xEDEDEDBF">
+        <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="30" />
+      </Label>
+      <PillButton id="retryBtn" text="Retry" translation="[890, 600]" />
+    </Group>
+    <Animation id="scrollAnim" duration="0.32" easeFunction="outCubic">
+      <Vector2DFieldInterpolator id="scrollInterp" key="[0.0, 1.0]" fieldToInterp="page.translation" />
+    </Animation>
+  </children>
+</component>

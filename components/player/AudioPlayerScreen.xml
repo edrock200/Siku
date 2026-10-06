@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Full-screen now-playing UI for music queues and audiobooks (Android TV TvAudiobookPlayerScreen):
+  large cover on the left; eyebrow, title, author/artist and chapter/album on the right; progress bar
+  with elapsed / remaining; transport row (previous, skip back, play/pause, skip forward, next);
+  utility pills (Chapters or Up Next, Sleep timer). Panels open on the right (AudioPanel).
+
+  params (all optional except what each mode needs):
+    Music / generic queue (`queue` present and non-empty):
+      queue          [{contentId, fileId?, title?, artist?, album?, posterUrl?, durationSeconds?}, ...]
+                     Raw API track/cards also work ({content_id, file_id, title, artist, album,
+                     poster_url, duration_seconds}). Entries without a fileId are resolved through
+                     GET /api/v2/catalog/items/{contentId} (versions[], user_data.last_file_id).
+      index          integer, the queue entry to start with (default 0)
+      startPosition  seconds into that first track (default 0)
+      shuffle        bool: shuffle the queue, keeping `index` first
+    Audiobook (no queue):
+      itemId         the audiobook content_id
+      startPosition  WHOLE-BOOK seconds; omitted = resume from user_data.position_seconds; 0 = start over
+    itemId of a non-audiobook item without a queue is played as a one-entry queue.
+    itemType?        optional hint ("audiobook" | "track" | ...); the fetched item's type wins.
+
+  Protocol (docs/api-spec.md §8): GET /api/v2/playback/capabilities (cached on m.global.playbackCaps,
+  shared with PlayerScreen) → POST /api/v2/playback/start (AudioCaps_startBody) per file → Audio node
+  → POST /api/v2/playback/{session}/progress every 10 s → DELETE /api/v2/playback/{session}.
+  Music sessions use progress_persistence "server". Audiobooks play one part per session with
+  progress_persistence "client" and a part-local start_position; whole-book progress is written with
+  POST /api/v2/sync/progress {items:[{media_item_id, position_ms, duration_ms}]}.
+  Back closes an open panel, otherwise stops playback and closes; m.global.homeDirty is set on exit.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="AudioPlayerScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/player/AudioPlayerScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/PlaybackCaps.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/AudioCaps.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/AudioTimeline.brs" />
+  <children>
+    <Rectangle width="1920" height="1080" color="0x000000FF" />
+    <Poster id="backdrop" width="1920" height="1080" loadDisplayMode="scaleToZoom" opacity="0.22" />
+    <Rectangle width="1920" height="1080" color="0x000000A6" />
+    <Poster uri="pkg:/images/ui/scrim_left.png" width="1100" height="1080" opacity="0.7" />
+    <Audio id="audio" notificationInterval="0.5" />
+    <Group id="focusSink" focusable="true" />
+
+    <Group id="main" visible="false">
+      <Group id="cover" translation="[160, 228]">
+        <Poster id="coverPlaceholder" uri="pkg:/images/ui/r16.9.png" blendColor="0x15171CFF" width="624" height="624" />
+        <Poster id="coverIcon" uri="pkg:/images/icons/music.png" blendColor="0xEDEDED40" width="220" height="220" translation="[202, 202]" />
+        <MaskGroup id="coverMask" maskUri="pkg:/images/ui/mask_square.png" maskSize="[624, 624]">
+          <Poster id="coverImage" width="624" height="624" loadDisplayMode="scaleToZoom" />
+        </MaskGroup>
+      </Group>
+
+      <Group id="column" translation="[876, 0]">
+        <Label id="eyebrow" translation="[0, 236]" width="884" maxLines="1" color="0xEDEDED94">
+          <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="26" />
+        </Label>
+        <Label id="npTitle" translation="[0, 278]" width="884" wrap="true" maxLines="2" color="0xEDEDEDFF">
+          <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="58" />
+        </Label>
+        <Label id="line2" width="884" maxLines="1" color="0xEDEDED9E">
+          <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="38" />
+        </Label>
+        <Label id="line3" width="884" maxLines="1" color="0xEDEDEDFF">
+          <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="32" />
+        </Label>
+
+        <Group id="progress" translation="[0, 590]">
+          <Poster id="trackBar" uri="pkg:/images/ui/r6.9.png" blendColor="0xFFFFFF3B" width="884" height="12" />
+          <Poster id="fillBar" uri="pkg:/images/ui/r6.9.png" blendColor="0xEDEDEDFF" width="0" height="12" />
+          <Group id="ticks" />
+          <Label id="elapsed" translation="[0, 30]" width="300" color="0xEDEDED9E">
+            <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="30" />
+          </Label>
+          <Label id="statusLabel" translation="[192, 30]" width="500" horizAlign="center" maxLines="1" color="0xEDEDEDBF">
+            <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="26" />
+          </Label>
+          <Label id="remaining" translation="[584, 30]" width="300" horizAlign="right" color="0xEDEDED9E">
+            <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="30" />
+          </Label>
+        </Group>
+
+        <Group id="transport" translation="[0, 700]">
+          <PlayerTransportButton id="prevBtn" iconUri="pkg:/images/icons/skip_previous.png" size="100" />
+          <PlayerTransportButton id="backBtn" iconUri="pkg:/images/icons/rewind_30.png" size="100" />
+          <PlayerTransportButton id="playBtn" iconUri="pkg:/images/icons/pause.png" size="128" />
+          <PlayerTransportButton id="fwdBtn" iconUri="pkg:/images/icons/forward.png" size="100" />
+          <PlayerTransportButton id="nextBtn" iconUri="pkg:/images/icons/skip_next.png" size="100" />
+        </Group>
+
+        <Group id="utility" translation="[0, 876]">
+          <PillButton id="listBtn" text="Chapters" iconUri="pkg:/images/icons/chapters.png" height="64" padX="32" fontSize="25" scaleOnFocus="1.0" />
+          <PillButton id="sleepBtn" text="Sleep Timer" iconUri="pkg:/images/icons/sleep.png" height="64" padX="32" fontSize="25" scaleOnFocus="1.0" />
+        </Group>
+      </Group>
+    </Group>
+
+    <LoadingSpinner id="spinner" translation="[924, 504]" />
+
+    <Group id="errorGroup" visible="false">
+      <Rectangle width="1920" height="1080" color="0x000000F2" />
+      <Poster uri="pkg:/images/icons/error.png" width="80" height="80" translation="[920, 380]" blendColor="0xEDEDED9E" />
+      <Label text="Something went wrong" width="1920" translation="[0, 480]" horizAlign="center" color="0xEDEDEDFF">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="38" />
+      </Label>
+      <Label id="errorLabel" width="1200" translation="[360, 540]" horizAlign="center" wrap="true" maxLines="3" color="0xEDEDEDBF">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="27" />
+      </Label>
+      <PillButton id="retryBtn" text="Try again" variant="solid" translation="[770, 680]" />
+      <PillButton id="errorCloseBtn" text="Close" translation="[990, 680]" />
+    </Group>
+
+    <AudioPanel id="panel" visible="false" />
+
+    <Timer id="progressTimer" duration="10" repeat="true" />
+    <Timer id="sleepTimer" duration="1" repeat="true" />
+    <Timer id="stopTimeout" duration="2.5" />
+    <Timer id="refreshTimeout" duration="12" />
+  </children>
+</component>

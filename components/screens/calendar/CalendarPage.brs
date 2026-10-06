@@ -463,7 +463,7 @@ sub onShelfSelected()
         itemType = Str_orEmpty(card.type)
     end if
     if id = "" then return
-    Nav_push("DetailScreen", { itemId: id, itemType: itemType })
+    Nav_openItem(id, itemType)
 end sub
 
 ' ---------- Actions ----------

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MarkupList row for audio lists: album tracks, audiobook chapters and parts, the player's
+  queue / chapter / sleep panels. Focused rows invert to a solid #EDEDED fill with black text.
+  ContentNode fields (built by AudioList_rowNode in components/player/AudioTimeline.brs):
+    title, number (leading column, e.g. "3"), subtitle (second line, optional),
+    trailing (right column, e.g. "4:12"), isCurrent (now playing: a glyph replaces the number
+    and the row gets a faint fill), compact (single-line panel row)
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="AudioListItem" extends="Group">
+  <interface>
+    <field id="itemContent" type="node" onChange="onContent" />
+    <field id="width" type="float" onChange="layout" />
+    <field id="height" type="float" onChange="layout" />
+    <field id="focusPercent" type="float" onChange="applyFocus" />
+    <field id="itemHasFocus" type="boolean" onChange="applyFocus" />
+    <field id="listHasFocus" type="boolean" onChange="applyFocus" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/AudioListItem.brs" />
+  <children>
+    <Poster id="bg" uri="pkg:/images/ui/r14.9.png" blendColor="0xEDEDEDFF" visible="false" />
+    <Poster id="currentIcon" uri="pkg:/images/icons/equalizer.png" width="34" height="34" visible="false" />
+    <Label id="number" horizAlign="center" vertAlign="center" color="0xEDEDED9E">
+      <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="26" />
+    </Label>
+    <Label id="title" maxLines="1" color="0xEDEDEDFF">
+      <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="29" />
+    </Label>
+    <Label id="subtitle" maxLines="1" color="0xEDEDED9E">
+      <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+    </Label>
+    <Label id="trailing" horizAlign="right" vertAlign="center" color="0xEDEDED9E">
+      <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="26" />
+    </Label>
+  </children>
+</component>
