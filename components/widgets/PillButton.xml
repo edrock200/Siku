@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Capsule button. Focused: solid #EDEDED with black text (the app's main focus idiom).
+  Fields:
+    text, iconUri (optional, white PNG), variant: "glass" (8% white fill + hairline) | "plain" (text only) | "solid" (76% white, e.g. Play)
+    height (default 76), minWidth, padX (default 40), fontSize (default 25), scaleOnFocus (default 1.06)
+    width (out): resulting width after layout
+    buttonSelected (out, alwaysNotify): set when OK is pressed
+    disabled: dims the button and ignores OK
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="PillButton" extends="Group">
+  <interface>
+    <field id="text" type="string" onChange="layout" />
+    <field id="iconUri" type="string" onChange="layout" />
+    <field id="variant" type="string" value="glass" onChange="applyState" />
+    <field id="height" type="integer" value="76" onChange="layout" />
+    <field id="minWidth" type="integer" value="0" onChange="layout" />
+    <field id="fixedWidth" type="integer" value="0" onChange="layout" />
+    <field id="padX" type="integer" value="40" onChange="layout" />
+    <field id="fontSize" type="integer" value="25" onChange="layout" />
+    <field id="scaleOnFocus" type="float" value="1.06" />
+    <field id="disabled" type="boolean" value="false" onChange="applyState" />
+    <field id="selectedState" type="boolean" value="false" onChange="applyState" />
+    <field id="width" type="integer" value="0" />
+    <field id="buttonSelected" type="boolean" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/PillButton.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <children>
+    <Group id="body">
+      <Poster id="bg" />
+      <Poster id="ring" />
+      <Poster id="icon" visible="false" />
+      <Label id="label" vertAlign="center" horizAlign="center" />
+    </Group>
+  </children>
+</component>

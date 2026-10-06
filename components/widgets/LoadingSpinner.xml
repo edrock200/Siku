@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Rotating arc. Size it with `size`; it spins only while visible.
+     SPDX-License-Identifier: AGPL-3.0-or-later -->
+<component name="LoadingSpinner" extends="Group">
+  <interface>
+    <field id="size" type="integer" value="72" onChange="layout" />
+    <field id="color" type="color" value="0xEDEDEDFF" onChange="layout" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/LoadingSpinner.brs" />
+  <children>
+    <Poster id="arc" uri="pkg:/images/ui/spinner.png" />
+    <Animation id="spin" duration="0.9" repeat="true" easeFunction="linear">
+      <FloatFieldInterpolator key="[0.0, 1.0]" keyValue="[0.0, -6.2831853]" fieldToInterp="arc.rotation" />
+    </Animation>
+  </children>
+</component>

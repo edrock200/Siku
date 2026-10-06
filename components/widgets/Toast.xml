@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Short message at the bottom of the screen. Set `message` to show it.
+     SPDX-License-Identifier: AGPL-3.0-or-later -->
+<component name="Toast" extends="Group">
+  <interface>
+    <field id="message" type="string" alwaysNotify="true" onChange="onMessage" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/Toast.brs" />
+  <children>
+    <Poster id="bg" uri="pkg:/images/ui/r32.9.png" height="64" blendColor="0x23252CF2" />
+    <Label id="label" height="64" vertAlign="center" horizAlign="center" color="0xEDEDEDFF">
+      <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="26" />
+    </Label>
+    <Timer id="timer" duration="3.5" />
+  </children>
+</component>

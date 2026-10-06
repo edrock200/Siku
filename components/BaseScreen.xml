@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Base for every full-screen page. MainScene keeps screens in a stack.
+  Contract:
+    params      (in)  data passed by whoever opened the screen
+    active      (in)  true while the screen is on top; screens take focus in onActiveChanged
+    navigateTo  (out) {screen: "Name", params: {...}, replace: bool, reset: bool} — ask MainScene to open a screen
+    close       (out) set true to pop this screen
+    result      (out) optional data handed back to the screen below when this one closes
+  Back: a screen returns false from onKeyEvent("back") to let MainScene pop it.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="BaseScreen" extends="Group">
+  <interface>
+    <field id="params" type="assocarray" />
+    <field id="active" type="boolean" value="false" onChange="onActiveChanged" />
+    <field id="navigateTo" type="assocarray" alwaysNotify="true" />
+    <field id="close" type="boolean" alwaysNotify="true" />
+    <field id="result" type="assocarray" />
+    <field id="screenResult" type="assocarray" alwaysNotify="true" onChange="onScreenResult" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/BaseScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Theme.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Api.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Nav.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Content.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
+</component>

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Item component for RowList / MarkupGrid / PosterGrid rows of media.
+  Reads the ContentNode fields set by Content_cardNode (components/common/Content.brs).
+  Styles: poster (2:3), landscape (16:9, Continue Watching / episodes), circle (people).
+  Focus: scale 1.10, 4 px #EDEDED border, soft white glow; caption brightens (docs/design-spec.md §1.5).
+  The containing list must set drawFocusFeedback="false".
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="MediaCardItem" extends="Group">
+  <interface>
+    <field id="itemContent" type="node" onChange="onContent" />
+    <field id="width" type="float" onChange="layout" />
+    <field id="height" type="float" onChange="layout" />
+    <field id="focusPercent" type="float" onChange="onFocus" />
+    <field id="itemHasFocus" type="boolean" onChange="onFocus" />
+    <field id="rowHasFocus" type="boolean" onChange="onFocus" />
+    <field id="gridHasFocus" type="boolean" onChange="onFocus" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/MediaCardItem.brs" />
+  <children>
+    <Group id="card">
+      <Poster id="glow" uri="pkg:/images/ui/r20.9.png" blendColor="0xFFFFFF47" opacity="0" />
+      <Poster id="placeholder" uri="pkg:/images/ui/r16.9.png" blendColor="0x15171CFF" />
+      <Label id="placeholderText" horizAlign="center" vertAlign="center" wrap="true" maxLines="3" color="0xEDEDED80">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="24" />
+      </Label>
+      <MaskGroup id="mask" maskUri="pkg:/images/ui/mask_poster.png">
+        <Poster id="image" loadDisplayMode="scaleToZoom" />
+        <Poster id="shade" uri="pkg:/images/ui/scrim_bottom.png" opacity="0" />
+        <Rectangle id="progressTrack" color="0xFFFFFF33" visible="false" />
+        <Rectangle id="progressFill" color="0xEDEDEDFF" visible="false" />
+      </MaskGroup>
+      <Group id="watchedBadge" visible="false">
+        <Poster id="watchedBg" uri="pkg:/images/ui/circle.png" blendColor="0xEDEDEDFF" />
+        <Poster id="watchedIcon" uri="pkg:/images/icons/check.png" blendColor="0x000000FF" />
+      </Group>
+      <Poster id="border" uri="pkg:/images/ui/r16_ring4.9.png" blendColor="0xEDEDEDFF" opacity="0" />
+    </Group>
+    <Label id="title" color="0xEDEDEDC7" horizAlign="left" maxLines="1">
+      <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="27" />
+    </Label>
+    <Label id="subtitle" color="0xEDEDEDB3" horizAlign="left" maxLines="1">
+      <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+    </Label>
+  </children>
+</component>

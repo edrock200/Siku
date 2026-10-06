@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Root scene: owns the screen stack and app-wide state on m.global.
+     SPDX-License-Identifier: AGPL-3.0-or-later -->
+<component name="MainScene" extends="Scene">
+  <interface>
+    <field id="launchArgs" type="assocarray" onChange="onLaunchArgs" />
+    <field id="inputArgs" type="assocarray" onChange="onInputArgs" />
+    <field id="exitApp" type="boolean" value="false" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/MainScene.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Theme.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
+  <children>
+    <Rectangle id="bg" width="1920" height="1080" color="0x000000FF" />
+    <Group id="screens" />
+    <Toast id="toast" />
+    <LoadingSpinner id="globalSpinner" visible="false" />
+  </children>
+</component>

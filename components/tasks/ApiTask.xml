@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  One HTTP call to the Silo API. Create, set `request`, set control="RUN", observe `response`.
+  request: {
+    method: "GET"|"POST"|"PUT"|"PATCH"|"DELETE"  (default GET)
+    path: "/api/v2/..."            resolved against session.serverUrl (or `baseUrl`)
+    url: "https://..."             absolute URL instead of path
+    baseUrl: "https://..."         override the server (used while probing a new server)
+    query: {k: v}                  appended as a query string
+    body: {..} or [..]             sent as JSON
+    auth: true                     send the bearer token (default true)
+    profile: true                  send X-Profile-Id / X-Profile-Token (default true)
+    timeout: 20                    seconds
+    context: anything              echoed back on the response
+  }
+  response: { ok: bool, status: int, data: parsed JSON or invalid, text: raw body,
+              error: {code, title, detail} or invalid, context }
+  status = 0 means a network failure. SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="ApiTask" extends="Task">
+  <interface>
+    <field id="request" type="assocarray" />
+    <field id="response" type="assocarray" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/tasks/ApiTask.brs" />
+  <script type="text/brightscript" uri="pkg:/components/tasks/Http.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
+</component>

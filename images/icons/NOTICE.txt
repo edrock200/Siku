@@ -1,0 +1,3 @@
+Icons in this folder are rendered from Material Icons Round by Google,
+licensed under the Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
+https://github.com/google/material-design-icons
