@@ -838,17 +838,257 @@ def requests_route(handler, method, p, q, b):
     return False
 
 
+# ---------------------------------------------------------------- subtitles (search, download, AI, sync)
+# Shapes follow contracts/api/v2/openapi.json (SubtitleSearchResults, StoredSubtitle, SubtitleAIJob,
+# SubtitleSyncState …) and the fixtures subtitles_search_partial / subtitle_download /
+# subtitle_ai_create / subtitle_ai_quota. Jobs advance a step on every read so the client's polling
+# can be exercised: an AI job completes on its third read, a sync job on its third read.
+SUBS = {"stored": [], "ai_jobs": {}, "sync": {}, "seq": 100, "rev": {}}
+EXTERNAL_SYNC_KEY = "external-" + "f903" * 16
+
+
+def sub_file_id(b, q=None):
+    return str((b or {}).get("media_file_id") or "42")
+
+
+def sub_sync_job(status, phase=None, progress=None, result=None, trigger="auto", failure=None, jid=None):
+    job = {"id": jid or str(SUBS["seq"]), "status": status, "trigger": trigger, "confidence": None,
+           "created_at": "2026-10-06T00:00:00.000Z", "finished_at": None}
+    if phase:
+        job["phase"] = phase
+    if progress is not None:
+        job["progress"] = progress
+    if result is not None:
+        job["result"] = result
+        job["confidence"] = 0.93
+        job["finished_at"] = "2026-10-06T00:01:00.000Z"
+    if failure:
+        job["failure"] = failure
+    return job
+
+
+def sub_sync_state(key, fid):
+    """The SubtitleSyncState for a key, creating the sidecar's entry on first use."""
+    st = SUBS["sync"].get(key)
+    if st is None and key == EXTERNAL_SYNC_KEY:
+        st = {"key": key, "media_file_id": fid, "source": "external", "language": "eng", "format": "srt",
+              "label": "Glass.City.2019.1080p.srt", "timing": {"offset_ms": 0, "scale": 1}, "sync": None, "_reads": 0}
+        SUBS["sync"][key] = st
+    return st
+
+
+def sub_sync_advance(st):
+    """A running job moves one step per read: queued → analyzing → matching → synced (+2.3 s)."""
+    job = st.get("sync")
+    if not job or job["status"] not in ("pending", "running"):
+        return
+    st["_reads"] = st.get("_reads", 0) + 1
+    n = st["_reads"]
+    if n == 1:
+        job.update(status="running", phase="analyzing", progress=0.35)
+    elif n == 2:
+        job.update(status="running", phase="matching", progress=0.7)
+    else:
+        job.pop("phase", None)
+        job.pop("progress", None)
+        job.update(status="synced", result={"offset_ms": 2300, "scale": 1}, confidence=0.93, finished_at="2026-10-06T00:01:00.000Z")
+        st["timing"] = {"offset_ms": 2300, "scale": 1}
+        SUBS["rev"][st["key"]] = SUBS["rev"].get(st["key"], 1) + 1
+
+
+def sub_public(st):
+    out = {k: v for k, v in st.items() if not k.startswith("_")}
+    if out.get("sync") is None:
+        out.pop("sync", None)
+    return out
+
+
+def sub_stored_public(rec):
+    out = {k: v for k, v in rec.items() if not k.startswith("_")}
+    st = SUBS["sync"].get("stored-" + rec["id"])
+    if st is not None:
+        out["timing"] = st["timing"]
+        if st.get("sync"):
+            out["sync"] = dict(st["sync"], subtitle_id=rec["id"])
+    return out
+
+
+def sub_store(fid, provider, language, release, fmt="srt", score=0.0, hi=False, auto_sync=True):
+    SUBS["seq"] += 1
+    rec = {"id": str(SUBS["seq"]), "media_file_id": fid, "provider": provider, "language": language, "format": fmt,
+           "release_name": release, "score": score, "hearing_impaired": hi, "created_at": "2026-10-06T00:00:00.000Z",
+           "timing": {"offset_ms": 0, "scale": 1}}
+    SUBS["stored"].append(rec)
+    key = "stored-" + rec["id"]
+    SUBS["seq"] += 1
+    SUBS["sync"][key] = {"key": key, "media_file_id": fid, "source": "downloaded", "stored_subtitle_id": rec["id"],
+                         "language": language, "format": fmt, "label": release or provider, "timing": {"offset_ms": 0, "scale": 1},
+                         "sync": sub_sync_job("pending", phase="queued", progress=0.0) if auto_sync else None, "_reads": 0}
+    return rec
+
+
+def playback_decision(sid, position, fid):
+    """The start / replan decision: inventory = the file's sidecar plus every stored subtitle."""
+    inventory = [{"track_id": "file:%s:subtitle:0" % fid, "combined_index": 0, "source": "external", "codec": "srt", "language": "eng",
+                  "label": "English", "forced": False, "default": False, "hearing_impaired": False, "delivery": "sidecar",
+                  "url": "/api/v2/stream/%s/subtitles/0.vtt?file_id=%s&external_subtitle_key=f903" % (sid, fid), "sync_key": EXTERNAL_SYNC_KEY}]
+    for rec in SUBS["stored"]:
+        if rec["media_file_id"] != fid:
+            continue
+        idx = len(inventory)
+        inventory.append({"track_id": "file:%s:subtitle:%d" % (fid, idx), "combined_index": idx, "source": "downloaded", "codec": rec["format"],
+                          "language": rec["language"], "label": rec["release_name"] or rec["provider"], "forced": False, "default": False,
+                          "hearing_impaired": rec["hearing_impaired"], "delivery": "sidecar",
+                          "url": "/api/v2/stream/%s/subtitles/%d.vtt?file_id=%s&downloaded_subtitle_id=%s" % (sid, idx, fid, rec["id"]),
+                          "sync_key": "stored-" + rec["id"]})
+    return {"protocol_version": 3, "server_features": ["playback_plan_v3", "neutral_playback_v3_contract_v1", "sequenced_progress_v1"],
+            "outcome": "playable", "session_id": sid,
+            "playback_plan": {"protocol_version": 3, "plan_id": "plan:%d" % (len(SUBS["stored"]) + 1), "plan_attempt_key": "v3:%d" % (len(SUBS["stored"]) + 1), "session_id": sid,
+                              "delivery": "original_http",
+                              "stream": {"url": "/mock-media/%s.mp4?st=abc" % sid, "protocol": "http_progressive", "container": "mp4", "mime_type": "video/mp4", "headers": {}, "header_refresh": "none"},
+                              "timeline": {"player_start_seconds": position, "timeline_offset_seconds": 0, "can_seek_anywhere": True},
+                              "selected_tracks": {"audio": {"id": "file:%s:audio:0" % fid, "index": 0}},
+                              "subtitle": {"mode": "off", "inventory": inventory},
+                              "source": {"media_file_id": fid, "duration_seconds": 3000}}}
+
+
+def subtitle_route(handler, method, p, q, b):
+    if not p.startswith("/api/v2/subtitles"):
+        return False
+    if p == "/api/v2/subtitles/ai/status":
+        handler.send(200, {"revision": "mock-ai-1", "state": "available", "allowed": True, "enabled": True, "transcribe_enabled": True})
+        return True
+    if p == "/api/v2/subtitles/ai/quota":
+        handler.send(200, {"limited": True, "limit": 5, "used": 2, "remaining": 3, "period": "day"})
+        return True
+    if p == "/api/v2/subtitles/providers/status":
+        handler.send(200, {"revision": "mock-prov-1", "state": "available", "allowed": True, "schema_version": 1, "enabled": True,
+                           "providers": ["opensubtitles", "subdl"]})
+        return True
+    if p == "/api/v2/subtitles/sync/status":
+        handler.send(200, {"revision": "mock-sync-1", "state": "available", "allowed": True, "auto_sync": True, "external": True})
+        return True
+    if p == "/api/v2/subtitles/ai/translate" and method == "POST":
+        LOG.append("AI TRANSLATE " + json.dumps(b))
+        for k in ("media_file_id", "kind", "source_index", "source_language", "target_language", "start_position"):
+            if k not in b:
+                handler.problem(422, "validation_failed", "%s is required" % k)
+                return True
+        if b["kind"] not in ("translate", "transcribe", "transcribe_translate"):
+            handler.problem(422, "validation_failed", "unknown kind")
+            return True
+        SUBS["seq"] += 1
+        job = {"id": str(SUBS["seq"]), "media_file_id": sub_file_id(b), "kind": b["kind"], "source_index": b["source_index"],
+               "source_language": b["source_language"], "target_language": b["target_language"], "engine": "mock", "model": "mock-1",
+               "status": "pending", "progress": 0.0, "progress_message": "", "result_subtitle_id": None,
+               "created_at": "2026-10-06T00:00:00.000Z", "updated_at": "2026-10-06T00:00:00.000Z", "_reads": 0}
+        SUBS["ai_jobs"][job["id"]] = job
+        handler.send(202, {"job": {k: v for k, v in job.items() if not k.startswith("_")}, "live_delivery_attached": False})
+        return True
+    m = re.match(r"^/api/v2/subtitles/ai/jobs/([^/]+)(/cancel)?$", p)
+    if m:
+        job = SUBS["ai_jobs"].get(m.group(1))
+        if job is None:
+            handler.problem(404, "not_found", "Unknown job")
+            return True
+        if m.group(2):
+            job.update(status="cancelled")
+            LOG.append("AI CANCEL " + job["id"])
+            handler.send(204)
+            return True
+        if job["status"] in ("pending", "running"):
+            job["_reads"] += 1
+            if job["_reads"] == 1:
+                job.update(status="running", progress=0.34, progress_message="Transcribing" if job["kind"] != "translate" else "Translating")
+            elif job["_reads"] == 2:
+                job.update(status="running", progress=0.72, progress_message="Translating")
+            else:
+                rec = sub_store(job["media_file_id"], "ai", job["target_language"], "AI %s" % job["kind"].replace("_", " "), auto_sync=False)
+                job.update(status="completed", progress=1.0, progress_message="", result_subtitle_id=rec["id"])
+        handler.send(200, {"job": {k: v for k, v in job.items() if not k.startswith("_")}})
+        return True
+    if p == "/api/v2/subtitles/search" and method == "POST":
+        LOG.append("SUB SEARCH " + json.dumps(b))
+        langs = b.get("languages") or ["en"]
+        lang = langs[0]
+        results = [
+            {"id": "os-%s-1" % lang, "provider": "opensubtitles", "language": lang, "release_name": "Glass.City.2019.1080p.BluRay.x264-SPARKS", "format": "srt",
+             "score": 92.5, "downloads": 18234, "hearing_impaired": False, "upload_date": "2024-02-01T00:00:00.000Z"},
+            {"id": "sdl-%s-7" % lang, "provider": "subdl", "language": lang, "release_name": "Glass City (2019) WEB-DL 1080p HI", "format": "srt",
+             "score": 61.0, "downloads": 2310, "hearing_impaired": True},
+            {"id": "os-%s-9" % lang, "provider": "opensubtitles", "language": lang, "release_name": "glass.city.dvdrip.xvid", "format": "srt",
+             "score": 24.0, "downloads": 410, "hearing_impaired": False},
+        ]
+        handler.send(200, {"results": results, "warnings": ["One or more subtitle providers could not complete the search."] if lang == "en" else []})
+        return True
+    if p == "/api/v2/subtitles/download" and method == "POST":
+        LOG.append("SUB DOWNLOAD " + json.dumps(b))
+        for k in ("media_file_id", "provider", "subtitle_id", "language", "release_name", "score", "hearing_impaired"):
+            if k not in b:
+                handler.problem(422, "validation_failed", "%s is required" % k)
+                return True
+        rec = sub_store(sub_file_id(b), b["provider"], b["language"], b["release_name"], score=b["score"], hi=b["hearing_impaired"])
+        handler.send(200, {"subtitle": sub_stored_public(rec)})
+        return True
+    m = re.match(r"^/api/v2/subtitles/([^/]+)/sync/([^/]+)(/timing)?$", p)
+    if m:
+        fid, key = m.group(1), m.group(2)
+        st = sub_sync_state(key, fid)
+        if st is None or st["media_file_id"] != fid:
+            handler.problem(404, "not_found", "Unknown subtitle")
+            return True
+        rev = SUBS["rev"].get(key, 1)
+        if m.group(3):
+            if method != "PUT":
+                return False
+            if "If-Match" not in handler.headers:
+                handler.problem(428, "precondition_required", "If-Match is required")
+                return True
+            if handler.headers["If-Match"] != 'W/"%d"' % rev:
+                handler.problem(412, "precondition_failed", "The subtitle changed")
+                return True
+            st["timing"] = {"offset_ms": int(b.get("offset_ms", 0)), "scale": b.get("scale", 1)}
+            SUBS["rev"][key] = rev + 1
+            LOG.append("SUB TIMING %s %s" % (key, json.dumps(st["timing"])))
+            handler.send(200, {"subtitle": sub_public(st)})
+            return True
+        if method == "POST":
+            SUBS["seq"] += 1
+            st["sync"] = sub_sync_job("pending", phase="queued", progress=0.0, trigger="manual")
+            st["_reads"] = 0
+            LOG.append("SUB SYNC START " + key)
+            handler.send(202, {"subtitle": sub_public(st)})
+            return True
+        sub_sync_advance(st)
+        handler.send(200, {"subtitle": sub_public(st)}, extra={"ETag": 'W/"%d"' % SUBS["rev"].get(key, 1)})
+        return True
+    m = re.match(r"^/api/v2/subtitles/([^/]+)/sync$", p)
+    if m:
+        fid = m.group(1)
+        sub_sync_state(EXTERNAL_SYNC_KEY, fid)
+        states = [sub_public(st) for st in SUBS["sync"].values() if st["media_file_id"] == fid]
+        handler.send(200, {"subtitles": states})
+        return True
+    m = re.match(r"^/api/v2/subtitles/([^/]+)$", p)
+    if m and method == "GET":
+        handler.send(200, {"subtitles": [sub_stored_public(r) for r in SUBS["stored"] if r["media_file_id"] == m.group(1)]})
+        return True
+    return False
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt, *args):
         LOG.append(fmt % args)
 
-    def send(self, code, body=None, ctype="application/json"):
+    def send(self, code, body=None, ctype="application/json", extra=None):
         data = b""
         if body is not None:
             data = body if isinstance(body, bytes) else json.dumps(body).encode()
         self.send_response(code)
+        for k, v in (extra or {}).items():
+            self.send_header(k, v)
         if data:
             self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
@@ -899,6 +1139,16 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, make_image(kind, name.rsplit(".", 1)[0]), "image/png" if kind == "logo" else "image/jpeg")
         if p.startswith("/mock-media/"):
             return self.send(404)
+        # Test control (not part of the API): empty or reseed the notifications inbox.
+        if p == "/mock/notifications/clear" and method == "POST":
+            STATE["notifs"] = []
+            return self.send(204)
+        if p == "/mock/notifications/reset" and method == "POST":
+            STATE.pop("notifs", None)
+            return self.send(204)
+        if re.match(r"^/api/v2/stream/[^/]+/subtitles/\d+\.vtt$", p):
+            LOG.append("VTT " + self.path)
+            return self.send(200, b"WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nMock subtitle line\n", "text/vtt")
 
         # POST /api/v2/catalog/query: the same query as GET /api/v2/catalog, as a JSON body plus
         # rule `groups` (CatalogQuery). Fold it into the GET handlers.
@@ -959,6 +1209,10 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authed():
             return self.problem(401, "invalid_token", "Authentication required")
         if requests_route(self, method, p, q, b):
+            return
+        if subtitle_route(self, method, p, q, b):
+            return
+        if notifications_route(self, method, p, q, b):
             return
 
         if p == "/api/v2/account/me":
@@ -1105,14 +1359,16 @@ class Handler(BaseHTTPRequestHandler):
             STATE["sessions"][sid] = b
             LOG.append("START " + json.dumps(b)[:400])
             print("START", json.dumps({k: b.get(k) for k in ("file_id", "audio_track_id", "subtitle_track_id", "start_position")}), flush=True)
-            return self.send(201, {"protocol_version": 3, "server_features": ["playback_plan_v3", "neutral_playback_v3_contract_v1", "sequenced_progress_v1"],
-                                   "outcome": "playable", "session_id": sid,
-                                   "playback_plan": {"protocol_version": 3, "plan_id": "plan:1", "plan_attempt_key": "v3:1", "session_id": sid,
-                                                     "delivery": "original_http",
-                                                     "stream": {"url": "/mock-media/%s.mp4?st=abc" % sid, "protocol": "http_progressive", "container": "mp4", "mime_type": "video/mp4", "headers": {}, "header_refresh": "none"},
-                                                     "timeline": {"player_start_seconds": b.get("start_position") or 0, "timeline_offset_seconds": 0, "can_seek_anywhere": True},
-                                                     "subtitle": {"mode": "off", "inventory": [{"track_id": "file:42:subtitle:0", "combined_index": 0, "codec": "srt", "language": "eng", "label": "English", "delivery": "sidecar", "url": "/api/v2/stream/%s/subtitles/0.vtt?file_id=42" % sid}]},
-                                                     "source": {"duration_seconds": 3000}}})
+            return self.send(201, playback_decision(sid, b.get("start_position") or 0, b.get("file_id") or "42"))
+        m = re.match(r"^/api/v2/playback/([^/]+)/replan$", p)
+        if m and method == "POST":
+            # Same decision shape as start; the inventory lists subtitles stored since (track_change).
+            LOG.append("REPLAN " + json.dumps({k: b.get(k) for k in ("operation", "position_seconds", "selected_tracks")}))
+            print("REPLAN", b.get("operation"), b.get("position_seconds"), flush=True)
+            if m.group(1) not in STATE["sessions"]:
+                return self.problem(410, "playback_session_ended", "Session ended")
+            start = STATE["sessions"][m.group(1)]
+            return self.send(200, playback_decision(m.group(1), b.get("position_seconds") or 0, start.get("file_id") or "42"))
         m = re.match(r"^/api/v2/playback/([^/]+)/progress$", p)
         if m:
             return self.send(200, {"outcome": "applied", "accepted": b})
@@ -1172,6 +1428,98 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/v2/settings/values/effective":
             return self.send(200, {"items": [{"key": "playback.intro_skip_mode", "value": "ask"}], "revision": 1})
         return self.problem(404, "not_found", "Mock: no route for " + p)
+
+
+# ---------- Notifications inbox (GET /api/v2/notifications, unread-count, {id}/read, read-all) ----------
+# Shapes follow silo-server contracts/api/v2/openapi.json (listNotifications, getNotificationUnreadCount,
+# markNotificationRead, markNotificationsRead). Cursors are "o<offset>"; read_cutoff is "rc-<epoch seconds>".
+# Test control: POST /mock/notifications/clear empties the inbox, POST /mock/notifications/reset reseeds it.
+
+def notif_seed():
+    if "notifs" in STATE:
+        return STATE["notifs"]
+    now = int(time.time())
+    rows = []
+    ages = [90, 40 * 60, 3 * 3600, 20 * 3600, 2 * 86400, 5 * 86400, 9 * 86400, 30 * 86400]
+    for i in range(32):
+        age = ages[i] if i < len(ages) else 40 * 86400 + i * 86400
+        kind = i % 5
+        row = {"id": "ntf-%03d" % (i + 1), "profile_id": "p1", "reason_flags": {}, "read_at": None,
+               "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - age))}
+        if kind in (0, 1, 3):
+            si = i % len(SERIES)
+            sr = series(si)
+            sn, en = 1 + i % SERIES[si][1], 1 + i % SERIES[si][2]
+            row.update({"type": "episode.available", "series_id": sr["content_id"], "series_title": sr["title"],
+                        "episode_id": episode_id(sr["content_id"], sn, en), "episode_title": "Chapter %d" % en,
+                        "season_number": sn, "episode_number": en, "poster_url": sr["poster_url"],
+                        "poster_path": "", "poster_thumbhash": "", "library_id": "2",
+                        "reason_flags": {"favorite": i % 2 == 0, "watchlist": i % 3 == 0}})
+        elif kind == 2:
+            row.update({"type": "request.fulfilled", "series_title": MOVIE_TITLES[i % len(MOVIE_TITLES)], "library_id": "1"})
+        else:
+            row.update({"type": "webhook.auto_disabled" if i % 2 else "library.scan_completed", "library_id": "1"})
+        if i >= 6 and i % 4 == 0:
+            row["read_at"] = row["created_at"]
+        rows.append(row)
+    STATE["notifs"] = rows
+    return rows
+
+
+def notif_now():
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def notifications_route(handler, method, p, q, b):
+    if not p.startswith("/api/v2/notifications"):
+        return False
+    rows = notif_seed()
+    if p == "/api/v2/notifications" and method == "GET":
+        items = rows
+        if (q.get("status") or ["all"])[0] == "unread":
+            items = [r for r in rows if not r["read_at"]]
+        limit = min(200, max(1, int((q.get("limit") or ["50"])[0])))
+        cursor = (q.get("cursor") or [""])[0]
+        offset = int(cursor[1:]) if cursor.startswith("o") and cursor[1:].isdigit() else 0
+        chunk = items[offset:offset + limit]
+        more = offset + limit < len(items)
+        pg = {"has_more": more}
+        if more:
+            pg["next_cursor"] = "o%d" % (offset + limit)
+        handler.send(200, {"items": chunk, "page": pg, "read_cutoff": "rc-%d" % int(time.time())})
+        return True
+    if p == "/api/v2/notifications/unread-count" and method == "GET":
+        handler.send(200, {"count": len([r for r in rows if not r["read_at"]])})
+        return True
+    if p == "/api/v2/notifications/read-all" and method == "POST":
+        through = str((b or {}).get("through") or "")
+        if not through.startswith("rc-") or not through[3:].isdigit():
+            handler.problem(422, "validation_failed", "through must be a read_cutoff from the inbox list")
+            return True
+        cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(through[3:])))
+        for r in rows:
+            if not r["read_at"] and r["created_at"] <= cutoff:
+                r["read_at"] = notif_now()
+        LOG.append("NOTIF READ-ALL " + through)
+        handler.send(204)
+        return True
+    m = re.match(r"^/api/v2/notifications/([^/]+)(/read)?$", p)
+    if m:
+        row = next((r for r in rows if r["id"] == m.group(1)), None)
+        if row is None:
+            handler.problem(404, "not_found", "Unknown notification")
+            return True
+        if m.group(2) and method == "POST":
+            if not row["read_at"]:
+                row["read_at"] = notif_now()
+            LOG.append("NOTIF READ " + row["id"])
+            handler.send(204)
+            return True
+        if not m.group(2) and method == "GET":
+            handler.send(200, row)
+            return True
+    handler.problem(404, "not_found", "Mock: no route for " + p)
+    return True
 
 
 def shuffle_pool(kind, sid):

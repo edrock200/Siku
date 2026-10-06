@@ -95,6 +95,7 @@ sub init()
     m.errorCloseBtn.observeField("buttonSelected", "exitPlayer")
     m.picker.observeField("chosen", "onPickerChosen")
     m.picker.observeField("dismissed", "onPickerDismissed")
+    Subs_init()
 end sub
 
 ' State for one playback attempt (reset again when Up Next chains to another episode).
@@ -148,6 +149,7 @@ sub resetPlaybackState()
     m.resumeAfterStart = invalid
     m.watchBackTarget = invalid
     m.waitingForToken = false
+    if m.subs <> invalid then Subs_resetPlayback()
 end sub
 
 ' ---------- Lifecycle ----------
@@ -166,6 +168,8 @@ sub restoreFocus()
         m.retryBtn.setFocus(true)
     else if m.picker.visible then
         m.picker.setFocus(true)
+    else if m.subsDialog.visible then
+        m.subsDialog.setFocus(true)
     else if m.upNext.visible then
         focusUpNext()
     else if m.hud.visible then
@@ -445,8 +449,10 @@ sub onStart(event as object)
     applyPlan(d.playback_plan)
 end sub
 
-' Hands a plan to the Video node (also used after a replan).
-sub applyPlan(plan as object)
+' Hands a plan to the Video node (also used after a replan, and to remount the same plan).
+' opts: { resumeAt: source seconds to continue from, subtitleTrackId: the track to select ("" = off) }.
+sub applyPlan(plan as object, opts = invalid as dynamic)
+    if opts = invalid then opts = {}
     m.plan = plan
     s = m.global.session
     stream = plan.stream
@@ -485,37 +491,40 @@ sub applyPlan(plan as object)
     content.HttpHeaders = headers
     if LCase(Left(url, 5)) = "https" then content.HttpCertificatesFile = "common:/certs/ca-bundle.crt"
     if m.duration > 0 then content.Length = Int(m.duration)
-    if tl.player_start_seconds <> invalid and tl.player_start_seconds > 0 then content.PlayStart = Int(tl.player_start_seconds)
+    m.resumeAfterStart = invalid
+    if opts.resumeAt <> invalid then
+        ' Continue where we were (a replan or a subtitle remount); the server may already have
+        ' anchored player_start_seconds there, and onVideoState seeks if it didn't.
+        startAt = opts.resumeAt - m.timelineOffset
+        if startAt > 0 then content.PlayStart = Int(startAt)
+        m.resumeAfterStart = opts.resumeAt
+    else if tl.player_start_seconds <> invalid and tl.player_start_seconds > 0 then
+        content.PlayStart = Int(tl.player_start_seconds)
+    end if
 
-    ' Subtitles: only WebVTT/SRT sidecars can be rendered by the Video node. Sidecar routes have no
-    ' signed `st`, and we can't be sure the Video node forwards HttpHeaders to sidecar fetches, so we
-    ' append the documented `token=` fallback (docs/api-spec.md §8.2, auth.go:320).
+    ' Subtitles: only WebVTT/SRT sidecars can be rendered by the Video node (Subs_buildTrack adds
+    ' the `token=` fallback and the timestamp_offset for the timeline offset and the viewer's delay).
     m.subtitleTracks = []
+    m.subtitleIndex = -1
     tracks = []
     subInv = []
     if plan.subtitle <> invalid then subInv = Arr_or(plan.subtitle.inventory)
+    m.subs.subtitleInventory = subInv
     for each t in subInv
-        if Str_orEmpty(t.delivery) = "sidecar" and not Str_isEmpty(t.url) then
-            path = LCase(t.url)
-            q = Instr(1, path, "?")
-            if q > 0 then path = Left(path, q - 1)
-            if Right(path, 4) = ".vtt" or Right(path, 4) = ".srt" then
-                su = Url_resolve(t.url)
-                if Instr(1, su, "?") > 0 then su = su + "&token=" + s.accessToken else su = su + "?token=" + s.accessToken
-                label = Str_orEmpty(t.label)
-                if label = "" then label = Str_orEmpty(t.language)
-                if t.forced = true then label = label + " (Forced)"
-                if t.hearing_impaired = true then label = label + " (SDH)"
-                m.subtitleTracks.Push({ label: label, url: su, language: Str_orEmpty(t.language), trackId: Str_orEmpty(t.track_id) })
-                tracks.Push({ Language: Str_orEmpty(t.language), TrackName: su, Description: label })
-            end if
+        track = Subs_buildTrack(t)
+        if track <> invalid then
+            m.subtitleTracks.Push(track)
+            tracks.Push({ Language: track.language, TrackName: track.url, Description: track.label })
         end if
     end for
     if tracks.Count() > 0 then content.SubtitleTracks = tracks
 
-    ' Default subtitle: what the plan selected, if we can render it.
+    ' Default subtitle: the caller's choice (a remount keeps the current track), else what the plan
+    ' selected, if we can render it.
     m.pendingSubtitleTrackId = ""
-    if m.forceSubtitlesOff then
+    if opts.subtitleTrackId <> invalid then
+        m.pendingSubtitleTrackId = Str_orEmpty(opts.subtitleTrackId)
+    else if m.forceSubtitlesOff then
         ' The detail page chose "Off · Start without subtitles".
     else if plan.subtitle <> invalid and Str_orEmpty(plan.subtitle.mode) <> "off" and plan.selected_tracks <> invalid and plan.selected_tracks.subtitle <> invalid then
         m.pendingSubtitleTrackId = Str_orEmpty(plan.selected_tracks.subtitle.id)
@@ -526,6 +535,18 @@ sub applyPlan(plan as object)
     setBuffering(true)
     m.progressTimer.control = "start"
     updateHudQualityLabel()
+    ' Follow the syncable subtitles of this file (their timing and running sync jobs).
+    if not m.subs.syncLoaded then Subs_syncReload()
+end sub
+
+' Fetches the mounted sidecar again (a delay change or new server timing): the Video node keeps the
+' cues it parsed, so the same plan is remounted at the current position with the same track.
+sub remountSubtitles()
+    if m.plan = invalid or m.closing then return
+    keepId = Subs_selectedTrackId()
+    resumeAt = m.position
+    m.video.control = "stop"
+    applyPlan(m.plan, { resumeAt: resumeAt, subtitleTrackId: keepId })
 end sub
 
 ' ---------- Video events ----------
@@ -539,7 +560,8 @@ sub onVideoState()
         m.isPaused = false
         m.playPauseBtn.iconUri = "pkg:/images/icons/pause.png"
         if m.resumeAfterStart <> invalid then
-            seekToSource(m.resumeAfterStart)
+            ' Only when PlayStart didn't land us there already.
+            if Abs(m.video.position + m.timelineOffset - m.resumeAfterStart) > 3 then seekToSource(m.resumeAfterStart)
             m.resumeAfterStart = invalid
         end if
         if m.pendingSubtitleTrackId <> "" then
@@ -664,6 +686,8 @@ sub exitPlayer()
     m.countdownTimer.control = "stop"
     m.holdTimer.control = "stop"
     m.hideTimer.control = "stop"
+    m.subsSyncTimer.control = "stop"
+    m.subsAiTimer.control = "stop"
     hadSession = m.sessionId <> ""
     m.video.control = "stop"
     m.video.visible = false
@@ -685,6 +709,8 @@ sub onScreenHidden()
     m.countdownTimer.control = "stop"
     m.holdTimer.control = "stop"
     m.hideTimer.control = "stop"
+    m.subsSyncTimer.control = "stop"
+    m.subsAiTimer.control = "stop"
     m.video.control = "stop"
     stopSession()
 end sub
@@ -825,7 +851,7 @@ sub hideControls()
     m.controls.visible = false
     m.hideTimer.control = "stop"
     positionSkipPill()
-    if not m.hud.visible and not m.upNext.visible and not m.errorGroup.visible and not m.picker.visible then
+    if not m.hud.visible and not m.upNext.visible and not m.errorGroup.visible and not m.picker.visible and not m.subsDialog.visible then
         if m.skipGroup.visible and m.skipBtn.visible then
             m.skipBtn.setFocus(true)
         else
@@ -961,7 +987,7 @@ sub checkMarkers()
         m.skippedCaption.visible = false
         m.skipGroup.visible = true
         positionSkipPill()
-        if not m.controls.visible and not m.hud.visible and not m.upNext.visible and not m.picker.visible then
+        if not m.controls.visible and not m.hud.visible and not m.upNext.visible and not m.picker.visible and not m.subsDialog.visible then
             m.skipBtn.setFocus(true)
         end if
     end if
@@ -979,7 +1005,7 @@ sub showSkippedCaption(mk as object)
     m.skipShownFor = "watch:" + Str_orEmpty(mk.start)
     m.watchBackTarget = mk.start
     positionSkipPill()
-    if not m.controls.visible and not m.hud.visible and not m.upNext.visible then m.skipBtn.setFocus(true)
+    if not m.controls.visible and not m.hud.visible and not m.upNext.visible and not m.picker.visible and not m.subsDialog.visible then m.skipBtn.setFocus(true)
     m.captionTimer.control = "start"
 end sub
 
@@ -1451,6 +1477,7 @@ sub openHud(tabIndex as integer)
     m.hudRow = 0
     m.hud.visible = true
     focusHud()
+    if names[tabIndex] = "Subtitles" then Subs_onPaneShown()
 end sub
 
 sub closeHud()
@@ -1480,6 +1507,7 @@ sub selectHudTab(i as integer)
     end for
     m.hudTabs[i].setFocus(true)
     buildHudRows()
+    if hudTabNames()[i] = "Subtitles" then Subs_onPaneShown()
 end sub
 
 function currentAudioName() as string
@@ -1502,6 +1530,12 @@ function audioTrackLabel(t as object) as string
 end function
 
 function currentSubtitleName() as string
+    if m.pendingSubtitleTrackId <> "" then
+        ' Chosen, but the player hasn't started yet (a remount or a fresh plan): "Label · Applying…".
+        for each t in m.subtitleTracks
+            if t.trackId = m.pendingSubtitleTrackId then return t.label + " · Applying…"
+        end for
+    end if
     if m.subtitleIndex < 0 or m.subtitleIndex >= m.subtitleTracks.Count() then return "Off"
     return m.subtitleTracks[m.subtitleIndex].label
 end function
@@ -1563,6 +1597,8 @@ function hudRowSpecs() as object
     else if tabName = "Subtitles" then
         rows.Push({ id: "subtitle", label: "Track", value: currentSubtitleName(), actionable: true })
         if m.subtitleTracks.Count() = 0 then rows.Push({ id: "nosub", label: "No text subtitles for this stream", value: "", actionable: false })
+        ' Delay, Timing (Sync to audio / Reset timing), Search subtitles, Translate with AI.
+        Subs_appendHudRows(rows)
     else if tabName = "Chapters" then
         for i = 0 to m.chapters.Count() - 1
             ch = m.chapters[i]
@@ -1608,6 +1644,14 @@ sub buildHudRows()
         lf = CreateObject("roSGNode", "Font")
         lf.uri = "pkg:/fonts/Inter-medium.otf"
         lf.size = 27
+        if spec.muted = true then
+            ' A detail line under a row (the Timing row's progress, result or note): full width, quieter.
+            lbl.width = rowW - 48
+            lbl.color = "0xEDEDED8C"
+            if not Str_isEmpty(spec.color) then lbl.color = spec.color
+            lf.uri = "pkg:/fonts/Inter-regular.otf"
+            lf.size = 23
+        end if
         lbl.font = lf
         val = row.createChild("Label")
         val.id = "value"
@@ -1673,6 +1717,8 @@ sub activateHudRow()
         p.autoPlayNext = not (p.autoPlayNext <> false)
         Prefs_save(p)
         buildHudRows()
+    else if Subs_activateHudRow(id) then
+        ' Handled by the subtitle suite.
     else if Left(id, 8) = "chapter:" then
         idx = Int(Val(Mid(id, 9)))
         if idx >= 0 and idx < m.chapters.Count() then
@@ -1700,7 +1746,8 @@ sub openPicker(kind as string)
     else if kind = "subtitle" then
         acts.Push({ id: "-1", label: "Off", checked: m.subtitleIndex < 0 })
         for i = 0 to m.subtitleTracks.Count() - 1
-            acts.Push({ id: i.ToStr(), label: m.subtitleTracks[i].label, checked: i = m.subtitleIndex })
+            ' The detail line is the track's sync status ("Syncing… 40%", "Synced +2.3 s"), when it has one.
+            acts.Push({ id: i.ToStr(), label: m.subtitleTracks[i].label, checked: i = m.subtitleIndex, detail: Subs_trackStatus(m.subtitleTracks[i]) })
         end for
         m.picker.title = "Subtitles"
     else if kind = "quality" then
@@ -1752,6 +1799,8 @@ sub onPickerChosen()
         setSubtitle(Int(Val(id)))
     else if kind = "quality" then
         if LCase(id) <> LCase(m.qualityPref) then requestQualityChange(id)
+    else if kind = "subtiming" then
+        Subs_timingChosen(id)
     end if
     afterPicker()
 end sub
@@ -1798,12 +1847,7 @@ sub onReplan(event as object)
     end if
     resumeAt = m.position
     m.video.control = "stop"
-    applyPlan(plan)
-    ' The server anchors player_start_seconds to position_seconds; if it didn't, seek ourselves.
-    tl = plan.timeline
-    if tl = invalid or tl.player_start_seconds = invalid or Abs(tl.player_start_seconds + m.timelineOffset - resumeAt) > 5 then
-        m.resumeAfterStart = resumeAt
-    end if
+    applyPlan(plan, { resumeAt: resumeAt, subtitleTrackId: Subs_selectedTrackId() })
 end sub
 
 ' ---------- Keys ----------
@@ -1824,7 +1868,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
         return true
     end if
-    if m.picker.visible then return true
+    if m.picker.visible or m.subsDialog.visible then return true
     if m.upNext.visible then return handleUpNextKey(key)
     if m.hud.visible then return handleHudKey(key)
     if key = "play" then

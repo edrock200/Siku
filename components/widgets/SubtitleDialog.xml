@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Centered D-pad dialog for the player's subtitle features (Search subtitles, Translate with AI,
+  Subtitle Delay), after the Android TV "TvOptionDialog" idiom: a 680 px dark glass panel with a
+  muted uppercase title and a column of rows. The list scrolls when it is taller than the screen.
+  Rows (the `rows` array; `id` names a row back to the owner):
+    {kind:"cycler", id, label, value}            "Label      ‹ value ›": Left/Right (and OK) cycle → `cycled`
+    {kind:"action", id, label, disabled?}        centered button row → `chosen`
+    {kind:"option", id, label, detail?, checked?} picker row with a ✓ → `chosen`
+    {kind:"result", id, score, releaseName, provider, hearingImpaired, downloads, language, busy?}
+                                                  provider search hit → `chosen`; busy shows "Downloading…"
+    {kind:"text", text, color?}                  a message; never takes focus
+    {kind:"progress", title, percent, message?}  a running job; never takes focus
+  Fields:
+    title, rows                in
+    chosen (out)               id of the action / option / result row that was selected
+    cycled (out)               {id, direction: -1|1} for a cycler row
+    dismissed (out)            true when Back is pressed
+  Rebuilding `rows` keeps the focus on the row with the same id.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="SubtitleDialog" extends="Group">
+  <interface>
+    <field id="title" type="string" onChange="rebuild" />
+    <field id="rows" type="array" onChange="rebuild" />
+    <field id="chosen" type="string" alwaysNotify="true" />
+    <field id="cycled" type="assocarray" alwaysNotify="true" />
+    <field id="dismissed" type="boolean" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/SubtitleDialog.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <children>
+    <Rectangle id="dim" width="1920" height="1080" color="0x00000080" />
+    <Group id="card">
+      <Poster id="cardBg" uri="pkg:/images/ui/r28.9.png" blendColor="0x101114E8" />
+      <Poster id="cardRing" uri="pkg:/images/ui/r28_ring2.9.png" blendColor="0xFFFFFF33" />
+      <Label id="titleLabel" color="0xEDEDED94">
+        <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="24" />
+      </Label>
+      <Group id="viewport">
+        <Group id="list" />
+      </Group>
+    </Group>
+  </children>
+</component>

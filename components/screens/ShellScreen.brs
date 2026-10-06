@@ -424,6 +424,7 @@ sub openProfilePanel()
         { id: "watchlist", label: "Watchlist", icon: "bookmark" },
         { id: "favorites", label: "Favorites", icon: "heart" },
         { id: "history", label: "History", icon: "history" },
+        { id: "notifications", label: "Notifications", icon: "notifications" },
         { id: "-" },
         { id: "settings", label: "Settings", icon: "settings" },
         { id: "switch_server", label: "Switch Server", icon: "dns" },
@@ -512,6 +513,11 @@ sub onProfileAction(id as string)
         closePanel()
         focusBar(avatarIndex)
         Nav_push("ProfileScreen", { switching: true })
+    else if id = "notifications" then
+        ' Siku addition: Android TV ships the inbox screen but has no entry point for it.
+        closePanel()
+        focusBar(avatarIndex)
+        Nav_push("NotificationsScreen")
     else if id = "watchlist" or id = "favorites" or id = "history" then
         closePanel()
         showPersonal(id)

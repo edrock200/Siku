@@ -33,7 +33,7 @@ ICONS = {
     "rewind_30": "replay_30", "forward_10": "forward_10", "sleep": "bedtime", "album": "album",
     "chapters": "format_list_numbered", "equalizer": "equalizer",
     # Notifications inbox empty state (NotificationsScreen)
-    "notifications_none": "notifications_none",
+    "notifications_none": "notifications_none", "notifications": "notifications",
 }
 
 

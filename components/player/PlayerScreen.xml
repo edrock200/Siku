@@ -15,6 +15,7 @@
 <component name="PlayerScreen" extends="BaseScreen">
   <script type="text/brightscript" uri="pkg:/components/player/PlayerScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/PlaybackCaps.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/SubtitleSuite.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Shuffle.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />
   <children>
@@ -119,6 +120,8 @@
     </Group>
 
     <DetailMoreMenu id="picker" visible="false" />
+    <!-- Search subtitles / Translate with AI / Subtitle Delay (SubtitleSuite.brs). -->
+    <SubtitleDialog id="subsDialog" visible="false" />
 
     <Timer id="progressTimer" duration="10" repeat="true" />
     <Timer id="hideTimer" duration="5" />
@@ -128,5 +131,7 @@
     <Timer id="refreshTimeout" duration="12" />
     <Timer id="stopTimeout" duration="2.5" />
     <Timer id="captionTimer" duration="4" />
+    <Timer id="subsSyncTimer" duration="3" repeat="true" />
+    <Timer id="subsAiTimer" duration="2" repeat="true" />
   </children>
 </component>
