@@ -4,7 +4,7 @@
 
 Siku brings your Silo library to Roku TVs and streaming players. It is a port of the official [Silo Android TV client](https://github.com/Silo-Server/silo-android) to Roku SceneGraph and BrightScript, and aims to look, feel and behave like it on a 10-foot, remote-driven screen.
 
-> **Status:** early development. Siku is not yet usable. This README describes the planned v1 scope; the checklist below tracks what is built.
+> **Status:** early development. Sign-in, profiles and settings work; browsing and playback are being built. The checklist below tracks progress.
 >
 > Siku is an independent community project. It is not made or endorsed by Silo Media L.L.C. "Silo" is a trademark of Silo Media L.L.C. and is used here only to say what Siku connects to.
 
@@ -14,10 +14,10 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 
 | Area | Feature | Status |
 |---|---|:---:|
-| Connect | Enter a server address, verify it, remember several servers | 🚧 |
-| Sign in | Username and password | 🚧 |
-| Sign in | Sign in with a code or QR from your phone (device sign-in) | 🚧 |
-| Profiles | Profile picker, PIN-protected profiles, switch profile | 🚧 |
+| Connect | Enter a server address, verify it, remember several servers | ✅ |
+| Sign in | Username and password | ✅ |
+| Sign in | Sign in with a code or QR from your phone (device sign-in) | ✅ |
+| Profiles | Profile picker, PIN-protected profiles, switch profile | ✅ |
 | Navigation | Top bar like Android TV: Home, media tabs (Movies, Shows, Music, Audiobooks), For You, Calendar, Search, Profile | 🚧 |
 | Home | Hero banner plus server-defined rows: Continue Watching, Next Up, Recently Added | 🚧 |
 | Browse | Library grids with sort and filters, collections | 🚧 |
@@ -25,7 +25,7 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Discover | Search, For You (Watchlist and Favorites), release Calendar | 🚧 |
 | Playback | Direct Play, Remux or Transcode chosen by the server from the Roku's capabilities | 🚧 |
 | Playback | Resume, progress sync, mark watched, audio and subtitle selection, Skip Intro, Up Next | 🚧 |
-| Settings | Account, playback and subtitle preferences, sign out, switch server | 🚧 |
+| Settings | Account, playback and subtitle preferences, sign out, switch server | ✅ |
 
 Not planned for v1: Watch Party, Requests, AI subtitle tools, ebooks (also absent from Android TV), and downloads (Roku has no local storage for media).
 
