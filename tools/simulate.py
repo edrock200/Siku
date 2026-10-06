@@ -41,7 +41,7 @@ def main():
     OUT = os.path.abspath(args.out)
     os.makedirs(OUT, exist_ok=True)
     log = open(os.path.join(OUT, "console.log"), "wb")
-    zip_path = os.path.join(OUT, "soku.zip")
+    zip_path = os.path.join(OUT, "siku.zip")
 
     subprocess.run(["sh", "-c", "cd '%s' && zip -qrD '%s' manifest source components images fonts -x '*.DS_Store'" % (ROOT, zip_path)], check=True)
     args.app = zip_path

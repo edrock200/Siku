@@ -97,7 +97,7 @@ function Http_deviceHeaders(session as object) as object
         "X-Silo-Device-Id": session.deviceId
         "X-Silo-Device-Name": "Roku " + di.GetModelDisplayName()
         "X-Silo-Device-Platform": "roku"
-        "X-Silo-Client": "Soku"
+        "X-Silo-Client": "Siku"
         "X-Silo-Client-Version": ai.GetVersion()
         "X-Silo-Client-Channel": "sideload"
         "X-Silo-Client-Family": "tv"

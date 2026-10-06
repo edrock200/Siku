@@ -1,6 +1,6 @@
-# Soku architecture
+# Siku architecture
 
-Soku is a Roku SceneGraph channel written in BrightScript. It ports the Silo Android TV client, so it should look and behave the same. Read these first:
+Siku is a Roku SceneGraph channel written in BrightScript. It ports the Silo Android TV client, so it should look and behave the same. Read these first:
 
 - [`design-spec.md`](design-spec.md): colors, type, spacing, focus, and every screen's layout. Pixel values are for the 1920×1080 canvas.
 - [`api-spec.md`](api-spec.md): the Silo `/api/v2` endpoints, with example JSON.
@@ -102,7 +102,7 @@ A screen is `<component name="XScreen" extends="BaseScreen">` (`components/BaseS
 
 ## Calling the API
 
-Soku uses the Silo **v2 API only** (`/api/v2/...`). `ApiTask` refuses any `path` outside `/api/v2/`. Never call `/api/v1` or the root `/health` route.
+Siku uses the Silo **v2 API only** (`/api/v2/...`). `ApiTask` refuses any `path` outside `/api/v2/`. Never call `/api/v1` or the root `/health` route.
 
 
 ```brightscript

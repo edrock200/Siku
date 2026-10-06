@@ -1,9 +1,9 @@
 {
-  "name": "soku",
+  "name": "siku",
   "version": "0.1.0",
   "private": true,
   "license": "AGPL-3.0-or-later",
-  "description": "Soku, a Roku client for the Silo media server",
+  "description": "Siku, a Roku client for the Silo media server",
   "scripts": {
     "lint": "bsc --project bsconfig.json",
     "package": "sh scripts/package.sh",

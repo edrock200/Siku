@@ -19,5 +19,5 @@ jobs:
         run: npm run package
       - uses: actions/upload-artifact@v4
         with:
-          name: soku
-          path: out/soku.zip
+          name: siku
+          path: out/siku.zip

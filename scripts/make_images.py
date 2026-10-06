@@ -1,6 +1,6 @@
-"""Generates Soku's channel artwork (icons, splash, logo) with Pillow.
+"""Generates Siku's channel artwork (icons, splash, logo) with Pillow.
 
-Soku uses its own mark — a rounded play tile with a three-color "speed" stripe —
+Siku uses its own mark — a rounded play tile with a three-color "speed" stripe —
 in Silo's palette. It deliberately does not reproduce the Silo logo.
 Run: python3 scripts/make_images.py
 """
@@ -60,9 +60,9 @@ def wordmark_width(font, text):
 
 
 def lockup(canvas, center, mark_size, font_size):
-    """Draws mark + 'soku' wordmark centred at `center` on an RGB canvas."""
+    """Draws mark + 'siku' wordmark centred at `center` on an RGB canvas."""
     font = ImageFont.truetype(FONT, font_size)
-    text = "soku"
+    text = "siku"
     gap = int(mark_size * 0.28)
     tw = wordmark_width(font, text)
     total = mark_size + gap + tw

@@ -1,4 +1,4 @@
-' Soku — a Roku client for the Silo media server.
+' Siku — a Roku client for the Silo media server.
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
 sub Main(args as dynamic)

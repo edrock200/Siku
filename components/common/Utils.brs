@@ -4,7 +4,7 @@
 ' ---------- Registry (persistent storage) ----------
 
 function Registry_read(key as string, default = invalid as dynamic) as dynamic
-    sec = CreateObject("roRegistrySection", "soku")
+    sec = CreateObject("roRegistrySection", "siku")
     if not sec.Exists(key) then return default
     raw = sec.Read(key)
     parsed = ParseJson(raw)
@@ -13,13 +13,13 @@ function Registry_read(key as string, default = invalid as dynamic) as dynamic
 end function
 
 sub Registry_write(key as string, value as dynamic)
-    sec = CreateObject("roRegistrySection", "soku")
+    sec = CreateObject("roRegistrySection", "siku")
     sec.Write(key, FormatJson({ v: value }))
     sec.Flush()
 end sub
 
 sub Registry_delete(key as string)
-    sec = CreateObject("roRegistrySection", "soku")
+    sec = CreateObject("roRegistrySection", "siku")
     sec.Delete(key)
     sec.Flush()
 end sub

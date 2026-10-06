@@ -1,10 +1,10 @@
-"""A small fake Silo server for exercising Soku in the brs-engine simulator.
+"""A small fake Silo server for exercising Siku in the brs-engine simulator.
 
 It speaks the /api/v2 shapes documented in docs/api-spec.md, with a synthetic
 library (movies, series with seasons and episodes, people) and generated artwork.
 
 Run:  python3 tools/mock_server.py [--port 8097]
-Then connect Soku to http://127.0.0.1:8097
+Then connect Siku to http://127.0.0.1:8097
 
 Device sign-in auto-approves on the second poll. Password login accepts any
 username with password "silo". The "Kids" profile has PIN 1234.

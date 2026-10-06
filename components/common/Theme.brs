@@ -3,7 +3,7 @@
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
 function Theme() as object
-    if m.soku_theme <> invalid then return m.soku_theme
+    if m.siku_theme <> invalid then return m.siku_theme
     t = {
         ' Colors are 0xRRGGBBAA, as SceneGraph expects.
         colors: {
@@ -60,7 +60,7 @@ function Theme() as object
         focusScale: 1.10
         animMs: 200
     }
-    m.soku_theme = t
+    m.siku_theme = t
     return t
 end function
 

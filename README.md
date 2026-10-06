@@ -1,12 +1,12 @@
-# Soku
+# Siku
 
-**Soku is a Roku client for [Silo](https://github.com/Silo-Server/silo-server), the self-hosted media server.**
+**Siku is a Roku client for [Silo](https://github.com/Silo-Server/silo-server), the self-hosted media server.**
 
-Soku brings your Silo library to Roku TVs and streaming players. It is a port of the official [Silo Android TV client](https://github.com/Silo-Server/silo-android) to Roku SceneGraph and BrightScript, and aims to look, feel and behave like it on a 10-foot, remote-driven screen.
+Siku brings your Silo library to Roku TVs and streaming players. It is a port of the official [Silo Android TV client](https://github.com/Silo-Server/silo-android) to Roku SceneGraph and BrightScript, and aims to look, feel and behave like it on a 10-foot, remote-driven screen.
 
-> **Status:** early development. Soku is not yet usable. This README describes the planned v1 scope; the checklist below tracks what is built.
+> **Status:** early development. Siku is not yet usable. This README describes the planned v1 scope; the checklist below tracks what is built.
 >
-> Soku is an independent community project. It is not made or endorsed by Silo Media L.L.C. "Silo" is a trademark of Silo Media L.L.C. and is used here only to say what Soku connects to.
+> Siku is an independent community project. It is not made or endorsed by Silo Media L.L.C. "Silo" is a trademark of Silo Media L.L.C. and is used here only to say what Siku connects to.
 
 ---
 
@@ -31,7 +31,7 @@ Not planned for v1: Watch Party, Requests, AI subtitle tools, ebooks (also absen
 
 ## Install (side-load)
 
-Soku is not in the Roku Channel Store. To run it on your own Roku:
+Siku is not in the Roku Channel Store. To run it on your own Roku:
 
 1. **Turn on developer mode.** On the Roku remote press **Home ×3, Up ×2, Right, Left, Right, Left, Right**. Note the IP address shown, accept the license and set a developer password. The Roku restarts.
 2. **Build the package** (see [Build](#build)) or download a release zip.
@@ -46,7 +46,7 @@ Requirements: Node.js 18+ and `zip`.
 ```sh
 npm install          # installs the BrighterScript compiler used for linting
 npm run lint         # validates BrightScript and SceneGraph XML
-npm run package      # writes out/soku.zip, ready to side-load
+npm run package      # writes out/siku.zip, ready to side-load
 ```
 
 To deploy straight to a Roku in developer mode:
@@ -72,7 +72,7 @@ scripts/                 Packaging and deploy helpers
 
 ## How it works
 
-Soku talks to a Silo server over the same HTTP API as the Android clients. The server owns the library, metadata, transcoding decisions and accounts; Soku displays them and drives playback with Roku's native `Video` node. When playback starts, Soku describes what this Roku can decode (H.264, HEVC, AAC, AC3/EAC3, HLS…) so the server can pick Direct Play, Remux or Transcode.
+Siku talks to a Silo server over the same HTTP API as the Android clients. The server owns the library, metadata, transcoding decisions and accounts; Siku displays them and drives playback with Roku's native `Video` node. When playback starts, Siku describes what this Roku can decode (H.264, HEVC, AAC, AC3/EAC3, HLS…) so the server can pick Direct Play, Remux or Transcode.
 
 ## References
 
@@ -82,6 +82,6 @@ Soku talks to a Silo server over the same HTTP API as the Android clients. The s
 
 ## License
 
-Soku is free software, released under the **GNU Affero General Public License v3.0 or later** (`AGPL-3.0-or-later`). See [LICENSE](LICENSE). It ports logic and UI from the AGPL-3.0 [Silo Android client](https://github.com/Silo-Server/silo-android).
+Siku is free software, released under the **GNU Affero General Public License v3.0 or later** (`AGPL-3.0-or-later`). See [LICENSE](LICENSE). It ports logic and UI from the AGPL-3.0 [Silo Android client](https://github.com/Silo-Server/silo-android).
 
-The Silo name and logo are trademarks of Silo Media L.L.C. and are not covered by this license. Soku uses its own logo.
+The Silo name and logo are trademarks of Silo Media L.L.C. and are not covered by this license. Siku uses its own logo.

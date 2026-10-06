@@ -8,7 +8,7 @@ sub init()
     m.pickerRing = m.top.findNode("pickerRing")
     m.pickerTitle = m.top.findNode("pickerTitle")
     m.pickerRows = m.top.findNode("pickerRows")
-    m.top.findNode("version").text = "Soku " + App_version()
+    m.top.findNode("version").text = "Siku " + App_version()
 
     s = m.global.session
     m.top.findNode("accountName").text = Str_orEmpty(s.profileName)
