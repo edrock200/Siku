@@ -7,9 +7,12 @@
   "scripts": {
     "lint": "bsc --project bsconfig.json",
     "package": "sh scripts/package.sh",
-    "deploy": "sh scripts/deploy.sh"
+    "deploy": "sh scripts/deploy.sh",
+    "mock": "python3 tools/mock_server.py --port 8097",
+    "simulate": "python3 tools/simulate.py --brs-cli node_modules/.bin/brs-cli"
   },
   "devDependencies": {
-    "brighterscript": "^0.73.5"
+    "brighterscript": "^0.73.5",
+    "brs-node": "^2.6.0"
   }
 }
