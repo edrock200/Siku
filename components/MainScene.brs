@@ -164,9 +164,27 @@ end sub
 
 sub handleDeepLink(args as dynamic)
     if args = invalid then return
-    ' Developer aid for the simulator (tools/simulate.py): open a screen directly.
+    ' Developer aids for the simulator (tools/simulate.py, tools/mock_server.py).
+    if args.debugSession = "mock" then
+        s = AA_copy(m.global.session)
+        s.serverUrl = "http://127.0.0.1:8097"
+        s.serverOrigin = s.serverUrl
+        s.serverName = "Mock Silo"
+        s.serverId = "mock-server-1"
+        s.accessToken = "acc-debug"
+        s.refreshToken = "ref-debug"
+        s.expiresAt = Time_nowSeconds() + 3600
+        s.user = { id: "1", username: "laura", role: "admin" }
+        s.profileId = "p-owner"
+        s.profileName = "Laura"
+        s.profileAvatar = "/mock-img/avatar/laura.jpg"
+        Session_save(s)
+        if Str_isEmpty(args.debugScreen) then routeToStart()
+    end if
     if not Str_isEmpty(args.debugScreen) then
-        resetTo(args.debugScreen, {})
+        params = {}
+        if not Str_isEmpty(args.debugItem) then params.itemId = args.debugItem
+        resetTo(args.debugScreen, params)
         return
     end if
     if Str_isEmpty(args.contentId) then return

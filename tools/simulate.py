@@ -31,16 +31,20 @@ KEYS = {
 
 
 def main():
+    global OUT
     ap = argparse.ArgumentParser()
     ap.add_argument("--steps", required=True)
     ap.add_argument("--brs-cli", default=shutil.which("brs-cli") or "brs-cli")
+    ap.add_argument("--out", default=OUT, help="snapshot/log folder (use your own when running in parallel)")
     ap.add_argument("--deep-link", default="", help="e.g. debugScreen=SettingsScreen")
-    ap.add_argument("--app", default=os.path.join(ROOT, "out", "soku.zip"))
     args = ap.parse_args()
+    OUT = os.path.abspath(args.out)
     os.makedirs(OUT, exist_ok=True)
     log = open(os.path.join(OUT, "console.log"), "wb")
+    zip_path = os.path.join(OUT, "soku.zip")
 
-    subprocess.run(["sh", os.path.join(ROOT, "scripts", "package.sh")], check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(["sh", "-c", "cd '%s' && zip -qrD '%s' manifest source components images fonts -x '*.DS_Store'" % (ROOT, zip_path)], check=True)
+    args.app = zip_path
     pid, fd = pty.fork()
     if pid == 0:
         os.chdir(OUT)
