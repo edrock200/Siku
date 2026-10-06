@@ -1,6 +1,6 @@
 # Siku architecture
 
-Siku is a Roku SceneGraph channel written in BrightScript. It ports the Silo Android TV client, so it should look and behave the same. Read these first:
+Siku is a Roku SceneGraph channel written in BrightScript. It ports the Silo **Android TV** client (the `androidTvApp` module, not the phone app), so it should look and behave the same. Phone-only features are out of scope, and so are downloads and any offline/local-storage features. Read these first:
 
 - [`design-spec.md`](design-spec.md): colors, type, spacing, focus, and every screen's layout. Pixel values are for the 1920×1080 canvas.
 - [`api-spec.md`](api-spec.md): the Silo `/api/v2` endpoints, with example JSON.

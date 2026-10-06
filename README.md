@@ -27,7 +27,7 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Playback | Resume, progress sync, mark watched, audio and subtitle selection, Skip Intro, Up Next | 🚧 |
 | Settings | Account, playback and subtitle preferences, sign out, switch server | ✅ |
 
-Not planned for v1: Watch Party, Requests, AI subtitle tools, ebooks (also absent from Android TV), and downloads (Roku has no local storage for media).
+Not planned for v1: Watch Party, Requests, AI subtitle tools, ebooks (also absent from Android TV), and downloads or any offline/local-storage features (Android TV is streaming-only too).
 
 ## Install (side-load)
 
@@ -72,16 +72,16 @@ scripts/                 Packaging and deploy helpers
 
 ## How it works
 
-Siku talks to a Silo server over the same HTTP API as the Android clients. The server owns the library, metadata, transcoding decisions and accounts; Siku displays them and drives playback with Roku's native `Video` node. When playback starts, Siku describes what this Roku can decode (H.264, HEVC, AAC, AC3/EAC3, HLS…) so the server can pick Direct Play, Remux or Transcode.
+Siku talks to a Silo server over the same HTTP API (v2) as the Android TV client. The server owns the library, metadata, transcoding decisions and accounts; Siku displays them and drives playback with Roku's native `Video` node. When playback starts, Siku describes what this Roku can decode (H.264, HEVC, AAC, AC3/EAC3, HLS…) so the server can pick Direct Play, Remux or Transcode.
 
 ## References
 
 - Silo server: <https://github.com/Silo-Server/silo-server>
-- Silo Android and Android TV clients (the design reference): <https://github.com/Silo-Server/silo-android>
+- Silo Android TV client (the design reference; the `androidTvApp` module of <https://github.com/Silo-Server/silo-android>)
 - Roku developer documentation: <https://developer.roku.com/docs/developer-program/getting-started/roku-dev-prog.md>
 
 ## License
 
-Siku is free software, released under the **GNU Affero General Public License v3.0 or later** (`AGPL-3.0-or-later`). See [LICENSE](LICENSE). It ports logic and UI from the AGPL-3.0 [Silo Android client](https://github.com/Silo-Server/silo-android).
+Siku is free software, released under the **GNU Affero General Public License v3.0 or later** (`AGPL-3.0-or-later`). See [LICENSE](LICENSE). It ports logic and UI from the AGPL-3.0 [Silo Android TV client](https://github.com/Silo-Server/silo-android).
 
 The Silo name and logo are trademarks of Silo Media L.L.C. and are not covered by this license. Siku uses its own logo.
