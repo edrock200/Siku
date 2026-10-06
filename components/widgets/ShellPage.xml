@@ -26,4 +26,5 @@
   <script type="text/brightscript" uri="pkg:/components/common/Nav.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Content.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Settings.brs" />
 </component>

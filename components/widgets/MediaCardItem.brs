@@ -49,9 +49,28 @@ sub onContent()
     m.placeholderText.text = c.title
     m.title.text = c.title
     m.subtitle.text = c.subtitle
+    ' Cards & Posters → Captions: "title" drops the metadata line, "artwork" both.
+    caption = cardCaption()
+    if caption = "artwork" then
+        m.title.text = ""
+        m.subtitle.text = ""
+    else if caption = "title" then
+        m.subtitle.text = ""
+    end if
     m.badge.visible = c.watched = true
     layout()
 end sub
+
+' The server-synced ui.card_presentation caption (read inline: this item has no Theme/Settings include).
+function cardCaption() as string
+    st = m.global.settings
+    if st = invalid or Type(st) <> "roAssociativeArray" or st.available <> true or st.items = invalid then return "title_metadata"
+    it = st.items["ui.card_presentation"]
+    if it = invalid or Type(it.value) <> "roAssociativeArray" then return "title_metadata"
+    caption = it.value.caption
+    if caption = invalid or (Type(caption) <> "roString" and Type(caption) <> "String") then return "title_metadata"
+    return LCase(caption)
+end function
 
 sub layout()
     size = imageSize()

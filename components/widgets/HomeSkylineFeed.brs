@@ -176,8 +176,8 @@ sub layoutRowTitles(animate as boolean)
         m.titleNodes[i].visible = i >= f and i < m.rowTops.Count()
     end for
     ' Set directly (RowList's own scroll is ~instant on the focused row); the animation node is kept
-    ' for a later tween but is not relied on.
-    m.titlesAnim.control = "stop"
+    ' for a later tween but is not relied on; an instant (non-animated) placement cancels any tween.
+    if not animate then m.titlesAnim.control = "stop"
     m.rowTitles.translation = target
 end sub
 
@@ -331,6 +331,7 @@ sub showCard(node as object)
     title = Str_orEmpty(card.title)
     if t = "episode" and not Str_isEmpty(card.series_title) then title = card.series_title
     logoUrl = Str_orEmpty(node.logoUrl)
+    if not Theme_showTitleArt() then logoUrl = "" ' Settings → General → Show title art
     m.titleLabel.text = title
     if logoUrl <> "" then
         ' Hidden until loaded and sized (onLogoLoaded), so it never flashes centered.

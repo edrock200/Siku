@@ -77,24 +77,55 @@ function Sp(value as float) as integer
     return Int(value * 1.72 + 0.5)
 end function
 
-' Poster-size preference (Settings → General → Poster Size): Compact ×0.86, Standard ×1, Large ×1.2.
-function Theme_posterScale() as float
-    p = m.global.prefs
-    if p <> invalid then
-        if p.posterSize = "compact" then return 0.86
-        if p.posterSize = "large" then return 1.2
+'
+' Cards & Posters (Settings → General): the server-synced ui.card_presentation when loaded, else the
+' legacy device pref. Read inline (not through Settings.brs) so every component that has Theme.brs
+' can call these without another include.
+function Theme_cardPresentation() as object
+    out = { posterSize: "standard", caption: "title_metadata" }
+    st = m.global.settings
+    if st <> invalid and Type(st) = "roAssociativeArray" and st.available = true and st.items <> invalid then
+        it = st.items["ui.card_presentation"]
+        if it <> invalid and Type(it.value) = "roAssociativeArray" then
+            if it.value.poster_size <> invalid then out.posterSize = LCase(it.value.poster_size)
+            if it.value.caption <> invalid then out.caption = LCase(it.value.caption)
+            return out
+        end if
     end if
+    p = m.global.prefs
+    if p <> invalid and p.posterSize <> invalid then out.posterSize = LCase(p.posterSize)
+    return out
+end function
+
+' Poster Size: Compact ×0.86, Standard ×1, Large ×1.2 (CardPosterSize.posterScale).
+function Theme_posterScale() as float
+    size = Theme_cardPresentation().posterSize
+    if size = "compact" then return 0.86
+    if size = "large" then return 1.2
     return 1.0
 end function
 
-' Grid columns for the poster-size preference (Compact 7, Standard 6, Large 5).
+' Grid columns for the poster size (Compact 7, Standard 6, Large 5).
 function Theme_gridColumns() as integer
-    p = m.global.prefs
-    if p <> invalid then
-        if p.posterSize = "compact" then return 7
-        if p.posterSize = "large" then return 5
-    end if
+    size = Theme_cardPresentation().posterSize
+    if size = "compact" then return 7
+    if size = "large" then return 5
     return 6
+end function
+
+' Card captions: "title_metadata" | "title" | "artwork" (CardCaption).
+function Theme_cardCaption() as string
+    return Theme_cardPresentation().caption
+end function
+
+' Show title art (ui.title_art, Settings → General → Title Pages): logos stand in for titles.
+function Theme_showTitleArt() as boolean
+    st = m.global.settings
+    if st <> invalid and Type(st) = "roAssociativeArray" and st.available = true and st.items <> invalid then
+        it = st.items["ui.title_art"]
+        if it <> invalid and it.value = false then return false
+    end if
+    return true
 end function
 
 ' Gives a Label its own Font node. A SceneGraph Font is a node and can have only one parent,

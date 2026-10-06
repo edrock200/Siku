@@ -45,6 +45,15 @@ sub Session_save(s as object)
     Session_rememberServer(s)
     m.global.session = s
     m.global.sessionChanged = m.global.sessionChanged + 1
+    ' The server-synced settings snapshot (components/common/Settings.brs) belongs to one server
+    ' and profile; drop it when either changes so the next screen reloads instead of mixing them.
+    st = m.global.settings
+    if st <> invalid and Type(st) = "roAssociativeArray" then
+        identity = Str_orEmpty(s.serverUrl) + "|" + Str_orEmpty(s.profileId)
+        if Str_orEmpty(st.identity) <> identity then
+            m.global.settings = { ready: false, available: false, identity: "", revision: 0, manifestRevision: 0, items: {}, error: "" }
+        end if
+    end if
 end sub
 
 ' Records the server in the saved-servers list (for Switch Server).
@@ -182,7 +191,10 @@ function Prefs_default() as object
         quality: "auto"
         skipBack: 10
         skipForward: 30
-        hiddenSections: []
+        hiddenSections: []         ' Home Sections editor: hidden row ids (per device, like Android TV)
+        sectionOrder: []           ' Home Sections editor: row ids in display order
+        resumeRewind: 7            ' Rewind on Resume, seconds (contract client_local, 0 = off)
+        passoutThreshold: 3        ' Still Watching Prompt: auto-advances before Up Next waits (0 = off)
     }
 end function
 

@@ -81,14 +81,21 @@ function Str_urlEncode(s as string) as string
 end function
 
 ' Builds "a=1&b=2" from an associative array (skips invalid values).
+' An array value repeats the key (`keys=a&keys=b`), as the settings endpoints expect.
 function Str_queryString(params as object) as string
     if params = invalid then return ""
     out = ""
     for each k in params
         v = params[k]
         if v <> invalid
-            if out <> "" then out = out + "&"
-            out = out + Str_urlEncode(k) + "=" + Str_urlEncode(Str_orEmpty(v))
+            values = []
+            if Type(v) = "roArray" then values = v else values.Push(v)
+            for each one in values
+                if one <> invalid then
+                    if out <> "" then out = out + "&"
+                    out = out + Str_urlEncode(k) + "=" + Str_urlEncode(Str_orEmpty(one))
+                end if
+            end for
         end if
     end for
     return out
@@ -226,7 +233,8 @@ function Text_width(text as string, fontUri as string, sizePx as integer) as flo
     try
         w = fnt.getOneLineWidth(text, 100000)
     catch e
-        w = 0
+        w = 0 ' e: the simulator's Font node lacks getOneLineWidth; any error means "unmeasured"
+        if e = invalid then w = 0
     end try
     if w = invalid then return 0
     return w
@@ -239,7 +247,8 @@ function Text_height(fontUri as string, sizePx as integer) as float
     try
         h = fnt.getOneLineHeight()
     catch e
-        h = 0
+        h = 0 ' e: same as Text_width; the caller falls back to a size-based estimate
+        if e = invalid then h = 0
     end try
     if h = invalid or h <= 0 then return sizePx * 1.3
     return h

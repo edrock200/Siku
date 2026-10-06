@@ -6,6 +6,10 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="ShellScreen" extends="BaseScreen">
+  <interface>
+    <!-- Set by Settings_notify when a Settings_load this screen started lands (Settings.brs). -->
+    <field id="settingsLoaded" type="boolean" alwaysNotify="true" onChange="onSettingsChanged" />
+  </interface>
   <script type="text/brightscript" uri="pkg:/components/screens/ShellScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Requests.brs" />
   <children>

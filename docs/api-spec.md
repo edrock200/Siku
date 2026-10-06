@@ -770,6 +770,17 @@ None is needed for login, browsing or playback. REST is the source of truth ever
 
 ---
 
+## 9b. Settings: the effective cascade (Android TV parity)
+
+Android TV's Settings screen is mostly server-synced per profile (`shared/.../network/apiv2/SettingsV2Api.kt`, `TvSettingsViewModel.kt`). Siku does the same in `components/common/Settings.brs`.
+
+- **Probe:** `GET /api/v2/settings/contract/capabilities` → `{api_version, manifest_revision, scopes[], client_families[], supports_batched_effective, ...}`. Filter the keys you ask for by `introduced_in <= manifest_revision` (contracts/settings/v1/manifest.json): an unknown key makes the whole effective request fail with 422 `validation_failed`.
+- **Read:** `GET /api/v2/settings/values/effective?keys=a&keys=b` (one `keys` parameter per key; `X-Profile-Id` required) → `{"items":[{"key","value","source":"default|profile|profile_device|profile_client|...","scope"?,"profile_id"?,"device_id"?,"client_family"?,"stored_value"?,"constrained"?,"suggested_values"?[]}],"revision":16}`. The `X-Silo-Device-Id` header selects the `profile_device` rows and `X-Silo-Client-Family` the `profile_client` rows; `ApiTask` sends both on every call.
+- **Write:** `PUT /api/v2/settings/values/{key}?scope=profile|profile_device|profile_client` with `{"value": ...}` → 200, the stored row `{key, scope, profile_id, device_id?, client_family?, value, revision, updated_at}`. `DELETE` with the same query → 204 (404 when nothing was stored there, which callers treat as done). A language tag is cleared with DELETE, never written as `""`.
+- **Scopes the TV app uses** (and Siku copies): `profile` for `playback.subtitle_language`, `playback.subtitle_mode`, `playback.show_forced_subtitles`, `catalog.metadata_language`, `player.video_skip_back/forward_seconds` (revision 9) and `ui.title_art` while "Apply to all devices" is on; `profile_device` for `playback.preferred_quality` + `playback.max_bitrate_kbps` (one Quality preset = both axes), `playback.audio_language`, `playback.intro_skip_mode`, `playback.auto_skip_credits`, `playback.auto_play_next`, `playback.next_up_prompt_seconds`, `playback.subtitle_appearance` (the whole object; `textOpacity` only when `manifest_revision >= 14`) and `player.dolby_vision_enabled`; `profile_client` for `ui.card_presentation` (`{poster_size, caption}`), `profile_device` while "Only This Device" is on. "Reset Playback Overrides" deletes every `profile_device` row above.
+- **Client-local (contract `client_local`, never written):** `nav.show_audiobooks`, `player.resume_rewind_seconds`, `player.passout_threshold`, `subtitle.matches_device`, and the Home row order / hidden set (`prefs`).
+- `tools/mock_server.py` serves all of this with the contract defaults and a per-scope store.
+
 ## 10. Recommended Roku call sequence
 
 1. User enters a URL → normalize → probe `/api/v2/system/info`, `/system/setup`, `/auth/signup` (https first, then http).

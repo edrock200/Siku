@@ -255,6 +255,7 @@ sub renderHero()
     end if
 
     logoUrl = Url_resolve(it.logo_url)
+    if not Settings_showTitleArt() then logoUrl = "" ' Settings → General → Show title art
     m.logo.visible = logoUrl <> ""
     m.logo.uri = logoUrl
     m.titleLabel.visible = logoUrl = ""

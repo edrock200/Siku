@@ -1214,6 +1214,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if notifications_route(self, method, p, q, b):
             return
+        if settings_route(self, method, p, q, b):
+            return
 
         if p == "/api/v2/account/me":
             return self.send(200, tokens()["user"])
@@ -1569,6 +1571,188 @@ def shuffle_view(sh):
     return {"id": sh["id"], "scope": sh["scope"], "current": cur, "next": nxt,
             "created_at": sh["created_at"], "updated_at": "2026-10-06T00:00:00.000Z"}
 
+
+
+# ---------------------------------------------------------------------------
+# Settings (the canonical "effective settings cascade", contracts/settings/v1).
+# GET  /api/v2/settings/contract/capabilities
+# GET  /api/v2/settings/values/effective?keys=a&keys=b   -> {items:[{key,value,source,scope,...}], revision}
+# PUT  /api/v2/settings/values/{key}?scope=...  {"value": ...} -> the stored row
+# DELETE /api/v2/settings/values/{key}?scope=... -> 204 (404 when nothing is stored there)
+# profile_device rows key on the X-Silo-Device-Id header, profile_client on X-Silo-Client-Family.
+# ---------------------------------------------------------------------------
+SETTINGS_REVISION = 16
+SETTINGS_DEFS = {
+    # key: (introduced_in, default, allowed scopes, resolution order)
+    "playback.preferred_quality": (1, "auto", ["profile", "profile_device"], ["profile_device", "profile"]),
+    "playback.max_bitrate_kbps": (1, None, ["profile", "profile_device"], ["profile_device", "profile"]),
+    "playback.audio_language": (1, None, ["profile", "profile_device", "profile_library", "profile_series"], ["profile_device", "profile"]),
+    "playback.subtitle_language": (1, None, ["profile", "profile_device", "profile_library", "profile_series"], ["profile_device", "profile"]),
+    "playback.subtitle_mode": (1, "auto", ["profile", "profile_device", "profile_library", "profile_series"], ["profile_device", "profile"]),
+    "playback.show_forced_subtitles": (1, True, ["profile", "profile_device", "profile_library", "profile_series"], ["profile_device", "profile"]),
+    "playback.intro_skip_mode": (7, "ask", ["profile", "profile_device"], ["profile_device", "profile"]),
+    "playback.auto_skip_credits": (1, False, ["profile", "profile_device"], ["profile_device", "profile"]),
+    "playback.auto_skip_recap": (1, False, ["profile", "profile_device"], ["profile_device", "profile"]),
+    "playback.auto_play_next": (1, True, ["profile", "profile_device"], ["profile_device", "profile"]),
+    "playback.auto_play_next_preview": (1, False, ["profile", "profile_device"], ["profile_device", "profile"]),
+    "playback.next_up_prompt_seconds": (1, 30, ["profile", "profile_device"], ["profile_device", "profile"]),
+    "playback.subtitle_appearance": (1, {"fontSize": "large", "fontFamily": "sans-serif", "fontColor": "#ffffff", "backgroundColor": "#000000",
+                                         "backgroundStyle": "box", "backgroundOpacity": 75, "textOpacity": 100, "textOutline": False,
+                                         "textOutlineColor": "#000000", "position": "bottom"},
+                                     ["profile", "profile_device"], ["profile_device", "profile"]),
+    "player.hdr_enabled": (1, True, ["profile_device"], ["profile_device"]),
+    "player.dolby_vision_enabled": (1, True, ["profile_device"], ["profile_device"]),
+    "player.dv_profile7_hdr10_fallback": (1, False, ["profile_device"], ["profile_device"]),
+    "player.match_frame_rate": (1, False, ["profile_device"], ["profile_device"]),
+    "player.video_skip_back_seconds": (9, 10, ["profile"], ["profile"]),
+    "player.video_skip_forward_seconds": (9, 30, ["profile"], ["profile"]),
+    "player.audiobook_skip_back_seconds": (9, 10, ["profile"], ["profile"]),
+    "player.audiobook_skip_forward_seconds": (9, 30, ["profile"], ["profile"]),
+    "catalog.metadata_language": (1, None, ["profile"], ["profile"]),
+    "home.hide_watched_items": (12, False, ["profile"], ["profile"]),
+    "ui.card_presentation": (5, {"poster_size": "standard", "caption": "title_metadata"}, ["profile", "profile_client", "profile_device"],
+                             ["profile_device", "profile_client", "profile"]),
+    "ui.title_art": (16, True, ["profile", "profile_device"], ["profile", "profile_device"]),
+    "ui.theme": (1, "cinema-dark", ["account", "profile"], ["profile", "account"]),
+}
+SETTINGS_SCOPES = ["account", "profile", "profile_client", "profile_device", "profile_library", "profile_series"]
+SETTINGS_LANGUAGE_KEYS = {"playback.audio_language", "playback.subtitle_language", "catalog.metadata_language"}
+SETTINGS_SUGGESTED = ["en", "es", "fr", "de", "ja"]
+
+
+def settings_store():
+    return STATE.setdefault("settings", {"rows": {}, "revision": 0})
+
+
+def settings_identity(handler, scope, q):
+    """The (scope, profile, device/family) a stored row is keyed by; None when the request lacks it."""
+    profile = handler.headers.get("X-Profile-Id") or ""
+    if scope == "account":
+        return ("account", "", "")
+    if scope == "profile":
+        return ("profile", profile, "")
+    if scope == "profile_device":
+        device = (q.get("device_id") or [handler.headers.get("X-Silo-Device-Id") or ""])[0]
+        if not device:
+            return None
+        return ("profile_device", profile, device)
+    if scope == "profile_client":
+        family = handler.headers.get("X-Silo-Client-Family") or ""
+        if not family:
+            return None
+        return ("profile_client", profile, family)
+    if scope == "profile_library":
+        return ("profile_library", profile, (q.get("library_id") or [""])[0])
+    if scope == "profile_series":
+        return ("profile_series", profile, (q.get("series_id") or [""])[0])
+    return None
+
+
+def settings_row_view(key, ident, row):
+    out = {"key": key, "scope": ident[0], "value": row["value"], "revision": row["revision"], "updated_at": row["updated_at"]}
+    if ident[0] != "account":
+        out["profile_id"] = ident[1]
+    if ident[0] == "profile_device":
+        out["device_id"] = ident[2]
+    elif ident[0] == "profile_client":
+        out["client_family"] = ident[2]
+    elif ident[0] == "profile_library":
+        out["library_id"] = ident[2]
+    elif ident[0] == "profile_series":
+        out["series_id"] = ident[2]
+    return out
+
+
+def settings_effective(handler, key, q):
+    introduced, default, _allowed, order = SETTINGS_DEFS[key]
+    store = settings_store()
+    for scope in order:
+        ident = settings_identity(handler, scope, q)
+        if ident is None:
+            continue
+        row = store["rows"].get((key,) + ident)
+        if row is not None:
+            out = {"key": key, "value": row["value"], "source": scope, "definition_revision": introduced,
+                   "updated_at": row["updated_at"], "scope": scope}
+            if scope != "account":
+                out["profile_id"] = ident[1]
+            if scope == "profile_device":
+                out["device_id"] = ident[2]
+            if scope == "profile_client":
+                out["client_family"] = ident[2]
+            if key in SETTINGS_LANGUAGE_KEYS:
+                out["suggested_values"] = SETTINGS_SUGGESTED
+            return out
+    out = {"key": key, "value": default, "source": "default", "definition_revision": introduced}
+    if key in SETTINGS_LANGUAGE_KEYS:
+        out["suggested_values"] = SETTINGS_SUGGESTED
+    return out
+
+
+def settings_validation(handler, location, detail):
+    return handler.send(422, {"type": "https://siloserver.org/docs/api/v2/problems/validation_failed", "title": "Validation failed", "status": 422,
+                              "detail": "The request did not pass validation; see errors.",
+                              "errors": [{"location": location, "code": "invalid", "detail": detail}]}, "application/problem+json")
+
+
+def settings_route(handler, method, p, q, b):
+    if p == "/api/v2/settings/contract/capabilities" and method == "GET":
+        return handler.send(200, {"revision": "mock-settings", "state": "available", "allowed": True, "api_version": 1,
+                                  "manifest_revision": SETTINGS_REVISION, "contract_etag": '"etag-%d"' % SETTINGS_REVISION,
+                                  "definition_count": len(SETTINGS_DEFS), "scopes": SETTINGS_SCOPES, "client_families": ["tv", "mobile", "tablet", "desktop", "web"],
+                                  "supports_batched_effective": True, "supports_idempotent_writes": True, "supports_atomic_shortcuts": True}) or True
+    if p == "/api/v2/settings/values/effective" and method == "GET":
+        if not handler.headers.get("X-Profile-Id"):
+            return handler.problem(400, "profile_required", "X-Profile-Id is required") or True
+        keys = q.get("keys") or sorted(SETTINGS_DEFS)
+        for k in keys:
+            if k not in SETTINGS_DEFS:
+                return settings_validation(handler, "query.keys", "No setting named %s exists in this server's contract" % k) or True
+        LOG.append("SETTINGS effective %s" % ",".join(keys))
+        return handler.send(200, {"items": [settings_effective(handler, k, q) for k in keys], "revision": SETTINGS_REVISION}) or True
+    m = re.match(r"^/api/v2/settings/values/([^/]+)$", p)
+    if m and method in ("GET", "PUT", "DELETE"):
+        key = m.group(1)
+        if key not in SETTINGS_DEFS:
+            return settings_validation(handler, "path.key", "No setting named %s exists in this server's contract" % key) or True
+        scope = (q.get("scope") or [""])[0]
+        if scope not in SETTINGS_SCOPES:
+            return settings_validation(handler, "query.scope", "scope is required") or True
+        if scope not in SETTINGS_DEFS[key][2]:
+            return settings_validation(handler, "query.scope", "%s does not allow scope %s" % (key, scope)) or True
+        if scope != "account" and not handler.headers.get("X-Profile-Id"):
+            return handler.problem(400, "profile_required", "X-Profile-Id is required") or True
+        ident = settings_identity(handler, scope, q)
+        if ident is None:
+            return handler.problem(400, "device_header_required", "X-Silo-Device-Id is required for device-scoped settings") or True
+        store = settings_store()
+        with LOCK:
+            row = store["rows"].get((key,) + ident)
+            if method == "GET":
+                if row is None:
+                    return handler.problem(404, "not_found", "Nothing is stored at that scope") or True
+                return handler.send(200, settings_row_view(key, ident, row)) or True
+            if method == "DELETE":
+                LOG.append("SETTINGS delete %s scope=%s" % (key, scope))
+                if row is None:
+                    return handler.problem(404, "not_found", "Nothing is stored at that scope") or True
+                del store["rows"][(key,) + ident]
+                store["revision"] += 1
+                return handler.send(204) or True
+            if "value" not in (b or {}):
+                return settings_validation(handler, "body.value", "value is required") or True
+            value = b["value"]
+            if key in SETTINGS_LANGUAGE_KEYS and (value is None or value == ""):
+                return settings_validation(handler, "body.value", "language_tag must not be empty") or True
+            if key == "playback.max_bitrate_kbps" and value is not None and not (100 <= int(value) <= 200000):
+                return settings_validation(handler, "body.value", "max_bitrate_kbps must be within 100..200000") or True
+            revision = (row["revision"] if row else 0) + 1
+            row = {"value": value, "revision": revision, "updated_at": "2026-10-06T00:00:00.000Z"}
+            store["rows"][(key,) + ident] = row
+            store["revision"] += 1
+            LOG.append("SETTINGS put %s scope=%s value=%s" % (key, scope, json.dumps(value)))
+            return handler.send(200, settings_row_view(key, ident, row)) or True
+    return False
 
 def tokens(username="laura"):
     return {"access_token": "acc-" + uuid.uuid4().hex[:12], "refresh_token": "ref-" + uuid.uuid4().hex[:12], "expires_in": 3600,

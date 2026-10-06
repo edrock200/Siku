@@ -60,6 +60,7 @@ sub init()
 
     m.di = CreateObject("roDeviceInfo")
     m.started = false
+    m.autoAdvances = 0   ' consecutive Up Next countdowns that played by themselves (Still Watching Prompt)
     ' The running shuffle this player plays picks from ({id, latest, exhausted}); invalid outside a
     ' shuffle. It outlives resetPlaybackState() because it spans every chained pick.
     m.shuffle = invalid
@@ -86,7 +87,7 @@ sub init()
     m.tuneBtn.observeField("buttonSelected", "onTuneButton")
     m.closeBtn.observeField("buttonSelected", "exitPlayer")
     m.skipBtn.observeField("buttonSelected", "onSkipPill")
-    m.unPlayBtn.observeField("buttonSelected", "playNext")
+    m.unPlayBtn.observeField("buttonSelected", "onPlayNowButton")
     m.unPickBtn.observeField("buttonSelected", "pickAnother")
     m.unKeepBtn.observeField("buttonSelected", "keepWatching")
     m.unBackBtn.observeField("buttonSelected", "exitPlayer")
@@ -395,6 +396,16 @@ sub startSession(installation as string)
     if p.startPosition <> invalid then
         spv = p.startPosition
         if (Type(spv) = "roInt" or Type(spv) = "Integer" or Type(spv) = "roFloat" or Type(spv) = "Float" or Type(spv) = "Double" or Type(spv) = "roDouble") and spv >= 0 then startPos = spv * 1.0
+    end if
+    ' Rewind on Resume (Settings → Playback → Episodes): back up a few seconds when continuing a
+    ' partly watched title. Only when the caller passed the resume position; a server-side resume
+    ' (no start_position) cannot be adjusted here.
+    if startPos <> invalid and startPos > 0 then
+        rewind = Settings_resumeRewindSeconds()
+        if rewind > 0 then
+            startPos = startPos - rewind
+            if startPos < 0 then startPos = 0
+        end if
     end if
     ' Track choices from the detail page, as ids ("file:<id>:audio:<n>" / "file:<id>:subtitle:<n>").
     ' Indexes are turned into ids for the file that actually plays; ids for another file are dropped,
@@ -752,18 +763,13 @@ sub togglePlay()
     rearmHide()
 end sub
 
+' player.video_skip_back/forward_seconds (profile setting, revision 9) with the device pref as fallback.
 function skipBackSeconds() as integer
-    v = 10
-    if m.global.prefs <> invalid and m.global.prefs.skipBack <> invalid then v = Int(m.global.prefs.skipBack)
-    if v <= 0 then v = 10
-    return v
+    return Settings_skipBackSeconds()
 end function
 
 function skipForwardSeconds() as integer
-    v = 30
-    if m.global.prefs <> invalid and m.global.prefs.skipForward <> invalid then v = Int(m.global.prefs.skipForward)
-    if v <= 0 then v = 30
-    return v
+    return Settings_skipForwardSeconds()
 end function
 
 sub onSkipBack()
@@ -809,7 +815,6 @@ end function
 sub layoutTransport()
     ' Left group at x 0; right group right-aligned at 1600.
     x = 1600
-    rightBtns = []
     for each b in [m.closeBtn, m.tuneBtn, m.subtitlesBtn, m.upNextBtn]
         if b.visible then
             x = x - 88
@@ -958,8 +963,9 @@ function markerLabel(kind as string) as string
 end function
 
 sub checkMarkers()
-    mode = "ask"
-    if m.global.prefs <> invalid and not Str_isEmpty(m.global.prefs.skipIntro) then mode = m.global.prefs.skipIntro
+    ' playback.intro_skip_mode (never | ask | always) and playback.auto_skip_credits, from the server.
+    mode = Settings_introSkipMode()
+    skipCredits = Settings_autoSkipCredits()
     active = invalid
     for each mk in m.markers
         if mk.kind <> "preview" and m.position >= mk.start and m.position < mk["end"] - 1 then active = mk
@@ -971,8 +977,8 @@ sub checkMarkers()
     end if
     key = active.kind + ":" + Str_orEmpty(active.start)
     m.activeMarker = active
-    if mode = "never" then return
-    if mode = "always" and active.kind <> "credits" then
+    if mode = "never" and not (active.kind = "credits" and skipCredits) then return
+    if (mode = "always" and active.kind <> "credits") or (active.kind = "credits" and skipCredits) then
         if m.autoSkipped[key] <> true then
             m.autoSkipped[key] = true
             seekToSource(active["end"])
@@ -1240,16 +1246,26 @@ end sub
 sub checkUpNext()
     if (not m.isEpisode and m.shuffle = invalid) or m.nextEpisode = invalid or m.upNextShown or m.upNextDismissed then return
     if m.duration <= 0 then return
-    trigger = m.duration - 30
+    ' playback.next_up_prompt_seconds: how long before the end the card appears (0 = at the end).
+    trigger = m.duration - Settings_nextUpPromptSeconds()
     for each mk in m.markers
         if mk.kind = "credits" and mk.start < trigger and mk.start > m.duration * 0.5 then trigger = mk.start
     end for
     if m.position >= trigger then showUpNext()
 end sub
 
+' playback.auto_play_next (server, profile_device scope) with the device pref as fallback.
 function autoPlayNext() as boolean
-    if m.global.prefs <> invalid and m.global.prefs.autoPlayNext = false then return false
-    return true
+    return Settings_autoPlayNext()
+end function
+
+' Still Watching Prompt (Settings → Playback → Episodes): after N consecutive auto-advances the Up
+' Next card waits for a key instead of counting down. 0 = never. Device-local, like Android TV.
+function stillWatchingDue() as boolean
+    threshold = Settings_passoutThreshold()
+    if threshold <= 0 then return false
+    if m.autoAdvances = invalid then m.autoAdvances = 0
+    return m.autoAdvances >= threshold
 end function
 
 sub startCountdown()
@@ -1274,9 +1290,10 @@ sub showUpNext()
     m.videoFrame.translation = [152, 284]
     m.videoFrame.visible = true
 
-    if m.nextEpisode <> invalid and autoPlayNext() then
+    if m.nextEpisode <> invalid and autoPlayNext() and not stillWatchingDue() then
         startCountdown()
     else
+        if stillWatchingDue() then m.autoAdvances = 0
         m.countdown = -1
         m.unPlayBtn.text = "Play Now"
     end if
@@ -1383,6 +1400,8 @@ sub onCountdownTick()
     m.countdown = m.countdown - 1
     if m.countdown <= 0 then
         m.countdownTimer.control = "stop"
+        if m.autoAdvances = invalid then m.autoAdvances = 0
+        m.autoAdvances = m.autoAdvances + 1
         playNext()
         return
     end if
@@ -1406,6 +1425,12 @@ sub keepWatching()
         return
     end if
     m.focusSink.setFocus(true)
+end sub
+
+' Play Now pressed by hand: the viewer is still watching, so the auto-advance count starts over.
+sub onPlayNowButton()
+    m.autoAdvances = 0
+    playNext()
 end sub
 
 sub playNext()
@@ -1584,7 +1609,7 @@ function hudRowSpecs() as object
     else if tabName = "Video" then
         rows.Push({ id: "quality", label: "Quality", value: qualityLabel(), actionable: true })
         auto = "On"
-        if m.global.prefs <> invalid and m.global.prefs.autoPlayNext = false then auto = "Off"
+        if not autoPlayNext() then auto = "Off"
         rows.Push({ id: "autoplay", label: "Auto-play next", value: auto, actionable: true })
         if m.plan <> invalid and m.plan.effective_recipe <> invalid and not Str_isEmpty(m.plan.effective_recipe.dynamic_range) then
             rows.Push({ id: "range", label: "Dynamic range", value: UCase(m.plan.effective_recipe.dynamic_range), actionable: false })

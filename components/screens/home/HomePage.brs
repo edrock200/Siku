@@ -62,34 +62,28 @@ sub onSections(event as object)
     end if
     sections = []
     if resp.data <> invalid then sections = Arr_or(resp.data.sections)
-    hidden = {}
-    prefs = m.global.prefs
-    if prefs <> invalid then
-        for each h in Arr_or(prefs.hiddenSections)
-            hidden[Str_orEmpty(h)] = true
-        end for
-    end if
+    ' Settings → General → Home Sections: this Roku's saved order and hidden rows (device-local,
+    ' like Android TV's TvHomeSectionPreferences). Library pages keep the server order.
+    if libraryId() = "" then sections = Settings_arrangeSections(sections)
     m.sections = []
     m.pendingSections = 0
     for each s in sections
         sid = Str_orEmpty(s.id)
-        if not hidden.DoesExist(sid) then
-            items = Arr_or(s.items)
-            total = s.total_count
-            if total = invalid then total = 0
-            entry = { section: s, items: items }
-            m.sections.Push(entry)
-            if items.Count() = 0 and total > 0 then
-                m.pendingSections = m.pendingSections + 1
-                idx = m.sections.Count() - 1
-                lib = libraryId()
-                if lib <> "" then
-                    path = "/api/v2/library/" + Str_urlEncode(lib) + "/sections/" + Str_urlEncode(sid) + "/items"
-                else
-                    path = "/api/v2/home/sections/" + Str_urlEncode(sid) + "/items"
-                end if
-                Api_get(path, { image_size: "medium" }, "onSectionItems", { index: idx })
+        items = hideWatchedItems(s, Arr_or(s.items))
+        total = s.total_count
+        if total = invalid then total = 0
+        entry = { section: s, items: items }
+        m.sections.Push(entry)
+        if items.Count() = 0 and total > 0 then
+            m.pendingSections = m.pendingSections + 1
+            idx = m.sections.Count() - 1
+            lib = libraryId()
+            if lib <> "" then
+                path = "/api/v2/library/" + Str_urlEncode(lib) + "/sections/" + Str_urlEncode(sid) + "/items"
+            else
+                path = "/api/v2/home/sections/" + Str_urlEncode(sid) + "/items"
             end if
+            Api_get(path, { image_size: "medium" }, "onSectionItems", { index: idx })
         end if
     end for
     if m.pendingSections = 0 then buildRows()
@@ -101,12 +95,29 @@ sub onSectionItems(event as object)
     if resp.ok and resp.data <> invalid and ctx <> invalid then
         idx = ctx.index
         if idx >= 0 and idx < m.sections.Count() then
-            m.sections[idx].items = Arr_or(resp.data.items)
+            m.sections[idx].items = hideWatchedItems(m.sections[idx].section, Arr_or(resp.data.items))
         end if
     end if
     m.pendingSections = m.pendingSections - 1
     if m.pendingSections <= 0 then buildRows()
 end sub
+
+' home.hide_watched_items (a profile setting other Silo clients set): drop played items from the
+' Home rows, except the progress rows, which are about what is being watched.
+function hideWatchedItems(section as object, items as object) as object
+    if not Settings_hideWatched() then return items
+    st = LCase(Str_orEmpty(section.section_type))
+    sid = LCase(Str_orEmpty(section.id))
+    if st = "continue_watching" or st = "next_up" or sid = "continue_watching" or sid = "next_up" then return items
+    out = []
+    for each c in items
+        played = false
+        if c.user_state <> invalid and c.user_state.played = true then played = true
+        if c.user_data <> invalid and c.user_data.played = true then played = true
+        if not played then out.Push(c)
+    end for
+    return out
+end function
 
 function isAudiobook(card as object) as boolean
     t = LCase(Str_orEmpty(card.type))
@@ -192,5 +203,7 @@ sub onMenuDismissed()
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
+    ' Parameters are part of the SceneGraph signature; the shell handles the keys this page does not.
+    if key = "" and press then return false
     return false
 end function

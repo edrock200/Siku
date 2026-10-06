@@ -39,6 +39,27 @@ sub init()
     resetRequestsGate()
     buildTabs()
     showHome()
+    ' Server-synced settings (components/common/Settings.brs): loaded once per profile; the pages
+    ' read them through Settings_* / Theme_* with the device prefs as fallback until they land.
+    m.settingsSig = Settings_uiSignature()
+    Settings_load()
+end sub
+
+' The settings snapshot changed (loaded here, edited in Settings, or reset by a profile switch):
+' rebuild what depends on it only when the drawn values actually differ, so the first answer with
+' the default values costs nothing. Also run when the shell is shown again (after Settings).
+sub onSettingsChanged()
+    sig = Settings_uiSignature()
+    if sig = m.settingsSig then return
+    m.settingsSig = sig
+    m.prefsSig = prefsSignature()
+    buildTabs()
+    m.global.homeDirty = true
+    ' Re-show the visible page so Home rebuilds its rows now rather than on the next visit.
+    if m.top.active and m.currentPage <> invalid then
+        m.currentPage.active = false
+        m.currentPage.active = true
+    end if
 end sub
 
 ' ---------- Tabs ----------
@@ -53,7 +74,7 @@ end sub
 function prefsSignature() as string
     p = m.global.prefs
     if p = invalid then return ""
-    return Str_orEmpty(p.showAudiobooks) + "|" + Str_orEmpty(p.posterSize)
+    return Str_orEmpty(p.showAudiobooks) + "|" + Theme_cardPresentation().posterSize
 end function
 
 ' Loads the libraries and the requests gate once per profile, then again only when the data is
@@ -566,10 +587,13 @@ sub onScreenShown()
         showHome()
         refreshData(true)
         m.global.homeDirty = false
+        m.settingsSig = Settings_uiSignature()
+        Settings_load()
         focusBar(0)
         return
     end if
     updateProfile()
+    onSettingsChanged()
     ' Settings may have toggled the Audiobooks tab (or the poster size): rebuild the tabs from the
     ' libraries we have, immediately and without a network round trip.
     sig = prefsSignature()

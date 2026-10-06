@@ -42,6 +42,7 @@ components/common/
   Nav.brs       Nav_push / Nav_replace / Nav_reset / Nav_close / Nav_play
   Shuffle.brs   Shuffle_* (capability cache, start, scope label) for /api/v2/shuffles
   Tracks.brs    Tracks_* labels and ids for file versions, audio and subtitle tracks
+  Settings.brs  Settings_* server-synced settings (effective cascade read/write, typed getters, Home row layout)
 components/tasks/
   ApiTask       one HTTP request (Task); JSON in and out; 401 → refresh → retry
   AuthTask      long-lived single-flight token refresher (rotating refresh tokens)
@@ -91,7 +92,7 @@ A screen is `<component name="XScreen" extends="BaseScreen">` (`components/BaseS
 | `PersonScreen` | `{ personId, name? }` |
 | `SearchScreen` | `{ query? }` |
 | `RequestDetailScreen` | `{ mediaType: "movie"\|"series", tmdbId, title?, moderationRequestId? }`. A TMDB title to request (or its request's status); `moderationRequestId` pins the page to one request, as from an admin's approval row |
-| `SettingsScreen` | none |
+| `SettingsScreen` | none. Android TV `TvSettingsScreen`: rail (account, General / Playback / Subtitles / Server, Sign Out) and a pane of grouped rows. Values are the server's effective settings (`Settings.brs`) with the device prefs as fallback; the Home Sections editor (`SettingsHomeSections.brs`) is a full-screen overlay |
 | `NotificationsScreen` | none. Notifications inbox (Android TV `TvInboxScreen`): Mark all read card, newest-first delivery cards, OK marks read and opens the series/episode, pages of 25. Android TV has no route to it, so Siku has no entry point either (deep link `debugScreen=NotificationsScreen`) |
 | `PlayerScreen` | `{ itemId, fileId?, startPosition?, title?, audioTrackId?/audioTrackIndex?, subtitleTrackId?/subtitleTrackIndex? (-1 = off), shuffleId?, shuffle? }`. With `shuffleId` the player runs a shuffle session: picks start at 0, Up Next shows the server's random pick with Pick Another / Stop shuffling |
 | `AudioDetailScreen` | `{ itemId, itemType }` for `album`, `artist`, `audiobook`, `track`. Use `Nav_openItem(id, type)`, which picks this or `DetailScreen` |
@@ -111,6 +112,7 @@ Music: the Silo v2 contract has no album/artist/track types yet, and Android TV 
 | `shuffleCaps` | Cached `GET /api/v2/shuffles/capabilities` keyed by server+profile (`Shuffle_refreshCaps` / `Shuffle_supports`). Shuffle entry points are hidden until it says available. |
 | `keyReleaseSeen` | Set once a key release reached a card list; arms the long-OK-press card menu (`LongPress_*` in Utils.brs). |
 | `requests` | `{enabled, canModerate, resolved}`: the media-requests gate, set by `ShellScreen` from `/api/v2/requests/status` and `/api/v2/admin/requests/capabilities`. Read it with `Req_gate()` (`components/common/Requests.brs`). |
+| `settings` | `{ready, available, identity, revision, manifestRevision, items: {key: {value, source, scope, ...}}, error}`: the server's effective settings for the active server + profile (`Settings_load`, called by `ShellScreen` per profile and by `SettingsScreen` on open and after every write). Read values through `Settings_*` getters (`Settings_quality`, `Settings_introSkipMode`, `Settings_autoPlayNext`, ...) or `Theme_cardPresentation` / `Theme_showTitleArt`; they fall back to `prefs` until the server answers. `Session_save` resets it when the server or profile changes. A component that calls `Settings_load` declares a boolean `settingsLoaded` field (alwaysNotify) to be told when the snapshot landed. |
 
 ## Calling the API
 

@@ -16,6 +16,7 @@ sub init()
         authExpired: false          ' set by ApiTask when the refresh token is rejected
         sessionChanged: 0           ' bumped whenever the session is saved
         homeDirty: false            ' set after playback or state changes so Home refreshes
+        settings: { ready: false, available: false, identity: "", revision: 0, manifestRevision: 0, items: {}, error: "" } ' server-synced settings snapshot (Settings.brs)
     })
     ' Single-flight token refresher used by every ApiTask.
     authTask = CreateObject("roSGNode", "AuthTask")

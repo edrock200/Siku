@@ -3,6 +3,27 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.8
+
+- **New:** Settings now matches the Android TV app. The General, Playback, Subtitles and
+  Server pages hold the same groups and rows: Home Sections (hide and reorder rows), Cards &
+  Posters (preset, poster size, captions, Only This Device), Show title art, Show Audiobooks,
+  Metadata Language, Quality (with bandwidth presets), Audio Language, Dolby Vision, Auto-Play
+  Next Episode, Show Next Up, Skip Intros, Skip Credits, Rewind on Resume, Still Watching
+  Prompt, Skip Back / Skip Forward, Reset Playback Overrides, subtitle Language, Behavior and
+  Show Forced Subtitles, the custom subtitle appearance (font, colors, opacity, outline,
+  background, position) and the server details.
+- **New:** most of these settings are saved on your Silo server for your profile, so a choice
+  made on Siku is used by your other Silo apps and the other way round. Siku shows what the
+  server resolves and falls back to the values saved on the Roku when the server is unreachable.
+- **Changed:** the player follows those settings: streaming quality and bandwidth cap, skip
+  intervals, intro and credits skipping, auto-play, when the Up Next card appears, rewinding a
+  few seconds when you resume, and pausing auto-play after several episodes in a row. Home
+  honours the hidden rows, their order and "hide watched items"; cards follow the poster size
+  and caption choice; title art can be turned off.
+- **Note:** the subtitle appearance choices are saved for your other devices, but on Roku
+  captions keep the style set in your Roku's own Settings › Accessibility › Captions style.
+
 ## v0.1.7
 
 - **Fixed:** the empty white circles in the top bar. The tabs now show their names (Home,

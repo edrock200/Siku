@@ -91,7 +91,7 @@ function PlaybackCaps_clientCapabilities() as object
         containers: p.containers
         max_resolution: p.maxResolution
         hdr: p.hdr
-        hdr_details: p.hdrDetails
+        hdr_details: PlaybackCaps_hdrDetails()
     }
 end function
 
@@ -116,7 +116,7 @@ function PlaybackCaps_delivery(containers as object, features as object) as obje
         video_codecs: p.codecsVideo
         audio_decode_codecs: p.codecsAudio
         audio_passthrough_codecs: []
-        hdr_details: p.hdrDetails
+        hdr_details: PlaybackCaps_hdrDetails()
         subtitles: PlaybackCaps_subtitles()
         features: features
         transformations: []
@@ -137,11 +137,11 @@ function PlaybackCaps_playbackContext() as object
         app_channel: "sideload"
         device: p.device
         output: {
-            hdr_details: p.hdrDetails
+            hdr_details: PlaybackCaps_hdrDetails()
             sink_type: "hdmi"
             display: {
                 hdr_evidence: hdrEvidence
-                hdr_types: p.hdrDetails
+                hdr_types: PlaybackCaps_hdrDetails()
             }
         }
         deliveries: {
@@ -168,6 +168,9 @@ function PlaybackCaps_startBody(installation as string, fileId as string, attemp
         client_playback_context: PlaybackCaps_playbackContext()
     }
     if startPosition <> invalid and startPosition >= 0 then body.start_position = startPosition
+    ' playback.max_bitrate_kbps (the bandwidth half of the Quality preset; 0 = uncapped).
+    cap = Settings_maxBitrateKbps()
+    if cap > 0 then body.bandwidth_cap_kbps = cap
     if not Str_isEmpty(audioTrackId) then body.audio_track_id = audioTrackId
     if not Str_isEmpty(subtitleTrackId) then body.subtitle_track_id = subtitleTrackId
     return body
@@ -197,11 +200,18 @@ function PlaybackCaps_replanBody(installation as string, attemptId as string, pl
     }
 end function
 
+' playback.preferred_quality (server, profile_device scope) with the device pref as fallback.
 function PlaybackCaps_qualityPreference() as string
-    q = ""
-    if m.global.prefs <> invalid then q = Str_orEmpty(m.global.prefs.quality)
-    if q = "" then q = "auto"
-    return q
+    return Settings_quality()
+end function
+
+' The HDR block we advertise. Settings → Playback → Dolby Vision off drops the DV profiles so the
+' server serves the HDR10 base layer instead (Android's DolbyVisionPolicy does the same).
+function PlaybackCaps_hdrDetails() as object
+    p = PlaybackCaps_probe()
+    d = AA_copy(p.hdrDetails)
+    if not Settings_dolbyVision() then d.dolby_vision_profiles = []
+    return d
 end function
 
 ' Validation the Android client performs before handing a plan to the player.
