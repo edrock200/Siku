@@ -4,7 +4,7 @@
 
 Siku brings your Silo library to Roku TVs and streaming players. It is a port of the official [Silo Android TV client](https://github.com/Silo-Server/silo-android) to Roku SceneGraph and BrightScript, and aims to look, feel and behave like it on a 10-foot, remote-driven screen.
 
-> **Status:** early development. Sign-in, browsing, detail pages and the player are built and tested in a simulator; they still need testing on a real Roku. Music and audiobooks are in progress. The checklist below tracks progress.
+> **Status:** early development. Sign-in, browsing, detail pages and the player are built and tested in a simulator; they still need testing on a real Roku. The checklist below tracks progress.
 >
 > Siku is an independent community project. It is not made or endorsed by Silo Media L.L.C. "Silo" is a trademark of Silo Media L.L.C. and is used here only to say what Siku connects to.
 
@@ -26,6 +26,7 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Playback | Direct Play, Remux or Transcode chosen by the server from the Roku's capabilities | 🟡 needs device testing |
 | Playback | Resume, progress sync, mark watched, audio and subtitle selection, Skip Intro, Up Next | 🟡 needs device testing |
 | Settings | Account, playback and subtitle preferences, sign out, switch server | ✅ |
+| Audio | Audiobooks (chapters, parts, resume, sleep timer) and music albums/artists with a now-playing screen | 🟡 needs device testing; music waits on server support |
 
 Not planned for v1: Watch Party, Requests, AI subtitle tools, ebooks (also absent from Android TV), and downloads or any offline/local-storage features (Android TV is streaming-only too).
 
