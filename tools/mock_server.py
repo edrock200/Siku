@@ -231,6 +231,204 @@ def make_image(kind, key):
     return buf.getvalue()
 
 
+# ---------------------------------------------------------------- audio (music + audiobooks)
+# The real v2 server has no native album/artist/track types yet (see AudioDetailScreen); these
+# shapes are the provisional ones Siku reads: catalog cards of type album/artist/track, album
+# detail with inline `tracks`, artist detail with inline `albums`. Audiobooks follow the real
+# contract: CatalogItemDetail.audiobook + FileVersion parts (presentation_kind "audiobook_part").
+ARTISTS = [("The Tidelines", "Indie Rock"), ("Mara Quell", "Electronic"), ("Low Country Choir", "Folk"), ("Ostinato", "Jazz")]
+ALBUMS = [(0, "Harbor Songs", 2019, 9), (0, "Weather Systems", 2022, 7), (1, "Neon Fields", 2021, 10),
+          (2, "Hollow Pines", 2018, 8), (3, "Late Set", 2020, 6), (1, "Afterglow", 2024, 8)]
+TRACK_WORDS = ["Lanterns", "Saltwater", "Northbound", "Quiet Engines", "Paper Boats", "Undertow", "Firelight", "Low Tide",
+               "Glass Hours", "Satellites", "Driftwood", "Static Bloom", "Morning Train", "Cinder"]
+AUDIOBOOKS = [
+    {"slug": "the-long-orbit", "title": "The Long Orbit", "year": 2023, "authors": [0], "narrators": [1], "parts": [[1500, 1800, 2100, 1800], [1600, 2000, 1900], [2400, 1700, 2200]]},
+    {"slug": "small-kingdoms", "title": "Small Kingdoms", "year": 2021, "authors": [2], "narrators": [3, 4], "parts": [[1200, 1500, 1320, 1800, 1500, 1680, 1440, 1560]]},
+]
+AUDIO_FILES = {}
+
+
+def slug(t):
+    return re.sub(r"[^a-z0-9]+", "-", t.lower()).strip("-")
+
+
+def artist_card(i):
+    name, genre = ARTISTS[i]
+    cid = "artist:" + slug(name)
+    return {"content_id": cid, "type": "artist", "title": name, "genres": [genre], "keywords": [], "status": "matched",
+            "poster_url": img("poster", "artist-" + slug(name))}
+
+
+def album_tracks(ai):
+    art, title, year, n = ALBUMS[ai]
+    out = []
+    for k in range(n):
+        tid = "track:%s-%d" % (slug(title), k + 1)
+        dur = 150 + (h(tid) % 200)
+        fid = "a%d%02d" % (ai + 1, k + 1)
+        AUDIO_FILES[fid] = {"duration": dur, "container": "mp3", "content_id": tid}
+        out.append({"content_id": tid, "type": "track", "title": TRACK_WORDS[(ai * 3 + k) % len(TRACK_WORDS)] + ("" if k < 5 else " (Reprise)"),
+                    "track_number": k + 1, "disc_number": 1, "duration_seconds": dur, "file_id": fid,
+                    "artist": ARTISTS[art][0], "album": title, "album_id": "album:" + slug(title),
+                    "poster_url": img("poster", "album-" + slug(title))})
+    return out
+
+
+def album_card(ai):
+    art, title, year, n = ALBUMS[ai]
+    return {"content_id": "album:" + slug(title), "type": "album", "title": title, "year": year, "artist": ARTISTS[art][0],
+            "artist_id": artist_card(art)["content_id"], "genres": [ARTISTS[art][1]], "keywords": [], "status": "matched",
+            "duration_seconds": sum(t["duration_seconds"] for t in album_tracks(ai)), "track_count": n,
+            "poster_url": img("poster", "album-" + slug(title))}
+
+
+def audiobook_card(bi):
+    b = AUDIOBOOKS[bi]
+    cid = "audiobook:" + b["slug"]
+    total = sum(sum(p) for p in b["parts"])
+    pos = STATE["progress"].get(cid, 0)
+    return {"content_id": cid, "type": "audiobook", "title": b["title"], "year": b["year"], "genres": ["Fiction"], "keywords": [],
+            "status": "matched", "duration_seconds": total, "position_seconds": pos or None,
+            "poster_url": img("poster", "book-" + b["slug"])}
+
+
+def audiobook_detail(bi):
+    b = AUDIOBOOKS[bi]
+    d = audiobook_card(bi)
+    total = d["duration_seconds"]
+    versions, chno = [], 0
+    for pi, chapters in enumerate(b["parts"]):
+        fid = "b%d%d" % (bi + 1, pi + 1)
+        dur = sum(chapters)
+        AUDIO_FILES[fid] = {"duration": dur, "container": "m4b", "content_id": d["content_id"]}
+        chs, t = [], 0
+        for ci, c in enumerate(chapters):
+            chno += 1
+            chs.append({"index": ci, "title": "Chapter %d: %s" % (chno, TRACK_WORDS[(chno + bi) % len(TRACK_WORDS)]),
+                        "start_seconds": t, "end_seconds": t + c, "source": "embedded"})
+            t += c
+        versions.append({"file_id": fid, "resolution": "", "codec_video": "", "codec_audio": "aac", "container": "m4b", "hdr": False,
+                         "file_size": dur * 16000, "duration": dur, "bitrate": 128, "added_at": "2026-01-01T00:00:00Z", "chapters": chs,
+                         "presentation_kind": "audiobook_part", "presentation_group_key": "default",
+                         "presentation_part_index": pi + 1, "presentation_part_total": len(b["parts"])})
+    pos = STATE["progress"].get(d["content_id"], 0)
+    d.update({
+        "overview": "A slow-burning story about distance, signal and the people who wait on the ground. " * 3,
+        "versions": versions, "playback_variants": [],
+        "user_state": {"played": False, "is_favorite": d["content_id"] in STATE["favorites"], "in_watchlist": False},
+        "user_data": {"position_seconds": pos, "duration_seconds": total, "played": False, "is_in_progress": pos > 0,
+                      "last_file_id": versions[0]["file_id"]},
+        "audiobook": {"authors": [{"name": PEOPLE[i], "person_id": str(100 + i)} for i in b["authors"]],
+                      "narrators": [{"name": PEOPLE[i], "person_id": str(100 + i)} for i in b["narrators"]],
+                      "total_duration_seconds": total, "publisher": "Mock House Audio", "other_narrations": [],
+                      "related": {"also_by_author": [{"content_id": audiobook_card(j)["content_id"], "title": AUDIOBOOKS[j]["title"],
+                                                      "poster_url": audiobook_card(j)["poster_url"], "year": AUDIOBOOKS[j]["year"]}
+                                                     for j in range(len(AUDIOBOOKS)) if j != bi],
+                                  "similar": []}},
+    })
+    return d
+
+
+def audio_detail(cid):
+    for ai in range(len(ALBUMS)):
+        c = album_card(ai)
+        if c["content_id"] == cid:
+            c.update(tracks=album_tracks(ai), overview="The %s record from %s." % (c["title"], c["artist"]),
+                     user_state={"played": False, "is_favorite": cid in STATE["favorites"], "in_watchlist": False})
+            return c
+        for t in album_tracks(ai):
+            if t["content_id"] == cid:
+                d = dict(t)
+                d["versions"] = [{"file_id": t["file_id"], "resolution": "", "codec_video": "", "codec_audio": "mp3", "container": "mp3", "hdr": False,
+                                  "file_size": 1, "duration": t["duration_seconds"], "bitrate": 320, "added_at": "2026-01-01T00:00:00Z"}]
+                return d
+    for i in range(len(ARTISTS)):
+        a = artist_card(i)
+        if a["content_id"] == cid:
+            a.update(albums=[album_card(ai) for ai in range(len(ALBUMS)) if ALBUMS[ai][0] == i],
+                     overview="%s make %s records." % (a["title"], ARTISTS[i][1].lower()),
+                     user_state={"played": False, "is_favorite": cid in STATE["favorites"], "in_watchlist": False})
+            return a
+    for bi in range(len(AUDIOBOOKS)):
+        if audiobook_card(bi)["content_id"] == cid:
+            return audiobook_detail(bi)
+    return None
+
+
+def audio_route(handler, method, p, q, b):
+    """Returns True when it answered the request; other routes fall through untouched."""
+    if p == "/api/v2/catalog" and method == "GET":
+        lib = q.get("library_id", [""])[0]
+        typ = q.get("type", [""])[0]
+        if lib not in ("3", "4") and typ not in ("album", "artist", "track", "audiobook"):
+            return False
+        if lib == "4" or typ == "audiobook":
+            items = [audiobook_card(i) for i in range(len(AUDIOBOOKS))]
+        elif typ == "artist":
+            items = [artist_card(i) for i in range(len(ARTISTS))]
+        elif typ == "track":
+            items = [t for ai in range(len(ALBUMS)) for t in album_tracks(ai)]
+        else:
+            items = [album_card(i) for i in range(len(ALBUMS))]
+        text = q.get("q", [""])[0].lower()
+        if text:
+            items = [i for i in items if text in i["title"].lower()]
+        handler.send(200, page(items, q))
+        return True
+    m = re.match(r"^/api/v2/catalog/items/([^/]+)$", p)
+    if m:
+        d = audio_detail(m.group(1))
+        if d is None:
+            return False
+        handler.send(200, d)
+        return True
+    m = re.match(r"^/api/v2/library/([34])/sections$", p)
+    if m:
+        if m.group(1) == "3":
+            secs = [{"id": "music_albums", "section_type": "recently_added", "title": "Recently Added in Music", "featured": False,
+                     "total_count": len(ALBUMS), "items": [album_card(i) for i in range(len(ALBUMS))]},
+                    {"id": "music_artists", "section_type": "custom_filter", "title": "Artists", "featured": False,
+                     "total_count": len(ARTISTS), "items": [artist_card(i) for i in range(len(ARTISTS))]}]
+        else:
+            secs = [{"id": "books_recent", "section_type": "recently_added", "title": "Recently Added in Audiobooks", "featured": False,
+                     "total_count": len(AUDIOBOOKS), "items": [audiobook_card(i) for i in range(len(AUDIOBOOKS))]}]
+        handler.send(200, {"sections": secs})
+        return True
+    if p == "/api/v2/playback/start" and method == "POST" and b.get("file_id") in AUDIO_FILES:
+        f = AUDIO_FILES[b["file_id"]]
+        sid = uuid.uuid4().hex
+        STATE["sessions"][sid] = b
+        LOG.append("START " + json.dumps(b)[:400])
+        mime = "audio/mpeg" if f["container"] == "mp3" else "audio/mp4"
+        handler.send(201, {"protocol_version": 3, "server_features": ["playback_plan_v3", "neutral_playback_v3_contract_v1", "sequenced_progress_v1"],
+                           "outcome": "playable", "session_id": sid,
+                           "playback_plan": {"protocol_version": 3, "plan_id": "plan:a", "plan_attempt_key": "v3:a", "session_id": sid,
+                                             "delivery": "original_http",
+                                             "stream": {"url": "/mock-media/%s.%s?st=abc" % (sid, f["container"]), "protocol": "http_progressive",
+                                                        "container": f["container"], "mime_type": mime, "headers": {}, "header_refresh": "none"},
+                                             "timeline": {"source_start_seconds": b.get("start_position") or 0, "player_start_seconds": b.get("start_position") or 0,
+                                                          "timeline_offset_seconds": 0, "can_seek_anywhere": True},
+                                             "subtitle": {"mode": "off", "inventory": []},
+                                             "source": {"media_file_id": b["file_id"], "duration_seconds": f["duration"], "audio_codec": "aac"}}})
+        return True
+    if p == "/api/v2/sync/progress" and method == "POST":
+        items = b.get("items") or []
+        res = []
+        for i, it in enumerate(items):
+            STATE["progress"][it.get("media_item_id")] = (it.get("position_ms") or 0) / 1000.0
+            res.append({"index": i, "media_item_id": it.get("media_item_id"), "status": "success"})
+        LOG.append("SYNC " + json.dumps(b)[:200])
+        handler.send(200, {"items": res, "summary": {"total": len(res), "succeeded": len(res), "failed": 0}})
+        return True
+    return False
+
+
+for _ai in range(len(ALBUMS)):
+    album_tracks(_ai)
+for _bi in range(len(AUDIOBOOKS)):
+    audiobook_detail(_bi)
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -292,6 +490,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, make_image(kind, name.rsplit(".", 1)[0]), "image/png" if kind == "logo" else "image/jpeg")
         if p.startswith("/mock-media/"):
             return self.send(404)
+
+        if audio_route(self, method, p, q, b):
+            return
 
         # ---- public
         if p == "/api/v2/system/info":
@@ -357,6 +558,7 @@ class Handler(BaseHTTPRequestHandler):
                 {"id": "1", "name": "Movies", "type": "movies", "sort_order": 0},
                 {"id": "2", "name": "Shows", "type": "series", "sort_order": 1},
                 {"id": "3", "name": "Music", "type": "music", "sort_order": 2},
+                {"id": "4", "name": "Audiobooks", "type": "audiobooks", "sort_order": 3},
             ]})
         if p == "/api/v2/home/sections":
             return self.send(200, home_sections())
