@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Base for the root pages hosted inside ShellScreen (HomePage, LibraryPage, ForYouPage, CalendarPage).
+  Contract:
+    params          (in)  data from the shell (library id, section, ...)
+    active          (in)  true while the page is the visible page of a visible shell
+    focusRequested  (in)  the shell asks the page to take focus (its list, or itself while loading)
+    navigateTo      (out) same shape as BaseScreen.navigateTo; the host forwards it to MainScene
+  A page returns false from onKeyEvent for keys it does not handle (Up at the top row, Back),
+  so the shell can move focus to the top bar.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="ShellPage" extends="Group">
+  <interface>
+    <field id="params" type="assocarray" />
+    <field id="active" type="boolean" value="false" onChange="onPageActiveChanged" />
+    <field id="focusRequested" type="boolean" alwaysNotify="true" onChange="onFocusRequested" />
+    <field id="navigateTo" type="assocarray" alwaysNotify="true" />
+    <field id="close" type="boolean" alwaysNotify="true" />
+    <field id="result" type="assocarray" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/ShellPage.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Theme.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Api.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Nav.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Content.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
+</component>

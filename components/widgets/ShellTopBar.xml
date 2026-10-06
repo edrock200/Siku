@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Root top bar (design-spec §3.1): wordmark, centered [Search] + tab capsules, profile avatar.
+  Fields:
+    tabs            array of {id, label, hasPanel}
+    selectedIndex   index of the committed tab
+    focusIndex      -1 = search, 0..n-1 = tabs, n = avatar (valid while the bar has focus)
+    avatarUrl / profileName
+    dimmed          true while focus is in the content area (bar at 70% opacity)
+    activeTab       tab index drawn as focused while its dropdown panel is open (-2 = none)
+  Outputs (alwaysNotify):
+    tabCommitted    index of the tab chosen with OK
+    panelRequested  tab index (Down/OK on a tab with a panel), or 1000 for the avatar menu
+    searchSelected  OK on the search button
+    enterContent    Down on a tab without a panel (or on search): focus should move into content
+    tabFrames       (out) array of [x, width] per tab in screen coordinates (to anchor panels)
+  The bar is a single focusable node; Left/Right move along search, tabs and avatar.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="ShellTopBar" extends="Group">
+  <interface>
+    <field id="tabs" type="array" onChange="rebuild" />
+    <field id="selectedIndex" type="integer" value="0" onChange="applyState" />
+    <field id="focusIndex" type="integer" value="0" onChange="applyState" />
+    <field id="avatarUrl" type="string" onChange="updateAvatar" />
+    <field id="profileName" type="string" onChange="updateAvatar" />
+    <field id="dimmed" type="boolean" value="false" onChange="onDimmed" />
+    <field id="activeTab" type="integer" value="-2" onChange="applyState" />
+    <field id="tabFrames" type="array" />
+    <field id="avatarFrame" type="array" />
+    <field id="tabCommitted" type="integer" alwaysNotify="true" />
+    <field id="panelRequested" type="integer" alwaysNotify="true" />
+    <field id="searchSelected" type="boolean" alwaysNotify="true" />
+    <field id="enterContent" type="boolean" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/ShellTopBar.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Theme.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
+  <children>
+    <Group id="bar">
+      <Poster id="wordmark" uri="pkg:/images/logo_wordmark.png" />
+      <Group id="searchBtn">
+        <Poster id="searchBg" uri="pkg:/images/ui/circle.png" width="56" height="56" blendColor="0xEDEDEDFF" visible="false" />
+        <Poster id="searchIcon" uri="pkg:/images/icons/search.png" width="38" height="38" translation="[9,9]" blendColor="0xEDEDED9E" />
+      </Group>
+      <Group id="tabsGroup" />
+      <Group id="avatar">
+        <Poster id="avatarBg" uri="pkg:/images/ui/circle.png" width="56" height="56" blendColor="0xFFFFFF2E" />
+        <MaskGroup id="avatarMask" maskUri="pkg:/images/ui/mask_circle.png" maskSize="[56,56]">
+          <Poster id="avatarImg" width="56" height="56" loadDisplayMode="scaleToZoom" />
+        </MaskGroup>
+        <Label id="avatarInitials" width="56" height="56" horizAlign="center" vertAlign="center" color="0xEDEDEDFF">
+          <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="24" />
+        </Label>
+        <Poster id="avatarRing" uri="pkg:/images/ui/circle_ring.png" width="60" height="60" translation="[-2,-2]" blendColor="0xFFFFFF2E" />
+      </Group>
+    </Group>
+    <Animation id="dimAnim" duration="0.2" easeFunction="outQuad">
+      <FloatFieldInterpolator id="dimInterp" key="[0.0, 1.0]" keyValue="[1.0, 0.7]" fieldToInterp="bar.opacity" />
+    </Animation>
+  </children>
+</component>

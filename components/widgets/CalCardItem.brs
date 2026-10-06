@@ -1,0 +1,41 @@
+' SPDX-License-Identifier: AGPL-3.0-or-later
+
+sub init()
+    m.inner = m.top.findNode("inner")
+    m.badge = m.top.findNode("badge")
+    m.badgeBg = m.top.findNode("badgeBg")
+    m.badgeRing = m.top.findNode("badgeRing")
+    m.badgeLabel = m.top.findNode("badgeLabel")
+end sub
+
+sub onContent()
+    c = m.top.itemContent
+    m.inner.itemContent = c
+    text = ""
+    if c <> invalid and c.badge <> invalid then text = c.badge
+    if text = "" then
+        m.badge.visible = false
+    else
+        m.badge.visible = true
+        m.badgeLabel.text = text
+        m.badgeLabel.width = 0
+        w = Int(m.badgeLabel.boundingRect().width) + 24
+        m.badgeLabel.width = w
+        m.badgeBg.width = w
+        m.badgeRing.width = w
+    end if
+end sub
+
+sub forward()
+    m.inner.width = m.top.width
+    m.inner.height = m.top.height
+    m.inner.focusPercent = m.top.focusPercent
+    m.inner.itemHasFocus = m.top.itemHasFocus
+    m.inner.rowHasFocus = m.top.rowHasFocus
+    m.inner.gridHasFocus = m.top.gridHasFocus
+    ' Keep the badge over the (scaled) poster corner.
+    p = m.top.focusPercent
+    if not (m.top.rowHasFocus or m.top.gridHasFocus) then p = 0
+    off = 12 - Int(m.top.width * 0.05 * p)
+    m.badge.translation = [off, off]
+end sub

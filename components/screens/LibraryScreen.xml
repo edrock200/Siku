@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Full-screen host for a LibraryPage, so other screens can Nav_push("LibraryScreen", {...})
+  (e.g. "See all" of a section, a person's filmography, a collection). Same params as LibraryPage.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="LibraryScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/screens/LibraryScreen.brs" />
+  <children>
+    <LibraryPage id="page" />
+  </children>
+</component>

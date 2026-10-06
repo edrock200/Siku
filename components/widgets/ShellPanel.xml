@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Dropdown / cascade panel with the Skyline panel chrome (design-spec §3.2): dark rounded
+  panel with a hairline, an uppercase header, focus-inverting rows and a footer hint.
+  Fields:
+    header    uppercase header text ("MOVIE LIBRARIES", "FOR YOU", "SORT BY")
+    rows      array of {id, label, icon?, trailing?: "check"|"chevron"|"", sub?} ; id "-" draws a divider
+    footer    hint text under the rows ("Press opens the section · Menu closes")
+    width     panel width (460 default; 300 for a flyout; 480 for the profile menu)
+    profile   optional {name, sub, avatar} header block (profile dropdown)
+    focusIndex  (in/out) focused row index
+  Outputs (alwaysNotify):
+    rowSelected  id of the row chosen with OK
+    rowFocused   index of the row that gained focus
+    exitRight / exitLeft  Right/Left pressed (the host moves to a flyout or back)
+  The panel is focusable; Back is not handled here so the host can close it.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="ShellPanel" extends="Group">
+  <interface>
+    <field id="header" type="string" onChange="rebuild" />
+    <field id="rows" type="array" onChange="rebuild" />
+    <field id="footer" type="string" onChange="rebuild" />
+    <field id="width" type="integer" value="460" onChange="rebuild" />
+    <field id="profile" type="assocarray" onChange="rebuild" />
+    <field id="focusIndex" type="integer" value="0" onChange="applyFocus" />
+    <field id="panelHeight" type="integer" value="0" />
+    <field id="rowSelected" type="string" alwaysNotify="true" />
+    <field id="rowFocused" type="integer" alwaysNotify="true" />
+    <field id="exitRight" type="boolean" alwaysNotify="true" />
+    <field id="exitLeft" type="boolean" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/ShellPanel.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Theme.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
+  <children>
+    <Poster id="shadow" uri="pkg:/images/ui/r28.9.png" blendColor="0x0000008C" />
+    <Poster id="bg" uri="pkg:/images/ui/r22.9.png" blendColor="0x1A1C22F2" />
+    <Poster id="sheen" uri="pkg:/images/ui/r22.9.png" blendColor="0x23252C" opacity="0.55" />
+    <Poster id="ring" uri="pkg:/images/ui/r22_ring2.9.png" blendColor="0xFFFFFF26" />
+    <Group id="profileHead" visible="false">
+      <Poster id="avatarBg" uri="pkg:/images/ui/circle.png" blendColor="0xFFFFFF2E" width="64" height="64" />
+      <MaskGroup id="avatarMask" maskUri="pkg:/images/ui/mask_circle.png" maskSize="[64,64]">
+        <Poster id="avatarImg" width="64" height="64" loadDisplayMode="scaleToZoom" />
+      </MaskGroup>
+      <Label id="avatarInitials" width="64" height="64" horizAlign="center" vertAlign="center" color="0xEDEDEDFF">
+        <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="24" />
+      </Label>
+      <Label id="profileName" color="0xEDEDEDFF">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="26" />
+      </Label>
+      <Label id="profileSub" color="0xEDEDED61">
+        <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="22" />
+      </Label>
+      <Rectangle id="profileDivider" height="1" color="0xFFFFFF1F" />
+    </Group>
+    <Label id="headerLabel" color="0xEDEDED61">
+      <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />
+    </Label>
+    <Group id="rowsGroup" />
+    <Rectangle id="footerDivider" height="1" color="0xFFFFFF1F" visible="false" />
+    <Label id="footerLabel" color="0xEDEDED85" wrap="true">
+      <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />
+    </Label>
+  </children>
+</component>

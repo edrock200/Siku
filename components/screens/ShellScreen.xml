@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Root shell (design-spec §3): top bar with tabs, cascade / For You / profile dropdown panels,
+  and a content area that hosts the root pages (HomePage, LibraryPage, ForYouPage, CalendarPage).
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="ShellScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/screens/ShellScreen.brs" />
+  <children>
+    <Group id="content" />
+    <ShellTopBar id="bar" />
+    <ShellPanel id="panelMain" visible="false" />
+    <ShellPanel id="panelFly" width="300" visible="false" />
+  </children>
+</component>

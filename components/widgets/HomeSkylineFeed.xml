@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The "Skyline" feed (design-spec §4.1): ambient backdrop of the focused card, focus marquee
+  (logo/title, badges, meta, synopsis) and the row band at the bottom. Used by HomePage and ForYouPage.
+  Fields:
+    rows        array of {id, title, style: "poster"|"landscape", items: [card...]}
+    state       "loading" | "ready" | "error" | "empty"
+    errorText, emptyTitle, emptyBody, emptyAction (button label for empty/error)
+    focusRequested   (in, alwaysNotify) take focus (row band when ready, else the action button / itself)
+    itemPatch        (in, alwaysNotify) {rowIndex, itemIndex, watched?, favorite?, inWatchlist?, progress?, remove?}
+  Outputs (alwaysNotify):
+    itemSelected  {rowIndex, itemIndex, rowId, card}   OK on a card
+    itemOptions   {rowIndex, itemIndex, rowId, card}   options (*) key on a card
+    actionSelected  the Retry / Refresh button
+    focusedCard   {rowIndex, itemIndex} after the focus rested (150 ms)
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="HomeSkylineFeed" extends="Group">
+  <interface>
+    <field id="rows" type="array" onChange="onRows" />
+    <field id="state" type="string" value="loading" onChange="applyState" />
+    <field id="errorText" type="string" />
+    <field id="emptyTitle" type="string" value="Nothing to watch yet" />
+    <field id="emptyBody" type="string" value="Add media to your libraries or start watching to see it here." />
+    <field id="emptyAction" type="string" value="Refresh" />
+    <field id="bandTop" type="integer" value="540" onChange="layoutBand" />
+    <field id="focusRequested" type="boolean" alwaysNotify="true" onChange="takeFocus" />
+    <field id="itemPatch" type="assocarray" alwaysNotify="true" onChange="onItemPatch" />
+    <field id="itemSelected" type="assocarray" alwaysNotify="true" />
+    <field id="itemOptions" type="assocarray" alwaysNotify="true" />
+    <field id="actionSelected" type="boolean" alwaysNotify="true" />
+    <field id="focusedCard" type="assocarray" alwaysNotify="true" />
+    <field id="hasRows" type="boolean" value="false" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/HomeSkylineFeed.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Theme.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Content.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
+  <children>
+    <!-- Ambient backdrop: top-right 64% x 70%, faded by mask_backdrop (two layers crossfade). -->
+    <Group id="backdrop" translation="[691, 0]">
+      <MaskGroup id="bdA" maskUri="pkg:/images/ui/mask_backdrop.png" maskSize="[1229, 756]" opacity="0">
+        <Poster id="imgA" width="1229" height="756" loadDisplayMode="scaleToZoom" />
+      </MaskGroup>
+      <MaskGroup id="bdB" maskUri="pkg:/images/ui/mask_backdrop.png" maskSize="[1229, 756]" opacity="0">
+        <Poster id="imgB" width="1229" height="756" loadDisplayMode="scaleToZoom" />
+      </MaskGroup>
+    </Group>
+    <Poster id="wash" uri="pkg:/images/ui/scrim_bottom.png" translation="[0, 380]" width="1920" height="700" opacity="0.75" />
+    <Animation id="fadeAnim" duration="0.5" easeFunction="inOutCubic">
+      <FloatFieldInterpolator id="fadeIn" key="[0.0, 1.0]" keyValue="[0.0, 1.0]" fieldToInterp="bdA.opacity" />
+      <FloatFieldInterpolator id="fadeOut" key="[0.0, 1.0]" keyValue="[1.0, 0.0]" fieldToInterp="bdB.opacity" />
+    </Animation>
+
+    <!-- Focus marquee (bottom-left, above the row band). -->
+    <Group id="marquee" translation="[88, 0]">
+      <Poster id="logo" loadDisplayMode="scaleToFit" visible="false" />
+      <Label id="titleLabel" width="880" wrap="true" maxLines="2" color="0xEDEDEDFF" lineSpacing="0">
+        <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="76" />
+      </Label>
+      <Group id="badges" />
+      <Label id="metaLabel" color="0xEDEDEDBF" maxLines="1" width="880">
+        <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />
+      </Label>
+      <Label id="synopsis" color="0xEDEDEDBF" width="780" wrap="true" maxLines="2" lineSpacing="8">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="27" />
+      </Label>
+    </Group>
+
+    <!-- Row band. -->
+    <RowList id="rowList" translation="[68, 540]" itemComponentName="MediaCardItem"
+             drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" vertFocusAnimationStyle="fixedFocus"
+             itemSize="[1852, 354]" itemSpacing="[0, 28]" numRows="2" focusXOffset="[20]"
+             showRowLabel="[true]" rowLabelOffset="[[20, 44]]" rowLabelColor="0xEDEDEDFF" visible="false">
+      <Font role="rowLabelFont" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+    </RowList>
+
+    <!-- States. -->
+    <LoadingSpinner id="spinner" translation="[924, 504]" visible="false" />
+    <Group id="status" visible="false">
+      <Label id="statusTitle" width="1920" horizAlign="center" color="0xEDEDEDFF" translation="[0, 430]">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="41" />
+      </Label>
+      <Label id="statusBody" width="1920" horizAlign="center" color="0xEDEDED9E" translation="[0, 492]">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="27" />
+      </Label>
+      <PillButton id="actionBtn" text="Refresh" height="64" fontSize="24" translation="[0, 560]" />
+    </Group>
+    <Timer id="restTimer" duration="0.15" repeat="false" />
+  </children>
+</component>

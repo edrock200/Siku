@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  For You: the Skyline feed driven by /api/v2/recommendations/discover (design-spec §4.6).
+  Favorites / Watchlist from the For You dropdown are LibraryPage variants, not this page.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="ForYouPage" extends="ShellPage">
+  <script type="text/brightscript" uri="pkg:/components/screens/foryou/ForYouPage.brs" />
+  <script type="text/brightscript" uri="pkg:/components/widgets/HomeCardActions.brs" />
+  <children>
+    <HomeSkylineFeed id="feed" emptyTitle="Not enough data yet"
+                     emptyBody="Watch and rate more content to unlock personalized recommendations."
+                     emptyAction="Check again" />
+    <ShellActionMenu id="menu" />
+  </children>
+</component>

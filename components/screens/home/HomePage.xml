@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Home (and a library's "Recommended" landing): the Skyline feed fed by /api/v2/home/sections
+  or /api/v2/library/{id}/sections. params: { libraryId?, libraryName? }
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="HomePage" extends="ShellPage">
+  <script type="text/brightscript" uri="pkg:/components/screens/home/HomePage.brs" />
+  <script type="text/brightscript" uri="pkg:/components/widgets/HomeCardActions.brs" />
+  <children>
+    <HomeSkylineFeed id="feed" />
+    <ShellActionMenu id="menu" />
+  </children>
+</component>

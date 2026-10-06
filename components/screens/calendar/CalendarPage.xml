@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Calendar (design-spec §4.7): Following | Trending | All segments, a week strip with ‹ › and Today,
+  and one poster shelf per day from GET /api/v2/calendar.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="CalendarPage" extends="ShellPage">
+  <script type="text/brightscript" uri="pkg:/components/screens/calendar/CalendarPage.brs" />
+  <children>
+    <Group id="segments" translation="[88, 188]">
+      <Poster id="segBg" uri="pkg:/images/ui/r28.9.png" blendColor="0xFFFFFF14" width="540" height="56" />
+      <Poster id="segRing" uri="pkg:/images/ui/r28_ring2.9.png" blendColor="0xFFFFFF1F" width="540" height="56" />
+      <Group id="segItems" />
+    </Group>
+    <Label id="monthLabel" translation="[1232, 196]" width="600" horizAlign="right" color="0xEDEDED9E">
+      <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="29" />
+    </Label>
+    <Group id="strip" translation="[88, 268]">
+      <Group id="stripItems" />
+    </Group>
+    <RowList id="shelves" translation="[68, 372]" itemComponentName="CalCardItem"
+             drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" vertFocusAnimationStyle="fixedFocus"
+             itemSize="[1852, 462]" rowItemSize="[[248, 462]]" rowItemSpacing="[[36, 0]]" itemSpacing="[0, 28]" numRows="2" focusXOffset="[20]"
+             showRowLabel="[true]" rowLabelOffset="[[20, 44]]" rowLabelColor="0xEDEDEDFF" visible="false">
+      <Font role="rowLabelFont" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+    </RowList>
+    <LoadingSpinner id="spinner" translation="[924, 640]" visible="false" />
+    <Group id="status" visible="false">
+      <Label id="statusTitle" width="1920" horizAlign="center" color="0xEDEDEDFF" translation="[0, 560]">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="41" />
+      </Label>
+      <Label id="statusBody" width="1920" horizAlign="center" color="0xEDEDED9E" translation="[0, 622]">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="27" />
+      </Label>
+      <PillButton id="retryBtn" text="Refresh" height="64" fontSize="24" translation="[0, 690]" visible="false" />
+    </Group>
+  </children>
+</component>
