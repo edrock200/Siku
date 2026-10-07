@@ -3,6 +3,17 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.19
+
+- **New (experiment):** Settings › Playback › **Experimental: Progressive Remux**. Offers the
+  Silo server a second way to keep the original video and convert only the audio: one MP4 stream
+  over plain HTTP instead of HLS. Roku may not play it; turn it off if videos stop starting.
+- **New (diagnostic):** a hidden stream-test screen. Launch it with
+  `curl -d '' "http://<roku-ip>:8060/launch/dev?debugScreen=StreamTestScreen"`. It plays
+  Apple's public HLS samples (HEVC and H.264 fragmented MP4 with separate audio, and MPEG-TS),
+  the last stream Siku played from your server, or a URL given as `&debugUrl=...`, and reports
+  the Roku's player state and the audio tracks it finds (also printed as `[siku-streamtest]`).
+
 ## v0.1.18
 
 - **Changed:** when Force Dolby Audio Passthrough makes the server send a Dolby track your TV

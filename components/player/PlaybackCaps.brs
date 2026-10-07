@@ -332,14 +332,14 @@ end function
 
 ' One delivery class. No max_channels: the Roku downmixes or passes through by itself, and a
 ' channel ceiling here would make the server refuse direct play of a 5.1 file on a stereo TV.
-function PlaybackCaps_delivery(containers as object, features as object, hlsRoute = false as boolean) as object
+function PlaybackCaps_delivery(containers as object, features as object, kind = "original" as string) as object
     p = PlaybackCaps_probe()
     audioCodecs = p.codecsAudio
     passthrough = p.passthroughAudio
     videoCodecs = p.codecsVideo
     hdr = PlaybackCaps_hdrDetails()
     claims = []
-    if hlsRoute then
+    if kind = "hls" then
         ' Roku's HLS player does not take audio muxed into fMP4 (CMAF) segments (Roku streaming
         ' specifications: "muxing audio and video not supported for CMAF"), and Silo's HLS remux
         ' copies the video into fMP4 with the audio muxed in, so every server_remux_hls plan
@@ -356,7 +356,7 @@ function PlaybackCaps_delivery(containers as object, features as object, hlsRout
         end for
         passthrough = []
         hdr = { hdr10: false, hdr10_plus: false, hlg: false, dolby_vision_profiles: [] }
-    else
+    else if kind = "original" then
         ' A Dolby Vision profile 8 file whose DV layer the output cannot take still plays as its
         ' HDR10/HLG base layer through the ordinary HEVC decoder (what Roku does with DV8 content
         ' on a non-DV display), so the server need not strip it into a remux.
@@ -403,6 +403,13 @@ function PlaybackCaps_playbackContext() as object
             hdr_types: hd
         }
     end if
+    dl = {
+        original_http: PlaybackCaps_delivery(p.containers, [])
+        hls: PlaybackCaps_delivery(["m3u8", "hls"], ["hls"], "hls")
+    }
+    ' Experimental (Settings › Playback): Silo's progressive remux, a fragmented MP4 over HTTP with
+    ' the video copied. The planner prefers it to HLS whenever the audio needs converting.
+    if Settings_progressiveRemux() then dl.progressive = PlaybackCaps_delivery(["mp4"], [], "progressive")
     return {
         protocol_version: 3
         form_factor: "tv"
@@ -410,10 +417,7 @@ function PlaybackCaps_playbackContext() as object
         app_channel: "sideload"
         device: p.device
         output: output
-        deliveries: {
-            original_http: PlaybackCaps_delivery(p.containers, [])
-            hls: PlaybackCaps_delivery(["m3u8", "hls"], ["hls"], true)
-        }
+        deliveries: dl
     }
 end function
 
@@ -582,7 +586,7 @@ function PlaybackCaps_diagLine(body as object, plan as object) as string
     caps = caps + " video=" + PlaybackCaps_join(p.codecsVideo) + " decoders=[" + PlaybackCaps_join(vdec, "; ") + "] audio=" + PlaybackCaps_join(p.codecsAudio)
     caps = caps + " passthru=" + PlaybackCaps_join(p.passthroughAudio) + " surround=" + PlaybackCaps_join(p.surroundAudio)
     caps = caps + " out=" + p.audioOutput + " decodeinfo=" + PlaybackCaps_join(decode)
-    caps = caps + " forcedolby=" + PlaybackCaps_str(p.forcedDolby) + " forcehdr=" + PlaybackCaps_str(Settings_forceHdrPassthrough())
+    caps = caps + " forcedolby=" + PlaybackCaps_str(p.forcedDolby) + " forcehdr=" + PlaybackCaps_str(Settings_forceHdrPassthrough()) + " progressive=" + PlaybackCaps_str(Settings_progressiveRemux())
     caps = caps + " display=" + PlaybackCaps_str(p.display.known) + " hdr10=" + PlaybackCaps_str(hd.hdr10) + " hdr10+=" + PlaybackCaps_str(hd.hdr10_plus) + " hlg=" + PlaybackCaps_str(hd.hlg) + " dv=" + PlaybackCaps_join(dvs)
     ' Raw display report and model, so a missing Dolby Vision or HDR flag can be traced on device.
     di = CreateObject("roDeviceInfo")

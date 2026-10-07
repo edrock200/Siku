@@ -321,6 +321,13 @@ function Settings_forceDolbyPassthrough() as boolean
     return Settings_prefs().forceDolbyPassthrough = true
 end function
 
+' Experimental: declare Silo's "progressive" delivery (a fragmented MP4 streamed over plain HTTP,
+' video copied, audio converted when needed). Roku's spec lists fragmented MP4 only under DASH
+' and HLS, so whether the Video node plays it progressively is what this switch finds out.
+function Settings_progressiveRemux() as boolean
+    return Settings_prefs().progressiveRemux = true
+end function
+
 ' Optimistic local update of one server value, for a screen that writes a setting and needs the
 ' new value at once (the player replans right after a toggle). The next Settings_load replaces it.
 sub Settings_setLocal(key as string, scope as string, value as dynamic)

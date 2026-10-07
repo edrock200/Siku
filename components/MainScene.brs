@@ -186,6 +186,7 @@ sub handleDeepLink(args as dynamic)
         params = {}
         if not Str_isEmpty(args.debugItem) then params.itemId = args.debugItem
         if not Str_isEmpty(args.debugFile) then params.fileId = args.debugFile ' PlayerScreen: play this version (mock 4K files: 52, 56)
+        if not Str_isEmpty(args.debugUrl) then params.url = args.debugUrl ' StreamTestScreen: an extra stream to try
         resetTo(args.debugScreen, params)
         return
     end if

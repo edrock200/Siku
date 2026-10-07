@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Developer diagnostic: plays a stream and reports what the Roku's Video node makes of it (state,
+     audio and subtitle tracks, errors). Open with
+     POST http://<roku-ip>:8060/launch/dev?debugScreen=StreamTestScreen
+     Optional: &debugUrl=<url-encoded .m3u8 or .mp4 URL> adds a "Custom URL" preset.
+     SPDX-License-Identifier: AGPL-3.0-or-later -->
+<component name="StreamTestScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/screens/debug/StreamTestScreen.brs" />
+  <children>
+    <Rectangle width="1920" height="1080" color="0x000000FF" />
+    <Label id="hdr" translation="[80, 30]" width="1760" color="0xEDEDEDFF" text="Stream test: pick a stream, then watch the report and listen">
+      <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="30" />
+    </Label>
+    <Label id="hint" translation="[80, 78]" width="1760" color="0xEDEDED9E" text="OK plays the highlighted stream. Back leaves. Every result is also printed to the debug console as [siku-streamtest].">
+      <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="22" />
+    </Label>
+    <LabelList id="list" translation="[80, 130]" itemSize="[900, 60]" numRows="6" color="0xEDEDEDBF" focusedColor="0x000000FF" textHorizAlign="left">
+      <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+      <Font role="focusedFont" uri="pkg:/fonts/Inter-semibold.otf" size="24" />
+    </LabelList>
+    <Video id="video" translation="[1020, 130]" width="820" height="461" />
+    <Label id="status" translation="[80, 540]" width="1760" wrap="true" maxLines="16" lineSpacing="4" color="0xEDEDEDFF" text="Nothing played yet.">
+      <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="23" />
+    </Label>
+  </children>
+</component>

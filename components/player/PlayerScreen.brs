@@ -554,6 +554,9 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
         end for
     end if
     content.HttpHeaders = headers
+    ' StreamTestScreen replays the last stream Siku played, with its auth headers.
+    if not m.global.hasField("lastStream") then m.global.addFields({ lastStream: {} })
+    m.global.lastStream = { url: url, format: fmt, headers: headers, label: Str_orEmpty(plan.delivery) + " " + fmt }
     if LCase(Left(url, 5)) = "https" then content.HttpCertificatesFile = "common:/certs/ca-bundle.crt"
     if m.duration > 0 then content.Length = Int(m.duration)
     m.resumeAfterStart = invalid

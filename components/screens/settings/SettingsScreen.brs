@@ -205,11 +205,13 @@ function buildPane(catId as string) as object
         if m.supportsDolbyVision and Settings_dolbyVision() then out.Push({ kind: "row", row: rowDef("dvProfile7Fallback", "toggle", "Profile 7 HDR10 Fallback") })
         out.Push({ kind: "row", row: rowDef("forceHdr", "toggle", "Force HDR Passthrough") })
         out.Push({ kind: "row", row: rowDef("forceDolby", "toggle", "Force Dolby Audio Passthrough") })
+        out.Push({ kind: "row", row: rowDef("progressiveRemux", "toggle", "Experimental: Progressive Remux") })
         q = Settings_qualityPresetFor(Settings_quality(), Settings_maxBitrateKbps())
         if q <> invalid then qText = q.description else qText = Settings_describeQuality(Settings_quality(), Settings_maxBitrateKbps()) + "."
         if m.supportsDolbyVision then qText = qText + " Dolby Vision off asks the server for the HDR10 layer of Dolby Vision files instead. Profile 7 HDR10 Fallback plays dual-layer Dolby Vision files as their HDR10 base layer; off, they are sent as they are and this Roku's HEVC decoder shows the base layer itself."
         qText = qText + " Force HDR Passthrough allows HDR playback when this TV doesn't report support. It does not force the HDMI output into HDR; the Roku may still convert the picture to SDR. Enable it only if you've confirmed your TV supports the source format."
         qText = qText + " Force Dolby Audio Passthrough tells the server this Roku can play Dolby Digital and Dolby Digital Plus even when the TV or receiver does not report it, so the original audio is sent instead of being converted to AAC. If you then get no sound, turn it off; a Roku app cannot switch the HDMI audio output itself."
+        qText = qText + " Experimental: Progressive Remux offers the server a second way to keep the original video while converting only the audio: one MP4 stream over plain HTTP instead of HLS. Roku may not play it; if videos fail to start, turn it off."
         out.Push({ kind: "footer", text: qText })
 
         out.Push({ kind: "header", text: "Episodes" })
@@ -329,6 +331,8 @@ function rowValue(row as object) as string
         return onOff(Settings_forceHdrPassthrough())
     else if id = "forceDolby" then
         return onOff(Settings_forceDolbyPassthrough())
+    else if id = "progressiveRemux" then
+        return onOff(Settings_progressiveRemux())
     else if id = "autoPlayNext" then
         return onOff(Settings_autoPlayNext())
     else if id = "showNextUp" then
@@ -1066,6 +1070,8 @@ sub applyChoice(row as object, value as dynamic)
         savePref("forceHdrPassthrough", value = true)
     else if id = "forceDolby" then
         savePref("forceDolbyPassthrough", value = true)
+    else if id = "progressiveRemux" then
+        savePref("progressiveRemux", value = true)
         refreshValues()
     else if id = "autoPlayNext" then
         beginWrites(1)
@@ -1136,6 +1142,7 @@ sub performConfirmed(actionId as string)
         p.passoutThreshold = 3
         p.forceHdrPassthrough = false
         p.forceDolbyPassthrough = false
+        p.progressiveRemux = false
         Prefs_save(p)
         keys = Settings_deviceKeys()
         beginWrites(keys.Count())
