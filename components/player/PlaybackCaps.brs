@@ -84,9 +84,13 @@ function PlaybackCaps_reprobe() as object
     ' Settings › Playback › Force Dolby Audio Passthrough: the viewer vouches for AC3 / E-AC3 when
     ' the HDMI capability list leaves them out (seen on device: a DV TV advertising LPCM only).
     forcedDolby = Settings_forceDolbyPassthrough()
+    forcedAudio = []
     if forcedDolby then
         for each c in ["ac3", "eac3"]
-            if not PlaybackCaps_has(codecsAudio, c) then codecsAudio.Push(c)
+            if not PlaybackCaps_has(codecsAudio, c) then
+                codecsAudio.Push(c)
+                forcedAudio.Push(c) ' declared only because of the setting; PlayerScreen warns when it plays
+            end if
             if not PlaybackCaps_has(passthroughAudio, c) then passthroughAudio.Push(c)
             if not PlaybackCaps_has(surround, c) then surround.Push(c)
         end for
@@ -129,6 +133,7 @@ function PlaybackCaps_reprobe() as object
 
     m.playbackProbe = {
         forcedDolby: forcedDolby
+        forcedAudio: forcedAudio
         codecsVideo: codecsVideo
         videoDecode: videoDecode
         codecsAudio: codecsAudio

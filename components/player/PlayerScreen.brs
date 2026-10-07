@@ -143,6 +143,7 @@ sub resetPlaybackState()
     m.pendingAudioIndex = -1
     m.chosenAudioIndex = -1
     m.plannedAudioApplied = true
+    m.forcedDolbyWarned = false
     m.upNextShown = false
     m.upNextDismissed = false
     m.countdown = -1
@@ -201,6 +202,7 @@ end sub
 
 sub startPipeline()
     m.remuxRecoveryTried = false
+    m.forcedDolbyWarned = false
     m.pendingAudioIndex = -1
     m.chosenAudioIndex = -1
     PlaybackCaps_reprobe()
@@ -480,6 +482,18 @@ sub onStart(event as object)
     print PlaybackCaps_diagLine(m.lastRequestBody, d.playback_plan)
     applyPlan(d.playback_plan)
     maybeRecoverSilentRemux(d.playback_plan)
+    warnForcedDolby(d.playback_plan)
+end sub
+
+' The plan carries a Dolby track only because Force Dolby Audio Passthrough vouched for it: say so
+' once, so silence is understood as the TV refusing the bitstream rather than a Siku fault.
+sub warnForcedDolby(plan as object)
+    if m.forcedDolbyWarned or plan = invalid or plan.effective_recipe = invalid then return
+    p = PlaybackCaps_probe()
+    codec = LCase(Str_orEmpty(plan.effective_recipe.audio_codec))
+    if p.forcedAudio = invalid or not PlaybackCaps_has(p.forcedAudio, codec) then return
+    m.forcedDolbyWarned = true
+    m.global.toast = "Dolby audio is sent as-is because Force Dolby Audio Passthrough is on. Your TV reports no Dolby support: if there is no sound, turn that setting off."
 end sub
 
 ' Roku's HLS player ignores audio muxed into fMP4 segments, and Silo's HLS remux (server_remux_hls)

@@ -3,6 +3,12 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.18
+
+- **Changed:** when Force Dolby Audio Passthrough makes the server send a Dolby track your TV
+  did not ask for, the player says so once, so silence is understood as the TV refusing Dolby
+  rather than a Siku fault.
+
 ## v0.1.17
 
 - **Fixed:** choosing a non-default audio track on the details page no longer forces the server
