@@ -42,6 +42,20 @@ transcodes for Roku into MPEG-TS segments, which is why Jellyfin plays with soun
 hardware. silo-server's Jellyfin-compatible API already honours that (`HLSRemuxMPEGTS`); protocol
 v3 only needs the same switch.
 
+## Device confirmation (2026-10-07, Roku Streaming Stick 4K 3820X, Roku OS 14)
+
+Using Siku's `StreamTestScreen`, the same device played all three Apple reference streams with
+sound, each reporting its audio track to the Video node:
+
+- HEVC in fragmented MP4 with the audio as a separate `#EXT-X-MEDIA` rendition
+  (`bipbop_adv_example_hevc/master.m3u8`): plays, sound.
+- H.264 in fragmented MP4 with a separate audio rendition (`img_bipbop_adv_example_fmp4`): plays, sound.
+- H.264 in MPEG-TS with muxed audio (`bipbop_16x9_variant.m3u8`): plays, sound.
+
+The same device plays silo-server's `server_remux_hls` (HEVC in fragmented MP4, audio muxed into
+the video segments) with video only and zero audio tracks. The difference is the packaging, not
+the codec: Roku takes HEVC fMP4 HLS when the audio is its own rendition.
+
 ## Routes already tried from the client
 
 - `server_remux_hls` (fMP4 segments, audio muxed): video plays, no audio, Video node reports
@@ -61,7 +75,7 @@ v3 only needs the same switch.
    AAC/AC3/E-AC3 audio are packaged as MPEG-TS, which Roku plays. Dolby Vision metadata is not
    carried in TS, so a DV8 source would present its HDR10 base layer on this route (the
    `hls_video_sample_entry` logic in `plan_v3.go` `hlsVideoSampleEntryV3` should return "" for it).
-2. **Demuxed CMAF.** Package the remux as two renditions (video-only and audio-only fMP4) with a
+2. **Demuxed CMAF (confirmed to play on Roku, see above).** Package the remux as two renditions (video-only and audio-only fMP4) with a
    master playlist carrying `#EXT-X-STREAM-INF` with `CODECS` (for example
    `"dvh1.08.06,mp4a.40.2"`) and `#EXT-X-MEDIA:TYPE=AUDIO`. This keeps Dolby Vision on Roku and
    matches Apple's HLS authoring rules too. Gate it on a client feature (for example

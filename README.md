@@ -25,7 +25,7 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Browse | Library grids with sort and filters, collections, A‑Z rail; audiobook Authors / Series groups; music Genres | ✅ |
 | Detail | Movies, series (seasons and episodes), episodes, cast, person pages | ✅ |
 | Discover | Search, For You (Watchlist and Favorites), release Calendar | ✅ |
-| Playback | Direct Play, Remux or Transcode chosen by the server from the Roku's real capabilities (4K, Dolby Vision, HDR10/HDR10+/HLG, surround passthrough) | 🟡 direct play and H.264 transcodes work on device; Silo's HLS remux is silent on Roku until the server packages it for Roku ([details](docs/upstream/silo-server-roku-hls-audio.md)) |
+| Playback | Direct Play, Remux or Transcode chosen by the server from the Roku's real capabilities (4K, Dolby Vision, HDR10/HDR10+/HLG, surround passthrough) | 🟡 direct play and H.264 transcodes work on device; Silo's HLS remux is silent on Roku because its audio is muxed into fMP4 segments, which Roku does not accept (device-confirmed; needs MPEG-TS or demuxed CMAF from the server, [details](docs/upstream/silo-server-roku-hls-audio.md)) |
 | Playback | Resume, progress sync, mark watched, Skip Intro, Up Next, audio and version selection, automatic subtitles from your Off / Auto / Always setting | ✅ |
 | Settings | Android TV's General, Playback, Subtitles and Server pages (quality and bandwidth, Dolby Vision, skip intro/credits, auto-play, home sections, cards), synced with your Silo profile | ✅ |
 | Audio | Audiobooks (chapters, parts, resume, sleep timer) and music albums/artists with a now-playing screen | 🟡 needs device testing; music waits on server support |
