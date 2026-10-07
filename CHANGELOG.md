@@ -3,6 +3,15 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.17
+
+- **Fixed:** choosing a non-default audio track on the details page no longer forces the server
+  to repackage or convert the file. Siku now tells the server it can switch tracks inside a
+  directly played file (Roku can, for MKV and MP4), so the file direct-plays and the chosen track
+  is selected on the Roku.
+- **For troubleshooting:** the debug line shows the requested audio and subtitle tracks and the
+  server's selection (`audio_req=`, `sub_req=`, `sel_audio=`, `sub_mode=`).
+
 ## v0.1.16
 
 - **Fixed:** after switching the audio track during playback, the Audio menu kept showing the old

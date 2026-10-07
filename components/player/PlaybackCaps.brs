@@ -356,6 +356,10 @@ function PlaybackCaps_delivery(containers as object, features as object, hlsRout
         ' HDR10/HLG base layer through the ordinary HEVC decoder (what Roku does with DV8 content
         ' on a non-DV display), so the server need not strip it into a remux.
         claims.Push("client_dv8_base_layer_fallback_v1")
+        ' The Video node switches audio tracks inside a direct-played MKV/MP4 (availableAudioTracks),
+        ' so a non-default track chosen on the details page need not force a remux: the server
+        ' keeps original_http and names the track in selected_tracks; PlayerScreen applies it.
+        claims.Push("client_selected_audio_track_v1")
     end if
     return {
         enabled: true
@@ -597,9 +601,12 @@ function PlaybackCaps_diagLine(body as object, plan as object) as string
     if hd.hdr10_max_height <> invalid then caps = caps + " hdr10max=" + PlaybackCaps_str(hd.hdr10_max_width) + "x" + PlaybackCaps_str(hd.hdr10_max_height) + "p" + PlaybackCaps_str(hd.hdr10_max_frame_rate)
     req = "quality=" + Str_orEmpty(body.quality_preference) + " cap=" + PlaybackCaps_str(body.bandwidth_cap_kbps) + " metered=" + PlaybackCaps_str(body.metered)
     if not Str_isEmpty(body.operation) then req = req + " op=" + body.operation
+    req = req + " audio_req=" + Str_orEmpty(body.audio_track_id) + " sub_req=" + Str_orEmpty(body.subtitle_track_id)
     dec = "none"
     if plan <> invalid then
         dec = "delivery=" + Str_orEmpty(plan.delivery) + " reason=" + Str_orEmpty(plan.decision_reason)
+        if plan.selected_tracks <> invalid and plan.selected_tracks.audio <> invalid then dec = dec + " sel_audio=" + PlaybackCaps_str(plan.selected_tracks.audio.index)
+        if plan.subtitle <> invalid then dec = dec + " sub_mode=" + Str_orEmpty(plan.subtitle.mode)
         r = plan.effective_recipe
         if r <> invalid then
             dec = dec + " recipe=" + Str_orEmpty(r.video_codec) + " " + PlaybackCaps_str(r.width) + "x" + PlaybackCaps_str(r.height) + " " + Str_orEmpty(r.dynamic_range)

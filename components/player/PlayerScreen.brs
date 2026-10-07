@@ -142,6 +142,7 @@ sub resetPlaybackState()
     m.remuxRecoveryTried = false
     m.pendingAudioIndex = -1
     m.chosenAudioIndex = -1
+    m.plannedAudioApplied = true
     m.upNextShown = false
     m.upNextDismissed = false
     m.countdown = -1
@@ -503,6 +504,7 @@ end sub
 sub applyPlan(plan as object, opts = invalid as dynamic)
     if opts = invalid then opts = {}
     m.plan = plan
+    m.plannedAudioApplied = false
     resetBuffered()
     s = m.global.session
     stream = plan.stream
@@ -641,6 +643,7 @@ sub onVideoState()
         setBuffering(true)
     else if st = "playing" then
         setBuffering(false)
+        applyPlannedAudioTrack()
         m.bufferLabel.text = "Buffering"
         m.isPaused = false
         m.playPauseBtn.iconUri = "pkg:/images/icons/pause.png"
@@ -2145,6 +2148,20 @@ sub onReplan(event as object)
     ' The overlay was rebuilt when the picker closed, before this answer: refresh it with the new plan.
     if m.hud.visible then buildHudRows()
     maybeRecoverSilentRemux(plan)
+end sub
+
+' On a direct-played file the server names the track to play (client_selected_audio_track_v1) and
+' the Video node selects it: availableAudioTracks lists the container's tracks in order.
+sub applyPlannedAudioTrack()
+    if m.plannedAudioApplied or m.plan = invalid then return
+    tracks = Arr_or(m.video.availableAudioTracks)
+    if tracks.Count() = 0 then return
+    m.plannedAudioApplied = true
+    if LCase(Str_orEmpty(m.plan.delivery)) <> "original_http" then return
+    if m.plan.selected_tracks = invalid or m.plan.selected_tracks.audio = invalid then return
+    idx = Int(Num_or(m.plan.selected_tracks.audio.index, -1))
+    if idx < 0 or idx >= tracks.Count() then return
+    if Str_orEmpty(m.video.audioTrack) <> Str_orEmpty(tracks[idx].Track) then m.video.audioTrack = tracks[idx].Track
 end sub
 
 ' ---------- Server-side audio tracks ----------
