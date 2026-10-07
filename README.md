@@ -30,6 +30,7 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Settings | Android TV's General, Playback, Subtitles and Server pages (quality and bandwidth, Dolby Vision, skip intro/credits, auto-play, home sections, cards), synced with your Silo profile | ✅ |
 | Audio | Audiobooks (chapters, parts, resume, sleep timer) and music albums/artists with a now-playing screen | 🟡 needs device testing; music waits on server support |
 | Requests | Request movies and series, track their status, approve or decline as a moderator (when the server enables it) | ✅ |
+| Subtitles | Display and selection of SRT/WebVTT tracks, automatic choice from the profile's preference | ✅ |
 | Subtitles | Search and download from providers, AI translate/transcribe, sync to audio, subtitle delay (server-gated) | 🟡 needs device testing |
 | Notifications | Inbox from the profile menu, mark read, mark all read | ✅ |
 
@@ -134,7 +135,7 @@ What that means on a Roku today:
 
 - A file whose video and audio your Roku accepts **direct-plays** untouched, Dolby Vision included.
 - A file whose audio your Roku cannot take (for example E-AC3 when the TV only advertises stereo PCM, or TrueHD/DTS) is **transcoded to H.264** with AAC sound. Silo's lighter "keep the video, convert the audio" remux is packaged as fragmented MP4 with the audio muxed in, which Roku plays without sound, so Siku avoids it until the server can package it for Roku. The request to the Silo team is in [`docs/upstream/silo-server-roku-hls-audio.md`](docs/upstream/silo-server-roku-hls-audio.md).
-- Subtitles: SRT and WebVTT tracks are shown; image subtitles (PGS, VobSub) and styled ASS are listed but cannot be displayed by Roku.
+- Subtitles: SRT and WebVTT tracks are shown, and the profile's language and Off/Auto/Always choice turns them on automatically (both confirmed on a real Roku); image subtitles (PGS, VobSub) and styled ASS are listed but cannot be displayed by Roku.
 
 ## Troubleshooting playback
 
