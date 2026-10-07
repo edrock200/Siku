@@ -312,6 +312,15 @@ function Settings_forceHdrPassthrough() as boolean
     return Settings_prefs().forceHdrPassthrough = true
 end function
 
+' Force Dolby Audio Passthrough (device-local, Siku only): declare Dolby Digital and Dolby Digital
+' Plus as playable even when the Roku reports that the HDMI device accepts neither. A Roku app
+' cannot switch passthrough on; this only changes what Siku tells the server, so the server sends
+' the original track and the Roku OS attempts it. Useful when a TV or receiver does decode Dolby
+' but does not advertise it (a wrong HDMI audio mode on the TV, a switch in the chain).
+function Settings_forceDolbyPassthrough() as boolean
+    return Settings_prefs().forceDolbyPassthrough = true
+end function
+
 ' Optimistic local update of one server value, for a screen that writes a setting and needs the
 ' new value at once (the player replans right after a toggle). The next Settings_load replaces it.
 sub Settings_setLocal(key as string, scope as string, value as dynamic)

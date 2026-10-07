@@ -3,6 +3,14 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.15
+
+- **New:** Settings › Playback › **Force Dolby Audio Passthrough**. Some TVs do not tell the Roku
+  that they accept Dolby Digital / Digital Plus, so the Roku reports "stereo only" and the server
+  converts every Dolby track to AAC. This switch tells the server the Roku can take Dolby, so the
+  original track is sent untouched. A Roku app cannot change the HDMI audio output itself: if you
+  get no sound with it on, turn it off. The debug line now shows `forcedolby=` and `forcehdr=`.
+
 ## v0.1.14
 
 - **Fixed:** silent video. When the Silo server repackages a file as a stream ("remux"), Roku

@@ -81,6 +81,16 @@ function PlaybackCaps_reprobe() as object
         if pt then passthroughAudio.Push(c)
         if (ok or pt) and PlaybackCaps_canDecodeAudio(di, { "codec": c, "chcnt": 6 }) then surround.Push(c)
     end for
+    ' Settings › Playback › Force Dolby Audio Passthrough: the viewer vouches for AC3 / E-AC3 when
+    ' the HDMI capability list leaves them out (seen on device: a DV TV advertising LPCM only).
+    forcedDolby = Settings_forceDolbyPassthrough()
+    if forcedDolby then
+        for each c in ["ac3", "eac3"]
+            if not PlaybackCaps_has(codecsAudio, c) then codecsAudio.Push(c)
+            if not PlaybackCaps_has(passthroughAudio, c) then passthroughAudio.Push(c)
+            if not PlaybackCaps_has(surround, c) then surround.Push(c)
+        end for
+    end if
     audioOutput = PlaybackCaps_str(di.GetAudioOutputChannel())
     audioChannels = 2
     if Instr(1, audioOutput, "7.1") > 0 then
@@ -112,6 +122,7 @@ function PlaybackCaps_reprobe() as object
     if osv <> invalid then osVersion = PlaybackCaps_str(osv.major) + "." + PlaybackCaps_str(osv.minor) + "." + PlaybackCaps_str(osv.revision)
 
     m.playbackProbe = {
+        forcedDolby: forcedDolby
         codecsVideo: codecsVideo
         videoDecode: videoDecode
         codecsAudio: codecsAudio
@@ -556,6 +567,7 @@ function PlaybackCaps_diagLine(body as object, plan as object) as string
     caps = caps + " video=" + PlaybackCaps_join(p.codecsVideo) + " decoders=[" + PlaybackCaps_join(vdec, "; ") + "] audio=" + PlaybackCaps_join(p.codecsAudio)
     caps = caps + " passthru=" + PlaybackCaps_join(p.passthroughAudio) + " surround=" + PlaybackCaps_join(p.surroundAudio)
     caps = caps + " out=" + p.audioOutput + " decodeinfo=" + PlaybackCaps_join(decode)
+    caps = caps + " forcedolby=" + PlaybackCaps_str(p.forcedDolby) + " forcehdr=" + PlaybackCaps_str(Settings_forceHdrPassthrough())
     caps = caps + " display=" + PlaybackCaps_str(p.display.known) + " hdr10=" + PlaybackCaps_str(hd.hdr10) + " hdr10+=" + PlaybackCaps_str(hd.hdr10_plus) + " hlg=" + PlaybackCaps_str(hd.hlg) + " dv=" + PlaybackCaps_join(dvs)
     ' Raw display report and model, so a missing Dolby Vision or HDR flag can be traced on device.
     di = CreateObject("roDeviceInfo")
@@ -708,4 +720,11 @@ function PlaybackCaps_resolutionLabel(width as dynamic, height as dynamic) as st
     if h >= 700 or w >= 1200 then return "720p"
     if h > 0 then return h.ToStr() + "p"
     return w.ToStr() + "w"
+end function
+
+function PlaybackCaps_has(arr as object, value as string) as boolean
+    for each v in arr
+        if v = value then return true
+    end for
+    return false
 end function
