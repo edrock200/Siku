@@ -3,6 +3,16 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.13
+
+- **Fixed:** no sound when the server repackaged a video as a stream (for example a Dolby
+  Vision file on a Roku that reports no Dolby Vision, so the server keeps the HDR10 layer). The
+  original Dolby Digital audio was copied into that stream and played silent on Roku. Siku now
+  asks for AAC on that route, so you get sound. Files that play directly still send Dolby
+  Digital and Dolby Digital Plus to your TV or receiver untouched.
+- **For troubleshooting:** the `[siku-playback]` debug line also shows your Roku model and
+  exactly what it reports about your TV (Dolby Vision, HDR10, HLG...).
+
 ## v0.1.12
 
 - **Fixed:** videos no longer drop to 720p. Choosing Original, Auto or 4K in Settings used to

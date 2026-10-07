@@ -93,10 +93,10 @@ function PlaybackCaps_probe() as object
     display = { known: false, hdr10: false, hdr10Plus: false, hlg: false, dolbyVision: false }
     if props <> invalid and Type(props) = "roAssociativeArray" and props.Count() > 0 then
         display.known = true
-        display.hdr10 = props.Hdr10 = true
-        display.hdr10Plus = props.Hdr10Plus = true
-        display.hlg = props.Hlg = true
-        display.dolbyVision = props.DolbyVision = true
+        display.hdr10 = PlaybackCaps_truthy(props.Hdr10)
+        display.hdr10Plus = PlaybackCaps_truthy(props.Hdr10Plus)
+        display.hlg = PlaybackCaps_truthy(props.Hlg)
+        display.dolbyVision = PlaybackCaps_truthy(props.DolbyVision)
     end if
 
     osv = di.GetOSVersion()
@@ -302,15 +302,28 @@ end function
 
 ' One delivery class. No max_channels: the Roku downmixes or passes through by itself, and a
 ' channel ceiling here would make the server refuse direct play of a 5.1 file on a stereo TV.
-function PlaybackCaps_delivery(containers as object, features as object) as object
+function PlaybackCaps_delivery(containers as object, features as object, hlsRoute = false as boolean) as object
     p = PlaybackCaps_probe()
+    audioCodecs = p.codecsAudio
+    passthrough = p.passthroughAudio
+    if hlsRoute then
+        ' Dolby Digital / Dolby Digital Plus copied into the server's fMP4 HLS remux played silent
+        ' on a real Roku (v0.1.12, a DV8 MKV with AC3: video fine, no audio). Declare only AAC and
+        ' MP3 for HLS so the server converts the audio there; files that play directly
+        ' (original_http) keep AC3/E-AC3 passthrough.
+        audioCodecs = []
+        for each c in p.codecsAudio
+            if c = "aac" or c = "mp3" then audioCodecs.Push(c)
+        end for
+        passthrough = []
+    end if
     return {
         enabled: true
         supported_on_device: true
         containers: containers
         video_codecs: p.codecsVideo
-        audio_decode_codecs: p.codecsAudio
-        audio_passthrough_codecs: p.passthroughAudio
+        audio_decode_codecs: audioCodecs
+        audio_passthrough_codecs: passthrough
         hdr_details: PlaybackCaps_hdrDetails()
         subtitles: PlaybackCaps_subtitles()
         features: features
@@ -350,7 +363,7 @@ function PlaybackCaps_playbackContext() as object
         output: output
         deliveries: {
             original_http: PlaybackCaps_delivery(p.containers, [])
-            hls: PlaybackCaps_delivery(["m3u8", "hls"], ["hls"])
+            hls: PlaybackCaps_delivery(["m3u8", "hls"], ["hls"], true)
         }
     }
 end function
@@ -520,6 +533,16 @@ function PlaybackCaps_diagLine(body as object, plan as object) as string
     caps = caps + " passthru=" + PlaybackCaps_join(p.passthroughAudio) + " surround=" + PlaybackCaps_join(p.surroundAudio)
     caps = caps + " out=" + p.audioOutput + " decodeinfo=" + PlaybackCaps_join(decode)
     caps = caps + " display=" + PlaybackCaps_str(p.display.known) + " hdr10=" + PlaybackCaps_str(hd.hdr10) + " hdr10+=" + PlaybackCaps_str(hd.hdr10_plus) + " hlg=" + PlaybackCaps_str(hd.hlg) + " dv=" + PlaybackCaps_join(dvs)
+    ' Raw display report and model, so a missing Dolby Vision or HDR flag can be traced on device.
+    di = CreateObject("roDeviceInfo")
+    rawDisplay = "-"
+    try
+        rawDisplay = FormatJson(di.GetDisplayProperties())
+    catch e
+        rawDisplay = "-" ' e: older firmware without GetDisplayProperties
+        if e = invalid then rawDisplay = "-"
+    end try
+    caps = caps + " model=" + PlaybackCaps_str(di.GetModel()) + " displayprops=" + rawDisplay
     if hd.hdr10_max_height <> invalid then caps = caps + " hdr10max=" + PlaybackCaps_str(hd.hdr10_max_width) + "x" + PlaybackCaps_str(hd.hdr10_max_height) + "p" + PlaybackCaps_str(hd.hdr10_max_frame_rate)
     req = "quality=" + Str_orEmpty(body.quality_preference) + " cap=" + PlaybackCaps_str(body.bandwidth_cap_kbps) + " metered=" + PlaybackCaps_str(body.metered)
     if not Str_isEmpty(body.operation) then req = req + " op=" + body.operation
