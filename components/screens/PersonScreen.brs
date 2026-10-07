@@ -186,7 +186,8 @@ sub onFilmography(event as object)
         return
     end if
     m.items = Arr_or(resp.data.items)
-    m.grid.content = Content_grid(m.items, "poster")
+    ' Cells carry a 20 / 30 px inset so the focused card's zoom is not clipped at the grid's edge (pitfall 12).
+    m.grid.content = Content_grid(m.items, "poster", 20, 30)
     m.emptyLabel.text = "No titles found."
     m.emptyLabel.visible = m.items.Count() = 0
     buildZones()

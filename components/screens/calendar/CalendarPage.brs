@@ -27,9 +27,6 @@ sub init()
     m.loaded = false
     m.loading = false
     m.errored = false
-    m.fontSeg = ThemeFont("semibold", 24)
-    m.fontDow = ThemeFont("medium", 20)
-    m.fontDay = ThemeFont("bold", 29)
     m.top.focusable = true
     m.top.observeField("focusedChild", "applyFocusVisuals")
     m.shelves.observeField("rowItemSelected", "onShelfSelected")
@@ -414,13 +411,16 @@ sub buildShelves(total as integer)
         row.addFields({ rowId: ymd, rowStyle: "poster" })
         items = []
         if m.eventsByDate.DoesExist(ymd) then items = m.eventsByDate[ymd]
+        ' Cards sit 32 px down inside a taller cell so the focused card's zoom is not clipped (pitfall 12).
         if items.Count() = 0 then
             stub = Content_cardNode({ content_id: "", "type": "stub", title: "Nothing scheduled" }, "poster")
             stub.raw = { stub: true }
+            stub.cardInsetY = 32
             row.appendChild(stub)
         else
             for each ev in items
                 node = Content_cardNode(ev, "poster")
+                node.cardInsetY = 32
                 t = LCase(Str_orEmpty(ev.type))
                 if t = "episode" then
                     se = Content_seShort(ev.season_number, ev.episode_number)

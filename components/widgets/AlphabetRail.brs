@@ -9,8 +9,7 @@ sub init()
         m.letters.Push(Chr(Asc("A") + i))
     end for
     m.nodes = []
-    m.chipFont = ThemeFont("semibold", 22)
-    m.allFont = ThemeFont("semibold", 20)
+    m.fontPx = 22
     for i = 0 to m.letters.Count() - 1
         g = m.entries.createChild("Group")
         dot = g.createChild("Poster")
@@ -80,14 +79,18 @@ sub relayout()
     fontPx = chip - 4
     if fontPx > 22 then fontPx = 22
     if fontPx < 12 then fontPx = 12
-    m.chipFont.size = fontPx
-    m.allFont.size = fontPx
+    ' Each Label owns its Font (Label_setFont), so the size is applied per label when it changes.
+    refont = fontPx <> m.fontPx
+    m.fontPx = fontPx
     for i = 0 to n - 1
         g = m.nodes[i]
         y = pad + Int(i * pitch + (pitch - chip) / 2)
         dot = Node_find(g, "dot")
         bg = Node_find(g, "bg")
         lbl = Node_find(g, "label")
+        if refont then
+            if i = 0 then Label_setFont(lbl, "semibold", fontPx - 2) else Label_setFont(lbl, "semibold", fontPx)
+        end if
         if m.expanded then
             dot.visible = false
             if i = 0 then

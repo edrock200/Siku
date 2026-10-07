@@ -19,8 +19,6 @@ sub init()
     m.footerLabel = m.top.findNode("footerLabel")
     m.rowNodes = []
     m.rowMeta = []
-    m.fontRow = ThemeFont("medium", 26)
-    m.fontRowFocused = ThemeFont("semibold", 26)
     m.padX = 32
     m.rowH = 64
     m.top.focusable = true
@@ -209,7 +207,7 @@ sub rebuild()
     m.shadow.width = w + 24
     m.shadow.height = y + 28
     m.shadow.translation = [-12, -4]
-    m.top.panelHeight = y
+    m.top.panelHeight = Int(y + 0.5)
 
     ' Keep the focus index on a selectable row.
     if m.top.focusIndex >= rows.Count() then m.top.focusIndex = firstSelectable()

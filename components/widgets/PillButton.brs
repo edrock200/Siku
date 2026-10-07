@@ -68,7 +68,7 @@ sub layout()
     end if
     m.label.height = h
     m.body.scaleRotateCenter = [w / 2, h / 2]
-    m.top.width = w
+    m.top.width = Int(w + 0.5) ' `width` is an integer field; a float would be dropped on device (pitfall 5)
     applyState()
 end sub
 

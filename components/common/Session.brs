@@ -106,9 +106,9 @@ function Session_withTokens(s as object, tokens as object) as object
     c = AA_copy(s)
     c.accessToken = Str_orEmpty(tokens.access_token)
     if not Str_isEmpty(tokens.refresh_token) then c.refreshToken = tokens.refresh_token
-    expiresIn = tokens.expires_in
-    if expiresIn = invalid then expiresIn = 3600
-    c.expiresAt = Time_nowSeconds() + Int(expiresIn)
+    expiresIn = Int(Num_or(tokens.expires_in, 3600))
+    if expiresIn <= 0 then expiresIn = 3600
+    c.expiresAt = Time_nowSeconds() + expiresIn
     ' A response with a user is a new sign-in (refresh responses carry none):
     ' drop any profile selected under the previous login.
     if tokens.user <> invalid then

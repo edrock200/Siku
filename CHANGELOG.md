@@ -3,6 +3,22 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.11
+
+A full review of the app, fixing problems before they show up on your TV.
+
+- **Fixed:** many places that could crash if your server sends a number as text (sign-in
+  timers, video length, chapters and intro markers, episode and season numbers, resume
+  positions, library counts, notification count, audiobook parts). They now read either form.
+- **Fixed:** the highlighted card was also cut off at the top on the Calendar, a person's
+  filmography and the Search results grid. It now shows in full, as on Home since v0.1.9.
+- **Fixed:** on the Requests page, the Home banner could show through under the request banner.
+- **Fixed:** the A to Z letters in libraries now scale to fit the rail.
+- **Fixed:** buttons, chips and panels size correctly even when their width works out to a
+  fraction of a pixel.
+- **Fixed:** profile tiles on the Who's Watching screen can always take the remote's focus.
+- **Changed:** long notification texts measure their height reliably, so rows don't overlap.
+
 ## v0.1.10
 
 - **Fixed:** subtitles now turn on by themselves according to your Subtitles settings, the same

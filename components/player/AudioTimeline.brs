@@ -73,7 +73,7 @@ function AudioTimeline_parts(versions as object, preferredFileId as string) as o
         k = "p" + Str_orEmpty(c.presentation_part_index)
         if byPart[k] = invalid then
             byPart[k] = []
-            partKeys.Push({ key: k, n: c.presentation_part_index })
+            partKeys.Push({ key: k, n: AudioTimeline_num(c.presentation_part_index) })
         end if
         byPart[k].Push(c)
     end for

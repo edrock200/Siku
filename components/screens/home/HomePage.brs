@@ -70,8 +70,7 @@ sub onSections(event as object)
     for each s in sections
         sid = Str_orEmpty(s.id)
         items = hideWatchedItems(s, Arr_or(s.items))
-        total = s.total_count
-        if total = invalid then total = 0
+        total = Content_num(s.total_count)
         entry = { section: s, items: items }
         m.sections.Push(entry)
         if items.Count() = 0 and total > 0 then

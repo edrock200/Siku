@@ -436,7 +436,7 @@ end sub
 
 sub showCount(data as object, singular as string, plural as string)
     if data = invalid or data.total = invalid then return
-    n = Int(data.total)
+    n = Int(Content_num(data.total))
     txt = n.ToStr() + " " + plural
     if n = 1 then txt = "1 " + singular
     if data.total_exact = false then txt = "About " + txt
@@ -646,7 +646,7 @@ sub onCollections(event as object)
         node.cardInsetX = m.insetX
         node.cardInsetY = m.insetY
         if c.item_count <> invalid then
-            n = Int(c.item_count)
+            n = Int(Content_num(c.item_count))
             if n = 1 then node.subtitle = "1 item" else node.subtitle = n.ToStr() + " items"
         end if
         root.appendChild(node)

@@ -155,6 +155,7 @@ sub buildGrid()
         rowW = inRow * colW + (inRow - 1) * gap
         x = (1920 - rowW) \ 2 + col * (colW + gap)
         g = m.gridGroup.createChild("Group")
+        g.focusable = true
         g.translation = [x, row * rowH]
 
         ring = g.createChild("Poster")

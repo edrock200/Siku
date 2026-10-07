@@ -40,7 +40,7 @@ sub layout()
     m.ring.height = h
     m.label.width = w
     m.label.height = h
-    m.top.width = w
+    m.top.width = Int(w + 0.5) ' integer field (pitfall 5)
     applyState()
 end sub
 

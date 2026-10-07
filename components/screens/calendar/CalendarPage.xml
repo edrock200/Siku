@@ -18,10 +18,12 @@
     <Group id="strip" translation="[88, 268]">
       <Group id="stripItems" />
     </Group>
-    <RowList id="shelves" translation="[68, 372]" itemComponentName="CalCardItem"
+    <!-- Cells are 32 px taller than the card (cardInsetY) and the list sits 32 px higher, so the
+         focused card's 1.10 zoom stays inside its cell on device and nothing moves on screen. -->
+    <RowList id="shelves" translation="[68, 340]" itemComponentName="CalCardItem"
              drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" vertFocusAnimationStyle="fixedFocus"
-             itemSize="[1852, 462]" rowItemSize="[[248, 462]]" rowItemSpacing="[[36, 0]]" itemSpacing="[0, 28]" numRows="2" focusXOffset="[20]"
-             showRowLabel="[true]" rowLabelOffset="[[20, 44]]" rowLabelColor="0xEDEDEDFF" visible="false">
+             itemSize="[1852, 494]" rowItemSize="[[248, 494]]" rowItemSpacing="[[36, 0]]" itemSpacing="[0, 28]" numRows="2" focusXOffset="[20]"
+             showRowLabel="[true]" rowLabelOffset="[[20, 12]]" rowLabelColor="0xEDEDEDFF" visible="false">
       <Font role="rowLabelFont" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
     </RowList>
     <LoadingSpinner id="spinner" translation="[924, 640]" visible="false" />

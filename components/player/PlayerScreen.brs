@@ -272,8 +272,8 @@ sub onWatch(event as object)
     if m.version <> invalid then m.chapters = Arr_or(m.version.chapters)
     m.scrubber.markers = m.markers
     m.scrubber.chapters = m.chapters
-    if m.version <> invalid and m.version.duration_seconds <> invalid then m.duration = m.version.duration_seconds
-    if m.duration = 0 and w.user_data <> invalid and w.user_data.duration_seconds <> invalid then m.duration = w.user_data.duration_seconds
+    if m.version <> invalid then m.duration = Content_num(m.version.duration_seconds)
+    if m.duration <= 0 and w.user_data <> invalid then m.duration = Content_num(w.user_data.duration_seconds)
     m.scrubber.duration = m.duration
 
     if m.shuffle <> invalid then
@@ -294,7 +294,7 @@ sub collectMarkers()
     if segs.Count() > 0 then
         for each s in segs
             if s.start_seconds <> invalid and s.end_seconds <> invalid then
-                out.Push({ kind: LCase(Str_orEmpty(s.kind)), start: s.start_seconds * 1.0, "end": s.end_seconds * 1.0 })
+                out.Push({ kind: LCase(Str_orEmpty(s.kind)), start: Content_num(s.start_seconds), "end": Content_num(s.end_seconds) })
             end if
         end for
     else
@@ -307,7 +307,7 @@ sub collectMarkers()
                 e = mk.end_seconds
                 if s = invalid then s = mk.start
                 if e = invalid then e = mk["end"]
-                if s <> invalid and e <> invalid then out.Push({ kind: kind, start: s * 1.0, "end": e * 1.0 })
+                if s <> invalid and e <> invalid then out.Push({ kind: kind, start: Content_num(s), "end": Content_num(e) })
             end if
         end for
     end if
@@ -366,7 +366,7 @@ sub onCapabilities(event as object)
     caps = resp.data
     hasV3 = false
     for each v in Arr_or(caps.protocol_versions)
-        if v = 3 then hasV3 = true
+        if Content_num(v) = 3 then hasV3 = true
     end for
     hasSeq = false
     for each f in Arr_or(caps.features)
@@ -471,10 +471,9 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
     stream = plan.stream
     tl = plan.timeline
     if tl = invalid then tl = {}
-    m.timelineOffset = 0.0
-    if tl.timeline_offset_seconds <> invalid then m.timelineOffset = tl.timeline_offset_seconds * 1.0
-    if plan.source <> invalid and plan.source.duration_seconds <> invalid and plan.source.duration_seconds > 0 then
-        m.duration = plan.source.duration_seconds * 1.0
+    m.timelineOffset = Content_num(tl.timeline_offset_seconds)
+    if plan.source <> invalid and Content_num(plan.source.duration_seconds) > 0 then
+        m.duration = Content_num(plan.source.duration_seconds)
         m.scrubber.duration = m.duration
     end if
 
@@ -511,8 +510,8 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
         startAt = opts.resumeAt - m.timelineOffset
         if startAt > 0 then content.PlayStart = Int(startAt)
         m.resumeAfterStart = opts.resumeAt
-    else if tl.player_start_seconds <> invalid and tl.player_start_seconds > 0 then
-        content.PlayStart = Int(tl.player_start_seconds)
+    else if Content_num(tl.player_start_seconds) > 0 then
+        content.PlayStart = Int(Content_num(tl.player_start_seconds))
     end if
 
     ' Subtitles: only WebVTT/SRT sidecars can be rendered by the Video node (Subs_buildTrack adds
@@ -578,7 +577,7 @@ function planAudioLanguage(plan as object) as string
     if idx < 0 or idx >= tracks.Count() then
         idx = 0
         for i = 0 to tracks.Count() - 1
-            if tracks[i].default = true then
+            if tracks[i]["default"] = true then
                 idx = i
                 exit for
             end if
@@ -1111,18 +1110,20 @@ end sub
 sub onNextSeasons(event as object)
     resp = Api_result(event)
     if m.closing or not resp.ok or resp.data = invalid then return
-    cur = Int(m.watch.season_number)
+    cur = Int(Content_num(m.watch.season_number))
     seasons = Arr_or(resp.data.items)
     toLoad = [cur]
     ' The next regular season (never specials unless we're already in specials).
     nextNum = invalid
     for each s in seasons
-        n = s.season_number
-        if n <> invalid and n > cur and (n <> 0) then
-            if nextNum = invalid or n < nextNum then nextNum = n
+        if s.season_number <> invalid then
+            n = Int(Content_num(s.season_number))
+            if n > cur and (n <> 0) then
+                if nextNum = invalid or n < nextNum then nextNum = n
+            end if
         end if
     end for
-    if nextNum <> invalid then toLoad.Push(Int(nextNum))
+    if nextNum <> invalid then toLoad.Push(nextNum)
     m.nextPending = toLoad.Count()
     for each n in toLoad
         Api_get("/api/v2/catalog/series/" + Str_urlEncode(m.nextSeriesId) + "/seasons/" + n.ToStr() + "/episodes", { image_size: "medium" }, "onNextEpisodes")
@@ -1138,15 +1139,21 @@ sub onNextEpisodes(event as object)
         end for
     end if
     if m.nextPending > 0 then return
-    cs = Int(m.watch.season_number)
-    ce = Int(m.watch.episode_number)
+    cs = Int(Content_num(m.watch.season_number))
+    ce = Int(Content_num(m.watch.episode_number))
     best = invalid
+    bestS = 0
+    bestE = 0
     for each ep in m.nextPool
-        sn = ep.season_number
-        en = ep.episode_number
-        if sn <> invalid and en <> invalid then
+        if ep.season_number <> invalid and ep.episode_number <> invalid then
+            sn = Int(Content_num(ep.season_number))
+            en = Int(Content_num(ep.episode_number))
             if sn > cs or (sn = cs and en > ce) then
-                if best = invalid or sn < best.season_number or (sn = best.season_number and en < best.episode_number) then best = ep
+                if best = invalid or sn < bestS or (sn = bestS and en < bestE) then
+                    best = ep
+                    bestS = sn
+                    bestE = en
+                end if
             end if
         end if
     end for
@@ -1391,7 +1398,7 @@ sub renderUpNext()
             m.unEpisode.text = title
         end if
         meta = ""
-        if ep.runtime <> invalid and ep.runtime > 0 then meta = Str_orEmpty(Int(ep.runtime)) + " min"
+        if Content_num(ep.runtime) > 0 then meta = Int(Content_num(ep.runtime)).ToStr() + " min"
         m.unMeta.text = meta
         m.unOverview.text = Str_orEmpty(ep.overview)
     end if

@@ -627,18 +627,14 @@ sub onStart(event as object)
         d = resp.data
         recovered()
         now = nowSec()
-        expiresIn = d.expires_in
-        if expiresIn = invalid then expiresIn = 900
-        expiresIn = Int(expiresIn)
-        if expiresIn < 1 then expiresIn = 1
+        expiresIn = Int(Content_num(d.expires_in))
+        if expiresIn < 1 then expiresIn = 900
         m.deadline = now + expiresIn
         m.serverToLocal = invalid
         dt = Time_parseIso(d.expires_at)
         if dt <> invalid then m.serverToLocal = now + expiresIn - dt.AsSeconds()
-        interval = d.interval
-        if interval = invalid then interval = 5
-        interval = Int(interval)
-        if interval < 1 then interval = 1
+        interval = Int(Content_num(d.interval))
+        if interval < 1 then interval = 5
         m.interval = interval
         m.pollBackoff = 0
         m.opened = false
@@ -713,7 +709,7 @@ sub onPoll(event as object)
                 if localExpiry > m.deadline then m.deadline = localExpiry
             end if
             if d.poll_after <> invalid then
-                pa = Int(d.poll_after)
+                pa = Int(Content_num(d.poll_after))
                 if pa < 1 then pa = 1
                 m.interval = pa
             end if

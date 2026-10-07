@@ -11,8 +11,6 @@ sub init()
     m.focusIndex = 0
     m.width = 640
     m.rowH = 76
-    m.fontRow = ThemeFont("medium", 27)
-    m.fontRowFocused = ThemeFont("semibold", 27)
     m.top.focusable = true
     m.top.visible = false
     m.top.observeField("focusedChild", "applyFocus")

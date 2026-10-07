@@ -3,7 +3,6 @@
 sub init()
     m.segments = m.top.findNode("segments")
     m.labels = m.top.findNode("labels")
-    m.labelFont = ThemeFont("semibold", 24)
     for i = 0 to 3
         m.segments.createChild("Rectangle")
         lbl = m.labels.createChild("Label")

@@ -15,7 +15,7 @@ sub init()
 
     ' The feed draws the backdrop and rows; this page draws the request marquee in place of the
     ' feed's own (which has no slot for a status line and stage track).
-    feedMarquee = m.feed.findNode("marquee")
+    feedMarquee = Node_find(m.feed, "marquee") ' not findNode: it would search this page, not the feed (pitfall 11)
     if feedMarquee <> invalid then feedMarquee.opacity = 0
 
     m.feed.observeField("itemSelected", "onItemSelected")

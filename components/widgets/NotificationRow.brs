@@ -82,8 +82,7 @@ sub layout()
     if m.subtitle.text <> "" then
         m.subtitle.visible = true
         subH = 41
-        r = m.subtitle.boundingRect()
-        if r <> invalid and r.height > 60 then subH = 82
+        if Label_height(m.subtitle) > 60 then subH = 82
         textH = textH + 8 + subH
     else
         m.subtitle.visible = false

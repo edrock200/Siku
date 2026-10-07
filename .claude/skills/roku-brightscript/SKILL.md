@@ -51,8 +51,10 @@ silent no-op on device. Declare the right type in the XML `<field>`, and when in
 
 **6. Real-server data is looser than the mock.**
 The real Silo server and TMDB omit fields the mock always sends, and may send numbers as strings.
-`it.runtime * 60` with a string crashes with a type mismatch. Use `Content_num()`, `Req_num()`
-(or the local `toInt()` in `DetailScreen.brs`) and `Str_orEmpty()` before arithmetic or concatenation; wrap arrays with `Arr_or()`;
+`it.runtime * 60` with a string crashes with a type mismatch, and so do `>`/`<` comparisons and
+`Int()` on a string (`=` merely returns false). Use `Num_or()` (Utils, parses numeric strings),
+`Content_num()`, `Req_num()` (or the local `toInt()` in `DetailScreen.brs`) and `Str_orEmpty()`
+before arithmetic, comparison or concatenation; wrap arrays with `Arr_or()`;
 check `Type(resp.data) = "roAssociativeArray"` in response handlers before dotting into it.
 
 **7. Keys go to the focused node first.**
@@ -160,3 +162,4 @@ released version is missing here.
 - **v0.1.8** Settings ported to the server-synced cascade (`Settings.brs`). Two things learned in the simulator while building it: a component cannot rely on `m.global.observeField` firing in brs-engine (the screen declares its own `settingsLoaded` field and the loader sets it instead), and a one-line `' comment` inside a multi-line AA literal is accepted by bsc but the simulator dropped the entry that followed it; keep comments at the end of a line. The device has not run this build yet: the pane scrolling (`clippingRect`), the picker windowing and the Home Sections editor's rotated arrow icons need a real-Roku check.
 - **v0.1.9** RowList clips items to their cell on device (pitfall 12): the focused card's zoom was cut at the top of every row. Cards now sit 32 px down inside taller cells.
 - **v0.1.10** Not a device rule but a porting one: the Silo server does not pick subtitles from the profile's Off/Auto/Always setting (the plan's `subtitle.mode` is usually `off`); Android TV resolves them client-side (`AutoSubtitleResolver.kt`). `Subs_autoChoice` ports it. When a Silo feature "does nothing" on Roku, check whether the Android client does the work itself before blaming the server.
+- **v0.1.11** Full review. Comparisons (`>`, `<`) and `Int()` on a string throw Type Mismatch on device (`=` just returns false), so every server number used in arithmetic or comparison goes through `Num_or` / `Content_num` (pitfall 6). Grids and calendar shelves got the pitfall-12 headroom; float-to-integer field assignments are rounded (pitfall 5).

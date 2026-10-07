@@ -82,7 +82,7 @@ sub refreshPartDone()
     count = m.pendingCount
     if page.ok and page.data <> invalid then
         m.rows = dedupeById(Arr_or(page.data.items))
-        if count.ok and count.data <> invalid and count.data.count <> invalid then m.unreadCount = count.data.count
+        if count.ok and count.data <> invalid and count.data.count <> invalid then m.unreadCount = Int(Content_num(count.data.count))
         m.nextCursor = pageCursor(page.data)
         m.readCutoff = Str_orEmpty(page.data.read_cutoff)
     end if

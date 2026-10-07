@@ -370,11 +370,10 @@ end sub
 ' Resume position of an item or episode from its user_data (seconds), 0 if none.
 function resumeOf(it as dynamic) as float
     if it = invalid or it.user_data = invalid then return 0
-    p = it.user_data.position_seconds
-    if p = invalid then return 0
-    d = it.user_data.duration_seconds
-    if d <> invalid and d > 0 and p >= d - 5 then return 0
+    p = Content_num(it.user_data.position_seconds)
     if p <= 0 then return 0
+    d = Content_num(it.user_data.duration_seconds)
+    if d > 0 and p >= d - 5 then return 0
     return p
 end function
 
@@ -736,7 +735,7 @@ sub onSeasons(event as object)
 end sub
 
 function seasonLabel(s as object) as string
-    if s.is_specials = true or s.season_number = 0 then return "Specials"
+    if s.is_specials = true or (s.season_number <> invalid and toInt(s.season_number) = 0) then return "Specials"
     if not Str_isEmpty(s.title) then return s.title
     return "Season " + Str_orEmpty(s.season_number)
 end function
@@ -1168,7 +1167,7 @@ sub onMore()
     if m.itemType = "episode" then
         seasonId = ""
         for each s in m.seasons
-            if s.season_number = m.item.season_number then seasonId = Str_orEmpty(s.content_id)
+            if toInt(s.season_number) = toInt(m.item.season_number) then seasonId = Str_orEmpty(s.content_id)
         end for
         if seasonId <> "" then acts.Push({ id: "season", label: "Go to Season " + Str_orEmpty(m.item.season_number) })
     end if
@@ -1232,7 +1231,7 @@ sub onMenuChosen()
         Nav_push("DetailScreen", { itemId: Str_orEmpty(m.item.series_id), itemType: "series" })
     else if id = "season" then
         for each s in m.seasons
-            if s.season_number = m.item.season_number then
+            if toInt(s.season_number) = toInt(m.item.season_number) then
                 Nav_push("DetailScreen", { itemId: Str_orEmpty(s.content_id), itemType: "season" })
             end if
         end for

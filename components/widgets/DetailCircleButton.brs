@@ -50,7 +50,7 @@ sub applyState()
         m.label.translation = [padX + iconSize + 14, 0]
         m.label.width = textW + 4
         m.label.height = s
-        m.top.width = w
+        m.top.width = Int(w + 0.5) ' integer field (pitfall 5)
     else
         w = s
         m.bg.uri = "pkg:/images/ui/circle.png"

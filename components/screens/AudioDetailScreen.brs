@@ -217,7 +217,7 @@ sub fillTrackList()
         t = m.tracks[i]
         num = Str_orEmpty(t.track_number)
         if num = "" then num = (i + 1).ToStr()
-        if t.disc_number <> invalid and t.disc_number > 1 then num = Str_orEmpty(t.disc_number) + "-" + num
+        if AudioTimeline_num(t.disc_number) > 1 then num = Str_orEmpty(t.disc_number) + "-" + num
         sub2 = Str_orEmpty(t.artist)
         if sub2 = artist then sub2 = ""
         dur = trackDuration(t)

@@ -113,8 +113,7 @@ end function
 
 function Tracks_fileSize(bytes as dynamic) as string
     if bytes = invalid then return ""
-    b = 0.0
-    b = b + bytes
+    b = Num_or(bytes)
     if b < 1024 * 1024 then return ""
     gb = b / (1024.0 * 1024.0 * 1024.0)
     if gb >= 1 then
@@ -159,7 +158,7 @@ function Tracks_channelsLabel(t as object) as string
     if not Str_isEmpty(t.layout) then return Str_orEmpty(t.layout)
     ch = t.channels
     if ch = invalid then return ""
-    n = Int(ch)
+    n = Int(Num_or(ch))
     if n = 1 then return "Mono"
     if n = 2 then return "Stereo"
     if n = 6 then return "5.1"
@@ -220,8 +219,8 @@ function Tracks_autoAudioOrdinal(v as dynamic) as integer
     if v = invalid then return -1
     tracks = Arr_or(v.audio_tracks)
     if tracks.Count() = 0 then return -1
-    e = v.effective_audio_track_index
-    if e <> invalid and e >= 0 and e < tracks.Count() then return Int(e)
+    e = Int(Num_or(v.effective_audio_track_index, -1))
+    if e >= 0 and e < tracks.Count() then return e
     for i = 0 to tracks.Count() - 1
         if tracks[i]["default"] = true then return i
     end for

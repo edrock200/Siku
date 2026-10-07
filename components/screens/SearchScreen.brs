@@ -39,7 +39,6 @@ sub init()
     m.peopleItems = []
     m.titlesDone = false
     m.peopleDone = false
-    m.fontChip = ThemeFont("medium", 24)
     m.keyboard = invalid
     m.top.focusable = true
     m.top.observeField("focusedChild", "applyFocusVisuals")
@@ -336,7 +335,7 @@ sub renderResults()
     m.status.visible = false
     if hasTitles then
         n = m.titles.Count()
-        if m.titlesTotal <> invalid then n = Int(m.titlesTotal)
+        if m.titlesTotal <> invalid then n = Int(Content_num(m.titlesTotal))
         if m.titlesExact then
             m.statusLine.text = n.ToStr() + " results"
         else
@@ -354,8 +353,9 @@ sub renderResults()
         gridY = 420
     end if
     if hasTitles then
-        m.grid.translation = [74, gridY]
-        m.grid.content = Content_grid(m.titles, "poster")
+        ' Cells carry a 14 / 30 px inset so the focused card's zoom is not clipped at the grid's edge (pitfall 12).
+        m.grid.translation = [74 - 14, gridY - 30]
+        m.grid.content = Content_grid(m.titles, "poster", 14, 30)
         m.grid.visible = true
     else
         m.grid.visible = false
@@ -599,7 +599,7 @@ sub layoutRequests()
     if focused then
         y = 412
     else if m.grid.visible then
-        y = m.grid.translation[1] + 2 * 486 + 40 + 24
+        y = m.grid.translation[1] + 2 * 546 + 24
     else if m.people.visible then
         y = 740
     else if m.retryBtn.visible then

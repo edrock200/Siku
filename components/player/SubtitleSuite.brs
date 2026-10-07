@@ -576,10 +576,8 @@ end function
 function Subs_timing(state as object) as object
     t = state.timing
     if t = invalid then t = {}
-    offset = 0
-    if t.offset_ms <> invalid then offset = Int(t.offset_ms)
-    scale = 1.0
-    if t.scale <> invalid then scale = t.scale * 1.0
+    offset = Int(Content_num(t.offset_ms))
+    scale = Content_numOr(t.scale, 1.0)
     return { offsetMs: offset, scale: scale }
 end function
 

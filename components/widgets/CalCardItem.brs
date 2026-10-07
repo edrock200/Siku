@@ -33,9 +33,12 @@ sub forward()
     m.inner.itemHasFocus = m.top.itemHasFocus
     m.inner.rowHasFocus = m.top.rowHasFocus
     m.inner.gridHasFocus = m.top.gridHasFocus
-    ' Keep the badge over the (scaled) poster corner.
+    ' Keep the badge over the (scaled) poster corner; the poster itself sits cardInsetY px down.
     p = m.top.focusPercent
     if not (m.top.rowHasFocus or m.top.gridHasFocus) then p = 0
     off = 12 - Int(m.top.width * 0.05 * p)
-    m.badge.translation = [off, off]
+    insetY = 0
+    c = m.top.itemContent
+    if c <> invalid and c.hasField("cardInsetY") and c.cardInsetY <> invalid then insetY = c.cardInsetY
+    m.badge.translation = [off, off + insetY]
 end sub

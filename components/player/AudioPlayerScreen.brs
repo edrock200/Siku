@@ -493,7 +493,7 @@ sub onCapabilities(event as object)
     caps = resp.data
     hasV3 = false
     for each v in Arr_or(caps.protocol_versions)
-        if v = 3 then hasV3 = true
+        if AudioTimeline_num(v) = 3 then hasV3 = true
     end for
     hasSeq = false
     for each f in Arr_or(caps.features)

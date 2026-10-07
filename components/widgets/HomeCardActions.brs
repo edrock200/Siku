@@ -1,5 +1,5 @@
 ' Card long-press / options actions shared by the Skyline pages and grids.
-' Include with <script uri="pkg:/components/widgets/HomeCardActions.brs" />; needs Utils, Api, Nav, Session.
+' Include with <script uri="pkg:/components/widgets/HomeCardActions.brs" />; needs Utils, Api, Nav, Session, Content.
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
 ' Builds the action list for a card. rowId tells whether it came from a progress row.
@@ -7,8 +7,7 @@ function CardActions_build(card as object, rowId as string) as object
     actions = []
     us = card.user_state
     if us = invalid then us = {}
-    posSec = card.position_seconds
-    if posSec <> invalid and posSec > 0 then
+    if Content_num(card.position_seconds) > 0 then
         actions.Push({ id: "resume", label: "Resume", icon: "play" })
     else
         actions.Push({ id: "play", label: "Play", icon: "play" })
@@ -44,7 +43,7 @@ function CardActions_perform(actionId as string, card as object, rowId as string
         playId = Str_orEmpty(card.play_content_id)
         if playId = "" then playId = id
         params = { itemId: playId, title: Str_orEmpty(card.title), itemType: Str_orEmpty(card.type) }
-        if actionId = "resume" and card.position_seconds <> invalid then params.startPosition = card.position_seconds
+        if actionId = "resume" and Content_num(card.position_seconds) > 0 then params.startPosition = Content_num(card.position_seconds)
         Nav_play(params)
         return invalid
     else if actionId = "watched" then

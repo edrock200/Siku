@@ -35,7 +35,7 @@ components/MainScene.*          screen stack, Back, startup routing, global stat
 components/BaseScreen.*         base component every screen extends
 components/common/
   Theme.brs     design tokens, ThemeFont(weight, px), Sp(sp)
-  Utils.brs     Registry_*, Str_*, Time_*, Arr_or, AA_get, AA_copy, Device_info, App_version
+  Utils.brs     Registry_*, Str_*, Num_or, Time_*, Arr_or, AA_get, AA_copy, Device_info, App_version, Node_find
   Session.brs   Session_* (tokens, profile, servers), Url_normalize/origin/host/resolve, Prefs_*
   Api.brs       Api_get / Api_send / Api_call / Api_result / Api_fire / Api_cancelAll / Api_errorText
   Content.brs   Content_cardNode / Content_rows / Content_grid / Content_metaLine / Library_mode

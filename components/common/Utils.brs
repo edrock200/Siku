@@ -148,6 +148,21 @@ function Time_parseIso(s as dynamic) as dynamic
     return d
 end function
 
+' ---------- Numbers ----------
+
+' A JSON number as a float. Real servers may send numbers as strings ("12"), which crash
+' arithmetic and comparisons (pitfall 6), so numeric strings are parsed; anything else is `fallback`.
+function Num_or(v as dynamic, fallback = 0.0 as float) as float
+    if v = invalid then return fallback
+    t = Type(v)
+    if t = "roInt" or t = "roInteger" or t = "Integer" or t = "roFloat" or t = "Float" or t = "roDouble" or t = "Double" or t = "roLongInteger" or t = "LongInteger" then return v * 1.0
+    if t = "roString" or t = "String" then
+        if v.Trim() = "" then return fallback
+        return Val(v)
+    end if
+    return fallback
+end function
+
 ' ---------- Collections ----------
 
 function Arr_or(v as dynamic) as object

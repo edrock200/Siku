@@ -27,8 +27,10 @@
              showRowLabel="[true]" rowLabelOffset="[[20, 0]]" rowLabelColor="0xEDEDEDFF" visible="false">
       <Font role="rowLabelFont" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
     </RowList>
-    <MarkupGrid id="grid" translation="[74, 420]" itemComponentName="MediaCardItem" numColumns="6" numRows="2"
-                itemSize="[264, 486]" itemSpacing="[28, 40]" drawFocusFeedback="false"
+    <!-- Cells carry a 14 px horizontal and 30 px vertical inset (Content_grid insetX/insetY); the card
+         pitch (264 + 28, 396 + 90 + 60) is unchanged and the grid starts that much left of / above. -->
+    <MarkupGrid id="grid" translation="[60, 390]" itemComponentName="MediaCardItem" numColumns="6" numRows="2"
+                itemSize="[292, 546]" itemSpacing="[0, 0]" drawFocusFeedback="false"
                 vertFocusAnimationStyle="floatingFocus" visible="false" />
     <!-- "Available to request" (requests enabled, query of 2+ characters): TMDB titles from
          GET /api/v2/requests/search, below the results; it moves up to the results area while focused. -->

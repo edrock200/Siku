@@ -16,8 +16,6 @@ sub init()
     m.dimAnim = m.top.findNode("dimAnim")
     m.dimInterp = m.top.findNode("dimInterp")
     m.tabNodes = []
-    m.fontMedium = ThemeFont("medium", 26)
-    m.fontSemibold = ThemeFont("semibold", 26)
     t = Theme()
     m.barTop = t.barTop
     m.barH = t.barHeight
