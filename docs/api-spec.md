@@ -690,6 +690,10 @@ Rules:
   - Subtitle URLs carry **no `st`**, so they require `Authorization` (or `token=`).
   - A VTT URL may take `timestamp_offset=<seconds>`.
   - For Roku, only use `.vtt`/`.srt` sidecars, and send `subtitle_fidelity_preference:"compatible"`.
+- **What Siku declares (and why):** see `components/player/PlaybackCaps.brs` and `docs/ARCHITECTURE.md`
+  "Playback". The `hls` delivery is deliberately H.264 / SDR / AAC+MP3 only and `original_http`
+  carries `client_dv8_base_layer_fallback_v1` and `client_selected_audio_track_v1`; the reasons are
+  device results recorded in `docs/upstream/silo-server-roku-hls-audio.md`.
 - **Track change or quality change:** `POST /api/v2/playback/{session_id}/replan` → 200, same decision shape. Body:
   ```text
   protocol_version, installation_id, client_features, operation ("track_change"|"quality_change"|"seek_reanchor"|"failure_recovery"|"seek_failure_recovery"|"output_change"),

@@ -49,7 +49,13 @@ components/tasks/
   Http.brs      roUrlTransfer wrapper and Silo device headers
 components/widgets/             reusable UI: MediaCardItem, PillButton, Toast, LoadingSpinner, …
 components/screens/             one folder or file pair per screen
-components/player/              PlayerScreen and its overlays
+components/screens/debug/       developer diagnostics opened by deep link: StreamTestScreen, FontTestScreen
+components/player/
+  PlayerScreen.*   the video player: start/replan pipeline, HUD, pickers, recovery, progress
+  PlaybackCaps.brs what this Roku can play, as the v3 capability payload; the [siku-playback] line
+  SubtitleSuite.brs sidecar tracks, auto choice (Subs_autoChoice), search/AI/sync tools
+  PlayerScrubber.* seek bar with the buffered-ahead segment
+docs/upstream/                  requests written for the Silo server team (Roku HLS audio packaging)
 ```
 
 `BaseScreen.xml` already includes `Theme.brs`, `Utils.brs`, `Api.brs`, `Nav.brs`, `Content.brs` and `Session.brs`, so screens that extend it get all of those helpers. A widget that needs a helper adds the `<script uri>` itself.
@@ -112,6 +118,8 @@ Music: the Silo v2 contract has no album/artist/track types yet, and Android TV 
 | `shuffleCaps` | Cached `GET /api/v2/shuffles/capabilities` keyed by server+profile (`Shuffle_refreshCaps` / `Shuffle_supports`). Shuffle entry points are hidden until it says available. |
 | `keyReleaseSeen` | Set once a key release reached a card list; arms the long-OK-press card menu (`LongPress_*` in Utils.brs). |
 | `requests` | `{enabled, canModerate, resolved}`: the media-requests gate, set by `ShellScreen` from `/api/v2/requests/status` and `/api/v2/admin/requests/capabilities`. Read it with `Req_gate()` (`components/common/Requests.brs`). |
+| `lastStream` | `{url, format, headers, label}` of the stream the player mounted last; `StreamTestScreen` replays it with its auth headers. |
+| `playbackCaps` | Cached `GET /api/v2/playback/capabilities` for the server (installation id, protocol versions, deliveries). |
 | `settings` | `{ready, available, identity, revision, manifestRevision, items: {key: {value, source, scope, ...}}, error}`: the server's effective settings for the active server + profile (`Settings_load`, called by `ShellScreen` per profile and by `SettingsScreen` on open and after every write). Read values through `Settings_*` getters (`Settings_quality`, `Settings_introSkipMode`, `Settings_autoPlayNext`, ...) or `Theme_cardPresentation` / `Theme_showTitleArt`; they fall back to `prefs` until the server answers. `Session_save` resets it when the server or profile changes. A component that calls `Settings_load` declares a boolean `settingsLoaded` field (alwaysNotify) to be told when the snapshot landed. |
 
 ## Calling the API
@@ -158,3 +166,39 @@ end sub
   | grid poster | 236×354 | about 354+90 |
 
 - `node.raw` holds the original API object for the card, so read `contentId`, `itemType` and `raw` when the user selects it.
+
+## Playback
+
+The pipeline (`components/player/PlayerScreen.brs`, `startPipeline`):
+
+1. `GET /api/v2/watch/{id}` (versions, user_data, markers, effective subtitle prefs) and
+   `GET /api/v2/playback/capabilities` (cached on `m.global.playbackCaps`).
+2. `POST /api/v2/playback/start` with `PlaybackCaps_startBody`: `client_capabilities` (codec
+   lists, detailed `video_decode[]` with profiles, levels, bit depths and frame sizes from
+   `CanDecodeVideo`, `hdr_details` from `GetDisplayProperties`, audio lists from `CanDecodeAudio`
+   decode/passthrough/channel probes) and `client_playback_context` (device, output, and the
+   `deliveries` the Roku can execute). The deliveries are declared per kind in
+   `PlaybackCaps_delivery`: `original_http` (the file itself; claims
+   `client_dv8_base_layer_fallback_v1` and `client_selected_audio_track_v1`), `hls` (declared
+   H.264 / SDR / AAC+MP3 only, because Silo's HLS remux is fMP4 with muxed audio, which Roku plays
+   silent) and, behind an experimental setting, `progressive` (fails on device; kept for other models).
+   `quality_preference` and `bandwidth_cap_kbps` come from the Quality preset; "original" never
+   sends a cap.
+3. The plan is handed to the Video node by `applyPlan`: stream URL and format, auth headers,
+   `PlayStart` from the timeline, sidecar subtitle tracks (`Subs_buildTrack`, SRT/WebVTT only), and
+   the default subtitle (`Subs_autoChoice`: the profile's language and Off/Auto/Always as Android TV
+   resolves them, after an explicit pick from the details page). On `original_http` the server's
+   `selected_tracks.audio.index` is applied to `availableAudioTracks` when playback starts.
+4. A `server_remux_hls` plan is started and then `maybeRecoverSilentRemux` asks for another route
+   once (`failure_recovery`, classification `unsupported_container`); the server answers with an
+   H.264 MPEG-TS transcode, which has sound.
+5. Replans (`sendReplan(operation, kind)`): `quality_change` from the Quality picker,
+   `track_change` from the Audio picker (server-side track list when the stream exposes one or
+   none), `output_change` from the HDR / Dolby Vision HUD toggles, `failure_recovery` as above.
+   `onReplan` swaps the plan at the current position and rebuilds the HUD.
+6. Progress (`/progress`, sequenced), markers (Skip Intro / credits), Up Next and the final
+   `DELETE /playback/{session}` follow the Android TV player's behaviour.
+
+Every start and replan prints one `[siku-playback]` line to the device console; see `CLAUDE.md`
+"Diagnostics" for the fields. The device facts behind these choices are in the skill's pitfalls
+13 and 14 and in `docs/upstream/silo-server-roku-hls-audio.md`.

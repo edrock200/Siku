@@ -105,7 +105,11 @@ AAs too). On the Silo side, `playback.max_bitrate_kbps` is nullable: an uncapped
 `{"value": null}` at `profile_device` (FormatJson renders an `invalid` value as `null`), because
 deleting the row lets a profile-scope cap through and the server then transcodes to 720p
 regardless of "Original". `PlaybackCaps.brs` is the reference; the `[siku-playback]` console
-line shows what was declared.
+line shows what was declared. Probe with lower-case quoted keys (`{ "codec": c, "passthru": 1 }`;
+Roku OS before 14.1 is case-sensitive) and re-probe at every playback start
+(`PlaybackCaps_reprobe`): a receiver switching on changes every answer. No Roku API forces HDMI
+passthrough; the *Force Dolby Audio Passthrough* setting only changes the declaration, and on a
+sink whose EDID lists LPCM only the result is direct play with no sound (confirmed on device).
 
 **14. Roku's HLS player ignores audio muxed into fMP4 (CMAF) segments.** Roku's streaming spec:
 "video: TS, CMAF (muxing audio and video not supported for CMAF); audio: aac, ac3, eac3". Silo's
@@ -116,7 +120,10 @@ delivery as H.264/SDR/AAC only, and PlayerScreen replans once (`failure_recovery
 `docs/upstream/silo-server-roku-hls-audio.md`. Also: query `CanDecodeAudio`/`CanDecodeVideo`
 with lower-case quoted keys (`{ "codec": c, "passthru": 1 }`; older OS is case-sensitive) and
 re-probe at every playback start, as Roku documents, because a receiver switching on changes the
-answers.
+answers. Device-confirmed 2026-10-07 with `StreamTestScreen`: Apple's HEVC and H.264 fMP4 samples
+with a separate audio rendition play with sound on the same Roku, and Silo's progressive remux
+(fragmented MP4 over HTTP) fails at once, so copied video reaches a Roku only as MPEG-TS or
+demuxed CMAF.
 
 ## Project conventions (short version; `docs/ARCHITECTURE.md` has the full one)
 - 1920×1080 canvas, pixel coordinates. Android dp × 2 = px; Android sp × 1.72 = px.
@@ -133,6 +140,13 @@ answers.
 - Focus idiom: controls invert to `#EDEDED` with black text; cards scale 1.10 with a ring.
 - Shared state lives on `m.global` (`session`, `prefs`, `toast`, `homeDirty`, ...). Edit a copy and
   call `Session_save` / `Prefs_save`; never mutate `m.global.session` in place.
+- Playback: `PlaybackCaps.brs` is the only place that describes the device to the server
+  (`client_capabilities`, `client_playback_context.deliveries` of kind `original` / `hls` /
+  `progressive`, claims). `PlayerScreen.applyPlan` hands a plan to the Video node; every change
+  of track, quality or output is a `sendReplan(operation, kind)` and `onReplan` swaps the plan at
+  the current position. `Subs_autoChoice` resolves the profile's subtitle preference client-side.
+  Settings that only change the declaration (`Force HDR Passthrough`, `Force Dolby Audio
+  Passthrough`, `Experimental: Progressive Remux`) are device-local prefs read in PlaybackCaps.
 
 ## Verify before you finish
 
@@ -159,6 +173,11 @@ answers.
    (`http://<roku-ip>`, user `rokudev`) and watch `telnet <roku-ip> 8085` for errors. A compile
    error prints `Syntax Error ... in pkg:/...(line)`; a runtime crash prints a full backtrace with
    local variables, which is the single most useful thing to paste into a bug report.
+6. Playback changes: on the device, play one direct-play title and one that needs a server route,
+   and read the two `[siku-playback]` lines (declared caps | request | decision). Open the debug
+   screens with `curl -d '' "http://<roku-ip>:8060/launch/dev?debugScreen=StreamTestScreen"`
+   (ECP needs POST; `&debugUrl=<url-encoded>` adds a stream) to test a packaging claim against
+   Apple's reference streams and the last Silo stream; results print as `[siku-streamtest]`.
 
 ## When a Roku prints an error
 - **Compile error at a line:** almost always pitfall 1 or 4. Fix it, then grep the whole tree for
@@ -170,6 +189,17 @@ answers.
   invisible because its labels measured as zero (pitfall 3).
 - **Hangs on the splash screen:** a crash during `MainScene.init` or the first screen's `init`.
   The telnet log has the backtrace.
+- **Video plays, no sound, Audio menu empty:** the plan is `server_remux_hls` (pitfall 14), or a
+  forced Dolby declaration on a stereo sink (`forcedolby=true`, `out=Stereo`); never a codec bug
+  in Siku. Check `plan: delivery=` and `audio=`/`decodeinfo=` in the `[siku-playback]` line.
+- **Direct play refused although codecs match:** read `request:` fields. A non-default
+  `audio_req` needs the `client_selected_audio_track_v1` claim, a `sub_req` naming a PGS track
+  forces burn-in, a `cap=` forces a ladder rung; the server's `reason=` names the gate.
+- **Playback fails within a second on a server route:** `delivery=server_remux_progressive`
+  (fragmented MP4 over HTTP) is not playable on Roku; the `[siku-playback] video error` line has
+  the Video node's code.
+- **Everything transcodes to 720p "at 6 Mbps":** a bandwidth cap reached the request; see
+  pitfall 13 (nullable `playback.max_bitrate_kbps`).
 
 ## Release log
 

@@ -119,14 +119,35 @@ components/
   screens/               One component per screen (connect, sign in, home, detail, player…)
   widgets/               Reusable UI: top bar, cards, rows, buttons, dialogs
   tasks/                 Background Task nodes for HTTP calls to the Silo API
-  player/                Video player and its on-screen controls
+  player/                Video player, its on-screen controls, and the capability report sent to the server
+  screens/debug/         Diagnostics opened by deep link (stream test, font test)
 images/                  Channel icons, splash screen and UI artwork
 scripts/                 Packaging and deploy helpers
+docs/                    Architecture, API notes, design spec, and requests for the Silo server team
 ```
 
 ## How it works
 
-Siku talks to a Silo server over the **Silo v2 API only** (`/api/v2/...`), the same API the Android TV client uses. It never calls the legacy v1 API, and its network layer rejects any request outside `/api/v2/`. The server owns the library, metadata, transcoding decisions and accounts; Siku displays them and drives playback with Roku's native `Video` node. When playback starts, Siku describes what this Roku can decode (H.264, HEVC, AAC, AC3/EAC3, HLS…) so the server can pick Direct Play, Remux or Transcode.
+Siku talks to a Silo server over the **Silo v2 API only** (`/api/v2/...`), the same API the Android TV client uses. It never calls the legacy v1 API, and its network layer rejects any request outside `/api/v2/`. The server owns the library, metadata, transcoding decisions and accounts; Siku displays them and drives playback with Roku's native `Video` node. When playback starts, Siku describes what this Roku and your TV can play (resolution, HEVC/AV1/VP9 with profiles and levels, HDR10/HDR10+/HLG/Dolby Vision, and the audio formats the Roku accepts or passes through) so the server can pick Direct Play, Remux or Transcode.
+
+What that means on a Roku today:
+
+- A file whose video and audio your Roku accepts **direct-plays** untouched, Dolby Vision included.
+- A file whose audio your Roku cannot take (for example E-AC3 when the TV only advertises stereo PCM, or TrueHD/DTS) is **transcoded to H.264** with AAC sound. Silo's lighter "keep the video, convert the audio" remux is packaged as fragmented MP4 with the audio muxed in, which Roku plays without sound, so Siku avoids it until the server can package it for Roku. The request to the Silo team is in [`docs/upstream/silo-server-roku-hls-audio.md`](docs/upstream/silo-server-roku-hls-audio.md).
+- Subtitles: SRT and WebVTT tracks are shown; image subtitles (PGS, VobSub) and styled ASS are listed but cannot be displayed by Roku.
+
+## Troubleshooting playback
+
+- Roku passes Dolby audio through to your TV or receiver; it does not decode it. If the Roku reports
+  "stereo" (Settings › Audio › HDMI set to PCM, or a TV that advertises PCM only), Dolby tracks are
+  converted. *Settings › Playback › Force Dolby Audio Passthrough* overrides the report; use it only
+  if your TV decodes Dolby but does not say so, and turn it off if there is no sound.
+- The debug console shows exactly what happened: run `telnet <roku-ip> 8085`, start a video, and
+  copy the line beginning `[siku-playback]`. It lists what Siku told the server and what the
+  server decided (`plan: delivery=… reason=…`). Please include it in bug reports.
+- To test what your Roku's player accepts, open the stream test screen with
+  `curl -d '' "http://<roku-ip>:8060/launch/dev?debugScreen=StreamTestScreen"` and play the
+  reference streams; results appear on screen and as `[siku-streamtest]` lines.
 
 ## Contributing
 
