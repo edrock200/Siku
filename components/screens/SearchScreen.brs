@@ -296,6 +296,8 @@ sub showIdle()
     m.statusBody.text = "Find " + Mid(placeholder(), 8) + " in one place."
     m.retryBtn.visible = false
     layoutRequests()
+    ' The results are gone; do not leave focus on one of them.
+    if m.focusArea <> "field" and m.focusArea <> "chips" then focusArea("field")
 end sub
 
 sub render()
@@ -391,8 +393,22 @@ function firstResultsArea() as string
     return ""
 end function
 
+' Closes Search and returns to whatever opened it (the shell, with the top bar's Search icon still
+' focused). Android TV's Back pops Search from anywhere except a raised keyboard, which handles its
+' own Back (the Roku KeyboardDialog closes itself and focus returns to the field).
+sub leaveSearch()
+    m.debounce.control = "stop"
+    Nav_close()
+end sub
+
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
+    ' Back is answered here, before looking at which part has focus, so no focus state (a hidden
+    ' people row or grid, a button that vanished, a stale area name) can trap the user in Search.
+    if key = "back" then
+        leaveSearch()
+        return true
+    end if
     if m.reqRow.hasFocus() then
         if key = "up" then
             ' Same precedence as Android TV: the results, else "Try again", else people, else the chips.
@@ -405,9 +421,6 @@ function onKeyEvent(key as string, press as boolean) as boolean
             else
                 focusArea("chips")
             end if
-            return true
-        else if key = "back" then
-            focusArea("field")
             return true
         end if
         return false
@@ -423,9 +436,6 @@ function onKeyEvent(key as string, press as boolean) as boolean
                 focusArea("requests")
             end if
             return true
-        else if key = "back" then
-            focusArea("field")
-            return true
         end if
         return false
     end if
@@ -437,9 +447,6 @@ function onKeyEvent(key as string, press as boolean) as boolean
             ' Down past the last grid row reaches the request row.
             if requestRowFocusable() then focusArea("requests")
             return true
-        else if key = "back" then
-            focusArea("field")
-            return true
         end if
         return false
     end if
@@ -450,13 +457,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
         else if key = "down" then
             if requestRowFocusable() then focusArea("requests")
             return true
-        else if key = "back" then
-            focusArea("field")
-            return true
         end if
         return false
     end if
-    if not m.top.hasFocus() then return false
     if m.focusArea = "field" then
         if key = "OK" then
             openKeyboard()
@@ -465,6 +468,8 @@ function onKeyEvent(key as string, press as boolean) as boolean
             focusArea("chips")
             return true
         else if key = "up" then
+            ' Up from the field reaches the top bar, as on Android TV (where Search sits under the bar).
+            leaveSearch()
             return true
         end if
         return false
@@ -490,9 +495,6 @@ function onKeyEvent(key as string, press as boolean) as boolean
         else if key = "down" then
             area = firstResultsArea()
             if area <> "" then focusArea(area)
-            return true
-        else if key = "back" then
-            focusArea("field")
             return true
         end if
     end if

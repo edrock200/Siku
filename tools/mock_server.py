@@ -165,6 +165,19 @@ def detail(cid):
                                  "subtitle_tracks": [{"index": 0, "language": "eng", "codec": "srt", "forced": False, "default": False, "external": True, "title": "English"},
                                                      {"index": 1, "language": "eng", "codec": "srt", "forced": False, "default": False, "external": False, "hearing_impaired": True, "title": "English SDH"},
                                                      {"index": 2, "language": "spa", "codec": "srt", "forced": True, "default": False, "external": False, "title": "Español (Forced)"}]})
+    if cid == "movie:glass-city":
+        # Long track and version lists, to check that the pickers scroll instead of running off screen.
+        langs = ["eng", "spa", "fra", "deu", "ita", "por", "jpn", "kor", "rus", "zho", "ara", "hin", "nld", "swe", "pol"]
+        v0 = d["versions"][0]
+        v0["audio_tracks"] = [{"index": i, "language": l, "codec": "eac3" if i % 2 == 0 else "aac", "channels": 6 if i % 2 == 0 else 2,
+                               "default": i == 0, "title": "Audio %d (%s)" % (i + 1, l)} for i, l in enumerate(langs)]
+        v0["subtitle_tracks"] = [{"index": i, "language": l, "codec": "srt", "forced": i % 5 == 4, "default": False,
+                                  "external": i % 3 == 0, "title": "Subtitle %d (%s)" % (i + 1, l)} for i, l in enumerate(langs)]
+        for n in range(8):
+            v = dict(v0)
+            v["file_id"] = str(50 + n)
+            v["resolution"] = ["1080p", "720p", "2160p", "480p"][n % 4]
+            d["versions"].append(v)
     return d
 
 

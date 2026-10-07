@@ -2,6 +2,9 @@
 <!--
   Centered action dialog ("More Actions", pickers). Rows invert to #EDEDED with black text on focus.
   Usage: set title and actions, make it visible, then setFocus(true). Observe chosen / dismissed.
+  A list taller than maxListH scrolls inside a clipped viewport that keeps the focused row visible;
+  chevrons at the top right / bottom centre of the card show that more rows lie above / below
+  (Android TV's TvOptionDialog also scrolls a capped list).
   Fields:
     title            header text (rendered uppercase, muted)
     actions          [{id, label, checked?, detail?}]  (detail: a muted second line, e.g. "Start without subtitles")
@@ -28,7 +31,12 @@
       <Label id="titleLabel" color="0xEDEDED9E">
         <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="22" />
       </Label>
-      <Group id="rows" />
+      <Group id="viewport">
+        <Group id="rows" />
+      </Group>
+      <Poster id="moreUp" uri="pkg:/images/icons/expand_more.png" width="32" height="32" blendColor="0xEDEDEDCC"
+              rotation="3.14159" scaleRotateCenter="[16, 16]" visible="false" />
+      <Poster id="moreDown" uri="pkg:/images/icons/expand_more.png" width="32" height="32" blendColor="0xEDEDEDCC" visible="false" />
     </Group>
   </children>
 </component>

@@ -5,11 +5,20 @@ sub init()
     m.cardBg = m.top.findNode("cardBg")
     m.cardRing = m.top.findNode("cardRing")
     m.titleLabel = m.top.findNode("titleLabel")
+    m.viewport = m.top.findNode("viewport")
     m.rows = m.top.findNode("rows")
+    m.moreUp = m.top.findNode("moreUp")
+    m.moreDown = m.top.findNode("moreDown")
     m.rowNodes = []
+    m.rowTops = []
+    m.rowHeights = []
     m.index = 0
     m.rowH = 72
     m.pad = 32
+    m.maxListH = 576        ' tallest visible list (6 two-line rows); longer lists scroll
+    m.scrollY = 0
+    m.listH = 0
+    m.viewH = 0
     m.top.focusable = true
     m.top.observeField("visible", "onVisible")
     rebuild()
@@ -25,12 +34,20 @@ sub onVisible()
             if acts[i].checked = true then m.index = i
         end for
     end if
+    ' Open with the checked row in the middle of the window rather than pinned to its bottom edge.
+    m.scrollY = 0
+    if m.index < m.rowTops.Count() then
+        m.scrollY = m.rowTops[m.index] - Int((m.viewH - m.rowHeights[m.index]) / 2)
+    end if
     applyFocus()
 end sub
 
 sub rebuild()
     m.rows.removeChildrenIndex(m.rows.getChildCount(), 0)
     m.rowNodes = []
+    m.rowTops = []
+    m.rowHeights = []
+    m.scrollY = 0
     acts = m.top.actions
     if acts = invalid then acts = []
     w = m.top.menuWidth
@@ -42,7 +59,7 @@ sub rebuild()
     titleH = 0
     if m.top.title <> "" then titleH = 30 + 20
 
-    y = m.pad + titleH
+    y = 0
     for i = 0 to acts.Count() - 1
         a = acts[i]
         detail = Str_orEmpty(a.detail)
@@ -95,9 +112,21 @@ sub rebuild()
         chk.blendColor = "0xEDEDEDFF"
         chk.visible = a.checked = true
         m.rowNodes.Push(row)
+        m.rowTops.Push(y)
+        m.rowHeights.Push(rowH)
         y = y + rowH
     end for
-    h = y + m.pad
+    ' The list is clipped to a window; the card is only as tall as that window.
+    m.listH = y
+    m.viewH = y
+    if m.viewH > m.maxListH then m.viewH = m.maxListH
+    m.viewport.translation = [0, m.pad + titleH]
+    m.viewport.clippingRect = [0, 0, w, m.viewH]
+    bottomPad = m.pad
+    if m.listH > m.viewH then bottomPad = m.pad + 24   ' room for the "more below" chevron
+    h = m.pad + titleH + m.viewH + bottomPad
+    m.moreUp.translation = [w - m.pad - 32, m.pad - 4]
+    m.moreDown.translation = [Int((w - 32) / 2), h - bottomPad + Int((bottomPad - 32) / 2)]
     m.cardBg.width = w
     m.cardBg.height = h
     m.cardRing.width = w
@@ -123,6 +152,22 @@ sub applyFocus()
             if det <> invalid then det.color = "0xEDEDED9E"
         end if
     end for
+    scrollToFocus()
+end sub
+
+' Keeps the focused row inside the viewport and shows a chevron on each side that has more rows.
+sub scrollToFocus()
+    if m.index >= 0 and m.index < m.rowTops.Count() then
+        rowTop = m.rowTops[m.index]
+        bottom = rowTop + m.rowHeights[m.index]
+        if rowTop < m.scrollY then m.scrollY = rowTop
+        if bottom > m.scrollY + m.viewH then m.scrollY = bottom - m.viewH
+    end if
+    if m.scrollY > m.listH - m.viewH then m.scrollY = m.listH - m.viewH
+    if m.scrollY < 0 then m.scrollY = 0
+    m.rows.translation = [0, -m.scrollY]
+    m.moreUp.visible = m.scrollY > 0
+    m.moreDown.visible = m.scrollY < m.listH - m.viewH
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
