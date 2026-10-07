@@ -33,6 +33,15 @@ silo-server's HLS remux puts the audio into the video's fMP4 segments:
 - `CopyVideoMPEGTS` exists but is only set by the Jellyfin-compatible API
   (`internal/jellycompat/streams.go`, `source.HLSRemuxMPEGTS`), never by protocol v3.
 
+## Prior art
+
+jellyfin-roku's device profile (`source/utils/deviceCapabilities.bs`, `getTranscodingProfiles`)
+sends Jellyfin **only** `"Container": "ts", "Protocol": "hls"` transcoding profiles, with H.264
+video and AC3 audio (5.1 kept when the output is surround). The Jellyfin server then remuxes and
+transcodes for Roku into MPEG-TS segments, which is why Jellyfin plays with sound on the same
+hardware. silo-server's Jellyfin-compatible API already honours that (`HLSRemuxMPEGTS`); protocol
+v3 only needs the same switch.
+
 ## Requested change (either is enough; the second is better)
 
 1. **MPEG-TS copy for v3 clients that ask for it.** Add a delivery-scoped client feature (for

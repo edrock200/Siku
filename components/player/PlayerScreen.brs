@@ -140,6 +140,8 @@ sub resetPlaybackState()
     m.forceSubtitlesOff = false
     m.explicitSubtitleId = ""
     m.remuxRecoveryTried = false
+    m.pendingAudioIndex = -1
+    m.chosenAudioIndex = -1
     m.upNextShown = false
     m.upNextDismissed = false
     m.countdown = -1
@@ -198,6 +200,8 @@ end sub
 
 sub startPipeline()
     m.remuxRecoveryTried = false
+    m.pendingAudioIndex = -1
+    m.chosenAudioIndex = -1
     PlaybackCaps_reprobe()
     p = m.top.params
     if p = invalid then p = {}
@@ -1658,8 +1662,9 @@ end sub
 
 function currentAudioName() as string
     if useServerAudioList() then
-        idx = currentServerAudioIndex()
         tracks = serverAudioTracks()
+        if m.pendingAudioIndex >= 0 and m.pendingAudioIndex < tracks.Count() then return Tracks_audioTitle(tracks[m.pendingAudioIndex], m.pendingAudioIndex) + " · Applying…"
+        idx = currentServerAudioIndex()
         if idx >= 0 then return Tracks_audioTitle(tracks[idx], idx)
     end if
     cur = m.video.audioTrack
@@ -2121,6 +2126,8 @@ sub onReplan(event as object)
         setBuffering(false)
         m.global.toast = failText
         if m.plan <> invalid and m.replanKind = "quality" then m.qualityPref = PlaybackCaps_qualityPreference()
+        m.pendingAudioIndex = -1
+        if m.hud.visible then buildHudRows()
         return
     end if
     plan = resp.data.playback_plan
@@ -2133,6 +2140,10 @@ sub onReplan(event as object)
     resumeAt = m.position
     m.video.control = "stop"
     applyPlan(plan, { resumeAt: resumeAt, subtitleTrackId: Subs_selectedTrackId() })
+    if m.replanKind = "audio" and m.pendingAudioIndex >= 0 then m.chosenAudioIndex = m.pendingAudioIndex
+    m.pendingAudioIndex = -1
+    ' The overlay was rebuilt when the picker closed, before this answer: refresh it with the new plan.
+    if m.hud.visible then buildHudRows()
     maybeRecoverSilentRemux(plan)
 end sub
 
@@ -2150,13 +2161,15 @@ function useServerAudioList() as boolean
     return Arr_or(m.video.availableAudioTracks).Count() <= 1 and serverAudioTracks().Count() > 1
 end function
 
-' The ordinal the plan plays (selected_tracks.audio.index), else what Auto would resolve to.
+' The ordinal the plan plays (selected_tracks.audio.index), else the one the viewer last chose
+' (a plan that omits selected_tracks), else what Auto would resolve to.
 function currentServerAudioIndex() as integer
     tracks = serverAudioTracks()
     if m.plan <> invalid and m.plan.selected_tracks <> invalid and m.plan.selected_tracks.audio <> invalid then
         idx = Int(Num_or(m.plan.selected_tracks.audio.index, -1))
         if idx >= 0 and idx < tracks.Count() then return idx
     end if
+    if m.chosenAudioIndex >= 0 and m.chosenAudioIndex < tracks.Count() then return m.chosenAudioIndex
     return Tracks_autoAudioOrdinal(m.version)
 end function
 
@@ -2167,6 +2180,8 @@ sub requestAudioTrackChange(idx as integer)
     selected = {}
     if m.plan.selected_tracks <> invalid then selected = AA_copy(m.plan.selected_tracks)
     selected.audio = { id: Tracks_audioId(m.fileId, idx), index: idx }
+    ' Shown as "Greek · Applying…" until the new plan is in; the HUD is rebuilt when it lands.
+    m.pendingAudioIndex = idx
     sendReplan("track_change", "audio", invalid, selected)
 end sub
 

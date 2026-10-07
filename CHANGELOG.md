@@ -3,6 +3,14 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.16
+
+- **Fixed:** after switching the audio track during playback, the Audio menu kept showing the old
+  track name. It now shows the new track (with "Applying…" while the server switches over).
+- **Changed:** when the Roku's audio output is set to 5.1 surround, Dolby Digital is treated as
+  playable even if the Roku's own check says otherwise. Jellyfin's Roku app does the same because
+  some receivers report it wrongly.
+
 ## v0.1.15
 
 - **New:** Settings › Playback › **Force Dolby Audio Passthrough**. Some TVs do not tell the Roku

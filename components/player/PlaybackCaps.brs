@@ -92,6 +92,12 @@ function PlaybackCaps_reprobe() as object
         end for
     end if
     audioOutput = PlaybackCaps_str(di.GetAudioOutputChannel())
+    ' jellyfin-roku (deviceCapabilities.bs): with the system output in "5.1 surround", AC3 plays even
+    ' when CanDecodeAudio reports a false negative on some receivers; assume it, as Jellyfin does.
+    if LCase(audioOutput) = "5.1 surround" and not PlaybackCaps_has(codecsAudio, "ac3") then
+        codecsAudio.Push("ac3")
+        surround.Push("ac3")
+    end if
     audioChannels = 2
     if Instr(1, audioOutput, "7.1") > 0 then
         audioChannels = 8
