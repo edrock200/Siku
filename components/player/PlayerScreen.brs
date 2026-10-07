@@ -139,6 +139,7 @@ sub resetPlaybackState()
     m.shufflePicking = false
     m.forceSubtitlesOff = false
     m.explicitSubtitleId = ""
+    m.remuxRecoveryTried = false
     m.upNextShown = false
     m.upNextDismissed = false
     m.countdown = -1
@@ -196,6 +197,8 @@ end sub
 ' ---------- Pipeline ----------
 
 sub startPipeline()
+    m.remuxRecoveryTried = false
+    PlaybackCaps_reprobe()
     p = m.top.params
     if p = invalid then p = {}
     m.itemId = Str_orEmpty(p.itemId)
@@ -471,6 +474,24 @@ sub onStart(event as object)
     ' One line per start for the debug console (telnet 8085): declared caps, request, decision.
     print PlaybackCaps_diagLine(m.lastRequestBody, d.playback_plan)
     applyPlan(d.playback_plan)
+    maybeRecoverSilentRemux(d.playback_plan)
+end sub
+
+' Roku's HLS player ignores audio muxed into fMP4 segments, and Silo's HLS remux (server_remux_hls)
+' is exactly that, so such a plan plays silent on device. The video is started anyway (no black
+' screen), and the server is asked once for another route as a failure recovery; it skips the
+' attempted plan and usually answers with an H.264 MPEG-TS transcode, which has sound. A second
+' remux_hls answer means nothing better exists on this server: say so.
+sub maybeRecoverSilentRemux(plan as object)
+    if plan = invalid or LCase(Str_orEmpty(plan.delivery)) <> "server_remux_hls" then return
+    if m.remuxRecoveryTried then
+        m.global.toast = "No sound expected: this file needs Silo's HLS remux, whose format Roku can't play audio from yet"
+        return
+    end if
+    m.remuxRecoveryTried = true
+    print "[siku-playback] server_remux_hls is fMP4 with muxed audio, which Roku plays silent; asking for another route"
+    failure = { classification: "unsupported_container", message: "Roku cannot play audio muxed into fMP4 HLS segments" }
+    sendReplan("failure_recovery", "recovery", failure)
 end sub
 
 ' Hands a plan to the Video node (also used after a replan, and to remount the same plan).
@@ -1636,6 +1657,11 @@ sub selectHudTab(i as integer)
 end sub
 
 function currentAudioName() as string
+    if useServerAudioList() then
+        idx = currentServerAudioIndex()
+        tracks = serverAudioTracks()
+        if idx >= 0 then return Tracks_audioTitle(tracks[idx], idx)
+    end if
     cur = m.video.audioTrack
     for each t in Arr_or(m.video.availableAudioTracks)
         if Str_orEmpty(t.Track) = Str_orEmpty(cur) then return audioTrackLabel(t)
@@ -1930,12 +1956,20 @@ sub openPicker(kind as string)
     acts = []
     m.hudChoices = []
     if kind = "audio" then
-        tracks = Arr_or(m.video.availableAudioTracks)
-        cur = Str_orEmpty(m.video.audioTrack)
-        for i = 0 to tracks.Count() - 1
-            t = tracks[i]
-            acts.Push({ id: i.ToStr(), label: audioTrackLabel(t), checked: Str_orEmpty(t.Track) = cur or (cur = "" and i = 0) })
-        end for
+        if useServerAudioList() then
+            tracks = serverAudioTracks()
+            cur = currentServerAudioIndex()
+            for i = 0 to tracks.Count() - 1
+                acts.Push({ id: "srv:" + i.ToStr(), label: Tracks_audioTitle(tracks[i], i), detail: Tracks_audioDetail(tracks[i]), checked: i = cur })
+            end for
+        else
+            tracks = Arr_or(m.video.availableAudioTracks)
+            cur = Str_orEmpty(m.video.audioTrack)
+            for i = 0 to tracks.Count() - 1
+                t = tracks[i]
+                acts.Push({ id: i.ToStr(), label: audioTrackLabel(t), checked: Str_orEmpty(t.Track) = cur or (cur = "" and i = 0) })
+            end for
+        end if
         if acts.Count() = 0 then acts.Push({ id: "-1", label: "Default", checked: true })
         m.picker.title = "Audio"
     else if kind = "subtitle" then
@@ -1943,6 +1977,15 @@ sub openPicker(kind as string)
         for i = 0 to m.subtitleTracks.Count() - 1
             ' The detail line is the track's sync status ("Syncing… 40%", "Synced +2.3 s"), when it has one.
             acts.Push({ id: i.ToStr(), label: m.subtitleTracks[i].label, checked: i = m.subtitleIndex, detail: Subs_trackStatus(m.subtitleTracks[i]) })
+        end for
+        ' The file's other subtitle tracks, so the viewer sees they exist and why they are not offered:
+        ' image formats (PGS, VobSub) and styled ASS have no Roku renderer.
+        inv = m.subs.subtitleInventory
+        for i = 0 to inv.Count() - 1
+            t = inv[i]
+            if Subs_buildTrack(t) = invalid then
+                acts.Push({ id: "na:" + i.ToStr(), label: Subs_inventoryLabel(t), detail: "Image or styled format: Roku can't show it", checked: false })
+            end if
         end for
         m.picker.title = "Subtitles"
     else if kind = "quality" then
@@ -1990,11 +2033,19 @@ sub onPickerChosen()
     m.picker.visible = false
     kind = m.pickerKind
     if kind = "audio" then
-        idx = Int(Val(id))
-        tracks = Arr_or(m.video.availableAudioTracks)
-        if idx >= 0 and idx < tracks.Count() then m.video.audioTrack = tracks[idx].Track
+        if Left(id, 4) = "srv:" then
+            requestAudioTrackChange(Int(Val(Mid(id, 5))))
+        else
+            idx = Int(Val(id))
+            tracks = Arr_or(m.video.availableAudioTracks)
+            if idx >= 0 and idx < tracks.Count() then m.video.audioTrack = tracks[idx].Track
+        end if
     else if kind = "subtitle" then
-        setSubtitle(Int(Val(id)))
+        if Left(id, 3) = "na:" then
+            m.global.toast = "Roku can't display image-based or styled subtitles (PGS, VobSub, ASS). A text version (SRT) would work."
+        else
+            setSubtitle(Int(Val(id)))
+        end if
     else if kind = "quality" then
         if LCase(id) <> LCase(m.qualityPref) then requestQualityChange(id)
     else if kind = "subtiming" then
@@ -2043,12 +2094,16 @@ sub onHudSettingWritten(event as object)
 end sub
 
 ' POST /playback/{session}/replan at the current position; onReplan swaps the plan in.
-sub sendReplan(operation as string, kind as string)
+sub sendReplan(operation as string, kind as string, failure = invalid as dynamic, selectedOverride = invalid as dynamic)
     inst = installationId()
     if inst = "" then return
     selected = {}
     if m.plan.selected_tracks <> invalid then selected = m.plan.selected_tracks
-    body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, operation, m.qualityPref, m.position, selected)
+    if selectedOverride <> invalid then selected = selectedOverride
+    ' A viewer's own change (track, quality, output) starts a new route choice on the server, so a
+    ' remux_hls answer to it gets one more recovery attempt.
+    if operation = "track_change" or operation = "quality_change" or operation = "output_change" then m.remuxRecoveryTried = false
+    body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, operation, m.qualityPref, m.position, selected, failure)
     m.lastRequestBody = body
     m.replanKind = kind
     setBuffering(true)
@@ -2060,6 +2115,8 @@ sub onReplan(event as object)
     if m.closing then return
     failText = "Couldn't change the quality"
     if m.replanKind = "output" then failText = "Couldn't change the video output"
+    if m.replanKind = "audio" then failText = "Couldn't change the audio track"
+    if m.replanKind = "recovery" then failText = "No sound expected: the server has no other way to stream this file to a Roku"
     if not resp.ok or resp.data = invalid or resp.data.outcome <> "playable" or resp.data.playback_plan = invalid then
         setBuffering(false)
         m.global.toast = failText
@@ -2076,6 +2133,41 @@ sub onReplan(event as object)
     resumeAt = m.position
     m.video.control = "stop"
     applyPlan(plan, { resumeAt: resumeAt, subtitleTrackId: Subs_selectedTrackId() })
+    maybeRecoverSilentRemux(plan)
+end sub
+
+' ---------- Server-side audio tracks ----------
+' A remux or transcode carries one audio track, so the Roku lists none (or one); the file's other
+' tracks are the version's audio_tracks and switching is a track_change replan, as on Android TV.
+' A direct-played MKV exposes its tracks to the Video node and switches locally.
+
+function serverAudioTracks() as object
+    if m.version = invalid then return []
+    return Arr_or(m.version.audio_tracks)
+end function
+
+function useServerAudioList() as boolean
+    return Arr_or(m.video.availableAudioTracks).Count() <= 1 and serverAudioTracks().Count() > 1
+end function
+
+' The ordinal the plan plays (selected_tracks.audio.index), else what Auto would resolve to.
+function currentServerAudioIndex() as integer
+    tracks = serverAudioTracks()
+    if m.plan <> invalid and m.plan.selected_tracks <> invalid and m.plan.selected_tracks.audio <> invalid then
+        idx = Int(Num_or(m.plan.selected_tracks.audio.index, -1))
+        if idx >= 0 and idx < tracks.Count() then return idx
+    end if
+    return Tracks_autoAudioOrdinal(m.version)
+end function
+
+sub requestAudioTrackChange(idx as integer)
+    if m.plan = invalid or m.sessionId = "" then return
+    tracks = serverAudioTracks()
+    if idx < 0 or idx >= tracks.Count() or idx = currentServerAudioIndex() then return
+    selected = {}
+    if m.plan.selected_tracks <> invalid then selected = AA_copy(m.plan.selected_tracks)
+    selected.audio = { id: Tracks_audioId(m.fileId, idx), index: idx }
+    sendReplan("track_change", "audio", invalid, selected)
 end sub
 
 ' ---------- Keys ----------

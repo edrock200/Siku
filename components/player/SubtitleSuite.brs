@@ -261,6 +261,20 @@ function Subs_labelIsSdh(label as string) as boolean
     return Instr(1, l, "sdh") > 0 or Instr(1, l, "hearing impaired") > 0 or Instr(1, l, "cc") = 1
 end function
 
+' Menu label for an inventory entry Roku cannot render: "English · PGS".
+function Subs_inventoryLabel(t as object) as string
+    label = ""
+    if not Str_isEmpty(t.language) then label = Subs_languageName(t.language)
+    if label = "" or label = "Unknown" then label = Str_orEmpty(t.label)
+    if label = "" then label = "Unknown"
+    codec = UCase(Str_orEmpty(t.codec))
+    if codec = "HDMV_PGS_SUBTITLE" then codec = "PGS"
+    if codec = "DVD_SUBTITLE" then codec = "VobSub"
+    if codec <> "" then label = label + " · " + codec
+    if t.forced = true then label = label + " (Forced)"
+    return label
+end function
+
 function Subs_appendQuery(u as string, pair as string) as string
     if Instr(1, u, "?") > 0 then return u + "&" + pair
     return u + "?" + pair

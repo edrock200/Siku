@@ -107,6 +107,17 @@ deleting the row lets a profile-scope cap through and the server then transcodes
 regardless of "Original". `PlaybackCaps.brs` is the reference; the `[siku-playback]` console
 line shows what was declared.
 
+**14. Roku's HLS player ignores audio muxed into fMP4 (CMAF) segments.** Roku's streaming spec:
+"video: TS, CMAF (muxing audio and video not supported for CMAF); audio: aac, ac3, eac3". Silo's
+HLS remux (`server_remux_hls`) is fMP4 with the audio muxed in, so it plays silent on device
+whatever the codec; H.264 transcodes come as MPEG-TS and play. PlaybackCaps declares the HLS
+delivery as H.264/SDR/AAC only, and PlayerScreen replans once (`failure_recovery`,
+`unsupported_container`) if a remux_hls plan still arrives. Server-side fix requested in
+`docs/upstream/silo-server-roku-hls-audio.md`. Also: query `CanDecodeAudio`/`CanDecodeVideo`
+with lower-case quoted keys (`{ "codec": c, "passthru": 1 }`; older OS is case-sensitive) and
+re-probe at every playback start, as Roku documents, because a receiver switching on changes the
+answers.
+
 ## Project conventions (short version; `docs/ARCHITECTURE.md` has the full one)
 - 1920×1080 canvas, pixel coordinates. Android dp × 2 = px; Android sp × 1.72 = px.
 - Every component is an XML file plus a sibling `.brs` referenced by `<script uri>`. No inline
@@ -179,3 +190,4 @@ released version is missing here.
 - **v0.1.11** Full review. Comparisons (`>`, `<`) and `Int()` on a string throw Type Mismatch on device (`=` just returns false), so every server number used in arithmetic or comparison goes through `Num_or` / `Content_num` (pitfall 6). Grids and calendar shelves got the pitfall-12 headroom; float-to-integer field assignments are rounded (pitfall 5).
 - **v0.1.12** A nullable setting (`playback.max_bitrate_kbps`) must be PUT as JSON `null` to mean "no limit at this scope"; DELETE lets a broader scope's value show through (it was a 6 Mbps profile cap forcing 720p). Capability probes: `CanDecodeAudio` with `PassThru`/`ChCnt`, `CanDecodeVideo` with profile and level, `GetVideoMode` for output (never the UI resolution); read device flags with `PlaybackCaps_truthy`, because an Integer/Boolean comparison throws on device.
 - **v0.1.13** AC3 copied into the server's fMP4 HLS remux played silent on a real Roku while video was fine. The HLS delivery now declares only AAC/MP3 audio; direct play keeps AC3/E-AC3 passthrough. Device display flags are read with `PlaybackCaps_truthy`, and the diagnostic line prints the raw `GetDisplayProperties()` JSON and model.
+- **v0.1.14** Silent remux traced to Roku's CMAF rule (pitfall 14): fMP4 HLS with muxed audio plays video only. Lesson: when video plays and audio does not on a server route, check the packaging against Roku's streaming spec before suspecting codecs.

@@ -994,6 +994,15 @@ def playback_route(fid, b):
     hdr10 = bool(hd.get("hdr10"))
     audio_ok = "eac3" in [c.lower() for c in caps.get("codecs_audio") or []]
     ladder = [(2160, 20000), (1080, 5000), (720, 2000), (480, 0)]
+    if fid == "56":
+        # File 56 always comes back as the fMP4 HLS remux, to exercise the client's silent-remux
+        # recovery (Roku plays no audio from muxed CMAF; PlayerScreen.maybeRecoverSilentRemux).
+        recipe = {"video_codec": "hevc", "audio_codec": "aac", "width": 3840, "height": 2160, "frame_rate": 23.976, "bitrate_kbps": 24000,
+                  "dynamic_range": "hdr10", "audio_channels": 6, "audio_layout": "5.1"}
+        warnings.append({"code": "dolby_vision_removed", "message": "Dolby Vision metadata is removed and the validated HDR10 base layer is preserved."})
+        warnings.append({"code": "audio_converted", "message": "The selected audio track is converted to AAC for HLS delivery."})
+        claims = {"video": {"hdr10": True}, "audio": {"codec": "aac", "passthrough": False, "reason": "hls_audio_adaptation"}}
+        return "server_remux_hls", "hls_audio_adaptation", recipe, claims, source, qualities, warnings
 
     def transcode(height, reason, bitrate):
         recipe = {"video_codec": "h264", "audio_codec": "aac", "width": height * 16 // 9, "height": height, "frame_rate": 23.976,
@@ -1482,7 +1491,19 @@ class Handler(BaseHTTPRequestHandler):
             if m.group(1) not in STATE["sessions"]:
                 return self.problem(410, "playback_session_ended", "Session ended")
             start = STATE["sessions"][m.group(1)]
-            return self.send(200, playback_decision(m.group(1), b.get("position_seconds") or 0, start.get("file_id") or "42", b))
+            decision = playback_decision(m.group(1), b.get("position_seconds") or 0, start.get("file_id") or "42", b)
+            plan = decision.get("playback_plan") or {}
+            if b.get("operation") == "failure_recovery" and plan.get("delivery") == "server_remux_hls":
+                # The real planner skips the attempted remux and falls through to an H.264 MPEG-TS
+                # transcode for a client whose HEVC decoder is level-bound (Roku).
+                plan["delivery"] = "server_transcode_hls"
+                plan["decision_reason"] = "client_failure_recovery"
+                plan["effective_recipe"] = {"video_codec": "h264", "audio_codec": "aac", "width": 1920, "height": 1080,
+                                            "dynamic_range": "sdr", "audio_channels": 2, "audio_layout": "stereo", "bitrate_kbps": 8000}
+                plan["degradation_warnings"] = [{"code": "client_failure_recovery", "message": "Re-planned after a client failure."}]
+            if b.get("operation") == "track_change" and (b.get("selected_tracks") or {}).get("audio"):
+                plan.setdefault("selected_tracks", {})["audio"] = b["selected_tracks"]["audio"]
+            return self.send(200, decision)
         m = re.match(r"^/api/v2/playback/([^/]+)/progress$", p)
         if m:
             return self.send(200, {"outcome": "applied", "accepted": b})

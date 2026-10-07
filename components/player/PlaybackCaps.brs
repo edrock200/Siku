@@ -20,6 +20,13 @@
 ' The user's HDR settings are applied later (PlaybackCaps_hdrDetails), never cached here.
 function PlaybackCaps_probe() as object
     if m.playbackProbe <> invalid then return m.playbackProbe
+    return PlaybackCaps_reprobe()
+end function
+
+' Roku asks that codec support be queried before every playback rather than cached: the answers
+' change when a soundbar or receiver is switched on, or the HDMI audio mode changes. PlayerScreen
+' calls this at each start; PlaybackCaps_probe() then serves the fresh result for the session.
+function PlaybackCaps_reprobe() as object
     di = CreateObject("roDeviceInfo")
 
     ' Video decoders, probed the way Roku documents CanDecodeVideo: Codec ("mpeg4 avc", "hevc",
@@ -67,11 +74,12 @@ function PlaybackCaps_probe() as object
     passthroughAudio = []
     surround = []
     for each c in ["ac3", "eac3", "dts", "truehd", "flac", "opus", "vorbis", "alac"]
-        ok = PlaybackCaps_canDecodeAudio(di, { Codec: c })
-        pt = PlaybackCaps_canDecodeAudio(di, { Codec: c, PassThru: 1 })
+        ' Lower-case quoted keys: Roku OS before 14.1 matches CanDecodeAudio keys case-sensitively.
+        ok = PlaybackCaps_canDecodeAudio(di, { "codec": c })
+        pt = PlaybackCaps_canDecodeAudio(di, { "codec": c, "passthru": 1 })
         if ok or pt then codecsAudio.Push(c)
         if pt then passthroughAudio.Push(c)
-        if (ok or pt) and PlaybackCaps_canDecodeAudio(di, { Codec: c, ChCnt: 6 }) then surround.Push(c)
+        if (ok or pt) and PlaybackCaps_canDecodeAudio(di, { "codec": c, "chcnt": 6 }) then surround.Push(c)
     end for
     audioOutput = PlaybackCaps_str(di.GetAudioOutputChannel())
     audioChannels = 2
@@ -157,7 +165,7 @@ function PlaybackCaps_probeDecoder(di as object, spec as object) as object
     profiles = []
     depths = [8]
     for each pr in spec.profiles
-        if PlaybackCaps_canDecodeVideo(di, { Codec: spec.rokuCodec, Profile: pr }) then
+        if PlaybackCaps_canDecodeVideo(di, { "codec": spec.rokuCodec, "profile": pr }) then
             profiles.Push(pr)
             for each d10 in spec.depth10
                 if d10 = pr and depths.Count() = 1 then depths.Push(10)
@@ -178,8 +186,8 @@ function PlaybackCaps_probeDecoder(di as object, spec as object) as object
     maxH = 0
     maxFps = 0
     for each t in tiers
-        fmt = { Codec: spec.rokuCodec, Level: t.level }
-        if probeProfile <> "" then fmt.Profile = probeProfile
+        fmt = { "codec": spec.rokuCodec, "level": t.level }
+        if probeProfile <> "" then fmt["profile"] = probeProfile
         if PlaybackCaps_canDecodeVideo(di, fmt) then
             levels.Push(t.num)
             if maxH = 0 then
@@ -231,7 +239,7 @@ function PlaybackCaps_canDecodeAudio(di as object, fmt as object) as boolean
     end try
     if r = invalid or Type(r) <> "roAssociativeArray" or not PlaybackCaps_truthy(r.Result) then return false
     ' A PassThru probe that the device answered by changing the passthrough flag is a "no".
-    if fmt.DoesExist("PassThru") and r.PassThru <> invalid and not PlaybackCaps_truthy(r.PassThru) then return false
+    if fmt.DoesExist("passthru") and r.passthru <> invalid and not PlaybackCaps_truthy(r.passthru) then return false
     return true
 end function
 
@@ -306,29 +314,44 @@ function PlaybackCaps_delivery(containers as object, features as object, hlsRout
     p = PlaybackCaps_probe()
     audioCodecs = p.codecsAudio
     passthrough = p.passthroughAudio
+    videoCodecs = p.codecsVideo
+    hdr = PlaybackCaps_hdrDetails()
+    claims = []
     if hlsRoute then
-        ' Dolby Digital / Dolby Digital Plus copied into the server's fMP4 HLS remux played silent
-        ' on a real Roku (v0.1.12, a DV8 MKV with AC3: video fine, no audio). Declare only AAC and
-        ' MP3 for HLS so the server converts the audio there; files that play directly
-        ' (original_http) keep AC3/E-AC3 passthrough.
+        ' Roku's HLS player does not take audio muxed into fMP4 (CMAF) segments (Roku streaming
+        ' specifications: "muxing audio and video not supported for CMAF"), and Silo's HLS remux
+        ' copies the video into fMP4 with the audio muxed in, so every server_remux_hls plan
+        ' played silent on device (v0.1.12/13). Silo packages MPEG-TS only when it transcodes the
+        ' video to H.264, so this delivery declares exactly what Roku can play from it: H.264,
+        ' SDR, AAC/MP3. HEVC copies are then impossible over HLS (the server keeps them for
+        ' direct play), and anything that needs a server-side change comes as an H.264 TS
+        ' transcode with sound. An H.264 remux copy would still be fMP4; PlayerScreen asks the
+        ' server for another route when a remux_hls plan arrives (maybeRecoverSilentRemux).
+        videoCodecs = ["h264"]
         audioCodecs = []
         for each c in p.codecsAudio
             if c = "aac" or c = "mp3" then audioCodecs.Push(c)
         end for
         passthrough = []
+        hdr = { hdr10: false, hdr10_plus: false, hlg: false, dolby_vision_profiles: [] }
+    else
+        ' A Dolby Vision profile 8 file whose DV layer the output cannot take still plays as its
+        ' HDR10/HLG base layer through the ordinary HEVC decoder (what Roku does with DV8 content
+        ' on a non-DV display), so the server need not strip it into a remux.
+        claims.Push("client_dv8_base_layer_fallback_v1")
     end if
     return {
         enabled: true
         supported_on_device: true
         containers: containers
-        video_codecs: p.codecsVideo
+        video_codecs: videoCodecs
         audio_decode_codecs: audioCodecs
         audio_passthrough_codecs: passthrough
-        hdr_details: PlaybackCaps_hdrDetails()
+        hdr_details: hdr
         subtitles: PlaybackCaps_subtitles()
         features: features
         transformations: []
-        validated_claims: []
+        validated_claims: claims
         auth_header_refresh: false
     }
 end function
@@ -395,7 +418,7 @@ end function
 
 ' POST /api/v2/playback/{session}/replan body for a quality or output change. The replan replaces
 ' the session's cap (the server copies bandwidth_cap_kbps from every replan), so it is sent again.
-function PlaybackCaps_replanBody(installation as string, attemptId as string, plan as object, operation as string, qualityPreference as string, positionSeconds as float, selectedTracks as object) as object
+function PlaybackCaps_replanBody(installation as string, attemptId as string, plan as object, operation as string, qualityPreference as string, positionSeconds as float, selectedTracks as object, failure = invalid as dynamic) as object
     di = CreateObject("roDeviceInfo")
     body = {
         protocol_version: 3
@@ -418,6 +441,7 @@ function PlaybackCaps_replanBody(installation as string, attemptId as string, pl
     }
     cap = PlaybackCaps_bandwidthCap(qualityPreference)
     if cap > 0 then body.bandwidth_cap_kbps = cap
+    if failure <> invalid then body.failure = failure
     return body
 end function
 
@@ -537,7 +561,16 @@ function PlaybackCaps_diagLine(body as object, plan as object) as string
     di = CreateObject("roDeviceInfo")
     rawDisplay = "-"
     try
-        rawDisplay = FormatJson(di.GetDisplayProperties())
+        ' Only scalar fields: the AA also carries the EDID as a roByteArray, which FormatJson rejects.
+        raw = di.GetDisplayProperties()
+        if raw <> invalid and Type(raw) = "roAssociativeArray" then
+            flat = {}
+            for each k in raw
+                t = Type(raw[k])
+                if t = "roBoolean" or t = "Boolean" or t = "roInt" or t = "roInteger" or t = "Integer" or t = "roFloat" or t = "Float" or t = "roString" or t = "String" then flat[k] = raw[k]
+            end for
+            rawDisplay = FormatJson(flat)
+        end if
     catch e
         rawDisplay = "-" ' e: older firmware without GetDisplayProperties
         if e = invalid then rawDisplay = "-"

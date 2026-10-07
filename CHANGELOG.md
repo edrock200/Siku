@@ -3,6 +3,25 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.14
+
+- **Fixed:** silent video. When the Silo server repackages a file as a stream ("remux"), Roku
+  plays the picture but not the sound: Roku's HLS player does not accept audio mixed into
+  fragmented-MP4 segments, which is how Silo packages remuxes. Siku now tells the server to use
+  that route only for H.264 conversions (which Silo packages as MPEG-TS, with sound) and keeps
+  HEVC, 4K and Dolby Vision for direct play. If a remux still arrives, Siku asks the server once
+  for another route, and says so if none exists. The full fix needs a change in the Silo server;
+  the request is written up in `docs/upstream/silo-server-roku-hls-audio.md`.
+- **Fixed:** Dolby Vision profile 8 files can now direct-play as HDR10 when the TV or receiver
+  does not take Dolby Vision, instead of being repackaged.
+- **New:** the Audio menu lists the file's audio tracks from the server when the stream only
+  carries one, and switching asks the server for that track. Image-based or styled subtitle
+  tracks (PGS, VobSub, ASS) are listed with a note that Roku cannot show them.
+- **Fixed:** the Roku's audio and HDR abilities are checked again at every playback start, so
+  turning a soundbar or receiver on or off, or changing the Roku's HDMI audio mode, takes effect
+  on the next video.
+- **Fixed:** an error printed in the debug log while listing the display's properties.
+
 ## v0.1.13
 
 - **Fixed:** no sound when the server repackaged a video as a stream (for example a Dolby
