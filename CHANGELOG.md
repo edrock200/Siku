@@ -3,6 +3,31 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.12
+
+- **Fixed:** videos no longer drop to 720p. Choosing Original, Auto or 4K in Settings used to
+  leave an old 6 Mbps limit in place, so the server shrank everything to 720p. Those choices now
+  remove the limit, and "Original" never sends one.
+- **Fixed:** the quality no longer shows "at 6 Mbps" when you did not choose a limit.
+- **Improved:** Siku now tells the server exactly what your Roku and TV can play: 4K, Dolby
+  Vision (with its profiles), HDR10, HDR10+, HLG, HEVC 10-bit, and which surround formats
+  (Dolby Digital, Dolby Digital Plus, DTS, TrueHD) your TV or receiver accepts as they are.
+  The server can then send the original video and audio instead of converting them.
+- **New:** Settings › Playback has the Android TV HDR options: Profile 7 HDR10 Fallback (under
+  Dolby Vision) and Force HDR Passthrough. They appear when your TV supports them.
+- **Fixed:** the player's info panel shows what is really playing: Direct Play, Remux or
+  Transcode, the video format (for example HEVC · 4K · Dolby Vision) and the audio (for example
+  E-AC3 5.1), plus the original file's details. The Video tab adds HDR and Dolby Vision switches.
+- **New:** the buffering screen shows a percentage, and the progress bar shows how much is
+  loaded ahead when the stream reports it.
+- **Fixed:** Back now leaves Search from anywhere on the screen, and Up from the search box goes
+  to the top bar.
+- **Fixed:** long audio, subtitle and version lists scroll inside the screen instead of running
+  off the bottom, with arrows when there is more.
+- **For troubleshooting:** each video start writes one line to the Roku debug log
+  (`telnet <roku-ip> 8085`) starting with `[siku-playback]`, listing what Siku told the server
+  and what the server chose.
+
 ## v0.1.11
 
 A full review of the app, fixing problems before they show up on your TV.

@@ -35,7 +35,9 @@ function Settings_keyDefs() as object
         { key: "playback.auto_play_next", rev: 1, def: true }
         { key: "playback.next_up_prompt_seconds", rev: 1, def: 30 }
         { key: "playback.subtitle_appearance", rev: 1, def: Settings_defaultAppearance() }
+        { key: "player.hdr_enabled", rev: 1, def: true }
         { key: "player.dolby_vision_enabled", rev: 1, def: true }
+        { key: "player.dv_profile7_hdr10_fallback", rev: 1, def: false }
         { key: "player.video_skip_back_seconds", rev: 9, def: 10 }
         { key: "player.video_skip_forward_seconds", rev: 9, def: 30 }
         { key: "catalog.metadata_language", rev: 1, def: "" }
@@ -48,7 +50,7 @@ end function
 
 ' The keys written at profile_device scope; "Reset Playback Overrides" deletes each of them.
 function Settings_deviceKeys() as object
-    return ["playback.preferred_quality", "playback.max_bitrate_kbps", "playback.audio_language", "playback.intro_skip_mode", "playback.auto_skip_credits", "playback.auto_play_next", "playback.next_up_prompt_seconds", "playback.subtitle_appearance", "player.dolby_vision_enabled"]
+    return ["playback.preferred_quality", "playback.max_bitrate_kbps", "playback.audio_language", "playback.intro_skip_mode", "playback.auto_skip_credits", "playback.auto_play_next", "playback.next_up_prompt_seconds", "playback.subtitle_appearance", "player.hdr_enabled", "player.dolby_vision_enabled", "player.dv_profile7_hdr10_fallback"]
 end function
 
 function Settings_defaultAppearance() as object
@@ -290,6 +292,40 @@ end function
 function Settings_dolbyVision() as boolean
     return Settings_value("player.dolby_vision_enabled", true) <> false
 end function
+
+' player.hdr_enabled (Android TV's HUD "HDR" toggle): off declares no HDR type at all, so the
+' server tone-maps HDR sources to SDR.
+function Settings_hdrEnabled() as boolean
+    return Settings_value("player.hdr_enabled", true) <> false
+end function
+
+' player.dv_profile7_hdr10_fallback: on, dual-layer Dolby Vision (profile 7) is asked for as its
+' HDR10 base layer (PlaybackCaps leaves profile 7 out of the declared profiles). Contract default
+' false, as on Android TV after hydration.
+function Settings_dvProfile7Fallback() as boolean
+    return Settings_value("player.dv_profile7_hdr10_fallback", false) = true
+end function
+
+' Force HDR Passthrough: device-local on Android TV too (PlaybackSettingsKeys.ForceHdrPassthrough
+' is never synced). Declares HDR10 / HDR10+ / HLG even when the TV does not report them.
+function Settings_forceHdrPassthrough() as boolean
+    return Settings_prefs().forceHdrPassthrough = true
+end function
+
+' Optimistic local update of one server value, for a screen that writes a setting and needs the
+' new value at once (the player replans right after a toggle). The next Settings_load replaces it.
+sub Settings_setLocal(key as string, scope as string, value as dynamic)
+    st = AA_copy(Settings_state())
+    items = {}
+    if st.items <> invalid then
+        for each k in st.items
+            items[k] = st.items[k]
+        end for
+    end if
+    items[key] = { value: value, source: scope, scope: scope, storedValue: value, constrained: false, suggested: [] }
+    st.items = items
+    m.global.settings = st
+end sub
 
 function Settings_hideWatched() as boolean
     return Settings_value("home.hide_watched_items", false) = true

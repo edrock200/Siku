@@ -197,10 +197,17 @@ function buildPane(catId as string) as object
         out.Push({ kind: "header", text: "Streaming" })
         out.Push({ kind: "row", row: rowDef("quality", "choice", "Quality") })
         out.Push({ kind: "row", row: rowDef("audioLanguage", "choice", "Audio Language") })
+        ' TvSettingsScreen STREAMING parity: Dolby Vision (default on; off plays the HDR10 base
+        ' layer) with the narrower Profile 7 fallback nested under it while Dolby Vision is on,
+        ' then Force HDR Passthrough. Match Content Frame Rate and True Black Bars are Android-only
+        ' (Roku switches refresh rate system-wide and never draws its own bars).
         if m.supportsDolbyVision then out.Push({ kind: "row", row: rowDef("dolbyVision", "toggle", "Dolby Vision") })
+        if m.supportsDolbyVision and Settings_dolbyVision() then out.Push({ kind: "row", row: rowDef("dvProfile7Fallback", "toggle", "Profile 7 HDR10 Fallback") })
+        out.Push({ kind: "row", row: rowDef("forceHdr", "toggle", "Force HDR Passthrough") })
         q = Settings_qualityPresetFor(Settings_quality(), Settings_maxBitrateKbps())
         if q <> invalid then qText = q.description else qText = Settings_describeQuality(Settings_quality(), Settings_maxBitrateKbps()) + "."
-        if m.supportsDolbyVision then qText = qText + " Dolby Vision off asks the server for the HDR10 layer of Dolby Vision files instead."
+        if m.supportsDolbyVision then qText = qText + " Dolby Vision off asks the server for the HDR10 layer of Dolby Vision files instead. Profile 7 HDR10 Fallback plays dual-layer Dolby Vision files as their HDR10 base layer; off, they are sent as they are and this Roku's HEVC decoder shows the base layer itself."
+        qText = qText + " Force HDR Passthrough allows HDR playback when this TV doesn't report support. It does not force the HDMI output into HDR; the Roku may still convert the picture to SDR. Enable it only if you've confirmed your TV supports the source format."
         out.Push({ kind: "footer", text: qText })
 
         out.Push({ kind: "header", text: "Episodes" })
@@ -314,6 +321,10 @@ function rowValue(row as object) as string
         return Settings_languageLabel(Settings_value("playback.audio_language", ""), "playback.audio_language")
     else if id = "dolbyVision" then
         return onOff(Settings_dolbyVision())
+    else if id = "dvProfile7Fallback" then
+        return onOff(Settings_dvProfile7Fallback())
+    else if id = "forceHdr" then
+        return onOff(Settings_forceHdrPassthrough())
     else if id = "autoPlayNext" then
         return onOff(Settings_autoPlayNext())
     else if id = "showNextUp" then
@@ -1032,7 +1043,11 @@ sub applyChoice(row as object, value as dynamic)
             if preset.kbps > 0 then
                 putValue("playback.max_bitrate_kbps", "profile_device", preset.kbps)
             else
-                deleteValue("playback.max_bitrate_kbps", "profile_device")
+                ' Uncapped: store JSON null at this scope ("no cap of my own", contracts/settings
+                ' conformance), as Android's flusher does. Deleting the row instead let a cap
+                ' stored at the profile scope show through, so "Original" read "Original at 6 Mbps"
+                ' and the server honoured that cap with a 720p transcode.
+                putValue("playback.max_bitrate_kbps", "profile_device", invalid)
             end if
         end if
     else if id = "audioLanguage" then
@@ -1040,6 +1055,12 @@ sub applyChoice(row as object, value as dynamic)
     else if id = "dolbyVision" then
         beginWrites(1)
         putValue("player.dolby_vision_enabled", "profile_device", value = true)
+    else if id = "dvProfile7Fallback" then
+        beginWrites(1)
+        putValue("player.dv_profile7_hdr10_fallback", "profile_device", value = true)
+    else if id = "forceHdr" then
+        savePref("forceHdrPassthrough", value = true)
+        refreshValues()
     else if id = "autoPlayNext" then
         beginWrites(1)
         putValue("playback.auto_play_next", "profile_device", value = true)
@@ -1107,6 +1128,7 @@ sub performConfirmed(actionId as string)
         p = AA_copy(m.global.prefs)
         p.resumeRewind = 7
         p.passoutThreshold = 3
+        p.forceHdrPassthrough = false
         Prefs_save(p)
         keys = Settings_deviceKeys()
         beginWrites(keys.Count())

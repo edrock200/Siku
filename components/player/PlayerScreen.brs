@@ -70,6 +70,12 @@ sub init()
     m.video.observeField("state", "onVideoState")
     m.video.observeField("position", "onVideoPosition")
     m.video.observeField("duration", "onVideoDuration")
+    ' Buffering percentage and the buffered-ahead segment. Both fields exist on a Roku Video
+    ' node; the simulator's does not have them, so they are guarded.
+    m.bufferLabel = m.top.findNode("bufferLabel")
+    m.bufferedEnd = -1.0
+    if m.video.hasField("bufferingStatus") then m.video.observeField("bufferingStatus", "onBufferingStatus")
+    if m.video.hasField("downloadedSegment") then m.video.observeField("downloadedSegment", "onDownloadedSegment")
     m.progressTimer.observeField("fire", "onProgressTick")
     m.hideTimer.observeField("fire", "hideControls")
     m.feedbackTimer.observeField("fire", "hideFeedback")
@@ -120,6 +126,8 @@ sub resetPlaybackState()
     m.subtitleIndex = -1
     m.pendingSubtitleTrackId = ""
     m.qualityPref = PlaybackCaps_qualityPreference()
+    m.lastRequestBody = invalid   ' the start/replan body the current plan answered (diagnostics)
+    m.replanKind = ""             ' "quality" | "output": what the pending replan was for
     m.skipShownFor = ""
     m.autoSkipped = {}
     m.activeMarker = invalid
@@ -420,6 +428,7 @@ sub startSession(installation as string)
     if subId <> "" and Left(subId, Len(prefix)) <> prefix then subId = ""
     m.explicitSubtitleId = subId
     body = PlaybackCaps_startBody(installation, m.fileId, m.attemptId, startPos, audioId, subId)
+    m.lastRequestBody = body
     Api_send("POST", "/api/v2/playback/start", body, "onStart")
 end sub
 
@@ -459,6 +468,8 @@ sub onStart(event as object)
     if m.sessionId = "" then m.sessionId = Str_orEmpty(d.playback_plan.session_id)
     m.sequence = 0
     m.stopId = ""
+    ' One line per start for the debug console (telnet 8085): declared caps, request, decision.
+    print PlaybackCaps_diagLine(m.lastRequestBody, d.playback_plan)
     applyPlan(d.playback_plan)
 end sub
 
@@ -467,6 +478,7 @@ end sub
 sub applyPlan(plan as object, opts = invalid as dynamic)
     if opts = invalid then opts = {}
     m.plan = plan
+    resetBuffered()
     s = m.global.session
     stream = plan.stream
     tl = plan.timeline
@@ -604,6 +616,7 @@ sub onVideoState()
         setBuffering(true)
     else if st = "playing" then
         setBuffering(false)
+        m.bufferLabel.text = "Buffering"
         m.isPaused = false
         m.playPauseBtn.iconUri = "pkg:/images/icons/pause.png"
         if m.resumeAfterStart <> invalid then
@@ -632,6 +645,45 @@ sub onVideoState()
     end if
 end sub
 
+' bufferingStatus: { percentage, isUnderrun, prebufferDone } while the Video node buffers; it can
+' be invalid or partial. The label is full-width and centered, so no measuring is needed.
+sub onBufferingStatus()
+    st = m.video.bufferingStatus
+    text = "Buffering"
+    if st <> invalid and Type(st) = "roAssociativeArray" then
+        pct = Int(Num_or(st.percentage, -1))
+        if pct >= 0 and pct <= 100 then text = "Buffering " + pct.ToStr() + "%"
+    end if
+    m.bufferLabel.text = text
+end sub
+
+' downloadedSegment (HLS / DASH only): each event names the segment just fetched. Its start and
+' duration are read loosely (the keys and units differ between Roku OS releases; values over
+' 100000 are milliseconds) and the furthest end becomes the buffered position, in source time.
+' Progressive MP4 never fires it, so the scrubber shows no buffered segment there.
+sub onDownloadedSegment()
+    seg = m.video.downloadedSegment
+    if seg = invalid or Type(seg) <> "roAssociativeArray" then return
+    startS = Num_or(seg.segStartTime, -1)
+    if startS < 0 then startS = Num_or(seg.startTime, -1)
+    if startS < 0 then startS = Num_or(seg.start, -1)
+    if startS < 0 then return
+    durS = Num_or(seg.segDuration, 0)
+    if durS <= 0 then durS = Num_or(seg.duration, 0)
+    if startS > 100000 then startS = startS / 1000
+    if durS > 100000 then durS = durS / 1000
+    endS = startS + durS + m.timelineOffset
+    if endS > m.bufferedEnd then
+        m.bufferedEnd = endS
+        if not m.scrubbing then m.scrubber.buffered = m.bufferedEnd
+    end if
+end sub
+
+sub resetBuffered()
+    m.bufferedEnd = -1.0
+    m.scrubber.buffered = -1.0
+end sub
+
 sub onVideoDuration()
     if m.duration <= 0 and m.video.duration > 0 then
         m.duration = m.video.duration
@@ -654,6 +706,7 @@ end function
 sub seekToSource(seconds as float)
     if seconds < 0 then seconds = 0
     if m.duration > 0 and seconds > m.duration - 1 then seconds = m.duration - 1
+    resetBuffered()
     m.video.seek = seconds - m.timelineOffset
     m.position = seconds
     m.scrubber.position = seconds
@@ -736,6 +789,8 @@ sub exitPlayer()
     m.subsSyncTimer.control = "stop"
     m.subsAiTimer.control = "stop"
     hadSession = m.sessionId <> ""
+    if m.video.hasField("bufferingStatus") then m.video.unobserveField("bufferingStatus")
+    if m.video.hasField("downloadedSegment") then m.video.unobserveField("downloadedSegment")
     m.video.control = "stop"
     m.video.visible = false
     stopSession()
@@ -1610,10 +1665,25 @@ function currentSubtitleName() as string
     return m.subtitleTracks[m.subtitleIndex].label
 end function
 
+' The Quality row: the chosen preference as the server names it (available_qualities carries a
+' display_name for ladder rungs), with the presets' own labels for the fixed values.
 function qualityLabel() as string
-    q = m.qualityPref
+    q = LCase(Str_orEmpty(m.qualityPref))
     if q = "" or q = "auto" then return "Auto"
-    return q
+    if m.plan <> invalid then
+        for each aq in Arr_or(m.plan.available_qualities)
+            if LCase(Str_orEmpty(aq.label)) = q and not Str_isEmpty(aq.display_name) then return aq.display_name
+        end for
+    end if
+    return qualityChoiceLabel(q)
+end function
+
+function qualityChoiceLabel(label as string) as string
+    l = LCase(label)
+    if l = "original" then return "Original"
+    if l = "2160p" or l = "4k" then return "4K"
+    if l = "auto" then return "Auto"
+    return label
 end function
 
 sub updateHudQualityLabel()
@@ -1629,41 +1699,45 @@ function hudRowSpecs() as object
     if tabName = "Info" then
         rows.Push({ id: "np", label: "Now Playing", value: m.titleLabel.text, actionable: false })
         if m.epTag.text <> "" then rows.Push({ id: "ep", label: "Episode", value: m.epTag.text, actionable: false })
-        route = ""
+        ' TvPlayerHud HudInfoPane: the route, then the stream that actually plays (the plan's
+        ' effective_recipe, labelled as Android does: "HEVC", "E-AC3", "Dolby Vision", "4K"), and
+        ' the source file's own facts when they differ (a remux or transcode changed something).
         if m.plan <> invalid then
-            route = Str_orEmpty(m.plan.delivery)
+            route = PlaybackCaps_deliveryLabel(m.plan.delivery)
+            if route <> "" then rows.Push({ id: "route", label: "Stream", value: route, actionable: false })
             r = m.plan.effective_recipe
             if r <> invalid then
-                bits = []
-                if not Str_isEmpty(r.video_codec) then bits.Push(UCase(r.video_codec))
-                if r.height <> invalid then bits.Push(Str_orEmpty(r.height) + "p")
-                if not Str_isEmpty(r.audio_codec) then bits.Push(UCase(r.audio_codec))
-                if not Str_isEmpty(r.audio_layout) then bits.Push(r.audio_layout)
-                route = Str_joinDots([route, Str_joinDots(bits, " ")])
+                video = Str_joinDots([PlaybackCaps_videoCodecLabel(r.video_codec), PlaybackCaps_resolutionLabel(r.width, r.height), effectiveRangeLabel()])
+                if video <> "" then rows.Push({ id: "video", label: "Video", value: video, actionable: false })
+                audio = Str_joinDots([PlaybackCaps_audioCodecLabel(r.audio_codec), PlaybackCaps_channelsLabel(r.audio_channels, r.audio_layout)], " ")
+                if audio <> "" then rows.Push({ id: "audio_info", label: "Audio", value: audio, actionable: false })
             end if
         end if
-        if route <> "" then rows.Push({ id: "route", label: "Stream", value: route, actionable: false })
-        if m.version <> invalid then
-            vbits = []
-            if not Str_isEmpty(m.version.resolution) then vbits.Push(m.version.resolution)
-            if not Str_isEmpty(m.version.container) then vbits.Push(UCase(m.version.container))
-            if m.version.hdr = true then vbits.Push("HDR")
-            if vbits.Count() > 0 then rows.Push({ id: "file", label: "Source file", value: Str_joinDots(vbits), actionable: false })
-        end if
+        src = sourceFactsLabel()
+        if src <> "" then rows.Push({ id: "file", label: "Source file", value: src, actionable: false })
     else if tabName = "Video" then
+        ' HudVideoPane: Quality, HDR, Dolby Vision (both as on Android TV's Playback column), the
+        ' auto toggles, and the dynamic range the plan promises.
         rows.Push({ id: "quality", label: "Quality", value: qualityLabel(), actionable: true })
-        auto = "On"
-        if not autoPlayNext() then auto = "Off"
-        rows.Push({ id: "autoplay", label: "Auto-play next", value: auto, actionable: true })
-        if m.plan <> invalid and m.plan.effective_recipe <> invalid and not Str_isEmpty(m.plan.effective_recipe.dynamic_range) then
-            rows.Push({ id: "range", label: "Dynamic range", value: UCase(m.plan.effective_recipe.dynamic_range), actionable: false })
+        if displayHasHdr() then rows.Push({ id: "hdr", label: "HDR", value: onOffLabel(Settings_hdrEnabled()), actionable: true })
+        if displayHasDolbyVision() then rows.Push({ id: "dolbyvision", label: "Dolby Vision", value: onOffLabel(Settings_dolbyVision()), actionable: true })
+        rows.Push({ id: "autoplay", label: "Auto-play next", value: onOffLabel(autoPlayNext()), actionable: true })
+        range = effectiveRangeLabel()
+        if range <> "" then
+            srcRange = ""
+            if m.plan <> invalid and m.plan.source <> invalid then srcRange = PlaybackCaps_rangeLabel(m.plan.source.dynamic_range)
+            if srcRange <> "" and srcRange <> range then range = range + " (file: " + srcRange + ")"
+            rows.Push({ id: "range", label: "Dynamic range", value: range, actionable: false })
         end if
     else if tabName = "Audio" then
         rows.Push({ id: "audio", label: "Track", value: currentAudioName(), actionable: true })
         if m.plan <> invalid and m.plan.effective_recipe <> invalid then
             r = m.plan.effective_recipe
-            if not Str_isEmpty(r.audio_codec) then rows.Push({ id: "acodec", label: "Codec", value: UCase(r.audio_codec), actionable: false })
-            if r.audio_channels <> invalid then rows.Push({ id: "ach", label: "Channels", value: Str_orEmpty(r.audio_channels), actionable: false })
+            codec = PlaybackCaps_audioCodecLabel(r.audio_codec)
+            if codec <> "" then rows.Push({ id: "acodec", label: "Codec", value: codec, actionable: false })
+            ch = PlaybackCaps_channelsLabel(r.audio_channels, r.audio_layout)
+            if ch <> "" then rows.Push({ id: "ach", label: "Channels", value: ch, actionable: false })
+            if m.plan.claims <> invalid and m.plan.claims.audio <> invalid and m.plan.claims.audio.passthrough = true then rows.Push({ id: "apass", label: "Output", value: "Passthrough", actionable: false })
         end if
     else if tabName = "Subtitles" then
         rows.Push({ id: "subtitle", label: "Track", value: currentSubtitleName(), actionable: true })
@@ -1680,6 +1754,52 @@ function hudRowSpecs() as object
         if rows.Count() = 0 then rows.Push({ id: "noch", label: "No chapters in this title", value: "", actionable: false })
     end if
     return rows
+end function
+
+function onOffLabel(v as boolean) as string
+    if v then return "On"
+    return "Off"
+end function
+
+' The dynamic range the plan promises ("Dolby Vision", "HDR10", "SDR"), from the validated video
+' claims first (what the server will really output), then the recipe's dynamic_range.
+function effectiveRangeLabel() as string
+    if m.plan = invalid then return ""
+    if m.plan.claims <> invalid and m.plan.claims.video <> invalid then
+        c = m.plan.claims.video
+        if c.dolby_vision = true then return "Dolby Vision"
+        if c.hdr10_plus = true then return "HDR10+"
+        if c.hdr10 = true then return "HDR10"
+        if c.hlg = true then return "HLG"
+    end if
+    if m.plan.effective_recipe <> invalid then return PlaybackCaps_rangeLabel(m.plan.effective_recipe.dynamic_range)
+    return ""
+end function
+
+' "HEVC · 4K · Dolby Vision · E-AC3 5.1 · MKV" for the file itself: the plan's source facts,
+' else the watch detail's version row.
+function sourceFactsLabel() as string
+    if m.plan <> invalid and m.plan.source <> invalid and Type(m.plan.source) = "roAssociativeArray" then
+        s = m.plan.source
+        range = PlaybackCaps_rangeLabel(s.dynamic_range)
+        if range = "Dolby Vision" and s.dolby_vision_profile <> invalid then range = range + " P" + PlaybackCaps_str(s.dolby_vision_profile)
+        audio = Str_joinDots([PlaybackCaps_audioCodecLabel(s.audio_codec), PlaybackCaps_channelsLabel(s.audio_channels, s.audio_layout)], " ")
+        out = Str_joinDots([PlaybackCaps_videoCodecLabel(s.video_codec), PlaybackCaps_resolutionLabel(s.width, s.height), range, audio, UCase(Str_orEmpty(s.container))])
+        if out <> "" then return out
+    end if
+    if m.version = invalid then return ""
+    hdr = ""
+    if m.version.hdr = true then hdr = "HDR"
+    return Str_joinDots([PlaybackCaps_videoCodecLabel(m.version.codec_video), Str_orEmpty(m.version.resolution), hdr, PlaybackCaps_audioCodecLabel(m.version.codec_audio), UCase(Str_orEmpty(m.version.container))])
+end function
+
+function displayHasHdr() as boolean
+    p = PlaybackCaps_probe()
+    return p.display.hdr10 or p.display.hdr10Plus or p.display.hlg or p.display.dolbyVision or Settings_forceHdrPassthrough()
+end function
+
+function displayHasDolbyVision() as boolean
+    return PlaybackCaps_probe().display.dolbyVision
 end function
 
 sub buildHudRows()
@@ -1788,6 +1908,10 @@ sub activateHudRow()
         p.autoPlayNext = not (p.autoPlayNext <> false)
         Prefs_save(p)
         buildHudRows()
+    else if id = "hdr" then
+        toggleOutputSetting("player.hdr_enabled", not Settings_hdrEnabled())
+    else if id = "dolbyvision" then
+        toggleOutputSetting("player.dolby_vision_enabled", not Settings_dolbyVision())
     else if Subs_activateHudRow(id) then
         ' Handled by the subtitle suite.
     else if Left(id, 8) = "chapter:" then
@@ -1827,8 +1951,11 @@ sub openPicker(kind as string)
             for each q in Arr_or(m.plan.available_qualities)
                 l = Str_orEmpty(q.label)
                 if l <> "" then
-                    text = l
-                    if q.height <> invalid and LCase(l) <> Str_orEmpty(q.height) + "p" then text = l + " · " + Str_orEmpty(q.height) + "p"
+                    text = Str_orEmpty(q.display_name)
+                    if text = "" then text = qualityChoiceLabel(l)
+                    hp = ""
+                    if q.height <> invalid then hp = PlaybackCaps_str(q.height) + "p"
+                    if hp <> "" and LCase(l) <> hp and LCase(text) <> hp then text = text + " · " + hp
                     acts.Push({ id: l, label: text, checked: LCase(m.qualityPref) = LCase(l) })
                 end if
             end for
@@ -1891,12 +2018,39 @@ end sub
 ' Quality change: replan and hand the new plan to the player at the current position.
 sub requestQualityChange(label as string)
     if m.plan = invalid or m.sessionId = "" then return
+    m.qualityPref = label
+    sendReplan("quality_change", "quality")
+end sub
+
+' HUD "HDR" / "Dolby Vision" toggles (TvPlayerViewModel.onSetHdrEnabled / onSetDolbyVisionEnabled):
+' write the profile_device setting, then replan in place as an output change when the file is
+' HDR, so the viewer sees the layer they just chose. An SDR file has nothing to re-plan.
+sub toggleOutputSetting(key as string, value as boolean)
+    Settings_setLocal(key, "profile_device", value)
+    Settings_put(key, "profile_device", value, "onHudSettingWritten")
+    buildHudRows()
+    if m.plan = invalid or m.sessionId = "" then return
+    srcRange = ""
+    if m.plan.source <> invalid then srcRange = LCase(Str_orEmpty(m.plan.source.dynamic_range))
+    if srcRange = "" and m.plan.effective_recipe <> invalid then srcRange = LCase(Str_orEmpty(m.plan.effective_recipe.dynamic_range))
+    if srcRange = "" or srcRange = "sdr" then return
+    sendReplan("output_change", "output")
+end sub
+
+sub onHudSettingWritten(event as object)
+    resp = Api_result(event)
+    if not resp.ok then m.global.toast = "Couldn't save the setting: " + Api_errorText(resp)
+end sub
+
+' POST /playback/{session}/replan at the current position; onReplan swaps the plan in.
+sub sendReplan(operation as string, kind as string)
     inst = installationId()
     if inst = "" then return
-    m.qualityPref = label
     selected = {}
     if m.plan.selected_tracks <> invalid then selected = m.plan.selected_tracks
-    body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, "quality_change", label, m.position, selected)
+    body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, operation, m.qualityPref, m.position, selected)
+    m.lastRequestBody = body
+    m.replanKind = kind
     setBuffering(true)
     Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/replan", body, "onReplan")
 end sub
@@ -1904,18 +2058,21 @@ end sub
 sub onReplan(event as object)
     resp = Api_result(event)
     if m.closing then return
+    failText = "Couldn't change the quality"
+    if m.replanKind = "output" then failText = "Couldn't change the video output"
     if not resp.ok or resp.data = invalid or resp.data.outcome <> "playable" or resp.data.playback_plan = invalid then
         setBuffering(false)
-        m.global.toast = "Couldn't change the quality"
-        if m.plan <> invalid then m.qualityPref = PlaybackCaps_qualityPreference()
+        m.global.toast = failText
+        if m.plan <> invalid and m.replanKind = "quality" then m.qualityPref = PlaybackCaps_qualityPreference()
         return
     end if
     plan = resp.data.playback_plan
     if PlaybackCaps_planProblem(resp.data) <> "" then
         setBuffering(false)
-        m.global.toast = "Couldn't change the quality"
+        m.global.toast = failText
         return
     end if
+    print PlaybackCaps_diagLine(m.lastRequestBody, plan)
     resumeAt = m.position
     m.video.control = "stop"
     applyPlan(plan, { resumeAt: resumeAt, subtitleTrackId: Subs_selectedTrackId() })

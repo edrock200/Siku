@@ -940,8 +940,102 @@ def sub_store(fid, provider, language, release, fmt="srt", score=0.0, hi=False, 
     return rec
 
 
-def playback_decision(sid, position, fid):
+# Files the mock treats as a 4K Dolby Vision (profile 8.1) HEVC MKV with E-AC3 5.1: the 2160p
+# variants of movie:glass-city. Everything else is the 1080p H.264/AAC MP4.
+FOUR_K_FILES = {"52", "56"}
+
+
+def playback_summary(b):
+    """One line of what a start/replan body declared, for the mock log."""
+    caps = b.get("client_capabilities") or {}
+    hd = caps.get("hdr_details") or {}
+    ctx = b.get("client_playback_context") or {}
+    out = ctx.get("output") or {}
+    disp = out.get("display") or {}
+    pt = (caps.get("audio_passthrough") or {}).get("passthrough_codecs")
+    return ("quality=%s cap=%s metered=%s max_res=%s video=%s audio=%s passthru=%s hdr=%s hdr10=%s hdr10+=%s hlg=%s dv=%s display_evidence=%s deliveries=%s"
+            % (b.get("quality_preference"), b.get("bandwidth_cap_kbps"), b.get("metered"), caps.get("max_resolution"),
+               ",".join(caps.get("codecs_video") or []), ",".join(caps.get("codecs_audio") or []), ",".join(pt or []),
+               caps.get("hdr"), hd.get("hdr10"), hd.get("hdr10_plus"), hd.get("hlg"), hd.get("dolby_vision_profiles"),
+               disp.get("hdr_evidence"), ",".join(sorted((ctx.get("deliveries") or {}).keys()))))
+
+
+def playback_route(fid, b):
+    """Mimics the server planner for the two mock sources: delivery, decision_reason, recipe, claims, source."""
+    caps = (b or {}).get("client_capabilities") or {}
+    hd = caps.get("hdr_details") or {}
+    quality = str((b or {}).get("quality_preference") or "auto").lower()
+    cap = (b or {}).get("bandwidth_cap_kbps") or 0
+    warnings = []
+    if fid not in FOUR_K_FILES:
+        source = {"media_file_id": fid, "duration_seconds": 3000, "container": "mp4", "video_codec": "h264", "width": 1920, "height": 1080,
+                  "frame_rate": 23.976, "bitrate_kbps": 8000, "dynamic_range": "sdr", "audio_codec": "aac", "audio_channels": 2, "audio_layout": "stereo"}
+        qualities = [{"label": "original", "height": 1080, "bitrate_kbps": 8000, "preserves_source": True},
+                     {"label": "720p-high", "display_name": "720p High", "height": 720, "bitrate_kbps": 4000, "preserves_source": False}]
+        if quality in ("720p", "480p", "720p-high") or (cap and cap < 8000):
+            height = 720 if quality != "480p" else 480
+            reason = "quality_bandwidth_cap" if (cap and cap < 8000 and quality not in ("720p", "480p", "720p-high")) else "quality_fixed_rung"
+            if reason == "quality_bandwidth_cap":
+                warnings.append({"code": "bandwidth_cap_applied", "message": "Delivery quality is limited by the configured bandwidth cap."})
+            recipe = {"video_codec": "h264", "audio_codec": "aac", "width": height * 16 // 9, "height": height, "frame_rate": 23.976,
+                      "bitrate_kbps": min(cap or 4000, 4000), "dynamic_range": "sdr", "audio_channels": 2, "audio_layout": "stereo"}
+            return "server_transcode_hls", reason, recipe, {"video": {}, "audio": {"codec": "aac", "passthrough": False, "reason": "server_audio_adaptation"}}, source, qualities, warnings
+        recipe = dict(source)
+        recipe.pop("media_file_id"), recipe.pop("duration_seconds"), recipe.pop("container")
+        return "original_http", "validated_original_playback", recipe, {"video": {}, "audio": {"codec": "aac", "passthrough": False, "reason": "client_decode_supported"}}, source, qualities, warnings
+    source = {"media_file_id": fid, "duration_seconds": 3000, "container": "mkv", "video_codec": "hevc", "video_profile": "main 10", "bit_depth": 10,
+              "width": 3840, "height": 2160, "frame_rate": 23.976, "bitrate_kbps": 24000, "dynamic_range": "dolby_vision", "dolby_vision_profile": 8,
+              "dv_bl_compat_id": 1, "audio_codec": "eac3", "audio_channels": 6, "audio_layout": "5.1"}
+    qualities = [{"label": "original", "height": 2160, "bitrate_kbps": 24000, "preserves_source": True},
+                 {"label": "1080p-high", "display_name": "1080p High", "height": 1080, "bitrate_kbps": 10000, "preserves_source": False},
+                 {"label": "1080p-medium", "display_name": "1080p Medium", "height": 1080, "bitrate_kbps": 6000, "preserves_source": False},
+                 {"label": "720p-high", "display_name": "720p High", "height": 720, "bitrate_kbps": 4000, "preserves_source": False}]
+    dv = hd.get("dolby_vision_profiles") or []
+    hdr10 = bool(hd.get("hdr10"))
+    audio_ok = "eac3" in [c.lower() for c in caps.get("codecs_audio") or []]
+    ladder = [(2160, 20000), (1080, 5000), (720, 2000), (480, 0)]
+
+    def transcode(height, reason, bitrate):
+        recipe = {"video_codec": "h264", "audio_codec": "aac", "width": height * 16 // 9, "height": height, "frame_rate": 23.976,
+                  "bitrate_kbps": bitrate, "dynamic_range": "sdr", "audio_channels": 6, "audio_layout": "5.1"}
+        warnings.append({"code": "hdr_tone_mapped", "message": "HDR video is tone-mapped to SDR for this playback route."})
+        return "server_transcode_hls", reason, recipe, {"video": {}, "audio": {"codec": "aac", "passthrough": False, "reason": "server_audio_adaptation"}}, source, qualities, warnings
+
+    if cap and cap < 24000:
+        # The cap is a hard ceiling that outranks "original" (ResolveQualityPolicyV3): 80 % of it buys a ladder class.
+        budget = cap * 0.8
+        height = next(h for h, floor in ladder if budget >= floor)
+        warnings.append({"code": "bandwidth_cap_applied", "message": "Delivery quality is limited by the configured bandwidth cap."})
+        return transcode(height, "quality_bandwidth_cap", min(cap, 8000))
+    if quality in ("1080p", "720p", "480p") or quality.startswith(("1080p-", "720p-", "480p-")):
+        height = int(quality.split("p")[0])
+        return transcode(height, "quality_fixed_rung", {1080: 6000, 720: 4000, 480: 1500}.get(height, 4000))
+    if caps.get("max_resolution") in ("1080p", "720p") and quality == "auto":
+        return transcode(1080, "quality_device_limit", 8000)
+    if 8 in dv and audio_ok:
+        recipe = {"video_codec": "hevc", "audio_codec": "eac3", "width": 3840, "height": 2160, "frame_rate": 23.976, "bitrate_kbps": 24000,
+                  "dynamic_range": "dolby_vision", "audio_channels": 6, "audio_layout": "5.1"}
+        claims = {"video": {"dolby_vision": True, "dolby_vision_reason": "native_profile_supported"},
+                  "audio": {"codec": "eac3", "passthrough": False, "reason": "client_decode_supported"}}
+        return "original_http", "validated_original_playback", recipe, claims, source, qualities, warnings
+    if hdr10:
+        # Dolby Vision off (or profile 8 not declared): the validated HDR10 base layer by remux.
+        audio = "eac3" if audio_ok else "aac"
+        recipe = {"video_codec": "hevc", "audio_codec": audio, "width": 3840, "height": 2160, "frame_rate": 23.976, "bitrate_kbps": 24000,
+                  "dynamic_range": "hdr10", "audio_channels": 6, "audio_layout": "5.1"}
+        warnings.append({"code": "dolby_vision_removed", "message": "Dolby Vision metadata is removed and the validated HDR10 base layer is preserved."})
+        claims = {"video": {"hdr10": True}, "audio": {"codec": audio, "passthrough": False, "reason": "client_decode_supported" if audio_ok else "server_audio_adaptation"}}
+        return "server_remux_hls", "hls_packaging_required", recipe, claims, source, qualities, warnings
+    return transcode(2160, "quality_auto_source", 20000)
+
+
+def playback_decision(sid, position, fid, body=None):
     """The start / replan decision: inventory = the file's sidecar plus every stored subtitle."""
+    delivery, reason, recipe, claims, source, qualities, warnings = playback_route(fid, body)
+    if delivery == "original_http":
+        stream = {"url": "/mock-media/%s.mp4?st=abc" % sid, "protocol": "http_progressive", "container": source["container"], "mime_type": "video/mp4", "headers": {}, "header_refresh": "none"}
+    else:
+        stream = {"url": "/api/v2/playback/transcode/%s/master.m3u8?st=abc" % sid, "protocol": "hls", "container": "hls", "mime_type": "application/vnd.apple.mpegurl", "headers": {}, "header_refresh": "none"}
     inventory = [{"track_id": "file:%s:subtitle:0" % fid, "combined_index": 0, "source": "external", "codec": "srt", "language": "eng",
                   "label": "English", "forced": False, "default": False, "hearing_impaired": False, "delivery": "sidecar",
                   "url": "/api/v2/stream/%s/subtitles/0.vtt?file_id=%s&external_subtitle_key=f903" % (sid, fid), "sync_key": EXTERNAL_SYNC_KEY}]
@@ -957,12 +1051,15 @@ def playback_decision(sid, position, fid):
     return {"protocol_version": 3, "server_features": ["playback_plan_v3", "neutral_playback_v3_contract_v1", "sequenced_progress_v1"],
             "outcome": "playable", "session_id": sid,
             "playback_plan": {"protocol_version": 3, "plan_id": "plan:%d" % (len(SUBS["stored"]) + 1), "plan_attempt_key": "v3:%d" % (len(SUBS["stored"]) + 1), "session_id": sid,
-                              "delivery": "original_http",
-                              "stream": {"url": "/mock-media/%s.mp4?st=abc" % sid, "protocol": "http_progressive", "container": "mp4", "mime_type": "video/mp4", "headers": {}, "header_refresh": "none"},
+                              "delivery": delivery, "decision_reason": reason,
+                              "stream": stream,
                               "timeline": {"player_start_seconds": position, "timeline_offset_seconds": 0, "can_seek_anywhere": True},
                               "selected_tracks": {"audio": {"id": "file:%s:audio:0" % fid, "index": 0}},
+                              "effective_recipe": recipe, "claims": claims, "available_qualities": qualities,
+                              "degradation_warnings": warnings, "transformations": [], "applied_quirks": [], "runtime_corrections": [],
+                              "requested_media_file_id": fid, "effective_media_file_id": fid,
                               "subtitle": {"mode": "off", "inventory": inventory},
-                              "source": {"media_file_id": fid, "duration_seconds": 3000}}}
+                              "source": source}}
 
 
 def subtitle_route(handler, method, p, q, b):
@@ -1374,16 +1471,18 @@ class Handler(BaseHTTPRequestHandler):
             STATE["sessions"][sid] = b
             LOG.append("START " + json.dumps(b)[:400])
             print("START", json.dumps({k: b.get(k) for k in ("file_id", "audio_track_id", "subtitle_track_id", "start_position")}), flush=True)
-            return self.send(201, playback_decision(sid, b.get("start_position") or 0, b.get("file_id") or "42"))
+            print("START CAPS", playback_summary(b), flush=True)
+            LOG.append("START CAPS " + playback_summary(b))
+            return self.send(201, playback_decision(sid, b.get("start_position") or 0, b.get("file_id") or "42", b))
         m = re.match(r"^/api/v2/playback/([^/]+)/replan$", p)
         if m and method == "POST":
             # Same decision shape as start; the inventory lists subtitles stored since (track_change).
             LOG.append("REPLAN " + json.dumps({k: b.get(k) for k in ("operation", "position_seconds", "selected_tracks")}))
-            print("REPLAN", b.get("operation"), b.get("position_seconds"), flush=True)
+            print("REPLAN", b.get("operation"), b.get("position_seconds"), playback_summary(b), flush=True)
             if m.group(1) not in STATE["sessions"]:
                 return self.problem(410, "playback_session_ended", "Session ended")
             start = STATE["sessions"][m.group(1)]
-            return self.send(200, playback_decision(m.group(1), b.get("position_seconds") or 0, start.get("file_id") or "42"))
+            return self.send(200, playback_decision(m.group(1), b.get("position_seconds") or 0, start.get("file_id") or "42", b))
         m = re.match(r"^/api/v2/playback/([^/]+)/progress$", p)
         if m:
             return self.send(200, {"outcome": "applied", "accepted": b})
@@ -1747,6 +1846,7 @@ def settings_route(handler, method, p, q, b):
                 return handler.send(200, settings_row_view(key, ident, row)) or True
             if method == "DELETE":
                 LOG.append("SETTINGS delete %s scope=%s" % (key, scope))
+                print("SETTINGS delete %s scope=%s" % (key, scope), flush=True)
                 if row is None:
                     return handler.problem(404, "not_found", "Nothing is stored at that scope") or True
                 del store["rows"][(key,) + ident]
@@ -1764,6 +1864,7 @@ def settings_route(handler, method, p, q, b):
             store["rows"][(key,) + ident] = row
             store["revision"] += 1
             LOG.append("SETTINGS put %s scope=%s value=%s" % (key, scope, json.dumps(value)))
+            print("SETTINGS put %s scope=%s value=%s" % (key, scope, json.dumps(value)), flush=True)
             return handler.send(200, settings_row_view(key, ident, row)) or True
     return False
 

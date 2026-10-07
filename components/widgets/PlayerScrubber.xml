@@ -3,7 +3,8 @@
   Player scrubber (design-spec §4.10): a glass capsule with the elapsed time, a track with the played
   fill, intro/credits/recap ranges and chapter ticks, a puck, and the remaining time ("-1:23:45").
   Fields: duration, position (source seconds), scrubPosition, scrubbing, markers [{kind,start,end}],
-          chapters [{start_seconds}], width (default 1600). Make it focusable; the screen handles keys.
+          chapters [{start_seconds}], buffered (source seconds downloaded ahead; < 0 hides the lighter
+          buffered segment), width (default 1600). Make it focusable; the screen handles keys.
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="PlayerScrubber" extends="Group">
@@ -12,6 +13,7 @@
     <field id="position" type="float" value="0" onChange="redraw" />
     <field id="scrubPosition" type="float" value="0" onChange="redraw" />
     <field id="scrubbing" type="boolean" value="false" onChange="redraw" />
+    <field id="buffered" type="float" value="-1" onChange="redraw" />
     <field id="markers" type="array" onChange="redraw" />
     <field id="chapters" type="array" onChange="redraw" />
     <field id="width" type="integer" value="1600" onChange="redraw" />
@@ -27,6 +29,7 @@
     </Label>
     <Group id="trackGroup">
       <Rectangle id="track" color="0xFFFFFF3D" />
+      <Rectangle id="bufferedFill" color="0xFFFFFF4D" visible="false" />
       <Group id="ranges" />
       <Group id="ticks" />
       <Rectangle id="fill" color="0xEDEDEDFF" />

@@ -93,6 +93,20 @@ padding to `Content_rows(rows, insetY)` (or `cardInsetX/Y` on grid nodes), add t
 to `itemSize` / `rowItemSize`, and move the list up (or shrink `rowLabelOffset.y`) by it so the
 layout does not shift. Anything that scales or overflows inside an item component needs this.
 
+**13. Declare playback capabilities from the right APIs, and never cap what the user did not.**
+`GetDisplayMode()` / `GetUIResolution()` describe the UI canvas (720p or 1080p even on a 4K TV);
+only `GetVideoMode()` ("2160p60") and `CanDecodeVideo({Codec:"hevc", Profile:"main 10",
+Level:"5.1"})` say what the box can play, and `GetDisplayProperties()` (Hdr10 / Hdr10Plus / Hlg /
+DolbyVision) what the TV takes. `CanDecodeAudio` answers true for decode *or* HDMI passthrough,
+so DD+/DTS go in `codecs_audio` (the Silo server copies audio only from that list at the
+"declared" tier). Guard every probe with `try`/`catch`, read result keys loosely, and never
+compare a possibly-missing key (`entry.max_height >= 2160` crashed; pitfall 6 applies to your own
+AAs too). On the Silo side, `playback.max_bitrate_kbps` is nullable: an uncapped preset must PUT
+`{"value": null}` at `profile_device` (FormatJson renders an `invalid` value as `null`), because
+deleting the row lets a profile-scope cap through and the server then transcodes to 720p
+regardless of "Original". `PlaybackCaps.brs` is the reference; the `[siku-playback]` console
+line shows what was declared.
+
 ## Project conventions (short version; `docs/ARCHITECTURE.md` has the full one)
 - 1920×1080 canvas, pixel coordinates. Android dp × 2 = px; Android sp × 1.72 = px.
 - Every component is an XML file plus a sibling `.brs` referenced by `<script uri>`. No inline
@@ -163,3 +177,4 @@ released version is missing here.
 - **v0.1.9** RowList clips items to their cell on device (pitfall 12): the focused card's zoom was cut at the top of every row. Cards now sit 32 px down inside taller cells.
 - **v0.1.10** Not a device rule but a porting one: the Silo server does not pick subtitles from the profile's Off/Auto/Always setting (the plan's `subtitle.mode` is usually `off`); Android TV resolves them client-side (`AutoSubtitleResolver.kt`). `Subs_autoChoice` ports it. When a Silo feature "does nothing" on Roku, check whether the Android client does the work itself before blaming the server.
 - **v0.1.11** Full review. Comparisons (`>`, `<`) and `Int()` on a string throw Type Mismatch on device (`=` just returns false), so every server number used in arithmetic or comparison goes through `Num_or` / `Content_num` (pitfall 6). Grids and calendar shelves got the pitfall-12 headroom; float-to-integer field assignments are rounded (pitfall 5).
+- **v0.1.12** A nullable setting (`playback.max_bitrate_kbps`) must be PUT as JSON `null` to mean "no limit at this scope"; DELETE lets a broader scope's value show through (it was a 6 Mbps profile cap forcing 720p). Capability probes: `CanDecodeAudio` with `PassThru`/`ChCnt`, `CanDecodeVideo` with profile and level, `GetVideoMode` for output (never the UI resolution); read device flags with `PlaybackCaps_truthy`, because an Integer/Boolean comparison throws on device.

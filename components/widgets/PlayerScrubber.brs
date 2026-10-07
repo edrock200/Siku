@@ -9,6 +9,7 @@ sub init()
     m.ranges = m.top.findNode("ranges")
     m.ticks = m.top.findNode("ticks")
     m.fill = m.top.findNode("fill")
+    m.bufferedFill = m.top.findNode("bufferedFill")
     m.puck = m.top.findNode("puck")
     m.remaining = m.top.findNode("remaining")
     m.rateChip = m.top.findNode("rateChip")
@@ -59,6 +60,21 @@ sub redraw()
     m.fill.translation = [0, trackY]
     m.fill.width = Int(trackW * frac)
     m.fill.height = trackH
+    ' Buffered-ahead segment (the Android TV player's lighter buffered track): from the played
+    ' position to the furthest downloaded second; hidden when nothing reports one (< 0).
+    buf = m.top.buffered
+    m.bufferedFill.visible = false
+    if dur > 0 and buf > cur then
+        if buf > dur then buf = dur
+        bx = Int(trackW * frac)
+        bw = Int(trackW * (buf / dur)) - bx
+        if bw > 0 then
+            m.bufferedFill.translation = [bx, trackY]
+            m.bufferedFill.width = bw
+            m.bufferedFill.height = trackH
+            m.bufferedFill.visible = true
+        end if
+    end if
     m.puck.width = puckS
     m.puck.height = puckS
     m.puck.translation = [Int(trackW * frac) - puckS / 2, (h - puckS) / 2]
