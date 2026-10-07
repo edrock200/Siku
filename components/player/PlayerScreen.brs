@@ -684,6 +684,10 @@ sub onVideoState()
     else if st = "error" then
         msg = Str_orEmpty(m.video.errorMsg)
         if msg = "" then msg = Str_orEmpty(m.video.errorStr)
+        ' To the debug console too: the on-screen text is short and the code matters for a bug report.
+        delivery = ""
+        if m.plan <> invalid then delivery = Str_orEmpty(m.plan.delivery)
+        print "[siku-playback] video error delivery=" + delivery + " code=" + Str_orEmpty(m.video.errorCode) + " msg=" + Str_orEmpty(m.video.errorMsg) + " str=" + Str_orEmpty(m.video.errorStr)
         if msg = "" then msg = "The video could not be played."
         if m.video.errorCode <> invalid and m.video.errorCode <> 0 then msg = msg + " (" + Str_orEmpty(m.video.errorCode) + ")"
         showError(msg)

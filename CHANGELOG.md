@@ -3,6 +3,13 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.20
+
+- **Changed:** the Progressive Remux experiment is marked as failing on the Streaming Stick 4K
+  (tested); it stays available, off by default, for anyone testing another Roku model.
+- **For troubleshooting:** when the Roku's player reports an error, the error code and message
+  are now also written to the debug log as `[siku-playback] video error …`.
+
 ## v0.1.19
 
 - **New (experiment):** Settings › Playback › **Experimental: Progressive Remux**. Offers the

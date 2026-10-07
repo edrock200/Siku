@@ -42,6 +42,16 @@ transcodes for Roku into MPEG-TS segments, which is why Jellyfin plays with soun
 hardware. silo-server's Jellyfin-compatible API already honours that (`HLSRemuxMPEGTS`); protocol
 v3 only needs the same switch.
 
+## Routes already tried from the client
+
+- `server_remux_hls` (fMP4 segments, audio muxed): video plays, no audio, Video node reports
+  zero audio tracks. Same with AC3, E-AC3 and server-converted AAC.
+- `server_remux_progressive` (fragmented MP4 over plain HTTP, `-movflags frag_keyframe+delay_moov`):
+  the Roku Video node fails immediately (tested 2026-10-07, Streaming Stick 4K, Roku OS 14).
+  Roku lists fragmented MP4 only under DASH and HLS.
+- `server_transcode_hls` with H.264 (MPEG-TS segments): plays with sound. This is the only
+  server-side route a Roku can hear today, at the cost of re-encoding the video.
+
 ## Requested change (either is enough; the second is better)
 
 1. **MPEG-TS copy for v3 clients that ask for it.** Add a delivery-scoped client feature (for

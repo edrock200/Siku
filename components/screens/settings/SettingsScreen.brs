@@ -211,7 +211,7 @@ function buildPane(catId as string) as object
         if m.supportsDolbyVision then qText = qText + " Dolby Vision off asks the server for the HDR10 layer of Dolby Vision files instead. Profile 7 HDR10 Fallback plays dual-layer Dolby Vision files as their HDR10 base layer; off, they are sent as they are and this Roku's HEVC decoder shows the base layer itself."
         qText = qText + " Force HDR Passthrough allows HDR playback when this TV doesn't report support. It does not force the HDMI output into HDR; the Roku may still convert the picture to SDR. Enable it only if you've confirmed your TV supports the source format."
         qText = qText + " Force Dolby Audio Passthrough tells the server this Roku can play Dolby Digital and Dolby Digital Plus even when the TV or receiver does not report it, so the original audio is sent instead of being converted to AAC. If you then get no sound, turn it off; a Roku app cannot switch the HDMI audio output itself."
-        qText = qText + " Experimental: Progressive Remux offers the server a second way to keep the original video while converting only the audio: one MP4 stream over plain HTTP instead of HLS. Roku may not play it; if videos fail to start, turn it off."
+        qText = qText + " Experimental: Progressive Remux offers the server a second way to keep the original video while converting only the audio: one MP4 stream over plain HTTP instead of HLS. Tested on a Streaming Stick 4K (Roku OS 14): playback fails at once, so leave it off unless you are testing another Roku model."
         out.Push({ kind: "footer", text: qText })
 
         out.Push({ kind: "header", text: "Episodes" })
