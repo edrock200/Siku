@@ -43,9 +43,12 @@ components/common/
   Shuffle.brs   Shuffle_* (capability cache, start, scope label) for /api/v2/shuffles
   Tracks.brs    Tracks_* labels and ids for file versions, audio and subtitle tracks
   Settings.brs  Settings_* server-synced settings (effective cascade read/write, typed getters, Home row layout)
+  Trailers.brs  Trailer_* "Trailers & More" entries (local extras, then YouTube videos; TrailerRail.kt)
+  ThemeMusic.brs ThemeMusic_* opt-in detail-page theme music (capability, playback grant, Audio node)
 components/tasks/
   ApiTask       one HTTP request (Task); JSON in and out; 401 → refresh → retry
   AuthTask      long-lived single-flight token refresher (rotating refresh tokens)
+  YouTubeLaunchTask  hands a YouTube trailer to the YouTube channel (837): roAppManager.LaunchApp, then ECP
   Http.brs      roUrlTransfer wrapper and Silo device headers
 components/widgets/             reusable UI: MediaCardItem, PillButton, Toast, LoadingSpinner, …
 components/screens/             one folder or file pair per screen
@@ -94,13 +97,13 @@ A screen is `<component name="XScreen" extends="BaseScreen">` (`components/BaseS
 | `ShellScreen` | none. Top bar and root tabs: Home, Movies, Series, Music, Audiobooks, For You, Calendar, Requests (only when `GET /api/v2/requests/status` enables it; page `RequestsPage`) |
 | `LibraryScreen` | `{ libraryId, libraryName, mode, section: "browse"\|"collections"\|..., title, source?, collectionId? }` |
 | `LibraryPage` (shell page) | `{ section, libraryId, libraryName, mode, mediaType?, ... }`. Sections: `browse`, `collections`, `alphabet` (A‑Z), `genres` (Music), `authors` / `series` (audiobook groups via `GET /api/v2/catalog/audiobook-groups`, drill-in through `POST /api/v2/catalog/query` with an `author`/`series` `is` rule), plus the personal lists. Browse and A‑Z show the right-edge `AlphabetRail` (`name_prefix`) |
-| `DetailScreen` | `{ itemId, itemType?, libraryId? }`. Movie, series, season and episode |
+| `DetailScreen` | `{ itemId, itemType?, libraryId? }`. Movie, series, season and episode. Zones: actions, season chips, episodes, Cast & Crew, Trailers & More, Related, Details. A local extra plays with `Nav_play({itemId, fileId, itemType: "extra", startPosition: 0})`; a YouTube video goes to `YouTubeLaunchTask`, and when YouTube can't be opened a `YouTubeHandoffDialog` shows the watch URL and a QR code. Theme music plays while the page is on top (`ui.theme_music_enabled`) |
 | `PersonScreen` | `{ personId, name? }` |
 | `SearchScreen` | `{ query? }` |
 | `RequestDetailScreen` | `{ mediaType: "movie"\|"series", tmdbId, title?, moderationRequestId? }`. A TMDB title to request (or its request's status); `moderationRequestId` pins the page to one request, as from an admin's approval row |
 | `SettingsScreen` | none. Android TV `TvSettingsScreen`: rail (account, General / Playback / Subtitles / Server, Sign Out) and a pane of grouped rows. Values are the server's effective settings (`Settings.brs`) with the device prefs as fallback; the Home Sections editor (`SettingsHomeSections.brs`) is a full-screen overlay |
 | `NotificationsScreen` | none. Notifications inbox (Android TV `TvInboxScreen`): Mark all read card, newest-first delivery cards, OK marks read and opens the series/episode, pages of 25. Android TV has no route to it, so Siku has no entry point either (deep link `debugScreen=NotificationsScreen`) |
-| `PlayerScreen` | `{ itemId, fileId?, startPosition?, title?, audioTrackId?/audioTrackIndex?, subtitleTrackId?/subtitleTrackIndex? (-1 = off), shuffleId?, shuffle? }`. With `shuffleId` the player runs a shuffle session: picks start at 0, Up Next shows the server's random pick with Pick Another / Stop shuffling |
+| `PlayerScreen` | `{ itemId, fileId?, startPosition?, title?, audioTrackId?/audioTrackIndex?, subtitleTrackId?/subtitleTrackIndex? (-1 = off), shuffleId?, shuffle?, itemType?/source? ("extra"), durationSeconds? }`. With `shuffleId` the player runs a shuffle session: picks start at 0, Up Next shows the server's random pick with Pick Another / Stop shuffling. An extra plays alone (no next episode, Up Next or On Deck) and starts by its file id when it has no watch detail. Up Next shows the next episode's still under a scrim and an On Deck row (home continue-watching items) |
 | `AudioDetailScreen` | `{ itemId, itemType }` for `album`, `artist`, `audiobook`, `track`. Use `Nav_openItem(id, type)`, which picks this or `DetailScreen` |
 | `AudioPlayerScreen` | Music `{ queue: [{contentId, fileId?, title?, artist?, album?, posterUrl?, durationSeconds?}], index?, startPosition?, shuffle? }`; audiobook `{ itemId, startPosition? }` (whole-book seconds). `Nav_play` routes audio types here |
 

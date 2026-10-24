@@ -68,6 +68,9 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   `&debugUrl=`, logs `[siku-streamtest]` state and track counts), `FontTestScreen` (label and
   9-patch rendering). Simulator deep links: `debugSession=mock`, `debugScreen`, `debugItem`,
   `debugFile` (mock 4K files 52 and 56; 56 always remuxes), `debugUrl`.
+- `[siku-trailer]` lines trace a "Trailers & More" pick: a local extra's start, or the YouTube
+  hand-off (installed check, `LaunchApp`, ECP status, outcome). `[siku-theme]` lines show the
+  theme-music capability, grant (delivery, type, loop) and Audio errors; grant URLs are never printed.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 
