@@ -18,6 +18,7 @@ import re
 import threading
 import time
 import uuid
+import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse, unquote
 
@@ -108,7 +109,64 @@ def episode(si, s, e):
         "files": [{"file_id": str(1000 + si * 100 + s * 10 + e), "resolution": "1080p", "codec_video": "h264", "container": "mp4"}],
         "user_data": {"position_seconds": pos, "duration_seconds": 2880, "played": cid in STATE["watched"]},
         "user_state": {"played": cid in STATE["watched"], "is_favorite": False, "in_watchlist": False},
+        **({"machine_translated_fields": ["overview"]} if si == 0 and s == 1 and e % 2 == 0 else {}),
     }
+
+
+# ---------- Trailers & More, theme music, AI translation markers ----------
+# Item detail `extras[]` (ItemExtraInfo + still_url/still_thumbhash) and `videos[]` (ItemVideoInfo).
+# Extras have no watch detail of their own here (GET /api/v2/watch/extra:… answers 404), which
+# exercises the player's fallback that starts the extra by file id.
+MOCK_TRAILERS = {
+    "movie:glass-city": {
+        "extras": [
+            {"content_id": "extra:glass-city-trailer", "kind": "trailer", "title": "Official Trailer", "duration_seconds": 151,
+             "file_id": 61, "still_url": img("still", "extra:glass-city-trailer"), "still_thumbhash": "mock"},
+            {"content_id": "extra:glass-city-bts", "kind": "behind_the_scenes", "title": "", "duration_seconds": 754,
+             "file_id": 62, "still_url": img("still", "extra:glass-city-bts")},
+            {"content_id": "extra:glass-city-deleted", "kind": "deleted_scene", "title": "The Rooftop", "duration_seconds": 3725, "file_id": 63},
+        ],
+        "videos": [
+            {"kind": "trailer", "site": "YouTube", "site_key": "dQw4w9WgXcQ", "name": "Glass City | Official Trailer", "is_official": True},
+            {"kind": "teaser", "site": "Vimeo", "site_key": "123456", "name": "Vimeo teaser (dropped)", "is_official": False},
+            {"kind": "featurette", "site": "youtube", "site_key": "9bZkp7q19f0", "name": "", "is_official": False},
+            {"kind": "trailer", "site": "YouTube", "site_key": "dQw4w9WgXcQ", "name": "Duplicate (dropped)", "is_official": True},
+        ],
+    },
+    "series:orbital": {
+        "extras": [
+            {"content_id": "extra:orbital-featurette", "kind": "featurette", "title": "Building the Station", "duration_seconds": 412,
+             "file_id": 64, "still_url": img("still", "extra:orbital-featurette")},
+        ],
+        "videos": [
+            {"kind": "trailer", "site": "YouTube", "site_key": "M7lc1UVf-VE", "name": "Orbital: Season 1 Trailer", "is_official": True},
+        ],
+    },
+}
+MOCK_TRANSLATED = {"movie:glass-city", "series:orbital"}
+
+
+def mock_themes(cid):
+    """Item detail `themes` (ThemeSongSet): Glass City and Orbital own one theme; Orbital's seasons
+    and episodes inherit the series' set, as the server resolves it. Other items: an empty set."""
+    owner = None
+    if cid == "movie:glass-city":
+        owner = cid
+    elif cid == "series:orbital" or cid.startswith("season:series:orbital-") or cid.startswith("episode:orbital-"):
+        owner = "series:orbital"
+    if owner is None:
+        return {"owner_id": cid, "items": []}
+    return {"owner_id": owner, "items": [{"id": "7", "title": "Main Theme", "duration_seconds": 95, "container": "mp3"}]}
+
+
+def silent_wav(seconds=2):
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(8000)
+        w.writeframes(b"\x00\x00" * 8000 * seconds)
+    return buf.getvalue()
 
 
 def all_movies():
@@ -165,6 +223,17 @@ def detail(cid):
                                  "subtitle_tracks": [{"index": 0, "language": "eng", "codec": "srt", "forced": False, "default": False, "external": True, "title": "English"},
                                                      {"index": 1, "language": "eng", "codec": "srt", "forced": False, "default": False, "external": False, "hearing_impaired": True, "title": "English SDH"},
                                                      {"index": 2, "language": "spa", "codec": "srt", "forced": True, "default": False, "external": False, "title": "Español (Forced)"}]})
+    trailers = MOCK_TRAILERS.get(cid)
+    if trailers:
+        # "Trailers & More": local extras (still_url on all but one, file ids the playback mock
+        # accepts) and YouTube videos, plus one Vimeo video the client must drop and a duplicate.
+        d["extras"] = [dict(x) for x in trailers["extras"]]
+        d["videos"] = [dict(v) for v in trailers["videos"]]
+    themes = mock_themes(cid)
+    if themes is not None:
+        d["themes"] = themes
+    if cid in MOCK_TRANSLATED:
+        d["machine_translated_fields"] = ["overview", "tagline"]
     if cid == "movie:glass-city":
         # Long track and version lists, to check that the pickers scroll instead of running off screen.
         langs = ["eng", "spa", "fra", "deu", "ita", "por", "jpn", "kor", "rus", "zho", "ara", "hin", "nld", "swe", "pol"]
@@ -1325,6 +1394,9 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/v2/auth/logout":
             return self.send(204)
 
+        if re.match(r"^/api/v2/catalog/items/.+/themes/[^/]+/audio$", p) and "token=mock-theme-grant" in self.path:
+            # A theme grant URL authorises itself (no bearer token), like the real one.
+            return self.send(200, silent_wav(), "audio/wav")
         if not self.authed():
             return self.problem(401, "invalid_token", "Authentication required")
         if requests_route(self, method, p, q, b):
@@ -1406,6 +1478,22 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 items = catalog_filter(items, q)
             return self.send(200, page(items, q))
+        if p == "/api/v2/catalog/themes/capabilities":
+            return self.send(200, {"revision": "mock-1", "state": "available", "allowed": True, "delivery": "routed",
+                                   "transcode": True, "cluster_routing": False, "grant_lifetime_seconds": 300})
+        m = re.match(r"^/api/v2/catalog/items/(.+)/themes/([^/]+)/playback$", p)
+        if m and method == "POST":
+            fmts = (b or {}).get("accepted_formats") or []
+            LOG.append("THEME GRANT %s %s accepted=%s" % (m.group(1), m.group(2), json.dumps(fmts)))
+            print("THEME GRANT", m.group(1), m.group(2), json.dumps(fmts), flush=True)
+            mp3 = any(f.get("container") == "mp3" for f in fmts) or not fmts
+            return self.send(200, {"url": "/api/v2/catalog/items/%s/themes/%s/audio?token=mock-theme-grant" % (m.group(1), m.group(2)),
+                                   "expires_at": "2030-01-01T00:05:00Z", "delivery": "original" if mp3 else "converted",
+                                   "content_type": "audio/wav" if mp3 else "audio/mp4"})
+        m = re.match(r"^/api/v2/catalog/items/(.+)/themes/([^/]+)/audio$", p)
+        if m:
+            LOG.append("THEME AUDIO %s %s" % (m.group(1), m.group(2)))
+            return self.send(200, silent_wav(), "audio/wav")
         m = re.match(r"^/api/v2/catalog/items/(.+)$", p)
         if m:
             d = detail(m.group(1))
@@ -1746,6 +1834,8 @@ SETTINGS_DEFS = {
     "ui.card_presentation": (5, {"poster_size": "standard", "caption": "title_metadata"}, ["profile", "profile_client", "profile_device"],
                              ["profile_device", "profile_client", "profile"]),
     "ui.title_art": (16, True, ["profile", "profile_device"], ["profile", "profile_device"]),
+    "ui.theme_music_enabled": (11, False, ["profile", "profile_device"], ["profile_device", "profile"]),
+    "ui.theme_music_loop": (11, False, ["profile", "profile_device"], ["profile_device", "profile"]),
     "ui.theme": (1, "cinema-dark", ["account", "profile"], ["profile", "account"]),
 }
 SETTINGS_SCOPES = ["account", "profile", "profile_client", "profile_device", "profile_library", "profile_series"]
@@ -1897,7 +1987,11 @@ def tokens(username="laura"):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8097)
+    ap.add_argument("--theme-music", action="store_true", help="turn ui.theme_music_enabled on by default (profile scope)")
     args = ap.parse_args()
+    if args.theme_music:
+        d = SETTINGS_DEFS["ui.theme_music_enabled"]
+        SETTINGS_DEFS["ui.theme_music_enabled"] = (d[0], True) + tuple(d[2:])
     srv = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
     print("Mock Silo on http://127.0.0.1:%d" % args.port, flush=True)
     srv.serve_forever()

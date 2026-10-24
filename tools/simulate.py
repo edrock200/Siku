@@ -40,6 +40,9 @@ def main():
     ap.add_argument("--deep-link", default="", help="e.g. debugScreen=SettingsScreen")
     args = ap.parse_args()
     OUT = os.path.abspath(args.out)
+    # The child chdirs into OUT before exec, so a relative --brs-cli path would no longer resolve.
+    if os.path.exists(args.brs_cli):
+        args.brs_cli = os.path.abspath(args.brs_cli)
     os.makedirs(OUT, exist_ok=True)
     log = open(os.path.join(OUT, "console.log"), "wb")
     zip_path = os.path.join(OUT, "siku.zip")
