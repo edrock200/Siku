@@ -3,15 +3,24 @@
   Movie / series / season / episode detail (docs/design-spec.md §4.3).
   params: { itemId, itemType?, libraryId? }
   The whole page scrolls: `page` is translated with `scrollAnim` as focus moves between zones
-  (actions → season chips → episode rail → cast → related → details).
+  (actions → season chips → episode rail → cast → trailers → related → details).
+  "Trailers & More" (Trailers.brs) lists local extras, which play in the player, then YouTube
+  videos, which are handed to the YouTube channel (YouTubeLaunchTask) or shown as a URL and QR code.
+  Theme music (ThemeMusic.brs) plays through `themeAudio` while the page is on top, when enabled.
   The action row also holds the Version / Audio / Subtitles selectors (§4.3) and the More menu
   leads with Shuffle Series / Shuffle Season N when the server offers shuffles (Shuffle.brs).
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="DetailScreen" extends="BaseScreen">
+  <interface>
+    <!-- Settings_load lands here when this page had to load the settings itself (deep link). -->
+    <field id="settingsLoaded" type="boolean" alwaysNotify="true" onChange="onSettingsLoaded" />
+  </interface>
   <script type="text/brightscript" uri="pkg:/components/screens/DetailScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Shuffle.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Trailers.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/ThemeMusic.brs" />
   <children>
     <Rectangle id="bg" width="1920" height="1080" color="0x040D0FFF" />
     <Group id="page">
@@ -43,6 +52,13 @@
         <Label id="overview" width="1080" wrap="true" maxLines="3" lineSpacing="6" color="0xEDEDEDBF" visible="false">
           <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="28" />
         </Label>
+        <!-- "Translated by AI" under an overview the server reports machine-translated (#536). -->
+        <Group id="aiMarker" visible="false">
+          <Poster id="aiMarkerIcon" uri="pkg:/images/icons/language.png" width="24" height="24" translation="[0, 3]" blendColor="0xFFFFFF99" />
+          <Label id="aiMarkerLabel" text="Translated by AI" translation="[34, 0]" height="30" vertAlign="center" color="0xFFFFFF99">
+            <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+          </Label>
+        </Group>
         <Label id="facts" width="1080" maxLines="1" color="0xEDEDEDE0" visible="false">
           <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />
         </Label>
@@ -79,6 +95,15 @@
                    itemSize="[1820, 332]" rowItemSize="[[200, 332]]" rowItemSpacing="[[44, 0]]" numRows="1"
                    drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" showRowLabel="[false]" />
         </Group>
+        <Group id="trailersSection" visible="false">
+          <Label id="trailersHeader" text="Trailers &amp; More" color="0xEDEDEDFF">
+            <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+          </Label>
+          <!-- Cards sit 32 px down inside 370 px cells: a real Roku clips items to their cell (pitfall 12). -->
+          <RowList id="trailersRow" translation="[0, 28]" itemComponentName="MediaCardItem"
+                   itemSize="[1820, 370]" rowItemSize="[[440, 370]]" rowItemSpacing="[[40, 0]]" numRows="1"
+                   drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" showRowLabel="[false]" />
+        </Group>
         <Group id="relatedSection" visible="false">
           <Label id="relatedHeader" text="Related Movies" color="0xEDEDEDFF">
             <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
@@ -107,6 +132,8 @@
       <PillButton id="retryBtn" text="Retry" translation="[890, 600]" />
     </Group>
     <DetailMoreMenu id="menu" visible="false" />
+    <YouTubeHandoffDialog id="ytDialog" visible="false" />
+    <Audio id="themeAudio" />
     <Animation id="scrollAnim" duration="0.32" easeFunction="outCubic">
       <Vector2DFieldInterpolator id="scrollInterp" key="[0.0, 1.0]" fieldToInterp="page.translation" />
     </Animation>

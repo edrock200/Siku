@@ -6,6 +6,8 @@
   square (1:1, audiobooks / albums / audiobook groups).
   Focus: scale 1.10, 4 px #EDEDED border, soft white glow; caption brightens (docs/design-spec.md §1.5).
   The containing list must set drawFocusFeedback="false".
+  playGlyph (optional boolean field on the content node): a centered play button over the image,
+  for the detail page's "Trailers & More" cards.
   cardInsetX / cardInsetY on the content node pad the card inside its cell (MarkupGrid cells clip to
   the grid's bounds, so the first column / row leaves room for the scaled card and its glow).
   SPDX-License-Identifier: AGPL-3.0-or-later
@@ -39,6 +41,10 @@
           <Rectangle id="progressTrack" color="0xFFFFFF33" visible="false" />
           <Rectangle id="progressFill" color="0xEDEDEDFF" visible="false" />
         </MaskGroup>
+        <Group id="playGlyph" visible="false">
+          <Poster id="playGlyphBg" uri="pkg:/images/ui/circle.png" blendColor="0x0000008C" width="60" height="60" />
+          <Poster id="playGlyphIcon" uri="pkg:/images/icons/play.png" blendColor="0xFFFFFFFF" width="36" height="36" translation="[13, 12]" />
+        </Group>
         <Group id="watchedBadge" visible="false">
           <Poster id="watchedBg" uri="pkg:/images/ui/circle.png" blendColor="0xEDEDEDFF" />
           <Poster id="watchedIcon" uri="pkg:/images/icons/check.png" blendColor="0x000000FF" />

@@ -14,6 +14,7 @@ sub init()
     m.title = m.top.findNode("title")
     m.meta = m.top.findNode("meta")
     m.synopsis = m.top.findNode("synopsis")
+    m.aiIcon = m.top.findNode("aiIcon")
 end sub
 
 function fieldOr(c as object, name as string, default as dynamic) as dynamic
@@ -34,6 +35,7 @@ sub onContent()
     m.synopsis.text = fieldOr(c, "synopsis", "")
     m.badge.visible = fieldOr(c, "watched", false) = true
     m.currentRing.visible = fieldOr(c, "isCurrent", false) = true
+    m.aiIcon.visible = fieldOr(c, "aiTranslated", false) = true
     layout()
 end sub
 
@@ -79,6 +81,9 @@ sub layout()
     m.synopsis.width = w
     m.eyebrow.visible = m.eyebrow.text <> ""
     m.meta.visible = m.meta.text <> ""
+    ' Compact AI marker at the right end of the meta line; the meta text stops short of it.
+    m.aiIcon.translation = [w - 24, h + 80]
+    if m.aiIcon.visible then m.meta.width = w - 36
 end sub
 
 sub onFocus()

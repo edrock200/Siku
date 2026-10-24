@@ -44,6 +44,11 @@ sub init()
     m.unScope = m.top.findNode("unScope")
     m.unScopeBg = m.top.findNode("unScopeBg")
     m.unScopeLabel = m.top.findNode("unScopeLabel")
+    m.upNextPanel = m.top.findNode("upNextPanel")
+    m.unBackdropGroup = m.top.findNode("unBackdropGroup")
+    m.unBackdrop = m.top.findNode("unBackdrop")
+    m.onDeckGroup = m.top.findNode("onDeck")
+    m.onDeckRow = m.top.findNode("onDeckRow")
     m.errorGroup = m.top.findNode("errorGroup")
     m.errorLabel = m.top.findNode("errorLabel")
     m.retryBtn = m.top.findNode("retryBtn")
@@ -97,6 +102,7 @@ sub init()
     m.unPickBtn.observeField("buttonSelected", "pickAnother")
     m.unKeepBtn.observeField("buttonSelected", "keepWatching")
     m.unBackBtn.observeField("buttonSelected", "exitPlayer")
+    m.onDeckRow.observeField("rowItemSelected", "onOnDeckSelected")
     m.unStopBtn.observeField("buttonSelected", "stopShuffling")
     m.retryBtn.observeField("buttonSelected", "retry")
     m.errorCloseBtn.observeField("buttonSelected", "exitPlayer")
@@ -133,6 +139,8 @@ sub resetPlaybackState()
     m.activeMarker = invalid
     m.nextEpisode = invalid
     m.nextIsEpisode = true
+    m.onDeck = []
+    m.upNextCompact = false
     m.seriesTitle = ""
     m.shuffleRefreshed = false
     m.shuffleAdvancing = false
@@ -209,6 +217,8 @@ sub startPipeline()
     p = m.top.params
     if p = invalid then p = {}
     m.itemId = Str_orEmpty(p.itemId)
+    ' A detail page's local extra (trailer, featurette): no resume, next episode, Up Next or On Deck.
+    m.isExtra = LCase(Str_orEmpty(p.itemType)) = "extra" or LCase(Str_orEmpty(p.source)) = "extra"
     ' A shuffle pick: remember the shuffle (and the Shuffle the start returned, so the first pick's
     ' `next` is known without another read).
     if not Str_isEmpty(p.shuffleId) then
@@ -237,15 +247,21 @@ end sub
 sub onWatch(event as object)
     resp = Api_result(event)
     if m.closing then return
-    if not resp.ok or resp.data = invalid then
+    p = m.top.params
+    w = invalid
+    if resp.ok and Type(resp.data) = "roAssociativeArray" then w = resp.data
+    if w = invalid and m.isExtra and not Str_isEmpty(p.fileId) then
+        ' An extra may have no watch detail of its own; the start needs only its file id.
+        print "[siku-trailer] watch detail unavailable for extra (status " + Str_orEmpty(resp.status) + "); starting file " + Str_orEmpty(p.fileId)
+        w = { content_id: m.itemId, "type": "extra", title: Str_orEmpty(p.title), versions: [] }
+    end if
+    if w = invalid then
         showError(Api_errorText(resp))
         return
     end if
-    w = resp.data
     m.watch = w
-    p = m.top.params
     if Str_isEmpty(m.titleLabel.text) then m.titleLabel.text = Str_orEmpty(w.title)
-    m.isEpisode = LCase(Str_orEmpty(w.type)) = "episode"
+    m.isEpisode = LCase(Str_orEmpty(w.type)) = "episode" and not m.isExtra
     m.seriesTitle = Str_orEmpty(w.series_title)
     if m.isEpisode then
         tag = Content_seShort(w.season_number, w.episode_number).Replace(" · ", "·")
@@ -269,6 +285,8 @@ sub onWatch(event as object)
         for each v in versions
             if Str_orEmpty(v.file_id) = fileId then ok = true
         end for
+        ' An extra's watch detail may list no versions; the caller's file id is then the file.
+        if versions.Count() = 0 and m.isExtra and fileId = Str_orEmpty(p.fileId) then ok = true
         if not ok then fileId = ""
     end if
     if fileId = "" then
@@ -292,13 +310,17 @@ sub onWatch(event as object)
     m.scrubber.chapters = m.chapters
     if m.version <> invalid then m.duration = Content_num(m.version.duration_seconds)
     if m.duration <= 0 and w.user_data <> invalid then m.duration = Content_num(w.user_data.duration_seconds)
+    if m.duration <= 0 then m.duration = Num_or(p.durationSeconds, 0)
     m.scrubber.duration = m.duration
 
-    if m.shuffle <> invalid then
+    if m.isExtra then
+        ' Extras chain to nothing (Android TV passes them as source "extra" from position 0).
+    else if m.shuffle <> invalid then
         ' A shuffle replaces the series order: the server names what plays next.
         resolveShuffleNext()
     else if m.isEpisode then
         resolveNextEpisode()
+        loadOnDeck()
     end if
     ensureFreshToken()
 end sub
@@ -1269,6 +1291,69 @@ sub onNextEpisodes(event as object)
     end if
 end sub
 
+' ---------- On Deck (silo-android #541, TvOnDeckItems.kt) ----------
+
+' Other items in progress for the Up Next overlay: home continue-watching sections minus this item
+' and its series, de-duplicated, at most 12, and only items with 16:9 art.
+sub loadOnDeck()
+    Api_get("/api/v2/home/sections", { image_size: "medium" }, "onOnDeck", { forItem: m.itemId })
+end sub
+
+sub onOnDeck(event as object)
+    resp = Api_result(event)
+    if m.closing or resp.context = invalid or resp.context.forItem <> m.itemId then return
+    if not resp.ok or Type(resp.data) <> "roAssociativeArray" then return
+    seriesId = ""
+    if m.watch <> invalid then seriesId = Str_orEmpty(m.watch.series_id)
+    out = []
+    seen = {}
+    for each sec in Arr_or(resp.data.sections)
+        st = ""
+        if Type(sec) = "roAssociativeArray" then st = LCase(Str_orEmpty(sec.section_type))
+        if st = "continue_watching" or st = "in_progress" or st = "next_up" then
+            for each it in Arr_or(sec.items)
+                if Type(it) = "roAssociativeArray" and out.Count() < 12 then
+                    cid = Str_orEmpty(it.content_id)
+                    t = LCase(Str_orEmpty(it.type))
+                    sameSeries = seriesId <> "" and Str_orEmpty(it.series_id) = seriesId
+                    if cid <> "" and cid <> m.itemId and not sameSeries and not seen.DoesExist(cid) and (t = "movie" or t = "episode") and not Str_isEmpty(it.backdrop_url) then
+                        seen[cid] = true
+                        out.Push(onDeckCard(it))
+                    end if
+                end if
+            end for
+        end if
+    end for
+    m.onDeck = out
+    if out.Count() > 0 then m.onDeckRow.content = Content_rows([{ id: "ondeck", title: "", style: "landscape", items: out }], 32)
+    if m.upNext.visible then
+        layoutUpNext()
+        renderUpNext()
+    end if
+end sub
+
+' On Deck shows each item's backdrop (Android TV's artUrl), not an episode's own still.
+function onDeckCard(it as object) as object
+    card = AA_copy(it)
+    card.Delete("still_url")
+    return card
+end function
+
+function onDeckShown() as boolean
+    return m.onDeck.Count() > 0 and m.shuffle = invalid
+end function
+
+sub onOnDeckSelected()
+    sel = m.onDeckRow.rowItemSelected
+    if sel = invalid or sel.Count() < 2 or sel[1] >= m.onDeck.Count() then return
+    it = m.onDeck[sel[1]]
+    title = Str_orEmpty(it.title)
+    if LCase(Str_orEmpty(it.type)) = "episode" and not Str_isEmpty(it.series_title) then title = it.series_title
+    ' No start position: the player reads the saved one, which may be newer than this snapshot.
+    m.autoAdvances = 0
+    playInPlace({ itemId: Str_orEmpty(it.content_id), title: title, itemType: Str_orEmpty(it.type) })
+end sub
+
 ' ---------- Shuffle (shuffle-api-v2.md "Player rules") ----------
 
 function shufflePath() as string
@@ -1429,14 +1514,7 @@ sub showUpNext()
     hideControlsNow()
     m.hud.visible = false
     m.skipGroup.visible = false
-    ' Shrink the video into a 16:9 pane on the left.
-    m.video.width = 880
-    m.video.height = 495
-    m.video.translation = [160, 292]
-    m.videoFrame.width = 896
-    m.videoFrame.height = 511
-    m.videoFrame.translation = [152, 284]
-    m.videoFrame.visible = true
+    layoutUpNext()
 
     if m.nextEpisode <> invalid and autoPlayNext() and not stillWatchingDue() then
         startCountdown()
@@ -1455,6 +1533,59 @@ sub showUpNext()
         Api_get(shufflePath(), { image_size: "large" }, "onShuffleRead", { forItem: m.itemId })
     end if
 end sub
+
+' Places the video pane, the panel and On Deck. With On Deck the overlay is one fixed screen, as on
+' Android TV: a smaller pane and a tighter panel above the row along the bottom.
+sub layoutUpNext()
+    compact = onDeckShown()
+    if compact then
+        vx = 160
+        vy = 150
+        vw = 704
+        vh = 396
+        m.upNextPanel.translation = [920, 110]
+        panelW = 840
+        m.unOverview.maxLines = 2
+    else
+        vx = 160
+        vy = 292
+        vw = 880
+        vh = 495
+        m.upNextPanel.translation = [1136, 240]
+        panelW = 620
+        m.unOverview.maxLines = 4
+    end if
+    m.video.width = vw
+    m.video.height = vh
+    m.video.translation = [vx, vy]
+    m.videoFrame.width = vw + 16
+    m.videoFrame.height = vh + 16
+    m.videoFrame.translation = [vx - 8, vy - 8]
+    m.videoFrame.visible = true
+    for each lbl in [m.unSeries, m.unEpisode, m.unMeta, m.unOverview]
+        lbl.width = panelW
+    end for
+    m.onDeckGroup.visible = compact
+    m.upNextCompact = compact
+end sub
+
+' The Up Next artwork: the next episode's still (a shuffled movie's backdrop), else the first On
+' Deck item's art. One place, so a later spoiler setting can withhold an unwatched episode's still.
+function upNextStillUrl(ep as dynamic) as string
+    u = ""
+    if ep <> invalid then
+        u = Str_orEmpty(ep.still_url)
+        if u = "" then u = Str_orEmpty(ep.backdrop_url)
+    end if
+    if u = "" and onDeckShown() then u = Str_orEmpty(m.onDeck[0].backdrop_url)
+    return Url_resolve(u)
+end function
+
+' The Up Next synopsis. One place, so a later spoiler setting can hide it.
+function upNextOverviewText(ep as dynamic) as string
+    if ep = invalid then return ""
+    return Str_orEmpty(ep.overview)
+end function
 
 ' Fills the Up Next panel from m.nextEpisode (a next episode, or a shuffle's random pick).
 sub renderUpNext()
@@ -1504,8 +1635,11 @@ sub renderUpNext()
         meta = ""
         if Content_num(ep.runtime) > 0 then meta = Int(Content_num(ep.runtime)).ToStr() + " min"
         m.unMeta.text = meta
-        m.unOverview.text = Str_orEmpty(ep.overview)
+        m.unOverview.text = upNextOverviewText(ep)
     end if
+    art = upNextStillUrl(ep)
+    m.unBackdrop.uri = art
+    m.unBackdropGroup.visible = art <> ""
     m.unPlayBtn.visible = ep <> invalid
     m.unPickBtn.visible = sh <> invalid and ep <> invalid
     m.unKeepBtn.visible = not m.finished
@@ -1524,6 +1658,10 @@ sub layoutUpNextButtons()
     if btns.Count() > 3 then
         y = 400
         stepY = 86
+    end if
+    if m.upNextCompact = true then
+        y = 340
+        stepY = 84
     end if
     for each b in btns
         b.translation = [0, y]
@@ -1561,6 +1699,7 @@ sub restoreVideoPane()
     m.video.height = 1080
     m.video.translation = [0, 0]
     m.videoFrame.visible = false
+    m.unBackdropGroup.visible = false
 end sub
 
 sub keepWatching()
@@ -2254,9 +2393,23 @@ end function
 
 function handleUpNextKey(key as string) as boolean
     btns = m.upNextButtons
+    if m.onDeckRow.hasFocus() then
+        ' The row handles left/right/OK itself; Up returns to the panel's last button.
+        if key = "up" and btns.Count() > 0 then
+            m.upNextIndex = btns.Count() - 1
+            focusUpNext()
+        else if key = "back" then
+            keepWatching()
+        end if
+        return true
+    end if
     if key = "down" then
-        if m.upNextIndex < btns.Count() - 1 then m.upNextIndex = m.upNextIndex + 1
-        focusUpNext()
+        if m.upNextIndex < btns.Count() - 1 then
+            m.upNextIndex = m.upNextIndex + 1
+            focusUpNext()
+        else if onDeckShown() and m.onDeckGroup.visible then
+            m.onDeckRow.setFocus(true)
+        end if
         m.countdownTimer.control = "stop"
         m.unPlayBtn.text = "Play Now"
         m.countdown = -1
