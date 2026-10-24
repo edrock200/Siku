@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hands a YouTube trailer to the YouTube channel (Roku channel id 837) with the video as a deep
+  link. Roku has no WebView, and playing YouTube inside Siku would need stream extraction, which
+  YouTube's terms forbid, so a trailer opens in YouTube's own channel or not at all.
+  Runs on a Task thread because roAppManager and roUrlTransfer are not used on the render thread.
+  request: { videoId, title }      set it, then control = "RUN"
+  result:  { outcome, detail }     outcome: "not_installed" | "launch_failed"
+  Launching another channel exits Siku (the manifest does not opt into instant resume), so a
+  result only ever arrives when the hand-off did not happen; the screen then shows the watch URL
+  and a QR code. Every step prints a [siku-trailer] line on the device console (telnet 8085).
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="YouTubeLaunchTask" extends="Task">
+  <interface>
+    <field id="request" type="assocarray" />
+    <field id="result" type="assocarray" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/tasks/YouTubeLaunchTask.brs" />
+</component>

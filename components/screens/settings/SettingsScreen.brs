@@ -183,6 +183,22 @@ function buildPane(catId as string) as object
             end if
         end if
 
+        ' Theme Music (ui.theme_music_enabled / ui.theme_music_loop, revision 11), as Android TV's
+        ' Settings > General offers them. Each switch writes this Roku's value (profile_device);
+        ' "Use Profile Setting" clears it so a value set for the profile elsewhere applies again.
+        if Settings_available() and Settings_manifestRevision() >= 11 then
+            out.Push({ kind: "header", text: "Theme Music" })
+            out.Push({ kind: "row", row: rowDef("themeMusic", "toggle", "Theme Music") })
+            if Settings_source("ui.theme_music_enabled") = "profile_device" then
+                out.Push({ kind: "row", row: rowDef("themeMusicReset", "action", "Use Profile Setting for Theme Music") })
+            end if
+            out.Push({ kind: "row", row: rowDef("themeMusicLoop", "toggle", "Loop Theme Music") })
+            if Settings_source("ui.theme_music_loop") = "profile_device" then
+                out.Push({ kind: "row", row: rowDef("themeMusicLoopReset", "action", "Use Profile Setting for Loop") })
+            end if
+            out.Push({ kind: "footer", text: "Play a title's theme music while its page is open, when the server has one. Loop repeats it until you leave the page. Roku plays it at the TV's volume." })
+        end if
+
         out.Push({ kind: "header", text: "Top Menu" })
         out.Push({ kind: "row", row: rowDef("showAudiobooks", "toggle", "Show Audiobooks") })
         out.Push({ kind: "footer", text: "Adds an Audiobooks tab to the top menu when your server has an audiobook library. Hidden by default." })
@@ -315,6 +331,10 @@ function rowValue(row as object) as string
         return onOff(Settings_showTitleArt())
     else if id = "titleArtAll" then
         return onOff(Settings_source("ui.title_art") = "profile")
+    else if id = "themeMusic" then
+        return onOff(Settings_themeMusicEnabled())
+    else if id = "themeMusicLoop" then
+        return onOff(Settings_themeMusicLoop())
     else if id = "showAudiobooks" then
         return onOff(p.showAudiobooks = true)
     else if id = "metadataLanguage" then
@@ -1037,6 +1057,12 @@ sub applyChoice(row as object, value as dynamic)
             ' Pin this device's value first, then clear the profile value so other devices return to their own.
             Settings_put("ui.title_art", "profile_device", show, "onWriteDone", { thenOp: { method: "DELETE", key: "ui.title_art", scope: "profile" } })
         end if
+    else if id = "themeMusic" then
+        beginWrites(1)
+        putValue("ui.theme_music_enabled", "profile_device", value = true)
+    else if id = "themeMusicLoop" then
+        beginWrites(1)
+        putValue("ui.theme_music_loop", "profile_device", value = true)
     else if id = "showAudiobooks" then
         savePref("showAudiobooks", value = true)
         m.global.homeDirty = true
@@ -1168,6 +1194,12 @@ sub activateRow(row as object)
     else if id = "cardUseProfileDefault" then
         beginWrites(1)
         deleteValue("ui.card_presentation", "profile_client")
+    else if id = "themeMusicReset" then
+        beginWrites(1)
+        deleteValue("ui.theme_music_enabled", "profile_device")
+    else if id = "themeMusicLoopReset" then
+        beginWrites(1)
+        deleteValue("ui.theme_music_loop", "profile_device")
     else if id = "switchProfile" then
         Nav_push("ProfileScreen", { switching: true })
     else if id = "resetOverrides" then

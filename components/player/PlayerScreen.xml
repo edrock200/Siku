@@ -5,7 +5,13 @@
             title?, audioTrackId? / audioTrackIndex?, subtitleTrackId? / subtitleTrackIndex? (-1 = off),
             shuffleId? (+ shuffle?: the Shuffle the start returned) — a running shuffle: every pick
             plays from the beginning, Up Next announces the server's random pick ("UP NEXT AT RANDOM")
-            with Pick Another / Stop shuffling, and no sequential next episode is offered }
+            with Pick Another / Stop shuffling, and no sequential next episode is offered,
+            itemType?/source? "extra" (a detail page's local trailer or featurette: plays from
+            startPosition 0, offers no next episode, Up Next or On Deck), durationSeconds? (used when
+            the watch detail has none) }
+  Up Next (silo-android #541): the next episode's still (else the first On Deck item's art) fills
+            the screen under a scrim (no blur on Roku), the video shrinks into a pane, and an On Deck
+            row of other items in progress (home continue-watching sections) runs along the bottom.
   Pipeline: GET /watch/{id} → GET /playback/capabilities (cached on m.global.playbackCaps)
             → POST /playback/start → Video node → progress every 10 s → DELETE /playback/{session}.
   The Video node never takes focus (enableUI=false); keys go to focusSink or our own controls so
@@ -20,6 +26,12 @@
   <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />
   <children>
     <Rectangle id="bg" width="1920" height="1080" color="0x000000FF" />
+    <!-- Up Next artwork. Drawn before the Video node so the video pane shows through it. -->
+    <Group id="unBackdropGroup" visible="false">
+      <Poster id="unBackdrop" width="1920" height="1080" loadDisplayMode="scaleToZoom" />
+      <Rectangle width="1920" height="1080" color="0x00000099" />
+      <Poster uri="pkg:/images/ui/scrim_bottom.png" width="1920" height="500" translation="[0, 580]" opacity="0.9" />
+    </Group>
     <Video id="video" width="1920" height="1080" enableUI="false" enableTrickPlay="false" notificationInterval="1" />
     <Poster id="videoFrame" uri="pkg:/images/ui/r16_ring2.9.png" blendColor="0xFFFFFF29" visible="false" />
     <Group id="focusSink" focusable="true" />
@@ -103,6 +115,15 @@
         <PillButton id="unKeepBtn" text="Keep Watching" fixedWidth="520" translation="[0, 514]" scaleOnFocus="1.0" />
         <PillButton id="unBackBtn" text="Back" fixedWidth="320" translation="[0, 608]" scaleOnFocus="1.0" />
         <PillButton id="unStopBtn" text="Stop shuffling" iconUri="pkg:/images/icons/shuffle.png" fixedWidth="440" translation="[0, 702]" scaleOnFocus="1.0" visible="false" />
+      </Group>
+      <!-- On Deck: other items in progress. Cards sit 32 px down in their cells (pitfall 12). -->
+      <Group id="onDeck" translation="[160, 736]" visible="false">
+        <Label id="onDeckLabel" text="On Deck" color="0xEDEDEDDB">
+          <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="29" />
+        </Label>
+        <RowList id="onDeckRow" translation="[0, 12]" itemComponentName="MediaCardItem"
+                 itemSize="[1760, 300]" rowItemSize="[[272, 300]]" rowItemSpacing="[[32, 0]]" numRows="1"
+                 drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" showRowLabel="[false]" />
       </Group>
     </Group>
 

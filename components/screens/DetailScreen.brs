@@ -16,6 +16,7 @@ sub init()
     m.tagline = m.top.findNode("tagline")
     m.overview = m.top.findNode("overview")
     m.facts = m.top.findNode("facts")
+    m.aiMarker = m.top.findNode("aiMarker")
     m.actions = m.top.findNode("actions")
     m.playBtn = m.top.findNode("playBtn")
     m.startOverBtn = m.top.findNode("startOverBtn")
@@ -32,6 +33,9 @@ sub init()
     m.episodeRow = m.top.findNode("episodeRow")
     m.castSection = m.top.findNode("castSection")
     m.castRow = m.top.findNode("castRow")
+    m.trailersSection = m.top.findNode("trailersSection")
+    m.trailersRow = m.top.findNode("trailersRow")
+    m.ytDialog = m.top.findNode("ytDialog")
     m.relatedSection = m.top.findNode("relatedSection")
     m.relatedHeader = m.top.findNode("relatedHeader")
     m.relatedRow = m.top.findNode("relatedRow")
@@ -69,6 +73,10 @@ sub init()
     m.selAudio = invalid        ' ordinal into audio_tracks; invalid = Auto
     m.selSubtitle = invalid     ' combined subtitle index; invalid = Auto; -1 = Off
     m.playDetail = invalid      ' the next-up episode's item detail (series/season pages)
+    m.trailers = []             ' Trailer_entries(m.item)
+    m.ytTask = invalid
+    m.onTop = false
+    ThemeMusic_init(m.top.findNode("themeAudio"))
 
     m.playBtn.observeField("buttonSelected", "onPlay")
     m.startOverBtn.observeField("buttonSelected", "onStartOver")
@@ -85,6 +93,8 @@ sub init()
     m.episodeRow.observeField("rowItemSelected", "onEpisodeSelected")
     m.castRow.observeField("rowItemSelected", "onCastSelected")
     m.relatedRow.observeField("rowItemSelected", "onRelatedSelected")
+    m.trailersRow.observeField("rowItemSelected", "onTrailerSelected")
+    m.ytDialog.observeField("dismissed", "onYouTubeDialogDismissed")
     m.detailsBox.observeField("focusedChild", "onDetailsFocus")
     m.retryBtn.observeField("buttonSelected", "load")
     m.menu.observeField("chosen", "onMenuChosen")
@@ -94,12 +104,36 @@ end sub
 ' ---------- Lifecycle ----------
 
 sub onScreenShown()
+    m.onTop = true
     if m.item = invalid then
         if not m.loading then load()
         return
     end if
     if m.global.homeDirty = true then refreshUserState()
-    focusZone(m.zoneIndex)
+    if m.ytDialog.visible then
+        m.ytDialog.setFocus(true)
+    else
+        focusZone(m.zoneIndex)
+    end if
+    ThemeMusic_show(m.item)
+end sub
+
+' Covered (the player, another page) or closed: theme music never plays under anything else.
+sub onScreenHidden()
+    m.onTop = false
+    ThemeMusic_stop()
+end sub
+
+' Opened without the shell (a deep link): the profile's settings were never read, and theme music
+' depends on them. Read them once; the answer lands in onSettingsLoaded.
+sub ensureSettings()
+    if Settings_available() or m.settingsRequested = true then return
+    m.settingsRequested = true
+    Settings_load()
+end sub
+
+sub onSettingsLoaded()
+    if m.onTop = true and m.item <> invalid then ThemeMusic_show(m.item)
 end sub
 
 function itemPath() as string
@@ -132,12 +166,15 @@ sub onItem(event as object)
     m.itemType = LCase(Str_orEmpty(m.item.type))
     renderHero()
     renderCast()
+    renderTrailers()
     renderDetails()
     layoutBody()
     buildZones()
     m.zoneIndex = 0
     m.actionIndex = 0
     focusZone(0)
+    ensureSettings()
+    ThemeMusic_show(m.item)
 
     seriesId = Str_orEmpty(m.item.series_id)
     if m.itemType = "series" then seriesId = Str_orEmpty(m.item.content_id)
@@ -285,8 +322,9 @@ sub renderHero()
 
     m.tagline.text = Str_orEmpty(it.tagline)
     m.tagline.visible = m.tagline.text <> ""
-    m.overview.text = Str_orEmpty(it.overview)
+    m.overview.text = heroOverviewText(it)
     m.overview.visible = m.overview.text <> ""
+    m.aiMarker.visible = m.overview.visible and overviewMachineTranslated(it)
 
     factParts = []
     cast = Arr_or(it.cast)
@@ -301,6 +339,20 @@ sub renderHero()
     updatePrimary()
     layoutHero()
 end sub
+
+' The hero's description. One place, so a later spoiler setting can hide it.
+function heroOverviewText(it as object) as string
+    return Str_orEmpty(it.overview)
+end function
+
+' "Translated by AI" marks only a machine-translated overview (upstream hasMachineTranslatedOverview).
+function overviewMachineTranslated(it as dynamic) as boolean
+    if it = invalid or Type(it) <> "roAssociativeArray" then return false
+    for each f in Arr_or(it.machine_translated_fields)
+        if LCase(Str_orEmpty(f)) = "overview" then return true
+    end for
+    return false
+end function
 
 sub layoutHero()
     x = 100
@@ -341,6 +393,10 @@ sub layoutHero()
     if m.overview.visible then
         m.overview.translation = [x, y]
         y = y + Label_height(m.overview) + gap
+    end if
+    if m.aiMarker.visible then
+        m.aiMarker.translation = [x, y - 8]
+        y = y + 30 + gap - 8
     end if
     if m.facts.visible then
         m.facts.translation = [x, y]
@@ -620,6 +676,10 @@ sub layoutBody()
         m.castSection.translation = [x, y]
         y = y + 60 + 300 + gap
     end if
+    if m.trailersSection.visible then
+        m.trailersSection.translation = [x, y]
+        y = y + 60 + 338 + gap
+    end if
     if m.relatedSection.visible then
         m.relatedSection.translation = [x, y]
         y = y + 60 + 364 + gap
@@ -639,6 +699,7 @@ sub buildZones()
         if m.episodes.Count() > 0 then zones.Push({ name: "episodes", y: sy })
     end if
     if m.castSection.visible then zones.Push({ name: "cast", y: m.castSection.translation[1] })
+    if m.trailersSection.visible then zones.Push({ name: "trailers", y: m.trailersSection.translation[1] })
     if m.relatedSection.visible then zones.Push({ name: "related", y: m.relatedSection.translation[1] })
     if m.detailsSection.visible then zones.Push({ name: "details", y: m.detailsSection.translation[1] })
     m.zones = zones
@@ -679,6 +740,8 @@ sub focusZone(i as integer)
             m.episodeRow.setFocus(true)
         else if z.name = "cast" then
             m.castRow.setFocus(true)
+        else if z.name = "trailers" then
+            m.trailersRow.setFocus(true)
         else if z.name = "related" then
             m.relatedRow.setFocus(true)
         else if z.name = "details" then
@@ -866,7 +929,8 @@ sub onEpisodes(event as object)
         node.addFields({
             eyebrow: Content_seShort(ep.season_number, ep.episode_number)
             meta: Str_joinDots(metaParts)
-            synopsis: Str_orEmpty(ep.overview)
+            synopsis: episodeSynopsis(ep)
+            aiTranslated: overviewMachineTranslated(ep) and episodeSynopsis(ep) <> ""
             isCurrent: Str_orEmpty(ep.content_id) = m.currentEpisodeId
         })
         if node.isCurrent then focusIdx = i
@@ -876,6 +940,11 @@ sub onEpisodes(event as object)
     m.episodeRow.jumpToRowItem = [0, focusIdx]
     buildZones()
 end sub
+
+' An episode card's synopsis. One place, so a later spoiler setting can hide it.
+function episodeSynopsis(ep as object) as string
+    return Str_orEmpty(ep.overview)
+end function
 
 sub onEpisodeSelected()
     sel = m.episodeRow.rowItemSelected
@@ -894,6 +963,7 @@ sub playEpisode(ep as object)
     r = resumeOf(ep)
     if r > 0 then params.startPosition = r
     applySelections(params, params.itemId)
+    ThemeMusic_stop()
     Nav_play(params)
 end sub
 
@@ -961,6 +1031,95 @@ sub onRelatedSelected()
     if sel[1] >= m.similar.Count() then return
     card = m.similar[sel[1]]
     Nav_push("DetailScreen", { itemId: Str_orEmpty(card.content_id), itemType: Str_orEmpty(card.type) })
+end sub
+
+' ---------- Trailers & More (TvDetailTrailersSection, silo-android #640 / #641) ----------
+
+sub renderTrailers()
+    t = m.itemType
+    m.trailers = []
+    if t = "movie" or t = "series" or t = "season" or t = "episode" then m.trailers = Trailer_entries(m.item)
+    if m.trailers.Count() = 0 then
+        m.trailersSection.visible = false
+        return
+    end if
+    root = CreateObject("roSGNode", "ContentNode")
+    row = root.createChild("ContentNode")
+    for each e in m.trailers
+        node = row.createChild("ContentNode")
+        Content_ensureFields(node)
+        node.addFields({ playGlyph: true })
+        node.title = e.title
+        node.subtitle = e.subtitle
+        node.cardStyle = "landscape"
+        node.cardInsetY = 32
+        node.HDPosterUrl = e.thumbUrl
+        node.contentId = e.key
+        node.itemType = "trailer"
+    end for
+    m.trailersRow.content = root
+    m.trailersSection.visible = true
+end sub
+
+sub onTrailerSelected()
+    sel = m.trailersRow.rowItemSelected
+    if sel = invalid or sel.Count() < 2 or sel[1] >= m.trailers.Count() then return
+    e = m.trailers[sel[1]]
+    if e.isLocal then
+        playExtra(e)
+    else
+        openYouTube(e)
+    end if
+end sub
+
+' A local extra plays in Siku's player from the beginning, like Android TV's onPlay(..., "extra",
+' 0.0): no resume, and the player offers no next episode or Up Next for it.
+sub playExtra(e as object)
+    ex = e.raw
+    params = { itemId: Str_orEmpty(ex.content_id), title: e.title, itemType: "extra", source: "extra", startPosition: 0 }
+    fid = Str_orEmpty(ex.file_id)
+    if fid <> "" then params.fileId = fid
+    d = Num_or(ex.duration_seconds, 0)
+    if d > 0 then params.durationSeconds = d
+    print "[siku-trailer] play local extra " + params.itemId + " file=" + fid
+    ThemeMusic_stop()
+    Nav_play(params)
+end sub
+
+' YouTube trailers go to the YouTube channel; Roku has no WebView, and streaming YouTube in Siku
+' would need stream extraction, which YouTube's terms forbid.
+sub openYouTube(e as object)
+    if m.ytTask <> invalid then return
+    m.ytEntry = e
+    print "[siku-trailer] open YouTube video=" + e.videoId
+    m.global.toast = "Opening YouTube…"
+    task = CreateObject("roSGNode", "YouTubeLaunchTask")
+    task.request = { videoId: e.videoId, title: e.title }
+    task.observeField("result", "onYouTubeResult")
+    m.ytTask = task
+    task.control = "RUN"
+end sub
+
+' Only arrives when the hand-off did not happen (a launch exits Siku).
+sub onYouTubeResult(event as object)
+    r = event.getData()
+    if m.ytTask <> invalid then m.ytTask.unobserveField("result")
+    m.ytTask = invalid
+    e = m.ytEntry
+    if e = invalid or Type(r) <> "roAssociativeArray" then return
+    msg = "Siku couldn't open the YouTube channel on this Roku."
+    if r.outcome = "not_installed" then msg = "The YouTube channel isn't installed on this Roku."
+    msg = msg + " Scan the code or open the link on your phone to watch it."
+    m.ytDialog.videoTitle = e.title
+    m.ytDialog.message = msg
+    m.ytDialog.url = Trailer_watchUrl(e.videoId)
+    m.ytDialog.visible = true
+    m.ytDialog.setFocus(true)
+end sub
+
+sub onYouTubeDialogDismissed()
+    m.ytDialog.visible = false
+    focusZone(m.zoneIndex)
 end sub
 
 sub renderDetails()
@@ -1055,6 +1214,7 @@ sub onPlay()
     end if
     if r > 0 then params.startPosition = r
     applySelections(params, id)
+    ThemeMusic_stop()
     Nav_play(params)
 end sub
 
@@ -1063,6 +1223,7 @@ sub onStartOver()
     if id = "" then return
     params = { itemId: id, title: playTitle(), startPosition: 0 }
     applySelections(params, id)
+    ThemeMusic_stop()
     Nav_play(params)
 end sub
 
@@ -1242,7 +1403,7 @@ end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
-    if m.menu.visible then return true
+    if m.menu.visible or m.ytDialog.visible then return true
     if m.item = invalid then
         if key = "back" then return false
         return true

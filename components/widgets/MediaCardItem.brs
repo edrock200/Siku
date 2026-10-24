@@ -13,6 +13,7 @@ sub init()
     m.track = m.top.findNode("progressTrack")
     m.fill = m.top.findNode("progressFill")
     m.badge = m.top.findNode("watchedBadge")
+    m.playGlyph = m.top.findNode("playGlyph")
     m.badgeBg = m.top.findNode("watchedBg")
     m.badgeIcon = m.top.findNode("watchedIcon")
     m.border = m.top.findNode("border")
@@ -58,6 +59,9 @@ sub onContent()
         m.subtitle.text = ""
     end if
     m.badge.visible = c.watched = true
+    m.playGlyph.visible = c.hasField("playGlyph") and c.playGlyph = true
+    ' A trailer card without an image keeps a plain tile behind its play button (the title is below).
+    if m.playGlyph.visible then m.placeholderText.visible = false
     layout()
 end sub
 
@@ -107,6 +111,7 @@ sub layout()
     m.glow.width = w + 24
     m.glow.height = h + 24
     m.glow.translation = [-12, -12]
+    m.playGlyph.translation = [(w - 60) / 2, (h - 60) / 2]
 
     ' Progress bar (6 px) on landscape and poster cards that have progress.
     c = m.top.itemContent

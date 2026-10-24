@@ -45,6 +45,8 @@ function Settings_keyDefs() as object
         { key: "ui.card_presentation", rev: 5, def: { poster_size: "standard", caption: "title_metadata" } }
         { key: "ui.title_art", rev: 16, def: true }
         { key: "ui.disabled_library_ids", rev: 1, def: invalid }
+        { key: "ui.theme_music_enabled", rev: 11, def: false }
+        { key: "ui.theme_music_loop", rev: 11, def: false }
     ]
     return m.siku_settingKeys
 end function
@@ -350,6 +352,16 @@ end function
 
 function Settings_showTitleArt() as boolean
     return Settings_value("ui.title_art", true) <> false
+end function
+
+' Theme music on detail pages (ui.theme_music_enabled / ui.theme_music_loop, revision 11, both
+' default off; profile and profile_device scopes, the device value wins).
+function Settings_themeMusicEnabled() as boolean
+    return Settings_value("ui.theme_music_enabled", false) = true
+end function
+
+function Settings_themeMusicLoop() as boolean
+    return Settings_value("ui.theme_music_loop", false) = true
 end function
 
 ' {posterSize, caption}: ui.card_presentation, else the legacy posterSize pref.
