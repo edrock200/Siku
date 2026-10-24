@@ -91,13 +91,13 @@ A screen is `<component name="XScreen" extends="BaseScreen">` (`components/BaseS
 | `ServerConnectScreen` | none |
 | `LoginScreen` | none |
 | `ProfileScreen` | `{ switching: bool }` |
-| `ShellScreen` | none. Top bar and root tabs: Home, Movies, Series, Music, Audiobooks, For You, Calendar, Requests (only when `GET /api/v2/requests/status` enables it; page `RequestsPage`) |
+| `ShellScreen` | none. Top bar and root tabs: Home, Movies, Series, Music, Audiobooks, For You, Calendar, Requests (only when `GET /api/v2/requests/status` enables it; page `RequestsPage`). Libraries listed in the profile's `ui.disabled_library_ids` setting are left out of the tabs and panels (`Settings_withoutHiddenLibraries`), re-filtered whenever the settings snapshot lands. A mixed library appears under both Movies and Series; its pages get `mediaType` (`movie`/`series`): Recommended (`HomePage`) filters each shelf to that type and refills short shelves from `GET /api/v2/catalog?source=section`, Browse and collections send `type`, and Shuffle is not offered there (a shuffle request carries no media type) |
 | `LibraryScreen` | `{ libraryId, libraryName, mode, section: "browse"\|"collections"\|..., title, source?, collectionId? }` |
 | `LibraryPage` (shell page) | `{ section, libraryId, libraryName, mode, mediaType?, ... }`. Sections: `browse`, `collections`, `alphabet` (A‑Z), `genres` (Music), `authors` / `series` (audiobook groups via `GET /api/v2/catalog/audiobook-groups`, drill-in through `POST /api/v2/catalog/query` with an `author`/`series` `is` rule), plus the personal lists. Browse and A‑Z show the right-edge `AlphabetRail` (`name_prefix`) |
 | `DetailScreen` | `{ itemId, itemType?, libraryId? }`. Movie, series, season and episode |
 | `PersonScreen` | `{ personId, name? }` |
 | `SearchScreen` | `{ query? }` |
-| `RequestDetailScreen` | `{ mediaType: "movie"\|"series", tmdbId, title?, moderationRequestId? }`. A TMDB title to request (or its request's status); `moderationRequestId` pins the page to one request, as from an admin's approval row |
+| `RequestDetailScreen` | `{ mediaType: "movie"\|"series", tmdbId, title? }`. A TMDB title to request (or its request's status), with Cancel Request for the user's own pending request. Request administration (approve, decline, retry) stays in web admin, as on Android TV |
 | `SettingsScreen` | none. Android TV `TvSettingsScreen`: rail (account, General / Playback / Subtitles / Server, Sign Out) and a pane of grouped rows. Values are the server's effective settings (`Settings.brs`) with the device prefs as fallback; the Home Sections editor (`SettingsHomeSections.brs`) is a full-screen overlay |
 | `NotificationsScreen` | none. Notifications inbox (Android TV `TvInboxScreen`): Mark all read card, newest-first delivery cards, OK marks read and opens the series/episode, pages of 25. Android TV has no route to it, so Siku has no entry point either (deep link `debugScreen=NotificationsScreen`) |
 | `PlayerScreen` | `{ itemId, fileId?, startPosition?, title?, audioTrackId?/audioTrackIndex?, subtitleTrackId?/subtitleTrackIndex? (-1 = off), shuffleId?, shuffle? }`. With `shuffleId` the player runs a shuffle session: picks start at 0, Up Next shows the server's random pick with Pick Another / Stop shuffling |
@@ -114,10 +114,11 @@ Music: the Silo v2 contract has no album/artist/track types yet, and Android TV 
 | `prefs` | Device-local settings (`Prefs_load`, `Prefs_save`). |
 | `toast` | Set a string to show a toast, e.g. `m.global.toast = "Added to Watchlist"`. |
 | `authExpired` | Set by the network layer. MainScene then signs out and routes to the login screen. |
+| `staleProfile` | Set by `ApiTask` on 403 `profile_verification_required` with the profile id/token the request sent (household-management calls excepted). If that is still the active profile, MainScene clears the profile selection (keeping the sign-in) and opens `ProfileScreen`; it waits while the player or the sign-in/server screens are on top. |
 | `homeDirty` | Set to `true` after playback or after watched/favorite/watchlist changes, so Home and the details reload on show. |
 | `shuffleCaps` | Cached `GET /api/v2/shuffles/capabilities` keyed by server+profile (`Shuffle_refreshCaps` / `Shuffle_supports`). Shuffle entry points are hidden until it says available. |
 | `keyReleaseSeen` | Set once a key release reached a card list; arms the long-OK-press card menu (`LongPress_*` in Utils.brs). |
-| `requests` | `{enabled, canModerate, resolved}`: the media-requests gate, set by `ShellScreen` from `/api/v2/requests/status` and `/api/v2/admin/requests/capabilities`. Read it with `Req_gate()` (`components/common/Requests.brs`). |
+| `requests` | `{enabled, resolved}`: the media-requests gate, set by `ShellScreen` from `/api/v2/requests/status`. Read it with `Req_gate()` (`components/common/Requests.brs`). Siku never calls `/api/v2/admin/requests*`. |
 | `lastStream` | `{url, format, headers, label}` of the stream the player mounted last; `StreamTestScreen` replays it with its auth headers. |
 | `playbackCaps` | Cached `GET /api/v2/playback/capabilities` for the server (installation id, protocol versions, deliveries). |
 | `settings` | `{ready, available, identity, revision, manifestRevision, items: {key: {value, source, scope, ...}}, error}`: the server's effective settings for the active server + profile (`Settings_load`, called by `ShellScreen` per profile and by `SettingsScreen` on open and after every write). Read values through `Settings_*` getters (`Settings_quality`, `Settings_introSkipMode`, `Settings_autoPlayNext`, ...) or `Theme_cardPresentation` / `Theme_showTitleArt`; they fall back to `prefs` until the server answers. `Session_save` resets it when the server or profile changes. A component that calls `Settings_load` declares a boolean `settingsLoaded` field (alwaysNotify) to be told when the snapshot landed. |
@@ -197,7 +198,9 @@ The pipeline (`components/player/PlayerScreen.brs`, `startPipeline`):
    none), `output_change` from the HDR / Dolby Vision HUD toggles, `failure_recovery` as above.
    `onReplan` swaps the plan at the current position and rebuilds the HUD.
 6. Progress (`/progress`, sequenced), markers (Skip Intro / credits), Up Next and the final
-   `DELETE /playback/{session}` follow the Android TV player's behaviour.
+   `DELETE /playback/{session}` follow the Android TV player's behaviour. A 410
+   `playback_session_ended` answer to progress or a replan means an administrator ended the
+   session: the player says so in a toast and closes without a DELETE.
 
 Every start and replan prints one `[siku-playback]` line to the device console; see `CLAUDE.md`
 "Diagnostics" for the fields. The device facts behind these choices are in the skill's pitfalls

@@ -66,7 +66,7 @@ There is no chromatic accent. Every "accent" is white at some opacity.
 - `inter_regular.otf` (400), `inter_medium.otf` (500), `inter_semibold.otf` (600), `inter_bold.otf` (700), `inter_black.otf` (900). These form the `InterFamily` used everywhere. License: `res/raw/inter_license.txt`.
 - `inter_tight_black.ttf` is used only for the detail-page hero title.
 - `outfit_semibold.ttf` and `outfit_extrabold.ttf` are shipped but unused. `OutfitFamily` is aliased to Inter.
-- A monospace family is used for code tiles, the filter-count badge and group headers.
+- A monospace family is used for the filter-count badge and group headers (the sign-in code is Inter Bold since upstream #656).
 
 ### 1.3 Type scale (`UI/theme/Type.kt`)
 
@@ -356,7 +356,7 @@ Code: `UI/components/marquee/TvMarquee.kt`, `MarqueeBackdrop.kt`.
     - **"Change server"** (Plain).
 - Right card:
   - **QR code**: 340 px, dark on a white rounded tile, 20 px quiet padding.
-  - **Code tiles**: per character up to 84 px wide × 1.24 tall, monospace Bold, glass tiles with 16 px radius.
+  - **Sign-in code** (upstream #656): no tiles; one line of Inter Bold at 40 sp (69 px), `4821 7730` with an en space (half the type size) between the groups, scaled down to fit 260 dp (520 px) when a longer or wider code would overflow. Android also asks for tabular, slashed-zero digits (`tnum`, `zero`), which a Roku Label cannot select.
   - Status line with spinner: "Getting a sign-in code…", "Waiting for approval", "Continue on your phone", "Signed in as %s", and so on.
 - There is no countdown; the code renews in place.
 
@@ -619,9 +619,9 @@ The page background is opaque: the sampled tint at 42% over black (default `rgb(
 ### 4.8 Requests tab (`screens/requests/TvRequestsPage.kt`)
 
 - Skyline layout.
-- Rows: "Waiting for your approval" (admins), "Your requests", "Failed requests", then "Discover" carousels.
+- Rows: "Your requests", then "Discover" carousels. Request administration (approve, decline, retry) stays in web admin (upstream #558).
 - The marquee shows status, a stage track, and "Requested <date>".
-- Long-press actions: "Cancel Request", "Approve", "Decline", "Retry".
+- Long-press action on the user's own pending request: "Cancel Request".
 - Empty state: "Nothing here yet" / "Use Search to find a movie or series to request".
 
 ### 4.9 Settings (`screens/settings/TvSettingsScreen.kt`)

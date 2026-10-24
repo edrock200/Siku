@@ -8,6 +8,17 @@ Then connect Siku to http://127.0.0.1:8097
 
 Device sign-in auto-approves on the second poll. Password login accepts any
 username with password "silo". The "Kids" profile has PIN 1234.
+
+Test switches (not part of the API) change behaviour for one scenario. Set them at start with
+--switch name=value (repeatable) or at run time with POST /mock/switch {"name": value} (null
+clears one); GET /mock/switch lists them.
+  hidden_libraries=<JSON array>  the profile's ui.disabled_library_ids default, e.g. [2,"4"]
+  mixed_library=1                add library 5 "Everything" (type "mixed": movies and series)
+  progress_410=1                 POST /playback/{id}/progress answers 410 playback_session_ended
+  replan_410=1                   POST /playback/{id}/replan answers 410 playback_session_ended
+  user_code=<code>               the device sign-in code to show (default 4821-7730)
+  stale_profile=<profile id>     every request on that profile answers 403
+                                 profile_verification_required until GET /api/v2/profiles runs
 """
 import argparse
 import hashlib
@@ -27,7 +38,7 @@ except ImportError:  # artwork is optional
     Image = None
 
 FONT = "/usr/share/fonts/opentype/inter/Inter-Bold.otf"
-STATE = {"devices": {}, "sessions": {}, "watchlist": set(), "favorites": set(), "watched": set(), "progress": {}, "shuffles": {}}
+STATE = {"devices": {}, "sessions": {}, "watchlist": set(), "favorites": set(), "watched": set(), "progress": {}, "shuffles": {}, "switches": {}}
 LOCK = threading.Lock()
 LOG = []
 
@@ -205,6 +216,33 @@ def home_sections():
         {"id": "hidden_gems", "section_type": "hidden_gems", "title": "Hidden Gems", "featured": False, "total_count": 10, "items": ms[12:22]},
         {"id": "trending", "section_type": "trending_on_server", "title": "Trending on Server", "featured": False, "total_count": 8, "items": ms[6:14]},
     ]}
+
+
+def mixed_sections(full=False):
+    """Library 5 ("Everything", mixed). Inline items are capped at the shelf's item_limit, the way
+    the real server bounds them; `full` gives the whole shelf for the section catalog source."""
+    ms = all_movies()
+    ss = all_series()
+    recent = []
+    for i in range(max(len(ms), len(ss))):
+        if i < len(ms):
+            recent.append(ms[i])
+        if i < 2 and i < len(ss):
+            recent.append(ss[i])
+    recent += ss[2:]  # the older series sit beyond the inline window
+    secs = [
+        {"id": "mixed_recent", "section_type": "recently_added", "title": "Recently Added in Everything", "featured": False, "item_limit": 12, "items": recent},
+        {"id": "mixed_gems", "section_type": "hidden_gems", "title": "Hidden Gems", "featured": False, "item_limit": 12,
+         "customized": True, "items": ms[12:18] + ss[:3]},
+    ]
+    out = []
+    for sct in secs:
+        sct = dict(sct)
+        if not full:
+            sct["items"] = sct["items"][:sct["item_limit"]]
+        sct["total_count"] = len(sct["items"])
+        out.append(sct)
+    return out
 
 
 def make_image(kind, key):
@@ -1265,6 +1303,15 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/mock/notifications/reset" and method == "POST":
             STATE.pop("notifs", None)
             return self.send(204)
+        if p == "/mock/switch":
+            if method == "POST":
+                for k, v in (b or {}).items():
+                    if v is None:
+                        STATE["switches"].pop(k, None)
+                    else:
+                        STATE["switches"][k] = v
+                print("SWITCHES", json.dumps(STATE["switches"]), flush=True)
+            return self.send(200, STATE["switches"])
         if re.match(r"^/api/v2/stream/[^/]+/subtitles/\d+\.vtt$", p):
             LOG.append("VTT " + self.path)
             return self.send(200, b"WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nMock subtitle line\n", "text/vtt")
@@ -1301,7 +1348,7 @@ class Handler(BaseHTTPRequestHandler):
             code = "dev-" + uuid.uuid4().hex[:8]
             STATE["devices"][code] = 0
             host = self.headers.get("Host", "127.0.0.1")
-            return self.send(201, {"device_code": code, "user_code": "4821-7730", "match_code": "warm pony",
+            return self.send(201, {"device_code": code, "user_code": STATE["switches"].get("user_code", "4821-7730"), "match_code": "warm pony",
                                    "verification_uri": "http://%s/activate" % host,
                                    "verification_uri_complete": "http://%s/activate?code=48217730" % host,
                                    "expires_at": "2030-01-01T00:00:00Z", "expires_in": 900, "interval": 3})
@@ -1327,6 +1374,14 @@ class Handler(BaseHTTPRequestHandler):
 
         if not self.authed():
             return self.problem(401, "invalid_token", "Authentication required")
+        stale = STATE["switches"].get("stale_profile")
+        if stale and p == "/api/v2/profiles" and method == "GET":
+            # The viewer is back on the picker: the next profile pick is a fresh, valid proof.
+            STATE["switches"].pop("stale_profile", None)
+            print("STALE_PROFILE cleared by the profile list", flush=True)
+        elif stale and self.headers.get("X-Profile-Id") == str(stale):
+            print("STALE_PROFILE 403", method, p, flush=True)
+            return self.problem(403, "profile_verification_required", "Profile verification required")
         if requests_route(self, method, p, q, b):
             return
         if subtitle_route(self, method, p, q, b):
@@ -1350,17 +1405,23 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, {"valid": True, "profile_token": "ptok-1", "expires_at": None})
             return self.send(200, {"valid": False})
         if p == "/api/v2/user/libraries":
-            return self.send(200, {"items": [
+            libs = [
                 {"id": "1", "name": "Movies", "type": "movies", "sort_order": 0},
                 {"id": "2", "name": "Shows", "type": "series", "sort_order": 1},
                 {"id": "3", "name": "Music", "type": "music", "sort_order": 2},
                 {"id": "4", "name": "Audiobooks", "type": "audiobooks", "sort_order": 3},
-            ]})
+            ]
+            if STATE["switches"].get("mixed_library"):
+                # A real server sends numeric ids; this one does, to exercise id normalisation.
+                libs.append({"id": 5, "name": "Everything", "type": "mixed", "sort_order": 4})
+            return self.send(200, {"items": libs})
         if p == "/api/v2/home/sections":
             return self.send(200, home_sections())
         m = re.match(r"^/api/v2/library/([^/]+)/sections$", p)
         if m:
             secs = home_sections()["sections"]
+            if m.group(1) == "5":
+                return self.send(200, {"sections": mixed_sections()})
             return self.send(200, {"sections": secs[1:] if m.group(1) == "1" else secs[2:3]})
         m = re.match(r"^/api/v2/library/([^/]+)/collections$", p)
         if m:
@@ -1379,6 +1440,14 @@ class Handler(BaseHTTPRequestHandler):
                 series = [g["name"] for g in audiobook_groups({"group_by": ["series"]})]
             return self.send(200, {"genres": genres, "studios": [], "networks": [], "countries": [], "original_languages": [], "content_ratings": ["PG", "PG-13", "R"],
                                    "authors": authors, "narrators": narrators, "series": series, "technical": {}})
+        if p == "/api/v2/catalog" and q.get("source", [""])[0] == "section" and q.get("library_id", [""])[0] == "5":
+            # A mixed library's shelf, paged in its stored order (TvLibraryMediaScope refills from it).
+            sec = next((x for x in mixed_sections(full=True) if x["id"] == q.get("section_id", [""])[0]), None)
+            if sec is None:
+                return self.problem(404, "not_found", "Unknown section")
+            LOG.append("SECTION CATALOG %s cursor=%s" % (sec["id"], q.get("cursor", [""])[0]))
+            print("SECTION CATALOG", sec["id"], "cursor=" + q.get("cursor", [""])[0], flush=True)
+            return self.send(200, page(sec["items"], q))
         if p == "/api/v2/catalog":
             src = q.get("source", ["query"])[0]
             lib = q.get("library_id", [""])[0]
@@ -1483,6 +1552,11 @@ class Handler(BaseHTTPRequestHandler):
             print("START CAPS", playback_summary(b), flush=True)
             LOG.append("START CAPS " + playback_summary(b))
             return self.send(201, playback_decision(sid, b.get("start_position") or 0, b.get("file_id") or "42", b))
+        m = re.match(r"^/api/v2/playback/([^/]+)/(replan|progress)$", p)
+        if m and method == "POST" and STATE["switches"].get(m.group(2) + "_410"):
+            print("SESSION_ENDED 410", m.group(2), flush=True)
+            LOG.append("SESSION_ENDED 410 " + m.group(2))
+            return self.problem(410, "playback_session_ended", "An administrator ended this playback session")
         m = re.match(r"^/api/v2/playback/([^/]+)/replan$", p)
         if m and method == "POST":
             # Same decision shape as start; the inventory lists subtitles stored since (track_change).
@@ -1746,6 +1820,7 @@ SETTINGS_DEFS = {
     "ui.card_presentation": (5, {"poster_size": "standard", "caption": "title_metadata"}, ["profile", "profile_client", "profile_device"],
                              ["profile_device", "profile_client", "profile"]),
     "ui.title_art": (16, True, ["profile", "profile_device"], ["profile", "profile_device"]),
+    "ui.disabled_library_ids": (1, None, ["profile"], ["profile"]),
     "ui.theme": (1, "cinema-dark", ["account", "profile"], ["profile", "account"]),
 }
 SETTINGS_SCOPES = ["account", "profile", "profile_client", "profile_device", "profile_library", "profile_series"]
@@ -1798,6 +1873,9 @@ def settings_row_view(key, ident, row):
 
 def settings_effective(handler, key, q):
     introduced, default, _allowed, order = SETTINGS_DEFS[key]
+    if key == "ui.disabled_library_ids" and STATE["switches"].get("hidden_libraries"):
+        hid = STATE["switches"]["hidden_libraries"]
+        default = json.loads(hid) if isinstance(hid, str) else hid
     store = settings_store()
     for scope in order:
         ident = settings_identity(handler, scope, q)
@@ -1897,7 +1975,12 @@ def tokens(username="laura"):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8097)
+    ap.add_argument("--switch", action="append", default=[], metavar="NAME=VALUE",
+                    help="set a test switch at start (see the module docstring)")
     args = ap.parse_args()
+    for sw in args.switch:
+        k, _, v = sw.partition("=")
+        STATE["switches"][k.strip()] = v.strip() or "1"
     srv = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
     print("Mock Silo on http://127.0.0.1:%d" % args.port, flush=True)
     srv.serve_forever()
