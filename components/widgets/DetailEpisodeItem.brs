@@ -43,9 +43,14 @@ sub layout()
     h = Int(w * 9 / 16)
     m.placeholder.width = w
     m.placeholder.height = h
-    m.placeholderIcon.width = 64
-    m.placeholderIcon.height = 64
-    m.placeholderIcon.translation = [(w - 64) / 2, (h - 64) / 2]
+    m.defaultArt = m.top.findNode("defaultArt")
+    m.defaultArt.width = w
+    m.defaultArt.height = h
+    ms = Int(w * 0.24)
+    if ms > 128 then ms = 128
+    m.placeholderIcon.width = ms
+    m.placeholderIcon.height = ms
+    m.placeholderIcon.translation = [(w - ms) \ 2, (h - ms) \ 2]
     m.mask.maskSize = [w, h]
     m.image.width = w
     m.image.height = h

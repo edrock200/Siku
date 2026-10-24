@@ -18,8 +18,11 @@
   <script type="text/brightscript" uri="pkg:/components/widgets/DetailEpisodeItem.brs" />
   <children>
     <Poster id="placeholder" uri="pkg:/images/ui/r16.9.png" blendColor="0x15171CFF" />
-    <Poster id="placeholderIcon" uri="pkg:/images/icons/tv.png" blendColor="0xEDEDED40" />
     <MaskGroup id="mask" maskUri="pkg:/images/ui/mask_landscape.png">
+      <!-- Default artwork under the still: shows when there is no still, it fails to load, or
+           spoiler protection hides it (the glow and the TV mark, as MediaCardItem). -->
+      <Poster id="defaultArt" uri="pkg:/images/ui/art_default_landscape.png" loadDisplayMode="scaleToFill" />
+      <Poster id="placeholderIcon" uri="pkg:/images/icons/tv.png" blendColor="0xFFFFFF21" />
       <Poster id="image" loadDisplayMode="scaleToZoom" />
       <Rectangle id="progressTrack" color="0xFFFFFF33" visible="false" />
       <Rectangle id="progressFill" color="0xEDEDEDFF" visible="false" />

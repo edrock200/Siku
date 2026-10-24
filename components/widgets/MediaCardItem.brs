@@ -6,6 +6,8 @@ sub init()
     m.glow = m.top.findNode("glow")
     m.placeholder = m.top.findNode("placeholder")
     m.placeholderText = m.top.findNode("placeholderText")
+    m.defaultArt = m.top.findNode("defaultArt")
+    m.defaultMark = m.top.findNode("defaultMark")
     m.initialsText = m.top.findNode("initialsText")
     m.mask = m.top.findNode("mask")
     m.image = m.top.findNode("image")
@@ -21,6 +23,7 @@ sub init()
     m.style = "poster"
     m.insetX = 0
     m.insetY = 0
+    m.image.observeField("loadStatus", "onImageStatus")
 end sub
 
 ' Image box size for the current item width (minus the cell inset). Captions go below it.
@@ -59,7 +62,47 @@ sub onContent()
     end if
     m.badge.visible = c.watched = true
     layout()
+    updateDefaultArt()
 end sub
+
+' The mark for the kind of title (DefaultArtworkKind.forItemType): series, seasons and episodes
+' the TV, audiobooks and podcasts the headphones, anything else the film.
+function markIcon(itemType as string) as string
+    t = LCase(itemType)
+    if t = "series" or t = "season" or t = "episode" then return "tv"
+    if t = "audiobook" or t = "audiobook_part" or t = "podcast" or t = "podcast_episode" or t = "book" then return "audiobook"
+    return "movie"
+end function
+
+sub onImageStatus()
+    updateDefaultArt()
+end sub
+
+' Shows the default artwork while the card has no image to draw: no URL, or a failed load.
+' People (circle) keep the plain circle and initials cards their letters.
+sub updateDefaultArt()
+    c = m.top.itemContent
+    if c = invalid then return
+    noImage = c.HDPosterUrl = invalid or c.HDPosterUrl = "" or m.image.loadStatus = "failed"
+    hasInitials = c.initials <> invalid and c.initials <> ""
+    show = noImage and m.style <> "circle" and not hasInitials
+    m.defaultArt.visible = show
+    m.defaultMark.visible = show
+    if show then
+        m.defaultArt.uri = "pkg:/images/ui/art_default_" + artAspect() + ".png"
+        itemType = ""
+        if c.itemType <> invalid then itemType = c.itemType
+        m.defaultMark.uri = "pkg:/images/icons/" + markIcon(itemType) + ".png"
+    end if
+    ' The title placeholder is for circles only now; cards with the glow carry their caption below.
+    m.placeholderText.visible = noImage and not hasInitials and not show
+end sub
+
+function artAspect() as string
+    if m.style = "landscape" then return "landscape"
+    if m.style = "square" then return "square"
+    return "poster"
+end function
 
 ' The server-synced ui.card_presentation caption (read inline: this item has no Theme/Settings include).
 function cardCaption() as string
@@ -102,6 +145,15 @@ sub layout()
     m.initialsText.height = h
     m.image.width = w
     m.image.height = h
+    m.defaultArt.width = w
+    m.defaultArt.height = h
+    ' Mark: 24% of the width, at least 28 px and at most 128 px (64 dp on the TV app).
+    ms = Int(w * 0.24)
+    if ms < 28 then ms = 28
+    if ms > 128 then ms = 128
+    m.defaultMark.width = ms
+    m.defaultMark.height = ms
+    m.defaultMark.translation = [(w - ms) \ 2, (h - ms) \ 2]
     m.border.width = w
     m.border.height = h
     m.glow.width = w + 24
