@@ -240,7 +240,7 @@ sub runSearch()
     m.statusLine.text = "Searching…"
     m.spinner.visible = not m.grid.visible and not m.people.visible
     chip = m.chipDefs[m.chipIndex]
-    params = { source: "query", q: q, limit: 40, image_size: "medium" }
+    params = Artwork_query({ source: "query", q: q, limit: 40, image_size: "medium" }, "browse", Theme_posterScale())
     if chip.id <> "all" then params["type"] = chip.id
     ctx = { seq: m.searchSeq }
     Api_get("/api/v2/catalog", params, "onTitles", ctx)

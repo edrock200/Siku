@@ -426,7 +426,7 @@ sub requestPage(cursor as string)
         Api_get("/api/v2/history", q, "onPage", ctx)
         return
     end if
-    q = { limit: 60, image_size: "medium" }
+    q = Artwork_query({ limit: 60, image_size: "medium" }, "browse", Theme_posterScale())
     if m.drill <> invalid and m.drill.kind = "collection" then
         q.source = "library_collection"
         q.collection_id = m.drill.collectionId
@@ -487,8 +487,12 @@ sub requestPage(cursor as string)
     if groups.Count() > 0 then
         body = q
         body.groups = groups
-        body.Delete("image_size")
-        Api_call({ method: "POST", path: "/api/v2/catalog/query", query: { image_size: "medium" }, body: body, context: ctx }, "onPage")
+        ' Artwork parameters ride the query string, not the CatalogQuery body.
+        query = Artwork_query({ image_size: "medium" }, "browse", Theme_posterScale())
+        for each k in query
+            body.Delete(k)
+        end for
+        Api_call({ method: "POST", path: "/api/v2/catalog/query", query: query, body: body, context: ctx }, "onPage")
     else
         Api_get("/api/v2/catalog", q, "onPage", ctx)
     end if

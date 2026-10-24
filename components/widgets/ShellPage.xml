@@ -28,4 +28,5 @@
   <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Settings.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Spoilers.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Artwork.brs" />
 </component>

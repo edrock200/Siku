@@ -44,13 +44,29 @@ end sub
 sub load()
     m.loading = true
     m.feed.state = "loading"
+    ' Artwork at drawn size (Artwork.brs): ask the server once whether it takes per-slot widths;
+    ' Home waits for that answer (at most 3 s) so its first read is already sized.
+    if not Artwork_capsSettled() and m.artCapsAsked <> true then
+        m.artCapsAsked = true
+        Artwork_fetchCaps("onArtworkCaps")
+        return
+    end if
     lib = libraryId()
     if lib <> "" then
-        Api_get("/api/v2/library/" + Str_urlEncode(lib) + "/sections", { image_size: "medium" }, "onSections")
+        Api_get("/api/v2/library/" + Str_urlEncode(lib) + "/sections", artworkQuery(), "onSections")
     else
-        Api_get("/api/v2/home/sections", { image_size: "medium" }, "onSections")
+        Api_get("/api/v2/home/sections", artworkQuery(), "onSections")
     end if
 end sub
+
+sub onArtworkCaps(event as object)
+    Artwork_storeCaps(event)
+    load()
+end sub
+
+function artworkQuery() as object
+    return Artwork_query({ image_size: "medium" }, "home", Theme_posterScale())
+end function
 
 sub onSections(event as object)
     resp = Api_result(event)
@@ -82,7 +98,7 @@ sub onSections(event as object)
             else
                 path = "/api/v2/home/sections/" + Str_urlEncode(sid) + "/items"
             end if
-            Api_get(path, { image_size: "medium" }, "onSectionItems", { index: idx })
+            Api_get(path, artworkQuery(), "onSectionItems", { index: idx })
         end if
     end for
     if m.pendingSections = 0 then buildRows()

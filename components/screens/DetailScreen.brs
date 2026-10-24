@@ -110,7 +110,7 @@ sub load()
     m.loading = true
     m.errorGroup.visible = false
     m.spinner.visible = true
-    Api_get(itemPath(), { image_size: "large" }, "onItem")
+    Api_get(itemPath(), Artwork_query({ image_size: "large" }, "detail"), "onItem")
 end sub
 
 sub showError(msg as string)
@@ -152,7 +152,7 @@ sub onItem(event as object)
         end if
     end if
     if m.itemType = "movie" or m.itemType = "series" then
-        Api_get("/api/v2/recommendations/similar/" + Str_urlEncode(Str_orEmpty(m.item.content_id)), { limit: 12, image_size: "medium" }, "onSimilar")
+        Api_get("/api/v2/recommendations/similar/" + Str_urlEncode(Str_orEmpty(m.item.content_id)), Artwork_query({ limit: 12, image_size: "medium" }, "similar", Theme_posterScale()), "onSimilar")
     end if
     ' Shuffle entry points in the More menu depend on the server's capability.
     Shuffle_refreshCaps("onShuffleCaps")
@@ -164,7 +164,7 @@ end sub
 
 ' After playback or a state change elsewhere: refetch user state silently.
 sub refreshUserState()
-    Api_get(itemPath(), { image_size: "large" }, "onItemRefreshed")
+    Api_get(itemPath(), Artwork_query({ image_size: "large" }, "detail"), "onItemRefreshed")
 end sub
 
 sub onItemRefreshed(event as object)
@@ -792,7 +792,7 @@ sub loadEpisodes(n as integer)
         m.episodesMsg.text = "Loading episodes…"
     end if
     m.episodesRequestSeason = n
-    Api_get("/api/v2/catalog/series/" + Str_urlEncode(sid) + "/seasons/" + n.ToStr() + "/episodes", { image_size: "medium" }, "onEpisodes")
+    Api_get("/api/v2/catalog/series/" + Str_urlEncode(sid) + "/seasons/" + n.ToStr() + "/episodes", Artwork_query({ image_size: "medium" }, "episodes"), "onEpisodes")
 end sub
 
 function airDateText(d as dynamic) as string
