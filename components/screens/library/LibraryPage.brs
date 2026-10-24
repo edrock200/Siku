@@ -33,6 +33,8 @@ sub init()
     m.clearPill.observeField("buttonSelected", "clearFilters")
     m.shufflePill.observeField("buttonSelected", "shuffle")
     m.retryBtn.observeField("buttonSelected", "reload")
+    m.errClearBtn = m.top.findNode("errClearBtn")
+    m.errClearBtn.observeField("buttonSelected", "clearFilters")
     m.sortPanel.observeField("rowSelected", "onSortChosen")
     m.filterPanel.observeField("rowSelected", "onFilterMainChosen")
     m.filterPanel.observeField("rowFocused", "onFilterMainFocused")
@@ -112,8 +114,77 @@ sub onParams()
         m.sortField = "title"
         m.sortDesc = false
     end if
+    ' Browse brings back this library's saved sort and filters (the A–Z jump is per visit).
+    if m.mode = "browse" then restoreBrowseState()
     layoutPage()
     m.loaded = false
+end sub
+
+' ---------- Saved Browse sort and filters (BrowsePrefsStore, #468 / #532) ----------
+' Kept on this Roku per server, profile and library, and per media type in a mixed library's
+' Movies / Series view, as Android TV does. "Preserve sort & filters" (default on) gates it;
+' turning it off forgets the saved state.
+
+' The registry key for this Browse view, or "" when nothing may be saved (no profile, not Browse).
+function browsePrefsKey() as string
+    if m.mode <> "browse" then return ""
+    s = m.global.session
+    profile = Str_orEmpty(s.profileId)
+    lib = Str_orEmpty(prm("libraryId"))
+    if profile = "" or lib = "" then return ""
+    server = Str_orEmpty(s.serverId)
+    if server = "" then server = Str_orEmpty(s.serverUrl)
+    key = "browsePrefs." + server + "." + profile + "." + lib
+    mt = Str_orEmpty(prm("mediaType"))
+    if mt <> "" then key = key + ".type-" + mt
+    return key
+end function
+
+function browsePrefs() as object
+    key = browsePrefsKey()
+    if key = "" then return { preserve: true }
+    v = Registry_read(key, invalid)
+    if v = invalid or Type(v) <> "roAssociativeArray" then return { preserve: true }
+    if v.preserve <> false then v.preserve = true
+    return v
+end function
+
+function preserveFilters() as boolean
+    return browsePrefs().preserve
+end function
+
+sub restoreBrowseState()
+    p = browsePrefs()
+    if p.preserve <> true or p.state = invalid or Type(p.state) <> "roAssociativeArray" then return
+    st = p.state
+    field = Str_orEmpty(st.sort)
+    if field = "" or sortOption(field) <> invalid then
+        m.sortField = field
+        m.sortDesc = st.desc = true
+    end if
+    m.genre = Str_orEmpty(st.genre)
+    ' Only watch statuses this panel offers come back.
+    m.watchStatus = ""
+    for each o in m.watchStatusOptions
+        if o.id = Str_orEmpty(st.watchStatus) then m.watchStatus = o.id
+    end for
+end sub
+
+' Saves the Browse grid's own sort and filters (not the A–Z jump) while preserve is on.
+sub saveBrowseState()
+    key = browsePrefsKey()
+    if key = "" then return
+    p = browsePrefs()
+    if p.preserve <> true then return
+    Registry_write(key, { preserve: true, state: { sort: m.sortField, desc: m.sortDesc, genre: m.genre, watchStatus: m.watchStatus } })
+end sub
+
+' The toggle takes effect at once: off forgets the saved state, on saves the current one.
+sub setPreserveFilters(enabled as boolean)
+    key = browsePrefsKey()
+    if key = "" then return
+    Registry_write(key, { preserve: enabled })
+    if enabled then saveBrowseState()
 end sub
 
 ' Authors / Series: a grid of audiobook groups (GET /api/v2/catalog/audiobook-groups).
@@ -324,6 +395,7 @@ sub reload()
     m.loaded = false
     m.loading = true
     m.spinner.visible = true
+    m.libraryHasItems = invalid
     m.requestSeq = m.requestSeq + 1
     if m.mode = "collections" and m.drill = invalid then
         Api_get("/api/v2/library/" + Str_urlEncode(Str_orEmpty(prm("libraryId"))) + "/collections", invalid, "onCollections", { seq: m.requestSeq })
@@ -422,6 +494,25 @@ sub requestPage(cursor as string)
     end if
 end sub
 
+sub checkLibraryHasItems()
+    m.spinner.visible = true
+    q = { source: "query", limit: 1, skip_total: "true" }
+    if not Str_isEmpty(prm("libraryId")) then q.library_id = prm("libraryId")
+    mt = Str_orEmpty(prm("mediaType"))
+    if mt <> "" then q["type"] = mt
+    Api_get("/api/v2/catalog", q, "onLibraryHasItems", { seq: m.requestSeq })
+end sub
+
+sub onLibraryHasItems(event as object)
+    resp = Api_result(event)
+    if resp.context = invalid or resp.context.seq <> m.requestSeq then return
+    m.spinner.visible = false
+    ' Unknown when the check fails: the filter message stays.
+    m.libraryHasItems = invalid
+    if resp.ok and Type(resp.data) = "roAssociativeArray" then m.libraryHasItems = Arr_or(resp.data.items).Count() > 0
+    showEmpty()
+end sub
+
 ' Reads the page cursor out of a catalog-style response and updates hasMore / nextCursor.
 sub readPaging(data as object)
     m.hasMore = false
@@ -478,6 +569,14 @@ end sub
 sub setCards(items as object)
     m.cards = items
     if items.Count() = 0 then
+        ' Browse narrowed by a filter or a letter: one unfiltered item (within a mixed library's
+        ' Movies / Series type) tells an empty library from filters that match nothing (#472).
+        ' The spinner stays up meanwhile, so the wrong message never flashes.
+        if m.mode = "browse" and m.drill = invalid and (filtersActive() or (m.namePrefix <> "" and railAvailable())) then
+            checkLibraryHasItems()
+            return
+        end if
+        m.libraryHasItems = invalid
         showEmpty()
         return
     end if
@@ -664,7 +763,16 @@ sub showError(msg as string)
     m.statusTitle.text = "Something went wrong"
     m.statusBody.text = msg
     m.retryBtn.visible = true
-    m.retryBtn.translation = [(1920 - m.retryBtn.width) / 2, 600]
+    ' Retry resends the same query, so a saved filter the server rejects would keep Browse failing
+    ' after every restart: offer to clear the filters here too (keeps the sort).
+    m.errClearBtn.visible = m.mode = "browse" and filtersActive()
+    if m.errClearBtn.visible then
+        w = m.retryBtn.width + 20 + m.errClearBtn.width
+        m.retryBtn.translation = [(1920 - w) / 2, 600]
+        m.errClearBtn.translation = [(1920 - w) / 2 + m.retryBtn.width + 20, 600]
+    else
+        m.retryBtn.translation = [(1920 - m.retryBtn.width) / 2, 600]
+    end if
     if m.top.hasFocus() or m.grid.hasFocus() then m.retryBtn.setFocus(true)
 end sub
 
@@ -672,6 +780,7 @@ sub showEmpty()
     m.grid.visible = false
     m.status.visible = true
     m.retryBtn.visible = false
+    m.errClearBtn.visible = false
     body = ""
     if m.mode = "favorites" then
         title = "No favorites yet"
@@ -688,6 +797,9 @@ sub showEmpty()
     else if isGroupsMode() and m.drill = invalid then
         title = "No audiobook " + LCase(groupsLabel()) + " found."
         body = ""
+    else if m.mode = "browse" and m.libraryHasItems = false then
+        title = "No titles found"
+        body = "This library is empty."
     else if m.namePrefix <> "" and railAvailable() then
         title = "No titles match"
         body = "Try another letter."
@@ -947,6 +1059,7 @@ sub onSortChosen()
     end if
     ' The A–Z jump only applies to the title order (TvLibraryDetailScreen hides the rail otherwise).
     if m.sortField <> "title" then m.namePrefix = ""
+    saveBrowseState()
     closePanels()
     updateSortPill()
     updateRail()
@@ -961,6 +1074,7 @@ sub openFilterPanel()
         { id: "genre", label: "Genre", trailing: "chevron", "sub": m.genre },
         { id: "status", label: "Watch Status", trailing: "chevron", "sub": watchStatusLabel() },
         { id: "-" },
+        { id: "preserve", label: "Preserve sort & filters", trailing: checkIf(preserveFilters()) },
         { id: "reset", label: "Reset filters" },
         { id: "done", label: "Done" }
     ]
@@ -1073,9 +1187,20 @@ sub onFilterMainChosen()
     id = m.filterPanel.rowSelected
     if id = "genre" or id = "status" then
         enterFilterFly()
+    else if id = "preserve" then
+        ' Takes effect at once rather than on Done (tvOS preserveRow).
+        setPreserveFilters(not preserveFilters())
+        rows = m.filterPanel.rows
+        for each r in rows
+            if r.id = "preserve" then r.trailing = checkIf(preserveFilters())
+        end for
+        idx = m.filterPanel.focusIndex
+        m.filterPanel.rows = rows
+        m.filterPanel.focusIndex = idx
     else if id = "reset" then
         m.genre = ""
         m.watchStatus = ""
+        saveBrowseState()
         closePanels()
         updateSortPill()
         reload()
@@ -1104,6 +1229,7 @@ sub onFilterValueChosen()
     else
         m.watchStatus = id
     end if
+    saveBrowseState()
     closePanels()
     updateSortPill()
     reload()
@@ -1112,6 +1238,7 @@ end sub
 sub clearFilters()
     m.genre = ""
     m.watchStatus = ""
+    saveBrowseState()
     updateSortPill()
     m.sortPill.setFocus(true)
     reload()
@@ -1300,6 +1427,21 @@ function onKeyEvent(key as string, press as boolean) as boolean
             openOptions()
             return true
         end if
+    end if
+    if m.retryBtn.hasFocus() and key = "right" and m.errClearBtn.visible then
+        m.errClearBtn.setFocus(true)
+        return true
+    end if
+    if m.errClearBtn.hasFocus() then
+        if key = "left" then
+            m.retryBtn.setFocus(true)
+            return true
+        else if key = "up" and visiblePills().Count() > 0 then
+            pills = visiblePills()
+            pills[0].setFocus(true)
+            return true
+        end if
+        return false
     end if
     if m.retryBtn.hasFocus() and key = "up" then
         if visiblePills().Count() > 0 then
