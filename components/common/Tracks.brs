@@ -273,7 +273,15 @@ end function
 ' Menu-row detail: custom title · codec · Forced · SDH · Default · External.
 function Tracks_subtitleDetail(t as object) as string
     tokens = []
-    u = Tracks_usefulTitle(t.title, t.language, t.codec)
+    ' An AI track names how it was made instead of its release-style title (Silo Android #544).
+    ai = Tracks_aiSubtitleKind(t.title)
+    u = ""
+    if ai <> "" then
+        tokens.Push(ai)
+        if Str_isEmpty(t.language) then u = Tracks_aiSubtitleSourceLabel(t.title)
+    else
+        u = Tracks_usefulTitle(t.title, t.language, t.codec)
+    end if
     if u <> "" then tokens.Push(u)
     c = Tracks_subtitleCodec(t.codec)
     if c <> "" then tokens.Push(c)
@@ -282,6 +290,29 @@ function Tracks_subtitleDetail(t as object) as string
     if t["default"] = true then tokens.Push("Default")
     if t.external = true then tokens.Push("External")
     return Str_joinDots(tokens)
+end function
+
+' How the server made an AI subtitle (SubtitleTrackDisplayLabel.aiSubtitleKind, Silo Android
+' #544): "AI Translation", "AI Transcription", or "" for any other track. Stored AI tracks carry a
+' "(translated)" or "(transcribed)" provider suffix, and their release names read
+' "English → German (AI)" or "English (AI transcribed)". Only these server markers count, never a
+' bare "AI" in a title.
+function Tracks_aiSubtitleKind(label as dynamic) as string
+    raw = Str_orEmpty(label).Trim()
+    if raw = "" then return ""
+    provider = ""
+    pm = CreateObject("roRegex", "\(([^)]+)\)\s*$", "").Match(raw)
+    if pm.Count() > 1 then provider = LCase(pm[1].Trim()).Replace("_", "").Replace("-", "")
+    if provider = "transcribed" or CreateObject("roRegex", "\bAI transcribed\b", "i").IsMatch(raw) then return "AI Transcription"
+    if provider = "translated" or CreateObject("roRegex", "\(\s*AI\s*\)", "i").IsMatch(raw) then return "AI Translation"
+    return ""
+end function
+
+' An AI track's server label without its "(AI)" / "(translated)" markers ("English → German"),
+' for a track with no language to name it.
+function Tracks_aiSubtitleSourceLabel(label as dynamic) as string
+    re = CreateObject("roRegex", "(\s*\(\s*(?:AI|AI transcribed|translated|transcribed)\s*\))+\s*$", "i")
+    return re.ReplaceAll(Str_orEmpty(label), "").Trim()
 end function
 
 ' Combined selection index per catalog position: external tracks count first, embedded after.

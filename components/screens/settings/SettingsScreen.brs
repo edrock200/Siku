@@ -78,6 +78,7 @@ sub init()
     m.serverVersion = ""
     m.supportsDolbyVision = displaySupportsDolbyVision()
     Hs_init()
+    Conn_init()
 
     renderPane()
     updateFocus()
@@ -211,7 +212,12 @@ function buildPane(catId as string) as object
         out.Push({ kind: "footer", text: "Fallback language Silo prefers for titles, descriptions, and artwork." })
     else if catId = "playback" then
         out.Push({ kind: "header", text: "Streaming" })
-        out.Push({ kind: "row", row: rowDef("quality", "choice", "Quality") })
+        ' TvSettingsScreen STREAMING (Silo Android #613): Resolution and Maximum Bitrate are two
+        ' pickers over the two server settings; there is no Original choice any more.
+        out.Push({ kind: "row", row: rowDef("resolution", "choice", "Resolution") })
+        out.Push({ kind: "row", row: rowDef("maxBitrate", "choice", "Maximum Bitrate") })
+        ' Lower quality when buffering and the learned-limit row (SettingsConnection.brs).
+        Conn_appendStreamingRows(out)
         out.Push({ kind: "row", row: rowDef("audioLanguage", "choice", "Audio Language") })
         ' TvSettingsScreen STREAMING parity: Dolby Vision (default on; off plays the HDR10 base
         ' layer) with the narrower Profile 7 fallback nested under it while Dolby Vision is on,
@@ -222,13 +228,14 @@ function buildPane(catId as string) as object
         out.Push({ kind: "row", row: rowDef("forceHdr", "toggle", "Force HDR Passthrough") })
         out.Push({ kind: "row", row: rowDef("forceDolby", "toggle", "Force Dolby Audio Passthrough") })
         out.Push({ kind: "row", row: rowDef("progressiveRemux", "toggle", "Experimental: Progressive Remux") })
-        q = Settings_qualityPresetFor(Settings_quality(), Settings_maxBitrateKbps())
-        if q <> invalid then qText = q.description else qText = Settings_describeQuality(Settings_quality(), Settings_maxBitrateKbps()) + "."
+        qText = Settings_qualityDescription(Settings_quality(), Settings_maxBitrateKbps())
         if m.supportsDolbyVision then qText = qText + " Dolby Vision off asks the server for the HDR10 layer of Dolby Vision files instead. Profile 7 HDR10 Fallback plays dual-layer Dolby Vision files as their HDR10 base layer; off, they are sent as they are and this Roku's HEVC decoder shows the base layer itself."
         qText = qText + " Force HDR Passthrough allows HDR playback when this TV doesn't report support. It does not force the HDMI output into HDR; the Roku may still convert the picture to SDR. Enable it only if you've confirmed your TV supports the source format."
         qText = qText + " Force Dolby Audio Passthrough tells the server this Roku can play Dolby Digital and Dolby Digital Plus even when the TV or receiver does not report it, so the original audio is sent instead of being converted to AAC. If you then get no sound, turn it off; a Roku app cannot switch the HDMI audio output itself."
         qText = qText + " Experimental: Progressive Remux offers the server a second way to keep the original video while converting only the audio: one MP4 stream over plain HTTP instead of HLS. Tested on a Streaming Stick 4K (Roku OS 14): playback fails at once, so leave it off unless you are testing another Roku model."
         out.Push({ kind: "footer", text: qText })
+
+        Conn_appendConnectionGroup(out)
 
         out.Push({ kind: "header", text: "Episodes" })
         out.Push({ kind: "row", row: rowDef("autoPlayNext", "toggle", "Auto-Play Next Episode") })
@@ -339,8 +346,12 @@ function rowValue(row as object) as string
         return onOff(p.showAudiobooks = true)
     else if id = "metadataLanguage" then
         return Settings_languageLabel(Settings_value("catalog.metadata_language", ""), "catalog.metadata_language")
-    else if id = "quality" then
-        return Settings_describeQuality(Settings_quality(), Settings_maxBitrateKbps())
+    else if id = "bufferingQuality" or id = "learnedLimit" or id = "connectionSpeed" then
+        return Conn_rowValue(id)
+    else if id = "resolution" then
+        return Settings_resolutionLabel(Settings_quality())
+    else if id = "maxBitrate" then
+        return Settings_bitrateLabel(Settings_maxBitrateKbps())
     else if id = "audioLanguage" then
         return Settings_languageLabel(Settings_value("playback.audio_language", ""), "playback.audio_language")
     else if id = "dolbyVision" then
@@ -441,12 +452,12 @@ function rowOptions(row as object) as object
         return [{ value: "title_metadata", label: "Title & Metadata" }, { value: "title", label: "Title Only" }, { value: "artwork", label: "Artwork Only" }]
     else if id = "metadataLanguage" then
         return Settings_languageOptions("catalog.metadata_language")
-    else if id = "quality" then
-        out = []
-        for each pr in Settings_qualityPresets()
-            out.Push({ value: pr.id, label: pr.label })
-        end for
-        return out
+    else if id = "bufferingQuality" then
+        return Conn_modeOptions()
+    else if id = "resolution" then
+        return Settings_resolutionChoices()
+    else if id = "maxBitrate" then
+        return Settings_bitrateChoices(Settings_maxBitrateKbps())
     else if id = "audioLanguage" then
         return Settings_languageOptions("playback.audio_language")
     else if id = "showNextUp" then
@@ -504,10 +515,12 @@ function rowCurrent(row as object) as dynamic
         return Settings_cardPresentation().caption
     else if id = "metadataLanguage" then
         return Str_orEmpty(Settings_value("catalog.metadata_language", ""))
-    else if id = "quality" then
-        q = Settings_qualityPresetFor(Settings_quality(), Settings_maxBitrateKbps())
-        if q = invalid then return ""
-        return q.id
+    else if id = "bufferingQuality" then
+        return Settings_bufferingQualityMode()
+    else if id = "resolution" then
+        return Settings_quality()
+    else if id = "maxBitrate" then
+        return Settings_maxBitrateKbps()
     else if id = "audioLanguage" then
         return Str_orEmpty(Settings_value("playback.audio_language", ""))
     else if id = "showNextUp" then
@@ -546,6 +559,7 @@ sub renderPane()
     m.entries = []
     cat = m.categories[m.catIndex]
     w = 1080
+    Conn_onCategory(cat.id)
 
     ' Pane header: glyph on a graphite tile, the category title and its blurb.
     tile = m.pane.createChild("Poster")
@@ -618,6 +632,7 @@ function addRow(row as object, y as integer, w as integer) as integer
     node.rowWidth = w
     node.rowHeight = 76
     node.label = row.label
+    if row.labelWidth <> invalid then node.labelWidth = row.labelWidth
     node.value = rowValue(row)
     node.showChevron = row.kind = "choice" or (row.kind = "action" and row.destructive <> true)
     node.destructive = row.destructive = true
@@ -1069,20 +1084,24 @@ sub applyChoice(row as object, value as dynamic)
         refreshValues()
     else if id = "metadataLanguage" then
         putLanguage("catalog.metadata_language", "profile", Str_orEmpty(value))
-    else if id = "quality" then
-        preset = Settings_qualityPresetById(Str_orEmpty(value))
-        if preset <> invalid then
-            beginWrites(2)
-            putValue("playback.preferred_quality", "profile_device", preset.resolution)
-            if preset.kbps > 0 then
-                putValue("playback.max_bitrate_kbps", "profile_device", preset.kbps)
-            else
-                ' Uncapped: store JSON null at this scope ("no cap of my own", contracts/settings
-                ' conformance), as Android's flusher does. Deleting the row instead let a cap
-                ' stored at the profile scope show through, so "Original" read "Original at 6 Mbps"
-                ' and the server honoured that cap with a 720p transcode.
-                putValue("playback.max_bitrate_kbps", "profile_device", invalid)
-            end if
+    else if id = "bufferingQuality" then
+        ' profile_device, like Skip Intros (a choice for this Roku and profile).
+        beginWrites(1)
+        putValue("playback.buffering_quality_mode", "profile_device", Str_orEmpty(value))
+    else if id = "resolution" then
+        beginWrites(1)
+        putValue("playback.preferred_quality", "profile_device", Settings_normalizeResolution(value))
+    else if id = "maxBitrate" then
+        beginWrites(1)
+        kbps = Int(Content_numOr(value, 0))
+        if kbps > 0 then
+            putValue("playback.max_bitrate_kbps", "profile_device", kbps)
+        else
+            ' No limit: store JSON null at this scope ("no cap of my own", contracts/settings
+            ' conformance), as Android's flusher does. Deleting the row instead let a cap stored
+            ' at the profile scope show through, and the server honoured that cap with a 720p
+            ' transcode (CLAUDE.md, pitfall 13).
+            putValue("playback.max_bitrate_kbps", "profile_device", invalid)
         end if
     else if id = "audioLanguage" then
         putLanguage("playback.audio_language", "profile_device", Str_orEmpty(value))
@@ -1202,6 +1221,10 @@ sub activateRow(row as object)
         deleteValue("ui.theme_music_loop", "profile_device")
     else if id = "switchProfile" then
         Nav_push("ProfileScreen", { switching: true })
+    else if id = "learnedLimit" then
+        Conn_resetLimit()
+    else if id = "connectionSpeed" then
+        Conn_testSpeed()
     else if id = "resetOverrides" then
         openConfirm("resetOverrides", "Reset Playback Overrides?", "Playback choices for this Roku and profile go back to the server fallback.", "Reset")
     else if id = "resetAppearance" then

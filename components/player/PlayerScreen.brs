@@ -62,6 +62,7 @@ sub init()
     m.refreshTimeout = m.top.findNode("refreshTimeout")
     m.stopTimeout = m.top.findNode("stopTimeout")
     m.captionTimer = m.top.findNode("captionTimer")
+    m.renditionTimer = m.top.findNode("renditionTimer")
 
     m.di = CreateObject("roDeviceInfo")
     m.started = false
@@ -89,6 +90,9 @@ sub init()
     m.refreshTimeout.observeField("fire", "onTokenRefreshed")
     m.stopTimeout.observeField("fire", "finishClose")
     m.captionTimer.observeField("fire", "hideCaption")
+    m.renditionTimer.observeField("fire", "onRenditionTimeout")
+    ' In-manifest subtitle tracks (an HLS WebVTT rendition) appear here once the stream is parsed.
+    if m.video.hasField("availableSubtitleTracks") then m.video.observeField("availableSubtitleTracks", "onAvailableSubtitles")
 
     m.skipBackBtn.observeField("buttonSelected", "onSkipBack")
     m.playPauseBtn.observeField("buttonSelected", "togglePlay")
@@ -109,6 +113,7 @@ sub init()
     m.picker.observeField("chosen", "onPickerChosen")
     m.picker.observeField("dismissed", "onPickerDismissed")
     Subs_init()
+    Bufq_init()
 end sub
 
 ' State for one playback attempt (reset again when Up Next chains to another episode).
@@ -127,11 +132,15 @@ sub resetPlaybackState()
     m.position = 0.0
     m.isPaused = false
     m.markers = []
+    m.markersFileId = ""   ' the file m.markers belong to
+    if m.markerTicket = invalid then m.markerTicket = 0
+    m.markerTicket = m.markerTicket + 1
     m.chapters = []
     m.subtitleTracks = []
     m.subtitleIndex = -1
     m.pendingSubtitleTrackId = ""
-    m.qualityPref = PlaybackCaps_qualityPreference()
+    m.qualityPref = PlaybackCaps_qualityPreference()   ' the session's preference: the saved one, then a pick
+    m.prevQualityPref = invalid
     m.lastRequestBody = invalid   ' the start/replan body the current plan answered (diagnostics)
     m.replanKind = ""             ' "quality" | "output": what the pending replan was for
     m.skipShownFor = ""
@@ -148,6 +157,10 @@ sub resetPlaybackState()
     m.forceSubtitlesOff = false
     m.explicitSubtitleId = ""
     m.remuxRecoveryTried = false
+    m.renditionWanted = false          ' the selected track is an HLS rendition not yet found on the Video node
+    m.renditionRecoveryTried = false   ' failure_recovery (subtitle_hls_rendition_failed) asked once per playback
+    m.renditionTimerArmed = false
+    if m.renditionTimer <> invalid then m.renditionTimer.control = "stop"
     m.pendingAudioIndex = -1
     m.chosenAudioIndex = -1
     m.plannedAudioApplied = true
@@ -173,6 +186,7 @@ sub resetPlaybackState()
     m.watchBackTarget = invalid
     m.waitingForToken = false
     if m.subs <> invalid then Subs_resetPlayback()
+    if m.bq <> invalid then Bufq_resetPlayback()
 end sub
 
 ' ---------- Lifecycle ----------
@@ -199,6 +213,9 @@ sub restoreFocus()
         focusHud()
     else if m.controls.visible then
         focusControls()
+    else if m.bufqPill.visible then
+        m.bufqFocused = true
+        m.bufqPrimary.setFocus(true)
     else if m.skipGroup.visible and m.skipBtn.visible then
         m.skipBtn.setFocus(true)
     else
@@ -233,7 +250,10 @@ sub startPipeline()
         showError("Nothing to play.")
         return
     end if
-    Api_get("/api/v2/watch/" + Str_urlEncode(m.itemId), { image_size: "medium" }, "onWatch")
+    ' Naming the file makes the server fill that version's on-demand markers (Silo Android #527).
+    q = { image_size: "medium" }
+    if not Str_isEmpty(p.fileId) then q.file_id = Str_orEmpty(p.fileId)
+    Api_get("/api/v2/watch/" + Str_urlEncode(m.itemId), q, "onWatch")
 end sub
 
 sub retry()
@@ -305,6 +325,7 @@ sub onWatch(event as object)
         if Str_orEmpty(v.file_id) = fileId then m.version = v
     end for
     collectMarkers()
+    m.markersFileId = fileId
     if m.version <> invalid then m.chapters = Arr_or(m.version.chapters)
     m.scrubber.markers = m.markers
     m.scrubber.chapters = m.chapters
@@ -325,33 +346,104 @@ sub onWatch(event as object)
     ensureFreshToken()
 end sub
 
-' Markers in {kind, start, end} form; marker_segments preferred, then per-version and top-level fields.
+' Markers in {kind, start, end} form for the file that plays (Silo Android #527): the version's
+' marker_segments, else its own intro / recap / credits / preview ranges. The title-level ranges
+' belong to the default version, so they are used only when the server reports no per-version
+' markers at all (an older server).
 sub collectMarkers()
+    m.markers = markersOf(m.version, m.watch)
+end sub
+
+function markersOf(version as dynamic, w as dynamic) as object
     out = []
-    w = m.watch
     segs = []
-    if m.version <> invalid then segs = Arr_or(m.version.marker_segments)
+    if version <> invalid then segs = Arr_or(version.marker_segments)
     if segs.Count() > 0 then
-        for each s in segs
-            if s.start_seconds <> invalid and s.end_seconds <> invalid then
-                out.Push({ kind: LCase(Str_orEmpty(s.kind)), start: Content_num(s.start_seconds), "end": Content_num(s.end_seconds) })
+        for each sg in segs
+            if sg <> invalid and sg.start_seconds <> invalid and sg.end_seconds <> invalid then
+                out.Push({ kind: LCase(Str_orEmpty(sg.kind)), start: Content_num(sg.start_seconds), "end": Content_num(sg.end_seconds) })
             end if
         end for
-    else
-        for each kind in ["intro", "recap", "credits"]
-            mk = invalid
-            if m.version <> invalid and m.version[kind] <> invalid then mk = m.version[kind]
-            if mk = invalid then mk = w[kind]
-            if mk <> invalid then
-                s = mk.start_seconds
-                e = mk.end_seconds
-                if s = invalid then s = mk.start
-                if e = invalid then e = mk["end"]
-                if s <> invalid and e <> invalid then out.Push({ kind: kind, start: Content_num(s), "end": Content_num(e) })
-            end if
+        return out
+    end if
+    perVersion = false
+    if version <> invalid then
+        for each kind in ["intro", "recap", "credits", "preview"]
+            if version.DoesExist(kind) then perVersion = true
         end for
     end if
-    m.markers = out
+    for each kind in ["intro", "recap", "credits", "preview"]
+        mk = invalid
+        if perVersion then
+            mk = version[kind]
+        else if w <> invalid then
+            mk = w[kind]
+        end if
+        if mk <> invalid and Type(mk) = "roAssociativeArray" then
+            s0 = mk.start_seconds
+            e0 = mk.end_seconds
+            if s0 = invalid then s0 = mk.start
+            if e0 = invalid then e0 = mk["end"]
+            if s0 <> invalid and e0 <> invalid then out.Push({ kind: kind, start: Content_num(s0), "end": Content_num(e0) })
+        end if
+    end for
+    return out
+end function
+
+' Adopts the marker ranges of one file and redraws the scrubber's bands. A Skip pill shown for a
+' range that no longer exists goes away at the next position tick (checkMarkers).
+sub applyMarkers(markers as object)
+    m.markerTicket = m.markerTicket + 1   ' a reconcile read sent before this is stale now
+    m.markers = markers
+    m.scrubber.markers = m.markers
+end sub
+
+' The file the plan plays (a replan or recovery can land on another version of the title).
+function planFileId(plan as dynamic) as string
+    f = ""
+    if plan <> invalid then f = Str_orEmpty(plan.effective_media_file_id)
+    if f = "" then f = m.fileId
+    return f
+end function
+
+' Reads the playing file's markers again, naming the file so the server fills that version's
+' on-demand markers (TvPlayerViewModel.reconcileMarkers, Silo Android #527). Android does this after
+' every control connection; Siku has no control socket, so it reads after every session start and
+' after a replan that lands on another file. A late answer never replaces newer ranges.
+sub reconcileMarkers()
+    if m.sessionId = "" or m.itemId = "" or m.markersFileId = "" then return
+    m.markerTicket = m.markerTicket + 1
+    ctx = { ticket: m.markerTicket, sessionId: m.sessionId, fileId: m.markersFileId, itemId: m.itemId }
+    Api_get("/api/v2/watch/" + Str_urlEncode(m.itemId), { image_size: "medium", file_id: m.markersFileId }, "onMarkersReconciled", ctx)
+end sub
+
+sub onMarkersReconciled(event as object)
+    resp = Api_result(event)
+    if m.closing or resp.context = invalid then return
+    c = resp.context
+    if c.ticket <> m.markerTicket or c.sessionId <> m.sessionId or c.fileId <> m.markersFileId or c.itemId <> m.itemId then return
+    if not resp.ok or resp.data = invalid or Type(resp.data) <> "roAssociativeArray" then return
+    version = invalid
+    for each v in Arr_or(resp.data.versions)
+        if v <> invalid and Str_orEmpty(v.file_id) = c.fileId then version = v
+    end for
+    if version = invalid then return
+    applyMarkers(markersOf(version, resp.data))
+    print "[siku-playback] markers file=" + c.fileId + " count=" + m.markers.Count().ToStr()
+end sub
+
+' A replan that lands on another file takes that file's markers from the watch detail, then
+' reads them again (TvPlayerViewModel.adoptFileMarkersAfterReplan).
+sub adoptFileMarkers(fileId as string)
+    m.markersFileId = fileId
+    version = invalid
+    if m.watch <> invalid then
+        for each v in Arr_or(m.watch.versions)
+            if v <> invalid and Str_orEmpty(v.file_id) = fileId then version = v
+        end for
+    end if
+    applyMarkers(markersOf(version, m.watch))
+    reconcileMarkers()
 end sub
 
 ' Refresh the token first when it is about to expire: the Video node can't refresh headers mid-stream.
@@ -460,6 +552,7 @@ sub startSession(installation as string)
     if subId <> "" and Left(subId, Len(prefix)) <> prefix then subId = ""
     m.explicitSubtitleId = subId
     body = PlaybackCaps_startBody(installation, m.fileId, m.attemptId, startPos, audioId, subId)
+    Bufq_decorateBody(body, invalid)
     m.lastRequestBody = body
     Api_send("POST", "/api/v2/playback/start", body, "onStart")
 end sub
@@ -500,9 +593,18 @@ sub onStart(event as object)
     if m.sessionId = "" then m.sessionId = Str_orEmpty(d.playback_plan.session_id)
     m.sequence = 0
     m.stopId = ""
+    PlaybackCaps_notePlanFeatures(d)
+    Bufq_noteDecision(d)
     ' One line per start for the debug console (telnet 8085): declared caps, request, decision.
     print PlaybackCaps_diagLine(m.lastRequestBody, d.playback_plan)
-    applyPlan(d.playback_plan)
+    applyPlan(d.playback_plan, { mountKind: "start" })
+    ' Every new session reads the playing file's markers again (the start may also have landed on
+    ' another version than the one asked for).
+    if planFileId(d.playback_plan) <> m.markersFileId then
+        adoptFileMarkers(planFileId(d.playback_plan))
+    else
+        reconcileMarkers()
+    end if
     maybeRecoverSilentRemux(d.playback_plan)
     warnForcedDolby(d.playback_plan)
 end sub
@@ -596,15 +698,30 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
     ' the `token=` fallback and the timestamp_offset for the timeline offset and the viewer's delay).
     m.subtitleTracks = []
     m.subtitleIndex = -1
+    m.renditionWanted = false
+    m.renditionTimerArmed = false
+    m.renditionTimer.control = "stop"
     tracks = []
     subInv = []
     if plan.subtitle <> invalid then subInv = Arr_or(plan.subtitle.inventory)
     m.subs.subtitleInventory = subInv
+    ' A transcode may carry the selected embedded track as a WebVTT rendition of its own HLS stream
+    ' (hls_subtitle_renditions_v1, Silo Android #611). That row is not mounted as a sidecar (its URL
+    ' is a slow whole-file extraction); it is selected on the Video node instead. A rendition in a
+    ' shape the client must refuse is ignored, so the row stays an ordinary sidecar.
+    rendition = PlaybackCaps_hlsRendition(plan)
+    if rendition <> invalid and rendition.problem = true then rendition = invalid
     for each t in subInv
-        track = Subs_buildTrack(t)
-        if track <> invalid then
+        track = invalid
+        if rendition <> invalid and Str_orEmpty(t.track_id) = rendition.trackId then
+            track = Subs_renditionTrack(t, rendition)
             m.subtitleTracks.Push(track)
-            tracks.Push({ Language: track.language, TrackName: track.url, Description: track.label })
+        else
+            track = Subs_buildTrack(t)
+            if track <> invalid then
+                m.subtitleTracks.Push(track)
+                tracks.Push({ Language: track.language, TrackName: track.url, Description: track.label })
+            end if
         end if
     end for
     if tracks.Count() > 0 then content.SubtitleTracks = tracks
@@ -628,6 +745,8 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
         autoPick = Subs_autoChoice(planAudioLanguage(plan))
         if autoPick >= 0 then
             m.pendingSubtitleTrackId = m.subtitleTracks[autoPick].trackId
+            picked = m.subtitleTracks[autoPick]
+            print "[siku-playback] subtitle auto: " + picked.trackId + " source=" + picked.source + " codec=" + picked.codec + " of " + m.subtitleTracks.Count().ToStr() + " renderable"
         else if autoPick = -2 then
             m.pendingSubtitleTrackId = planSubId
         end if
@@ -637,6 +756,10 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
     m.video.control = "play"
     setBuffering(true)
     m.progressTimer.control = "start"
+    ' Buffering quality: a new adoption, or a same-plan remount (a source reload only).
+    mountKind = Str_orEmpty(opts.mountKind)
+    if mountKind = "" then mountKind = "start"
+    Bufq_onPlanMounted(plan, mountKind)
     updateHudQualityLabel()
     ' Follow the syncable subtitles of this file (their timing and running sync jobs).
     if not m.subs.syncLoaded then Subs_syncReload()
@@ -671,13 +794,14 @@ sub remountSubtitles()
     keepId = Subs_selectedTrackId()
     resumeAt = m.position
     m.video.control = "stop"
-    applyPlan(m.plan, { resumeAt: resumeAt, subtitleTrackId: keepId })
+    applyPlan(m.plan, { resumeAt: resumeAt, subtitleTrackId: keepId, mountKind: "remount" })
 end sub
 
 ' ---------- Video events ----------
 
 sub onVideoState()
     st = m.video.state
+    Bufq_onVideoState(st)
     if st = "buffering" then
         setBuffering(true)
     else if st = "playing" then
@@ -697,6 +821,7 @@ sub onVideoState()
             end for
             m.pendingSubtitleTrackId = ""
         end if
+        if m.renditionWanted then selectRendition()
     else if st = "paused" then
         m.isPaused = true
         m.playPauseBtn.iconUri = "pkg:/images/icons/play.png"
@@ -735,6 +860,7 @@ end sub
 sub onDownloadedSegment()
     seg = m.video.downloadedSegment
     if seg = invalid or Type(seg) <> "roAssociativeArray" then return
+    Bufq_onSegment(seg)
     startS = Num_or(seg.segStartTime, -1)
     if startS < 0 then startS = Num_or(seg.startTime, -1)
     if startS < 0 then startS = Num_or(seg.start, -1)
@@ -778,6 +904,7 @@ sub seekToSource(seconds as float)
     if seconds < 0 then seconds = 0
     if m.duration > 0 and seconds > m.duration - 1 then seconds = m.duration - 1
     resetBuffered()
+    Bufq_onSeek()
     m.video.seek = seconds - m.timelineOffset
     m.position = seconds
     m.scrubber.position = seconds
@@ -882,6 +1009,8 @@ sub exitPlayer()
     m.subsSyncTimer.control = "stop"
     m.subsAiTimer.control = "stop"
     hadSession = m.sessionId <> ""
+    Bufq_onStopped()
+    m.bufqTimer.control = "stop"
     if m.video.hasField("bufferingStatus") then m.video.unobserveField("bufferingStatus")
     if m.video.hasField("downloadedSegment") then m.video.unobserveField("downloadedSegment")
     m.video.control = "stop"
@@ -906,6 +1035,8 @@ sub onScreenHidden()
     m.hideTimer.control = "stop"
     m.subsSyncTimer.control = "stop"
     m.subsAiTimer.control = "stop"
+    Bufq_onStopped()
+    m.bufqTimer.control = "stop"
     m.video.control = "stop"
     stopSession()
 end sub
@@ -1041,7 +1172,10 @@ sub hideControls()
     m.hideTimer.control = "stop"
     positionSkipPill()
     if not m.hud.visible and not m.upNext.visible and not m.errorGroup.visible and not m.picker.visible and not m.subsDialog.visible then
-        if m.skipGroup.visible and m.skipBtn.visible then
+        if m.bufqPill.visible then
+            m.bufqFocused = true
+            m.bufqPrimary.setFocus(true)
+        else if m.skipGroup.visible and m.skipBtn.visible then
             m.skipBtn.setFocus(true)
         else
             m.focusSink.setFocus(true)
@@ -1881,25 +2015,114 @@ function currentSubtitleName() as string
     return m.subtitleTracks[m.subtitleIndex].label
 end function
 
-' The Quality row: the chosen preference as the server names it (available_qualities carries a
-' display_name for ladder rungs), with the presets' own labels for the fixed values.
-function qualityLabel() as string
-    q = LCase(Str_orEmpty(m.qualityPref))
-    if q = "" or q = "auto" then return "Auto"
-    if m.plan <> invalid then
-        for each aq in Arr_or(m.plan.available_qualities)
-            if LCase(Str_orEmpty(aq.label)) = q and not Str_isEmpty(aq.display_name) then return aq.display_name
-        end for
-    end if
-    return qualityChoiceLabel(q)
+' ---------- Quality menu (PlaybackQualityMenu.kt; Silo Android #495, #613, #649) ----------
+
+' The plan's Quality menu: Auto, then available_qualities in server order, each with its bitrate as
+' secondary text. The source entry ("original" / preserves_source) that servers before the
+' Original removal still list is dropped, because Auto is the way back to the source. A plan with
+' no entries left gets no menu (and the HUD hides the Quality row).
+function qualityMenu() as object
+    out = []
+    if m.plan = invalid then return out
+    for each q in Arr_or(m.plan.available_qualities)
+        if q <> invalid and Type(q) = "roAssociativeArray" then
+            l = Str_orEmpty(q.label)
+            if l <> "" and not PlaybackCaps_truthy(q.preserves_source) and LCase(l) <> "original" then
+                name = Str_orEmpty(q.display_name).Trim()
+                if name = "" then name = l
+                out.Push({ id: l, name: name, bitrate: Settings_formatKbps(Int(Num_or(q.bitrate_kbps, 0))) })
+            end if
+        end if
+    end for
+    if out.Count() = 0 then return out
+    ' A learned limit (buffering quality, Silo Android #636) held Auto down for this plan.
+    autoName = "Auto"
+    if m.plan.bandwidth_limit <> invalid and Type(m.plan.bandwidth_limit) = "roAssociativeArray" then autoName = "Auto · limited after buffering"
+    out.Unshift({ id: "auto", name: autoName, bitrate: "" })
+    return out
 end function
 
-function qualityChoiceLabel(label as string) as string
-    l = LCase(label)
-    if l = "original" then return "Original"
-    if l = "2160p" or l = "4k" then return "4K"
-    if l = "auto" then return "Auto"
-    return label
+' activePlaybackQualityId: the menu row the session's preference lights, or "" for none. Auto
+' lights only for an "auto" preference (also "original" and its aliases). When the decision
+' listed plan_active_quality_v1, the plan's active_quality names the row (none when it names
+' none); older servers fall back to the inference: a picked rung lights its own row, and a
+' resolution such as "1080p" lights nothing while the source plays unreduced under it, otherwise
+' the delivered ladder class's Medium entry.
+function activeQualityId(menu as object, preference as dynamic) as string
+    if menu.Count() = 0 or m.plan = invalid then return ""
+    norm = PlaybackCaps_videoQuality(preference)
+    if m.plan.siku_reports_active_quality = true then
+        id = "auto"
+        if norm <> "auto" then
+            id = Str_orEmpty(m.plan.active_quality)
+            if id = "auto" then id = ""
+        end if
+        for each o in menu
+            if o.id = id then return o.id
+        end for
+        return ""
+    end if
+    for each o in menu
+        if LCase(o.id) = norm then return o.id
+    end for
+    aliasH = qualityPreferenceHeight(norm)
+    if aliasH = 0 then return ""
+    srcH = 0
+    srcK = 0
+    if m.plan.source <> invalid and Type(m.plan.source) = "roAssociativeArray" then
+        srcH = Int(Num_or(m.plan.source.height, 0))
+        srcK = Int(Num_or(m.plan.source.bitrate_kbps, 0))
+    end if
+    delW = 0
+    delH = 0
+    delK = 0
+    r = m.plan.effective_recipe
+    if r <> invalid and Type(r) = "roAssociativeArray" then
+        delW = Int(Num_or(r.width, 0))
+        delH = Int(Num_or(r.height, 0))
+        delK = Int(Num_or(r.bitrate_kbps, 0))
+    end if
+    ' A shorter delivered frame shows a reduction even when the bitrate does not.
+    reduced = (delK > 0 and srcK > 0 and delK < srcK) or (delH > 0 and srcH > 0 and delH < srcH)
+    if srcH > 0 and not reduced and srcH <= aliasH then return ""
+    classH = ladderClassHeight(delW, delH)
+    if classH = 0 then classH = aliasH
+    rung = classH.ToStr() + "p-medium"
+    if classH = 480 then rung = "480p"
+    if classH = 540 then rung = "" ' a low cap can choose the 540p class, which has no menu entry
+    for each o in menu
+        if o.id = rung then return o.id
+    end for
+    return ""
+end function
+
+function qualityPreferenceHeight(pref as string) as integer
+    if pref = "2160p" or pref = "4k" or pref = "uhd" then return 2160
+    if pref = "1080p" or pref = "fhd" then return 1080
+    if pref = "720p" or pref = "hd" then return 720
+    if pref = "480p" or pref = "sd" then return 480
+    return 0
+end function
+
+' The server's ladder class for an encoded frame: the smallest box that holds it (1280x688 is
+' 720p); larger than every box is 2160p; 0 when the height is unknown.
+function ladderClassHeight(w as integer, h as integer) as integer
+    if h <= 0 then return 0
+    for each ladderBox in [[854, 480], [960, 540], [1280, 720], [1920, 1080], [3840, 2160]]
+        if h <= ladderBox[1] and (w <= 0 or w <= ladderBox[0]) then return ladderBox[1]
+    end for
+    return 2160
+end function
+
+' The Quality row's value: the lit row's name, or with none lit (a saved resolution the source
+' plays under) that resolution, such as "1080p".
+function qualityLabel() as string
+    menu = qualityMenu()
+    active = activeQualityId(menu, m.qualityPref)
+    for each o in menu
+        if o.id = active and active <> "" then return o.name
+    end for
+    return Settings_resolutionLabel(PlaybackCaps_videoQuality(m.qualityPref))
 end function
 
 sub updateHudQualityLabel()
@@ -1934,7 +2157,8 @@ function hudRowSpecs() as object
     else if tabName = "Video" then
         ' HudVideoPane: Quality, HDR, Dolby Vision (both as on Android TV's Playback column), the
         ' auto toggles, and the dynamic range the plan promises.
-        rows.Push({ id: "quality", label: "Quality", value: qualityLabel(), actionable: true })
+        ' The quality menu exists whenever the plan lists a rung: even a single one shows Auto + it.
+        if qualityMenu().Count() > 0 then rows.Push({ id: "quality", label: "Quality", value: qualityLabel(), actionable: true })
         if displayHasHdr() then rows.Push({ id: "hdr", label: "HDR", value: onOffLabel(Settings_hdrEnabled()), actionable: true })
         if displayHasDolbyVision() then rows.Push({ id: "dolbyvision", label: "Dolby Vision", value: onOffLabel(Settings_dolbyVision()), actionable: true })
         rows.Push({ id: "autoplay", label: "Auto-play next", value: onOffLabel(autoPlayNext()), actionable: true })
@@ -2165,8 +2389,9 @@ sub openPicker(kind as string)
     else if kind = "subtitle" then
         acts.Push({ id: "-1", label: "Off", checked: m.subtitleIndex < 0 })
         for i = 0 to m.subtitleTracks.Count() - 1
-            ' The detail line is the track's sync status ("Syncing… 40%", "Synced +2.3 s"), when it has one.
-            acts.Push({ id: i.ToStr(), label: m.subtitleTracks[i].label, checked: i = m.subtitleIndex, detail: Subs_trackStatus(m.subtitleTracks[i]) })
+            ' The detail line: where the track comes from (an embedded and an external track of one
+            ' language otherwise read the same), then its sync status ("Syncing… 40%", "Synced +2.3 s").
+            acts.Push({ id: i.ToStr(), label: m.subtitleTracks[i].label, checked: i = m.subtitleIndex, detail: Str_joinDots([Subs_sourceLabel(m.subtitleTracks[i]), Subs_trackStatus(m.subtitleTracks[i])]) })
         end for
         ' The file's other subtitle tracks, so the viewer sees they exist and why they are not offered:
         ' image formats (PGS, VobSub) and styled ASS have no Roku renderer.
@@ -2179,20 +2404,12 @@ sub openPicker(kind as string)
         end for
         m.picker.title = "Subtitles"
     else if kind = "quality" then
-        acts.Push({ id: "auto", label: "Auto", checked: m.qualityPref = "auto" or m.qualityPref = "" })
-        if m.plan <> invalid then
-            for each q in Arr_or(m.plan.available_qualities)
-                l = Str_orEmpty(q.label)
-                if l <> "" then
-                    text = Str_orEmpty(q.display_name)
-                    if text = "" then text = qualityChoiceLabel(l)
-                    hp = ""
-                    if q.height <> invalid then hp = PlaybackCaps_str(q.height) + "p"
-                    if hp <> "" and LCase(l) <> hp and LCase(text) <> hp then text = text + " · " + hp
-                    acts.Push({ id: l, label: text, checked: LCase(m.qualityPref) = LCase(l) })
-                end if
-            end for
-        end if
+        ' Auto first, then the server's entries in its order with their bitrate, the delivered row checked.
+        menu = qualityMenu()
+        active = activeQualityId(menu, m.qualityPref)
+        for each o in menu
+            acts.Push({ id: o.id, label: o.name, trailing: o.bitrate, checked: active <> "" and o.id = active })
+        end for
         m.picker.title = "Quality"
     end if
     m.picker.actions = acts
@@ -2237,7 +2454,7 @@ sub onPickerChosen()
             setSubtitle(Int(Val(id)))
         end if
     else if kind = "quality" then
-        if LCase(id) <> LCase(m.qualityPref) then requestQualityChange(id)
+        if id <> PlaybackCaps_videoQuality(m.qualityPref) then requestQualityChange(id)
     else if kind = "subtiming" then
         Subs_timingChosen(id)
     end if
@@ -2252,14 +2469,104 @@ sub setSubtitle(idx as integer)
     else
         m.subtitleIndex = idx
         m.video.globalCaptionMode = "On"
-        m.video.subtitleTrack = m.subtitleTracks[idx].url
+        if Str_isEmpty(m.subtitleTracks[idx].rendition) then
+            m.renditionWanted = false
+            m.renditionTimerArmed = false
+            m.renditionTimer.control = "stop"
+            m.video.subtitleTrack = m.subtitleTracks[idx].url
+        else
+            m.renditionWanted = true
+            selectRendition()
+        end if
     end if
+    if idx < 0 then
+        m.renditionWanted = false
+        m.renditionTimerArmed = false
+        m.renditionTimer.control = "stop"
+    end if
+end sub
+
+' ---------- HLS subtitle rendition (Silo Android #611) ----------
+
+' Selects the plan's WebVTT rendition among the Video node's in-manifest tracks, or waits for it to
+' be listed (renditionTimer bounds the wait; then the server is asked for the sidecar plan).
+sub selectRendition()
+    if not m.renditionWanted or m.subtitleIndex < 0 or m.subtitleIndex >= m.subtitleTracks.Count() then return
+    t = m.subtitleTracks[m.subtitleIndex]
+    name = findRenditionTrack(t)
+    if name <> "" then
+        m.renditionWanted = false
+        m.renditionTimerArmed = false
+        m.renditionTimer.control = "stop"
+        m.video.subtitleTrack = name
+        print "[siku-playback] hls subtitle rendition " + t.renditionGroup + ":" + t.rendition + " selected as " + name
+        return
+    end if
+    if m.video.state = "playing" and not m.renditionTimerArmed then
+        m.renditionTimerArmed = true
+        m.renditionTimer.control = "start"
+    end if
+end sub
+
+' The Video node's TrackName for the rendition named NAME: the one in-manifest track whose
+' Description is NAME, else the only in-manifest text track; "" when none or ambiguous. Sidecars
+' (our own URLs) and closed captions (eia608/708) never match; language never identifies it, the
+' rendition declares none.
+function findRenditionTrack(t as object) as string
+    ours = {}
+    for each st in m.subtitleTracks
+        if not Str_isEmpty(st.url) then ours[st.url] = true
+    end for
+    exact = []
+    others = []
+    for each a in Arr_or(m.video.availableSubtitleTracks)
+        if a <> invalid and Type(a) = "roAssociativeArray" then
+            tn = Str_orEmpty(a.TrackName)
+            ltn = LCase(tn)
+            if tn <> "" and not ours.DoesExist(tn) and Left(ltn, 6) <> "eia608" and Left(ltn, 6) <> "eia708" then
+                if Str_orEmpty(a.Description).Trim() = t.rendition then exact.Push(tn) else others.Push(tn)
+            end if
+        end if
+    end for
+    if exact.Count() = 1 then return exact[0]
+    if exact.Count() = 0 and others.Count() = 1 then return others[0]
+    return ""
+end function
+
+sub onAvailableSubtitles()
+    if m.renditionWanted then selectRendition()
+end sub
+
+sub onRenditionTimeout()
+    if not m.renditionWanted or m.closing then return
+    failHlsRendition()
+end sub
+
+' The Roku never listed the rendition: ask once for the plan without it (failure_recovery,
+' subtitle_hls_rendition_failed), which keeps the video and brings the track back as a sidecar.
+sub failHlsRendition()
+    m.renditionWanted = false
+    m.renditionTimerArmed = false
+    m.renditionTimer.control = "stop"
+    listed = []
+    for each a in Arr_or(m.video.availableSubtitleTracks)
+        if a <> invalid and Type(a) = "roAssociativeArray" then listed.Push(Str_orEmpty(a.TrackName) + "|" + Str_orEmpty(a.Description))
+    end for
+    print "[siku-playback] hls subtitle rendition not found; listed=" + PlaybackCaps_join(listed, ";")
+    if m.renditionRecoveryTried or m.plan = invalid or m.sessionId = "" then
+        m.global.toast = "Couldn't show these subtitles"
+        return
+    end if
+    m.renditionRecoveryTried = true
+    sendReplan("failure_recovery", "subtitle", { classification: "subtitle_hls_rendition_failed", message: "The Roku Video node did not list the stream's WebVTT subtitle rendition" })
 end sub
 
 ' Quality change: replan and hand the new plan to the player at the current position.
 sub requestQualityChange(label as string)
     if m.plan = invalid or m.sessionId = "" then return
+    m.prevQualityPref = m.qualityPref
     m.qualityPref = label
+    Bufq_onQualityPickSent()
     sendReplan("quality_change", "quality")
 end sub
 
@@ -2284,7 +2591,9 @@ sub onHudSettingWritten(event as object)
 end sub
 
 ' POST /playback/{session}/replan at the current position; onReplan swaps the plan in.
-sub sendReplan(operation as string, kind as string, failure = invalid as dynamic, selectedOverride = invalid as dynamic)
+' extra: request fields to add (the buffering-quality estimate); lowering: the buffering
+' controller's replan output when it asked for this one (the kept-estimate rule needs it).
+sub sendReplan(operation as string, kind as string, failure = invalid as dynamic, selectedOverride = invalid as dynamic, extra = invalid as dynamic, lowering = invalid as dynamic)
     inst = installationId()
     if inst = "" then return
     selected = {}
@@ -2294,6 +2603,8 @@ sub sendReplan(operation as string, kind as string, failure = invalid as dynamic
     ' remux_hls answer to it gets one more recovery attempt.
     if operation = "track_change" or operation = "quality_change" or operation = "output_change" then m.remuxRecoveryTried = false
     body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, operation, m.qualityPref, m.position, selected, failure)
+    if extra <> invalid then body.Append(extra)
+    Bufq_decorateBody(body, lowering)
     m.lastRequestBody = body
     m.replanKind = kind
     setBuffering(true)
@@ -2311,11 +2622,14 @@ sub onReplan(event as object)
     failText = "Couldn't change the quality"
     if m.replanKind = "output" then failText = "Couldn't change the video output"
     if m.replanKind = "audio" then failText = "Couldn't change the audio track"
+    if m.replanKind = "subtitle" then failText = "Couldn't show these subtitles"
     if m.replanKind = "recovery" then failText = "No sound expected: the server has no other way to stream this file to a Roku"
+    if m.replanKind = "bq" then failText = "" ' the buffering controller's own lowering: it re-arms by itself
     if not resp.ok or resp.data = invalid or resp.data.outcome <> "playable" or resp.data.playback_plan = invalid then
         setBuffering(false)
-        m.global.toast = failText
-        if m.plan <> invalid and m.replanKind = "quality" then m.qualityPref = PlaybackCaps_qualityPreference()
+        if failText <> "" then m.global.toast = failText
+        if m.plan <> invalid and (m.replanKind = "quality" or m.replanKind = "bq") and m.prevQualityPref <> invalid then m.qualityPref = m.prevQualityPref
+        Bufq_onReplanFailed(m.replanKind)
         m.pendingAudioIndex = -1
         if m.hud.visible then buildHudRows()
         return
@@ -2323,13 +2637,18 @@ sub onReplan(event as object)
     plan = resp.data.playback_plan
     if PlaybackCaps_planProblem(resp.data) <> "" then
         setBuffering(false)
-        m.global.toast = failText
+        if failText <> "" then m.global.toast = failText
+        if (m.replanKind = "quality" or m.replanKind = "bq") and m.prevQualityPref <> invalid then m.qualityPref = m.prevQualityPref
+        Bufq_onReplanFailed(m.replanKind)
         return
     end if
+    PlaybackCaps_notePlanFeatures(resp.data)
+    Bufq_noteDecision(resp.data)
     print PlaybackCaps_diagLine(m.lastRequestBody, plan)
     resumeAt = m.position
     m.video.control = "stop"
-    applyPlan(plan, { resumeAt: resumeAt, subtitleTrackId: Subs_selectedTrackId() })
+    applyPlan(plan, { resumeAt: resumeAt, subtitleTrackId: Subs_selectedTrackId(), mountKind: m.replanKind })
+    if planFileId(plan) <> m.markersFileId then adoptFileMarkers(planFileId(plan))
     if m.replanKind = "audio" and m.pendingAudioIndex >= 0 then m.chosenAudioIndex = m.pendingAudioIndex
     m.pendingAudioIndex = -1
     ' The overlay was rebuilt when the picker closed, before this answer: refresh it with the new plan.
@@ -2408,6 +2727,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         return true
     end if
     if m.picker.visible or m.subsDialog.visible then return true
+    if Bufq_handleKey(key) then return true
     if m.upNext.visible then return handleUpNextKey(key)
     if m.hud.visible then return handleHudKey(key)
     if key = "play" then

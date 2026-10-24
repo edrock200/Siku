@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Connection speed test (Silo Android #636, "Connection speed test" in the server's
+  buffering-quality spec): downloads the server's bandwidth probe once, times it, and reports the
+  result with POST /api/v2/playback/bandwidth-probe/results.
+  request: { url: absolute bandwidth_probe_url, targetKbps: bandwidth_probe_target_kbps or 0 }
+  result (out): { outcome: "measured" | "rate_limited" | "unavailable" | "failed",
+                  kbps, lowerBound, bytes, durationMs, transport, saved, retryAfter, status, method }
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="ProbeTask" extends="Task">
+  <interface>
+    <field id="request" type="assocarray" />
+    <field id="result" type="assocarray" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/tasks/ProbeTask.brs" />
+  <script type="text/brightscript" uri="pkg:/components/tasks/Http.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
+</component>

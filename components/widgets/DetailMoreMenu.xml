@@ -7,7 +7,8 @@
   (Android TV's TvOptionDialog also scrolls a capped list).
   Fields:
     title            header text (rendered uppercase, muted)
-    actions          [{id, label, checked?, detail?}]  (detail: a muted second line, e.g. "Start without subtitles")
+    actions          [{id, label, checked?, detail?, trailing?}]  (detail: a muted second line, e.g. "Start without
+                     subtitles"; trailing: muted text at the row's end before the check, e.g. a bitrate)
     menuWidth        default 720
     chosen (out)     the id of the selected action
     dismissed (out)  true when Back is pressed

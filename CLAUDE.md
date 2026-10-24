@@ -49,8 +49,10 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   start, lower-case quoted keys). The *Force Dolby Audio Passthrough* setting overrides the
   report for AC3/E-AC3 and announces itself on screen; on a stereo-only sink it yields direct play
   with no sound, which is the TV's doing.
-- `playback.max_bitrate_kbps` is nullable: uncapped presets PUT `null` at `profile_device`;
-  deleting the row let a profile-scope 6 Mbps cap force 720p transcodes. "Original" never sends a cap.
+- `playback.max_bitrate_kbps` is nullable: Maximum Bitrate "No limit" PUTs `null` at
+  `profile_device`; deleting the row let a profile-scope 6 Mbps cap force 720p transcodes. There
+  is no Original quality any more (Silo Android #613): a saved `original` reads as Auto and a
+  video request never sends `"original"` (older servers take it as "never convert").
 - Direct play of a non-default audio track needs the `client_selected_audio_track_v1` claim;
   Dolby Vision profile 8 on a non-DV output needs `client_dv8_base_layer_fallback_v1`. Both are
   declared on `original_http`.
@@ -62,7 +64,11 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
 - `telnet <roku-ip> 8085` is the device console. Every playback start and replan prints one
   `[siku-playback]` line: declared capabilities, the request (`quality`, `cap`, `audio_req`,
   `sub_req`, `op`), and the server's decision (`delivery`, `reason`, `sel_audio`, `sub_mode`,
-  recipe, source, warnings). Player errors print `[siku-playback] video error …`.
+  recipe, source, warnings, `active_q`, `learned_limit`, `sub_hls`; the request also shows `est`
+  and `ll` for buffering quality). Player errors print `[siku-playback] video error …`. Other
+  lines: `subtitle auto:` (the track chosen automatically), `markers file=` (the playing file's
+  markers), `hls subtitle rendition …` (selected or not found), `buffering replan …` / `buffering
+  plan=…` (a lowering and each plan's stall summary), `speed test outcome=…`.
 - Debug screens open with `curl -d '' "http://<roku-ip>:8060/launch/dev?debugScreen=<Name>"`
   (ECP needs POST): `StreamTestScreen` (plays reference HLS streams, the last Silo stream or
   `&debugUrl=`, logs `[siku-streamtest]` state and track counts), `FontTestScreen` (label and

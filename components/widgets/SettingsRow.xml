@@ -10,6 +10,8 @@
     <field id="iconUri" type="string" onChange="layout" />
     <field id="rowWidth" type="integer" value="1080" onChange="layout" />
     <field id="rowHeight" type="integer" value="76" onChange="layout" />
+    <!-- Label column width; 0 = half the row (the value takes the other half). -->
+    <field id="labelWidth" type="integer" value="0" onChange="layout" />
     <field id="showChevron" type="boolean" value="true" onChange="layout" />
     <field id="highlighted" type="boolean" value="false" onChange="applyState" />
     <field id="focusedState" type="boolean" value="false" onChange="applyState" />

@@ -42,6 +42,8 @@ FONT = "/usr/share/fonts/opentype/inter/Inter-Bold.otf"
 STATE = {"devices": {}, "sessions": {}, "watchlist": set(), "favorites": set(), "watched": set(), "progress": {}, "shuffles": {}, "switches": {}}
 LOCK = threading.Lock()
 LOG = []
+# Feature switches (main() sets them from the command line).
+OPTS = {"active_quality": True, "ai_fail": False, "ai_transcribe_only": False, "buffering_quality": True, "probe_kbps": 40000}
 
 GENRES = ["Science Fiction", "Drama", "Crime", "Comedy", "Thriller", "Adventure", "Animation", "Documentary"]
 MOVIE_TITLES = [
@@ -1047,6 +1049,16 @@ def sub_store(fid, provider, language, release, fmt="srt", score=0.0, hi=False, 
     return rec
 
 
+# Per-file marker ranges for the watch detail; files in ON_DEMAND_MARKER_FILES report them only to a
+# read that names them (file_id), the way the server fills on-demand markers.
+FILE_MARKERS = {
+    "default": {"intro": {"start_seconds": 30, "end_seconds": 90}},
+    "52": {"intro": {"start_seconds": 40, "end_seconds": 100}, "credits": {"start_seconds": 2800, "end_seconds": 2990}},
+    "56": {"recap": {"start_seconds": 5, "end_seconds": 45}, "intro": {"start_seconds": 60, "end_seconds": 120}},
+}
+ON_DEMAND_MARKER_FILES = {"56"}
+
+
 # Files the mock treats as a 4K Dolby Vision (profile 8.1) HEVC MKV with E-AC3 5.1: the 2160p
 # variants of movie:glass-city. Everything else is the 1080p H.264/AAC MP4.
 FOUR_K_FILES = {"52", "56"}
@@ -1125,7 +1137,8 @@ def playback_route(fid, b):
         return transcode(height, "quality_bandwidth_cap", min(cap, 8000))
     if quality in ("1080p", "720p", "480p") or quality.startswith(("1080p-", "720p-", "480p-")):
         height = int(quality.split("p")[0])
-        return transcode(height, "quality_fixed_rung", {1080: 6000, 720: 4000, 480: 1500}.get(height, 4000))
+        rung_kbps = {"1080p-high": 10000, "1080p-medium": 6000, "720p-high": 4000}.get(quality)
+        return transcode(height, "quality_fixed_rung", rung_kbps or {1080: 6000, 720: 4000, 480: 1500}.get(height, 4000))
     if caps.get("max_resolution") in ("1080p", "720p") and quality == "auto":
         return transcode(1080, "quality_device_limit", 8000)
     if 8 in dv and audio_ok:
@@ -1145,9 +1158,66 @@ def playback_route(fid, b):
     return transcode(2160, "quality_auto_source", 20000)
 
 
+def active_quality_for(delivery, recipe, qualities, quality):
+    """plan_active_quality_v1: the available_qualities label the plan delivers, or None (the source
+    plays unchanged, or the encode falls between entries). A picked rung names itself; otherwise
+    the entry of the delivered height whose bitrate is closest to the recipe's."""
+    if delivery != "server_transcode_hls":
+        return None
+    entries = [q for q in qualities if not q.get("preserves_source")]
+    if quality in [q["label"] for q in entries]:
+        return quality
+    same = [q for q in entries if q.get("height") == recipe.get("height")]
+    if not same:
+        return None
+    return min(same, key=lambda q: abs(q.get("bitrate_kbps", 0) - (recipe.get("bitrate_kbps") or 0)))["label"]
+
+
+def learned_limit_apply(body):
+    """buffering_quality_v1 (Silo Android #636): a lowering replan (bandwidth_estimate_source
+    observed_rebuffer) teaches this device a learned limit, learned_limit "clear" forgets it, and
+    Auto then plans under min(estimate, learned limit) unless the request says "ignore". Returns the
+    body the planner sees (the budget as a cap) and the plan's bandwidth_limit, if one applied."""
+    b = dict(body or {})
+    bq = STATE.setdefault("bq", {"learned_limit": None, "probe": None})
+    features = b.get("client_features") or []
+    supported = OPTS["buffering_quality"] and "buffering_quality_v1" in features
+    est = b.get("bandwidth_estimate_kbps")
+    if supported and b.get("learned_limit") == "clear":
+        bq["learned_limit"] = None
+        print("LEARNED LIMIT cleared", flush=True)
+    if supported and est and b.get("bandwidth_estimate_source") == "observed_rebuffer":
+        observed = b.get("observed_throughput_kbps")
+        kbps = min(est, observed) if observed else est
+        bq["learned_limit"] = {"kbps": kbps, "observed_at": "2026-10-17T20:15:00Z", "expires_at": "2026-10-24T20:15:00Z"}
+        print("LEARNED LIMIT set %d kbps" % kbps, flush=True)
+    quality = str(b.get("quality_preference") or "auto").lower()
+    limit = None
+    budget = est
+    if supported and quality == "auto" and b.get("learned_limit") != "ignore" and bq["learned_limit"]:
+        limit = bq["learned_limit"]["kbps"]
+        budget = min(budget, limit) if budget else limit
+    if budget and quality == "auto":
+        cap = b.get("bandwidth_cap_kbps")
+        b["bandwidth_cap_kbps"] = min(cap, budget) if cap else budget
+    bandwidth_limit = {"kbps": limit, "source": "observed_rebuffer", "expires_at": bq["learned_limit"]["expires_at"]} if limit else None
+    return b, bandwidth_limit
+
+
 def playback_decision(sid, position, fid, body=None):
     """The start / replan decision: inventory = the file's sidecar plus every stored subtitle."""
-    delivery, reason, recipe, claims, source, qualities, warnings = playback_route(fid, body)
+    planned_body, bandwidth_limit = learned_limit_apply(body)
+    print("BUFFERING request est=%s source=%s observed=%s learned_limit=%s features=%s" % (
+        (body or {}).get("bandwidth_estimate_kbps"), (body or {}).get("bandwidth_estimate_source"), (body or {}).get("observed_throughput_kbps"),
+        (body or {}).get("learned_limit"), ",".join((body or {}).get("client_features") or [])), flush=True)
+    delivery, reason, recipe, claims, source, qualities, warnings = playback_route(fid, planned_body)
+    quality = str((body or {}).get("quality_preference") or "auto").lower()
+    features = ["playback_plan_v3", "neutral_playback_v3_contract_v1", "sequenced_progress_v1"]
+    active = active_quality_for(delivery, recipe, qualities, quality)
+    if OPTS["active_quality"]:
+        features.append("plan_active_quality_v1")
+    LOG.append("DECISION delivery=%s reason=%s quality=%s active_quality=%s" % (delivery, reason, quality, active))
+    print("DECISION delivery=%s reason=%s quality=%s cap=%s active_quality=%s" % (delivery, reason, quality, (body or {}).get("bandwidth_cap_kbps"), active), flush=True)
     if delivery == "original_http":
         stream = {"url": "/mock-media/%s.mp4?st=abc" % sid, "protocol": "http_progressive", "container": source["container"], "mime_type": "video/mp4", "headers": {}, "header_refresh": "none"}
     else:
@@ -1155,34 +1225,75 @@ def playback_decision(sid, position, fid, body=None):
     inventory = [{"track_id": "file:%s:subtitle:0" % fid, "combined_index": 0, "source": "external", "codec": "srt", "language": "eng",
                   "label": "English", "forced": False, "default": False, "hearing_impaired": False, "delivery": "sidecar",
                   "url": "/api/v2/stream/%s/subtitles/0.vtt?file_id=%s&external_subtitle_key=f903" % (sid, fid), "sync_key": EXTERNAL_SYNC_KEY}]
+    if fid in FOUR_K_FILES:
+        # The 4K MKV also carries embedded tracks: an English SubRip (served as a WebVTT sidecar, so a
+        # Roku can show it; auto-selection prefers it over the external file, Silo Android #529) and
+        # an English PGS (image-based: Roku lists it as unavailable). Inventory order: externals first.
+        inventory.append({"track_id": "file:%s:subtitle:1" % fid, "combined_index": 1, "source": "embedded", "codec": "subrip", "language": "eng",
+                          "label": "English", "forced": False, "default": True, "hearing_impaired": False, "delivery": "sidecar",
+                          "url": "/api/v2/stream/%s/subtitles/1.vtt?file_id=%s&embedded_stream_index=0" % (sid, fid)})
+        inventory.append({"track_id": "file:%s:subtitle:2" % fid, "combined_index": 2, "source": "embedded", "codec": "hdmv_pgs_subtitle", "language": "eng",
+                          "label": "English (PGS)", "forced": False, "default": False, "hearing_impaired": False, "delivery": "sidecar",
+                          "url": "/api/v2/stream/%s/subtitles/2.sup?file_id=%s&embedded_stream_index=1" % (sid, fid)})
     for rec in SUBS["stored"]:
         if rec["media_file_id"] != fid:
             continue
         idx = len(inventory)
         inventory.append({"track_id": "file:%s:subtitle:%d" % (fid, idx), "combined_index": idx, "source": "downloaded", "codec": rec["format"],
-                          "language": rec["language"], "label": rec["release_name"] or rec["provider"], "forced": False, "default": False,
+                          "language": rec["language"], "label": ("%s (%s)" % (rec["release_name"], rec["provider"]) if rec["provider"] in ("translated", "transcribed") else (rec["release_name"] or rec["provider"])), "forced": False, "default": False,
                           "hearing_impaired": rec["hearing_impaired"], "delivery": "sidecar",
                           "url": "/api/v2/stream/%s/subtitles/%d.vtt?file_id=%s&downloaded_subtitle_id=%s" % (sid, idx, fid, rec["id"]),
                           "sync_key": "stored-" + rec["id"]})
-    return {"protocol_version": 3, "server_features": ["playback_plan_v3", "neutral_playback_v3_contract_v1", "sequenced_progress_v1"],
+    plan_extra = {}
+    if OPTS["active_quality"] and active is not None:
+        plan_extra["active_quality"] = active
+    if bandwidth_limit:
+        plan_extra["bandwidth_limit"] = bandwidth_limit
+    if OPTS["buffering_quality"]:
+        features.append("buffering_quality_v1")
+    # The selected subtitle (a start's subtitle_track_id, a replan's selected_tracks.subtitle). An
+    # embedded text track on a transcode comes back as a WebVTT rendition of the HLS stream when the
+    # client lists hls_subtitle_renditions_v1 (Silo Android #611); a failure_recovery classified
+    # subtitle_hls_rendition_failed gets the sidecar plan instead.
+    b = body or {}
+    wanted = b.get("subtitle_track_id") or ((b.get("selected_tracks") or {}).get("subtitle") or {}).get("id")
+    subtitle = {"mode": "off", "inventory": inventory}
+    selected_sub = None
+    row = next((r for r in inventory if r["track_id"] == wanted), None) if wanted else None
+    if row is not None:
+        selected_sub = {"id": row["track_id"], "index": row["combined_index"]}
+        failed_rendition = b.get("operation") == "failure_recovery" and (b.get("failure") or {}).get("classification") == "subtitle_hls_rendition_failed"
+        if (delivery == "server_transcode_hls" and row["source"] == "embedded" and row["codec"] in ("subrip", "srt", "webvtt")
+                and "hls_subtitle_renditions_v1" in (b.get("client_features") or []) and not failed_rendition):
+            subtitle = {"mode": "render", "track_id": row["track_id"], "inventory": inventory,
+                        "hls_rendition": {"group_id": "subs", "name": "Subtitles", "format": "vtt", "mime_type": "text/vtt"}}
+            features.append("hls_subtitle_renditions_v1")
+        else:
+            subtitle = {"mode": "convert" if row["delivery"] == "sidecar" else "burn_in", "track_id": row["track_id"], "inventory": inventory}
+        print("SUBTITLE decision track=%s mode=%s rendition=%s" % (row["track_id"], subtitle["mode"], "hls_rendition" in subtitle), flush=True)
+    selected = {"audio": {"id": "file:%s:audio:0" % fid, "index": 0}}
+    if selected_sub:
+        selected["subtitle"] = selected_sub
+    return {"protocol_version": 3, "server_features": features,
             "outcome": "playable", "session_id": sid,
             "playback_plan": {"protocol_version": 3, "plan_id": "plan:%d" % (len(SUBS["stored"]) + 1), "plan_attempt_key": "v3:%d" % (len(SUBS["stored"]) + 1), "session_id": sid,
                               "delivery": delivery, "decision_reason": reason,
                               "stream": stream,
                               "timeline": {"player_start_seconds": position, "timeline_offset_seconds": 0, "can_seek_anywhere": True},
-                              "selected_tracks": {"audio": {"id": "file:%s:audio:0" % fid, "index": 0}},
+                              "selected_tracks": selected,
                               "effective_recipe": recipe, "claims": claims, "available_qualities": qualities,
                               "degradation_warnings": warnings, "transformations": [], "applied_quirks": [], "runtime_corrections": [],
                               "requested_media_file_id": fid, "effective_media_file_id": fid,
-                              "subtitle": {"mode": "off", "inventory": inventory},
-                              "source": source}}
+                              "subtitle": subtitle,
+                              "source": source, **plan_extra}}
 
 
 def subtitle_route(handler, method, p, q, b):
     if not p.startswith("/api/v2/subtitles"):
         return False
     if p == "/api/v2/subtitles/ai/status":
-        handler.send(200, {"revision": "mock-ai-1", "state": "available", "allowed": True, "enabled": True, "transcribe_enabled": True})
+        # --ai-transcribe-only: transcription without translation (Silo Android #547).
+        handler.send(200, {"revision": "mock-ai-1", "state": "available", "allowed": True, "enabled": not OPTS["ai_transcribe_only"], "transcribe_enabled": True})
         return True
     if p == "/api/v2/subtitles/ai/quota":
         handler.send(200, {"limited": True, "limit": 5, "used": 2, "remaining": 3, "period": "day"})
@@ -1196,12 +1307,17 @@ def subtitle_route(handler, method, p, q, b):
         return True
     if p == "/api/v2/subtitles/ai/translate" and method == "POST":
         LOG.append("AI TRANSLATE " + json.dumps(b))
+        print("AI TRANSLATE", json.dumps({k: b.get(k) for k in ("kind", "source_index", "source_language", "target_language")}), flush=True)
         for k in ("media_file_id", "kind", "source_index", "source_language", "target_language", "start_position"):
             if k not in b:
                 handler.problem(422, "validation_failed", "%s is required" % k)
                 return True
         if b["kind"] not in ("translate", "transcribe", "transcribe_translate"):
             handler.problem(422, "validation_failed", "unknown kind")
+            return True
+        if OPTS["ai_transcribe_only"] and b["kind"] != "transcribe":
+            # The real server's answer when translation is not configured.
+            handler.problem(422, "ai_not_configured", "AI subtitle processing is not configured")
             return True
         SUBS["seq"] += 1
         job = {"id": str(SUBS["seq"]), "media_file_id": sub_file_id(b), "kind": b["kind"], "source_index": b["source_index"],
@@ -1227,9 +1343,21 @@ def subtitle_route(handler, method, p, q, b):
             if job["_reads"] == 1:
                 job.update(status="running", progress=0.34, progress_message="Transcribing" if job["kind"] != "translate" else "Translating")
             elif job["_reads"] == 2:
-                job.update(status="running", progress=0.72, progress_message="Translating")
+                if OPTS["ai_fail"]:
+                    # --ai-fail: every job fails on its second read, with the reason the client must show.
+                    job.update(status="failed", progress=0.34, progress_message="", error_message="The transcription model ran out of memory on this server.")
+                    LOG.append("AI FAILED " + job["id"])
+                else:
+                    job.update(status="running", progress=0.72, progress_message="Translating")
             else:
-                rec = sub_store(job["media_file_id"], "ai", job["target_language"], "AI %s" % job["kind"].replace("_", " "), auto_sync=False)
+                # Stored AI tracks as the real server labels them: a "(translated)" / "(transcribed)"
+                # provider and a release name "English → German (AI)" / "English (AI transcribed)".
+                src = (job["source_language"] or "en")
+                if job["kind"] == "transcribe":
+                    provider, release, lang = "transcribed", "%s (AI transcribed)" % src, (job["target_language"] or src)
+                else:
+                    provider, release, lang = "translated", "%s → %s (AI)" % (src, job["target_language"]), job["target_language"]
+                rec = sub_store(job["media_file_id"], provider, lang, release, auto_sync=False)
                 job.update(status="completed", progress=1.0, progress_message="", result_subtitle_id=rec["id"])
         handler.send(200, {"job": {k: v for k, v in job.items() if not k.startswith("_")}})
         return True
@@ -1321,6 +1449,36 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         if data:
             self.wfile.write(data)
+
+    def send_probe(self, q):
+        """The bandwidth probe: `size` bytes of filler, throttled to --probe-kbps. A second probe
+        within 10 s gets 429 with Retry-After, as the real server rate-limits them."""
+        now = time.time()
+        last = STATE.get("probe_at", 0)
+        if now - last < 10:
+            return self.send(429, {"type": "about:blank", "title": "Too many probes", "status": 429}, extra={"Retry-After": "30"})
+        STATE["probe_at"] = now
+        size = min(int((q.get("size") or ["8000000"])[0]), 64 * 1024 * 1024)
+        print("PROBE GET size=%d at %d kbps" % (size, OPTS["probe_kbps"]), flush=True)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(size))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        chunk = b"\0" * 65536
+        bytes_per_s = OPTS["probe_kbps"] * 1000 / 8
+        sent = 0
+        start = time.time()
+        try:
+            while sent < size:
+                n = min(len(chunk), size - sent)
+                self.wfile.write(chunk[:n])
+                sent += n
+                ahead = sent / bytes_per_s - (time.time() - start)
+                if ahead > 0:
+                    time.sleep(ahead)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def problem(self, code, name, title):
         self.send(code, {"type": "https://siloserver.org/docs/api/v2/problems/" + name, "title": title, "status": code}, "application/problem+json")
@@ -1620,18 +1778,67 @@ class Handler(BaseHTTPRequestHandler):
             d = detail(m.group(1))
             if not d:
                 return self.problem(404, "not_found", "Not found")
+            # File-specific markers (Silo Android #527): each version carries its own ranges, and a
+            # version whose markers the server fills on demand (file 56 here) has them only when the
+            # read names it with file_id.
+            asked = (q.get("file_id") or [""])[0]
+            print("WATCH %s file_id=%s" % (m.group(1), asked or "-"), flush=True)
             vs = []
             for v in d["versions"]:
                 v = dict(v)
-                v["marker_segments"] = [{"kind": "intro", "start_seconds": 30, "end_seconds": 90}]
+                fid = str(v.get("file_id"))
+                ranges = FILE_MARKERS.get(fid, FILE_MARKERS["default"])
+                if fid in ON_DEMAND_MARKER_FILES and asked != fid:
+                    ranges = {}
+                for kind in ("intro", "recap", "credits", "preview"):
+                    v[kind] = ranges.get(kind)
+                v["marker_segments"] = [{"kind": k, "start_seconds": r["start_seconds"], "end_seconds": r["end_seconds"]} for k, r in ranges.items()]
                 vs.append(v)
             return self.send(200, {"content_id": d["content_id"], "type": d["type"], "title": d["title"], "versions": vs,
                                    "series_title": d.get("series_title"),
                                    "user_data": d["user_data"], "series_id": d.get("series_id"), "season_number": d.get("season_number"),
-                                   "episode_number": d.get("episode_number"), "intro": {"start_seconds": 30, "end_seconds": 90}})
+                                   "episode_number": d.get("episode_number"), "intro": {"start_seconds": 30, "end_seconds": 90},
+                                   # The profile's subtitle preferences as the server resolves them for this title.
+                                   "effective_subtitle_language": settings_effective(self, "playback.subtitle_language", q)["value"],
+                                   "effective_subtitle_mode": settings_effective(self, "playback.subtitle_mode", q)["value"],
+                                   "effective_show_forced_subtitles": settings_effective(self, "playback.show_forced_subtitles", q)["value"]})
         if p == "/api/v2/playback/capabilities":
-            return self.send(200, {"revision": "1", "state": "available", "allowed": True, "installation_id": "11111111-1111-4111-8111-111111111111",
-                                   "protocol_versions": [3], "features": ["playback_plan_v3", "sequenced_progress_v1"], "deliveries": ["original_http", "server_transcode_hls"]})
+            caps = {"revision": "1", "state": "available", "allowed": True, "installation_id": "11111111-1111-4111-8111-111111111111",
+                    "protocol_versions": [3], "features": ["playback_plan_v3", "sequenced_progress_v1"], "deliveries": ["original_http", "server_transcode_hls"]}
+            if OPTS["buffering_quality"]:
+                # Buffering quality and the connection speed test (Silo Android #636).
+                caps["features"] += ["buffering_quality_v1", "connection_speed_v1"]
+                caps.update({"bandwidth_probe_url": "/api/v2/playback/bandwidth-probe", "bandwidth_probe_target_kbps": 30000,
+                             "bandwidth_probe_automatic": True, "bandwidth_probe_max_age_seconds": 604800})
+            return self.send(200, caps)
+        if p == "/api/v2/playback/connection" and method == "GET" and OPTS["buffering_quality"]:
+            bq = STATE.setdefault("bq", {"learned_limit": None, "probe": None})
+            out = {"connection": "local"}
+            if bq["learned_limit"]:
+                out["learned_limit"] = bq["learned_limit"]
+            if bq["probe"]:
+                out["probe"] = bq["probe"]
+            # The server's Auto budget: 80 % of the lower of the reading and the learned limit.
+            reading = bq["probe"]["kbps"] if bq["probe"] else None
+            limit = bq["learned_limit"]["kbps"] if bq["learned_limit"] else None
+            base = min(x for x in (reading, limit) if x) if (reading or limit) else None
+            if base:
+                out["auto_budget_kbps"] = base * 8 // 10
+            return self.send(200, out)
+        if p == "/api/v2/playback/connection/learned-limit" and method == "DELETE" and OPTS["buffering_quality"]:
+            STATE.setdefault("bq", {"learned_limit": None, "probe": None})["learned_limit"] = None
+            print("LEARNED LIMIT reset from Settings", flush=True)
+            return self.send(204)
+        if p == "/api/v2/playback/bandwidth-probe" and method == "GET" and OPTS["buffering_quality"]:
+            return self.send_probe(q)
+        if p == "/api/v2/playback/bandwidth-probe/results" and method == "POST" and OPTS["buffering_quality"]:
+            print("PROBE RESULT " + json.dumps(b), flush=True)
+            STATE.setdefault("bq", {"learned_limit": None, "probe": None})["probe"] = {
+                "kbps": b.get("kbps"), "measured_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "transport": b.get("transport"), "lower_bound": bool(b.get("lower_bound"))}
+            if b.get("manual") and STATE["bq"]["learned_limit"] and (b.get("kbps") or 0) > STATE["bq"]["learned_limit"]["kbps"]:
+                STATE["bq"]["learned_limit"] = None
+            return self.send(204)
         if p == "/api/v2/playback/start" and method == "POST":
             sid = uuid.uuid4().hex
             STATE["sessions"][sid] = b
@@ -1876,7 +2083,7 @@ def shuffle_view(sh):
 # DELETE /api/v2/settings/values/{key}?scope=... -> 204 (404 when nothing is stored there)
 # profile_device rows key on the X-Silo-Device-Id header, profile_client on X-Silo-Client-Family.
 # ---------------------------------------------------------------------------
-SETTINGS_REVISION = 16
+SETTINGS_REVISION = 21
 SETTINGS_DEFS = {
     # key: (introduced_in, default, allowed scopes, resolution order)
     "playback.preferred_quality": (1, "auto", ["profile", "profile_device"], ["profile_device", "profile"]),
@@ -1886,6 +2093,7 @@ SETTINGS_DEFS = {
     "playback.subtitle_mode": (1, "auto", ["profile", "profile_device", "profile_library", "profile_series"], ["profile_device", "profile"]),
     "playback.show_forced_subtitles": (1, True, ["profile", "profile_device", "profile_library", "profile_series"], ["profile_device", "profile"]),
     "playback.intro_skip_mode": (7, "ask", ["profile", "profile_device"], ["profile_device", "profile"]),
+    "playback.buffering_quality_mode": (21, "always", ["profile", "profile_device"], ["profile_device", "profile"]),
     "playback.auto_skip_credits": (1, False, ["profile", "profile_device"], ["profile_device", "profile"]),
     "playback.auto_skip_recap": (1, False, ["profile", "profile_device"], ["profile_device", "profile"]),
     "playback.auto_play_next": (1, True, ["profile", "profile_device"], ["profile_device", "profile"]),
@@ -2068,6 +2276,12 @@ def main():
     ap.add_argument("--switch", action="append", default=[], metavar="NAME=VALUE",
                     help="set a test switch at start (see the module docstring)")
     ap.add_argument("--theme-music", action="store_true", help="turn ui.theme_music_enabled on by default (profile scope)")
+    ap.add_argument("--no-active-quality", action="store_true",
+                    help="act as a server before plan_active_quality_v1 (the client infers the lit Quality row)")
+    ap.add_argument("--ai-fail", action="store_true", help="every AI subtitle job fails on its second read")
+    ap.add_argument("--ai-transcribe-only", action="store_true", help="AI transcription on, AI translation off")
+    ap.add_argument("--no-buffering-quality", action="store_true", help="act as a server before buffering_quality_v1 / connection_speed_v1")
+    ap.add_argument("--probe-kbps", type=int, default=40000, help="rate the bandwidth probe download is throttled to")
     args = ap.parse_args()
     for sw in args.switch:
         k, _, v = sw.partition("=")
@@ -2075,6 +2289,11 @@ def main():
     if args.theme_music:
         d = SETTINGS_DEFS["ui.theme_music_enabled"]
         SETTINGS_DEFS["ui.theme_music_enabled"] = (d[0], True) + tuple(d[2:])
+    OPTS["active_quality"] = not args.no_active_quality
+    OPTS["ai_fail"] = args.ai_fail
+    OPTS["ai_transcribe_only"] = args.ai_transcribe_only
+    OPTS["buffering_quality"] = not args.no_buffering_quality
+    OPTS["probe_kbps"] = args.probe_kbps
     srv = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
     print("Mock Silo on http://127.0.0.1:%d" % args.port, flush=True)
     srv.serve_forever()

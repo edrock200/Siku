@@ -146,6 +146,14 @@ end sub
 sub onToast()
     msg = m.global.toast
     if Str_isEmpty(msg) then return
+    ' A longer message (a full sentence to read on a TV) sets m.global.toastSeconds first.
+    secs = 3.5
+    if m.global.hasField("toastSeconds") then
+        asked = Num_or(m.global.toastSeconds, 0)
+        if asked > 0 then secs = asked
+        m.global.toastSeconds = 0
+    end if
+    m.toast.duration = secs
     m.toast.message = msg
 end sub
 
@@ -242,6 +250,8 @@ sub handleDeepLink(args as dynamic)
         params = {}
         if not Str_isEmpty(args.debugItem) then params.itemId = args.debugItem
         if not Str_isEmpty(args.debugFile) then params.fileId = args.debugFile ' PlayerScreen: play this version (mock 4K files: 52, 56)
+        if not Str_isEmpty(args.debugBufq) then params.debugBufq = true ' PlayerScreen: fake a play-then-stall for the buffering-quality controller (the simulator never plays)
+        if not Str_isEmpty(args.debugSubtitle) then params.subtitleTrackIndex = Int(Val(Str_orEmpty(args.debugSubtitle))) ' PlayerScreen: start with this subtitle (combined index), as a details-page pick
         if not Str_isEmpty(args.debugUrl) then params.url = args.debugUrl ' StreamTestScreen: an extra stream to try
         resetTo(args.debugScreen, params)
         return

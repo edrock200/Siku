@@ -151,18 +151,8 @@ function Subs_buildTrack(t as object) as dynamic
         su = Subs_appendQuery(su, "timestamp_offset=" + Subs_formatSeconds(shift))
     end if
     su = Subs_appendQuery(su, "token=" + s.accessToken)
-    ' Language name first, as Android TV shows it; the server's label can be a bare codec
-    ' name ("SUBRIP" was seen on device), so it is only a fallback.
-    label = ""
-    if not Str_isEmpty(t.language) then label = Subs_languageName(t.language)
-    if label = "" or label = "Unknown" then label = Str_orEmpty(t.label)
-    if label = "" then label = "Unknown"
-    if t.forced = true then label = label + " (Forced)"
-    if t.hearing_impaired = true then label = label + " (SDH)"
-    storedId = Subs_storedIdOf(t)
-    if storedId <> "" and Instr(1, label, "(") = 0 then label = label + " (Downloaded)"
     return {
-        label: label
+        label: Subs_trackLabel(t)
         url: su
         language: Str_orEmpty(t.language)
         trackId: Str_orEmpty(t.track_id)
@@ -171,10 +161,60 @@ function Subs_buildTrack(t as object) as dynamic
         codec: Str_orEmpty(t.codec)
         combinedIndex: t.combined_index
         isVtt: isVtt
-        storedId: storedId
+        storedId: Subs_storedIdOf(t)
         forced: t.forced = true
         hearingImpaired: t.hearing_impaired = true or Subs_labelIsSdh(Str_orEmpty(t.label))
     }
+end function
+
+' The selected track as the transcode's own WebVTT rendition (Silo Android #611): no sidecar URL;
+' the Video node lists it in availableSubtitleTracks and PlayerScreen selects it there. No delay or
+' timing tools: those work on a sidecar's URL.
+function Subs_renditionTrack(t as object, rendition as object) as object
+    return {
+        label: Subs_trackLabel(t)
+        url: ""
+        language: Str_orEmpty(t.language)
+        trackId: Str_orEmpty(t.track_id)
+        syncKey: ""
+        source: Str_orEmpty(t.source)
+        codec: Str_orEmpty(t.codec)
+        combinedIndex: t.combined_index
+        isVtt: false
+        storedId: ""
+        forced: t.forced = true
+        hearingImpaired: t.hearing_impaired = true or Subs_labelIsSdh(Str_orEmpty(t.label))
+        rendition: rendition.name
+        renditionGroup: rendition.group_id
+    }
+end function
+
+' "Embedded" / "External" / "Downloaded" ("In stream" for an HLS rendition), for the picker's detail.
+function Subs_sourceLabel(t as object) as string
+    if not Str_isEmpty(t.rendition) then return "In stream"
+    rank = Subs_autoSourceRank(t)
+    if rank = 2 then return "Downloaded"
+    if rank = 1 then return "External"
+    if LCase(Str_orEmpty(t.source)) = "embedded" then return "Embedded"
+    return ""
+end function
+
+' Language name first, as Android TV shows it; the server's label can be a bare codec name
+' ("SUBRIP" was seen on device), so it is only a fallback. An AI track says how it was made,
+' "German (AI Translation)" / "English (AI Transcription)", from the server's markers (Silo
+' Android #544); without a language its label minus the markers.
+function Subs_trackLabel(t as object) as string
+    aiKind = Tracks_aiSubtitleKind(t.label)
+    label = ""
+    if not Str_isEmpty(t.language) then label = Subs_languageName(t.language)
+    if (label = "" or label = "Unknown") and aiKind <> "" then label = Tracks_aiSubtitleSourceLabel(t.label)
+    if label = "" or label = "Unknown" then label = Str_orEmpty(t.label)
+    if label = "" then label = "Unknown"
+    if aiKind <> "" then label = label + " (" + aiKind + ")"
+    if t.forced = true then label = label + " (Forced)"
+    if t.hearing_impaired = true then label = label + " (SDH)"
+    if Subs_storedIdOf(t) <> "" and Instr(1, label, "(") = 0 then label = label + " (Downloaded)"
+    return label
 end function
 
 ' ---------- Automatic subtitle choice ----------
@@ -183,9 +223,16 @@ end function
 ' -2 when the preferences pick nothing (the server's own selection, if any, then stands).
 '   mode off, or no tracks                → off / nothing
 '   no preferred language                 → only "always" picks (the best track of any language)
-'   "auto" and the audio is that language → off, or that language's forced track if forced subs are on
-'   otherwise                             → the best track in that language, else any forced track
-' Best within a pool: full dialogue (not forced, not SDH) → not forced → any.
+'   "auto" and the audio is that language → off, or that language's best forced track if forced subs are on
+'   otherwise                             → the best track in that language, else the best forced track
+' "Best" is autoSubtitlePreferenceOrder (Silo Android #529, server/web parity silo-server #1849):
+' full dialogue beats forced, plain beats SDH, then embedded beats external beats downloaded
+' (external sidecars are the ones that drift out of sync); full ties keep the inventory order.
+' Upstream's first tier, "a track the device renders itself beats one the server must burn in",
+' is settled before ranking on Roku: the candidates are m.subtitleTracks, which hold only the
+' WebVTT/SRT sidecars the Video node can show (an embedded text track is served as one), while
+' embedded PGS/VobSub/ASS tracks need a burn-in Siku never asks for, so they are not candidates.
+' "Prefer embedded" therefore applies only between tracks this Roku can actually display.
 function Subs_autoChoice(audioLanguage as string) as integer
     tracks = m.subtitleTracks
     if tracks.Count() = 0 then return -2
@@ -194,40 +241,54 @@ function Subs_autoChoice(audioLanguage as string) as integer
     target = Subs_autoLangKey(prefs.language)
     if target = "" then
         if prefs.mode <> "always" then return -2
-        return Subs_autoBest(tracks, "")
+        return Subs_autoBest(tracks, "", false)
     end if
     if prefs.mode = "auto" and Subs_autoLangKey(audioLanguage) = target then
         if prefs.showForced then
-            for i = 0 to tracks.Count() - 1
-                if tracks[i].forced and Subs_autoLangKey(tracks[i].language) = target and not tracks[i].hearingImpaired then return i
-            end for
-            for i = 0 to tracks.Count() - 1
-                if tracks[i].forced and Subs_autoLangKey(tracks[i].language) = target then return i
-            end for
+            forced = Subs_autoBest(tracks, target, true)
+            if forced >= 0 then return forced
         end if
         return -1
     end if
-    best = Subs_autoBest(tracks, target)
+    best = Subs_autoBest(tracks, target, false)
     if best >= 0 then return best
-    if prefs.showForced then
-        for i = 0 to tracks.Count() - 1
-            if tracks[i].forced then return i
-        end for
-    end if
+    if prefs.showForced then return Subs_autoBest(tracks, "", true)
     return -2
 end function
 
-function Subs_autoBest(tracks as object, target as string) as integer
-    for pass = 0 to 2
-        for i = 0 to tracks.Count() - 1
-            t = tracks[i]
-            if target = "" or Subs_autoLangKey(t.language) = target then
-                if pass = 2 then return i
-                if not t.forced and (pass = 1 or not t.hearingImpaired) then return i
+' The best-ranked track in a language ("" = any), forced ones only when forcedOnly; -2 for none.
+function Subs_autoBest(tracks as object, target as string, forcedOnly as boolean) as integer
+    best = -2
+    bestRank = 0
+    for i = 0 to tracks.Count() - 1
+        t = tracks[i]
+        if (target = "" or Subs_autoLangKey(t.language) = target) and (not forcedOnly or t.forced) then
+            r = Subs_autoRank(t)
+            if best < 0 or r < bestRank then
+                best = i
+                bestRank = r
             end if
-        end for
+        end if
     end for
-    return -2
+    return best
+end function
+
+' autoSubtitlePreferenceOrder as one number, lower is better: forced, then SDH, then the source.
+function Subs_autoRank(t as object) as integer
+    r = Subs_autoSourceRank(t)
+    if t.hearingImpaired then r = r + 10
+    if t.forced then r = r + 100
+    return r
+end function
+
+' Embedded 0 (also unknown, as on the web player), external 1, downloaded 2 (a stored provider
+' download or AI result, whatever its inventory source says).
+function Subs_autoSourceRank(t as object) as integer
+    if Str_orEmpty(t.storedId) <> "" then return 2
+    src = LCase(Str_orEmpty(t.source))
+    if src = "downloaded" then return 2
+    if src = "external" then return 1
+    return 0
 end function
 
 ' The cascaded preferences, as Android TV's player reads them: the watch detail's effective values
@@ -1168,6 +1229,7 @@ sub Subs_adoptStored(storedId as string, origin as string)
     selected = {}
     if m.plan.selected_tracks <> invalid then selected = m.plan.selected_tracks
     body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, "track_change", m.qualityPref, m.position, selected)
+    Bufq_decorateBody(body, invalid)
     Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/replan", body, "Subs_onAdoptReplan", { fileId: m.fileId, sessionId: m.sessionId, storedId: storedId })
 end sub
 
@@ -1182,6 +1244,7 @@ sub Subs_onAdoptReplan(event as object)
         Subs_adoptFailed(origin, Subs_adoptPrefix(origin) + ", but the subtitle list could not be refreshed.")
         return
     end if
+    PlaybackCaps_notePlanFeatures(resp.data)
     plan = resp.data.playback_plan
     trackId = ""
     renderable = false
@@ -1203,7 +1266,8 @@ sub Subs_onAdoptReplan(event as object)
         trackId = Subs_selectedTrackId()
     end if
     m.video.control = "stop"
-    applyPlan(plan, { resumeAt: m.position, subtitleTrackId: trackId })
+    applyPlan(plan, { resumeAt: m.position, subtitleTrackId: trackId, mountKind: "track" })
+    if planFileId(plan) <> m.markersFileId then adoptFileMarkers(planFileId(plan))
     Subs_adoptDone(origin)
 end sub
 
@@ -1267,15 +1331,19 @@ end function
 
 ' "English SRT (External)" — the TV's subtitleChoiceLabel, from the inventory item.
 function Subs_aiSubtitleLabel(t as object, position as integer) as string
+    aiKind = Tracks_aiSubtitleKind(t.label)
     name = Subs_languageName(t.language)
     if Str_isEmpty(t.language) then
         name = Str_orEmpty(t.label)
+        if aiKind <> "" then name = Tracks_aiSubtitleSourceLabel(t.label)
         if name = "" then name = "Track " + (position + 1).ToStr()
     end if
     codec = Tracks_subtitleCodec(t.codec)
     if codec <> "" then name = name + " " + codec
     src = Str_orEmpty(t.source)
-    if src = "external" then
+    if aiKind <> "" then
+        name = name + " (" + aiKind + ")"
+    else if src = "external" then
         name = name + " (External)"
     else if src = "downloaded" then
         name = name + " (Downloaded)"
@@ -1287,7 +1355,8 @@ sub Subs_openAi()
     if not Subs_aiAvailable() then return
     ai = m.subs.ai
     Api_get("/api/v2/subtitles/ai/quota", invalid, "Subs_onAiQuota", { fileId: m.fileId })
-    if ai.phase = "failed" then ai.phase = "idle"
+    ' The phase is kept (Silo Android #545): a running job shows its progress and a failure keeps
+    ' its reason above a form that stays usable for a new request.
     ' The mode row appears only when both modes are available; otherwise the available one is fixed.
     subsOk = m.subs.aiStatus.enabled and Subs_aiSubtitleSources().Count() > 0
     audioOk = m.subs.aiStatus.transcribeEnabled and Subs_aiAudioSources().Count() > 0
@@ -1303,6 +1372,11 @@ sub Subs_openAi()
     if ai.targetPos < 0 then ai.targetPos = Subs_languageIndex(Subs_preferredLanguage())
     Subs_renderAi()
 end sub
+
+' Translating a transcript needs AI translation too (TvAiTranslateDialog.canTranslateTranscript).
+function Subs_aiCanTranslateTranscript() as boolean
+    return m.subs.aiStatus.enabled = true
+end function
 
 sub Subs_onAiQuota(event as object)
     resp = Api_result(event)
@@ -1362,7 +1436,13 @@ sub Subs_renderAi()
             rows.Push({ kind: "cycler", id: "source", label: "Source audio", value: Tracks_audioSummary(audioSources[ai.audioPos], ai.audioPos) })
         end if
         if ai.targetPos < 0 or ai.targetPos >= opts.Count() then ai.targetPos = 0
-        rows.Push({ kind: "cycler", id: "target", label: "Target language", value: opts[ai.targetPos].name })
+        if ai.mode = "subtitles" or Subs_aiCanTranslateTranscript() then
+            rows.Push({ kind: "cycler", id: "target", label: "Target language", value: opts[ai.targetPos].name })
+        else
+            ' A server can offer transcription without translation (Silo Android #547): the audio
+            ' job then stays in the spoken language, so there is no target to pick.
+            rows.Push({ kind: "text", text: "Subtitles are written in the spoken language. AI translation is turned off on this server.", color: "0xEDEDEDA8" })
+        end if
         ' Quota applies to the transcribe kinds only; exempt callers (admins) get limited=false.
         if ai.mode = "audio" and ai.quota <> invalid and ai.quota.limited = true then
             q = ai.quota
@@ -1433,6 +1513,11 @@ sub Subs_aiSubmit()
         src = sources[ai.audioPos]
         kind = "transcribe_translate"
         if Subs_isSameLanguage(src.language, target) then kind = "transcribe"
+        if not Subs_aiCanTranslateTranscript() then
+            ' Without AI translation a transcribe_translate job is refused ("not configured").
+            kind = "transcribe"
+            target = ""
+        end if
         sourceIndex = ai.audioPos
         if src.index <> invalid then sourceIndex = Int(src.index)
         sourceLanguage = Str_orEmpty(src.language)
@@ -1481,6 +1566,9 @@ sub Subs_onAiJob(event as object)
     if m.closing or not Subs_sameFile(resp) or Str_orEmpty(resp.context.sessionId) <> m.sessionId then return
     ai = m.subs.ai
     if ai.job = invalid or Str_orEmpty(ai.job.id) <> Str_orEmpty(resp.context.jobId) then return
+    ' A poll answered after the job already finished (polls can overlap on a slow link) must not
+    ' adopt the result twice.
+    if ai.phase <> "running" then return
     if resp.ok and resp.data <> invalid and resp.data.job <> invalid then
         Subs_applyAiJob(resp.data.job)
     else if resp.status = 404 then
@@ -1514,6 +1602,13 @@ sub Subs_applyAiJob(job as object)
         ai.phase = "failed"
         ai.error = Str_orEmpty(job.error_message)
         if ai.error = "" then ai.error = "Translation failed"
+        ' The dialog may have been closed while the job ran (Silo Android #545): say why in the
+        ' player, long enough to read a full sentence on a TV. Reopening the dialog shows it too.
+        if m.subs.dialog <> "ai" then
+            if not m.global.hasField("toastSeconds") then m.global.addFields({ toastSeconds: 0.0 })
+            m.global.toastSeconds = 10.0
+            m.global.toast = "AI subtitles failed. " + ai.error
+        end if
     else if st = "cancelled" then
         m.subsAiTimer.control = "stop"
         ai.phase = "idle"

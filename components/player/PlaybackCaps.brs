@@ -279,8 +279,37 @@ function PlaybackCaps_truthy(v as dynamic) as boolean
 end function
 
 ' client_features we advertise. We don't implement seek_reanchor or header refresh.
+' hls_subtitle_renditions_v1 (Silo Android #611): a server_transcode_hls plan may carry the
+' selected embedded text subtitle as a WebVTT SUBTITLES rendition of its own HLS stream instead of
+' a whole-file sidecar extraction. Android offers it only for its own HLS player (not a Cast
+' receiver); Siku's HLS is always the Roku's own Video node, which lists in-manifest WebVTT
+' renditions in availableSubtitleTracks. It changes nothing for direct play, and a rendition the
+' Roku cannot find is handed back with failure_recovery (subtitle_hls_rendition_failed), which
+' returns the sidecar plan (PlayerScreen.failHlsRendition). Needs a device test.
 function PlaybackCaps_clientFeatures() as object
-    return ["playback_plan_v3"]
+    return ["playback_plan_v3", "hls_subtitle_renditions_v1"]
+end function
+
+' The plan's subtitle.hls_rendition when it is a usable one ({group_id, name}), "invalid" when the
+' plan has none, or { problem: true } when it carries one in a shape the client must refuse
+' (validateForMedia3): only a server_transcode_hls / hls plan rendering or converting the selected
+' track, with no artifact or embedded decision beside it.
+function PlaybackCaps_hlsRendition(plan as dynamic) as dynamic
+    if plan = invalid or plan.subtitle = invalid or Type(plan.subtitle) <> "roAssociativeArray" then return invalid
+    r = plan.subtitle.hls_rendition
+    if r = invalid or Type(r) <> "roAssociativeArray" then return invalid
+    sub_ = plan.subtitle
+    mode = LCase(Str_orEmpty(sub_.mode))
+    selId = ""
+    if plan.selected_tracks <> invalid and plan.selected_tracks.subtitle <> invalid then selId = Str_orEmpty(plan.selected_tracks.subtitle.id)
+    proto = ""
+    if plan.stream <> invalid then proto = LCase(Str_orEmpty(plan.stream.protocol))
+    ok = LCase(Str_orEmpty(plan.delivery)) = "server_transcode_hls" and proto = "hls"
+    ok = ok and (mode = "render" or mode = "convert") and sub_.artifact = invalid and sub_.embedded = invalid
+    ok = ok and Str_orEmpty(r.group_id).Trim() <> "" and Str_orEmpty(r.name).Trim() <> ""
+    ok = ok and selId <> "" and selId = Str_orEmpty(sub_.track_id)
+    if not ok then return { problem: true }
+    return { group_id: Str_orEmpty(r.group_id).Trim(), name: Str_orEmpty(r.name).Trim(), trackId: selId }
 end function
 
 ' client_capabilities block.
@@ -423,7 +452,7 @@ end function
 
 ' POST /api/v2/playback/start body. startPosition: invalid = server resume, 0 = start over.
 function PlaybackCaps_startBody(installation as string, fileId as string, attemptId as string, startPosition as dynamic, audioTrackId as dynamic, subtitleTrackId as dynamic) as object
-    quality = PlaybackCaps_qualityPreference()
+    quality = PlaybackCaps_videoQuality(PlaybackCaps_qualityPreference())
     body = {
         protocol_version: 3
         installation_id: installation
@@ -439,7 +468,7 @@ function PlaybackCaps_startBody(installation as string, fileId as string, attemp
         client_playback_context: PlaybackCaps_playbackContext()
     }
     if startPosition <> invalid and startPosition >= 0 then body.start_position = startPosition
-    cap = PlaybackCaps_bandwidthCap(quality)
+    cap = PlaybackCaps_bandwidthCap()
     if cap > 0 then body.bandwidth_cap_kbps = cap
     if not Str_isEmpty(audioTrackId) then body.audio_track_id = audioTrackId
     if not Str_isEmpty(subtitleTrackId) then body.subtitle_track_id = subtitleTrackId
@@ -462,33 +491,43 @@ function PlaybackCaps_replanBody(installation as string, attemptId as string, pl
         plan_attempt_key: Str_orEmpty(plan.plan_attempt_key)
         attempted_plan_keys: [Str_orEmpty(plan.plan_attempt_key)]
         attempt_count: 1
-        quality_preference: qualityPreference
+        quality_preference: PlaybackCaps_videoQuality(qualityPreference)
         position_seconds: positionSeconds
         metered: false
         selected_tracks: selectedTracks
         client_capabilities: PlaybackCaps_clientCapabilities()
         client_playback_context: PlaybackCaps_playbackContext()
     }
-    cap = PlaybackCaps_bandwidthCap(qualityPreference)
+    cap = PlaybackCaps_bandwidthCap()
     if cap > 0 then body.bandwidth_cap_kbps = cap
     if failure <> invalid then body.failure = failure
     return body
 end function
 
-' playback.max_bitrate_kbps (the bandwidth half of the Quality preset; 0 = uncapped). The server
-' treats the cap as a hard ceiling that outranks "original" (ResolveQualityPolicyV3), and a cap
-' inherited from the profile scope would turn "Original" into a 720p transcode, so "Original"
-' (never transcode) sends no cap at all.
-function PlaybackCaps_bandwidthCap(quality as string) as integer
-    if LCase(quality) = "original" then return 0
+' playback.max_bitrate_kbps (the Maximum Bitrate setting; 0 = No limit). The server treats the
+' cap as a hard ceiling, and the replan copies it from every request, so it is sent on each start
+' and replan whatever the quality preference: an Auto picked in the player keeps the saved cap
+' (Android's inPlayerQualityPair), and so does a rung. No limit sends none: the setting is PUT
+' as JSON null at profile_device, so a profile-scope cap cannot show through (pitfall 13).
+function PlaybackCaps_bandwidthCap() as integer
     cap = Settings_maxBitrateKbps()
     if cap < 100 then return 0
     return cap
 end function
 
-' playback.preferred_quality (server, profile_device scope) with the device pref as fallback.
+' The saved preference as a video quality_preference: playback.preferred_quality (server,
+' profile_device scope) with the device pref as fallback, "original" read as Auto.
 function PlaybackCaps_qualityPreference() as string
     return Settings_quality()
+end function
+
+' videoQualityPreference (PlaybackQualityMenu.kt): trimmed, lower-cased, with "original" and its
+' aliases read as Auto. Older servers take "original" to mean never convert, so a video request
+' must never send it.
+function PlaybackCaps_videoQuality(preference as dynamic) as string
+    q = LCase(Str_orEmpty(preference)).Trim()
+    if q = "" or q = "original" or q = "source" or q = "max" then return "auto"
+    return q
 end function
 
 ' The HDR block we advertise: the display's types, then the user's choices, as Android TV's
@@ -560,6 +599,19 @@ function PlaybackCaps_planProblem(decision as object) as string
     return ""
 end function
 
+' Records on the plan what the decision's server_features say about it, so code that only holds
+' the plan can tell: plan_active_quality_v1 makes plan.active_quality authoritative (an absent
+' value then means the plan delivers no menu entry; Silo Android #649). Call once per decision,
+' before applyPlan.
+sub PlaybackCaps_notePlanFeatures(decision as object)
+    if decision = invalid or decision.playback_plan = invalid then return
+    reports = false
+    for each f in Arr_or(decision.server_features)
+        if f = "plan_active_quality_v1" then reports = true
+    end for
+    decision.playback_plan.siku_reports_active_quality = reports
+end sub
+
 ' ---------- Diagnostics ----------
 
 ' One line for the debug console (telnet 8085), printed once per start/replan:
@@ -611,11 +663,25 @@ function PlaybackCaps_diagLine(body as object, plan as object) as string
     req = "quality=" + Str_orEmpty(body.quality_preference) + " cap=" + PlaybackCaps_str(body.bandwidth_cap_kbps) + " metered=" + PlaybackCaps_str(body.metered)
     if not Str_isEmpty(body.operation) then req = req + " op=" + body.operation
     req = req + " audio_req=" + Str_orEmpty(body.audio_track_id) + " sub_req=" + Str_orEmpty(body.subtitle_track_id)
+    ' Buffering quality: the estimate sent (and its source), the learned-limit instruction.
+    req = req + " est=" + PlaybackCaps_str(body.bandwidth_estimate_kbps) + "/" + Str_orEmpty(body.bandwidth_estimate_source) + " ll=" + Str_orEmpty(body.learned_limit)
     dec = "none"
     if plan <> invalid then
         dec = "delivery=" + Str_orEmpty(plan.delivery) + " reason=" + Str_orEmpty(plan.decision_reason)
         if plan.selected_tracks <> invalid and plan.selected_tracks.audio <> invalid then dec = dec + " sel_audio=" + PlaybackCaps_str(plan.selected_tracks.audio.index)
         if plan.subtitle <> invalid then dec = dec + " sub_mode=" + Str_orEmpty(plan.subtitle.mode)
+        hr = PlaybackCaps_hlsRendition(plan)
+        if hr <> invalid then
+            if hr.problem = true then dec = dec + " sub_hls=invalid" else dec = dec + " sub_hls=" + hr.group_id + ":" + hr.name
+        end if
+        ' active_q: the menu entry the server says the plan delivers ("none" = none, "?" = not reported).
+        aq = "?"
+        if plan.siku_reports_active_quality = true then
+            aq = Str_orEmpty(plan.active_quality)
+            if aq = "" then aq = "none"
+        end if
+        dec = dec + " active_q=" + aq
+        if plan.bandwidth_limit <> invalid and Type(plan.bandwidth_limit) = "roAssociativeArray" then dec = dec + " learned_limit=" + PlaybackCaps_str(plan.bandwidth_limit.kbps)
         r = plan.effective_recipe
         if r <> invalid then
             dec = dec + " recipe=" + Str_orEmpty(r.video_codec) + " " + PlaybackCaps_str(r.width) + "x" + PlaybackCaps_str(r.height) + " " + Str_orEmpty(r.dynamic_range)

@@ -47,6 +47,7 @@ components/common/
   ThemeMusic.brs ThemeMusic_* opt-in detail-page theme music (capability, playback grant, Audio node)
 components/tasks/
   ApiTask       one HTTP request (Task); JSON in and out; 401 → refresh → retry
+  ProbeTask     the connection speed test (bandwidth probe download, timed; results POSTed)
   AuthTask      long-lived single-flight token refresher (rotating refresh tokens)
   YouTubeLaunchTask  hands a YouTube trailer to the YouTube channel (837): roAppManager.LaunchApp, then ECP
   Http.brs      roUrlTransfer wrapper and Silo device headers
@@ -57,6 +58,10 @@ components/player/
   PlayerScreen.*   the video player: start/replan pipeline, HUD, pickers, recovery, progress
   PlaybackCaps.brs what this Roku can play, as the v3 capability payload; the [siku-playback] line
   SubtitleSuite.brs sidecar tracks, auto choice (Subs_autoChoice), search/AI/sync tools
+  BufferingQuality.brs the buffering-quality controller (pure BrightScript, explicit clock);
+                   tools/bq_vectors.py replays the server's conformance vectors against it
+  PlayerBuffering.brs the player's side of it: Video events in, quality_change replans and the
+                   "Playback keeps buffering" / "Quality lowered" pill out, request fields
   PlayerScrubber.* seek bar with the buffered-ahead segment
 docs/upstream/                  requests written for the Silo server team (Roku HLS audio packaging)
 ```
@@ -186,8 +191,10 @@ The pipeline (`components/player/PlayerScreen.brs`, `startPipeline`):
    `client_dv8_base_layer_fallback_v1` and `client_selected_audio_track_v1`), `hls` (declared
    H.264 / SDR / AAC+MP3 only, because Silo's HLS remux is fMP4 with muxed audio, which Roku plays
    silent) and, behind an experimental setting, `progressive` (fails on device; kept for other models).
-   `quality_preference` and `bandwidth_cap_kbps` come from the Quality preset; "original" never
-   sends a cap.
+   `quality_preference` and `bandwidth_cap_kbps` come from the Resolution and Maximum Bitrate
+   settings (a saved "original" is Auto; "original" is never sent for video; No limit sends no
+   cap). The player's Quality menu is Auto plus the plan's `available_qualities` without the
+   source entry, with the row the server reports in `active_quality` checked.
 3. The plan is handed to the Video node by `applyPlan`: stream URL and format, auth headers,
    `PlayStart` from the timeline, sidecar subtitle tracks (`Subs_buildTrack`, SRT/WebVTT only), and
    the default subtitle (`Subs_autoChoice`: the profile's language and Off/Auto/Always as Android TV
@@ -201,9 +208,20 @@ The pipeline (`components/player/PlayerScreen.brs`, `startPipeline`):
    none), `output_change` from the HDR / Dolby Vision HUD toggles, `failure_recovery` as above.
    `onReplan` swaps the plan at the current position and rebuilds the HUD.
 6. Progress (`/progress`, sequenced), markers (Skip Intro / credits), Up Next and the final
-   `DELETE /playback/{session}` follow the Android TV player's behaviour. A 410
-   `playback_session_ended` answer to progress or a replan means an administrator ended the
-   session: the player says so in a toast and closes without a DELETE.
+   `DELETE /playback/{session}` follow the Android TV player's behaviour. Markers are the playing
+   file's own (`/watch/{id}?file_id=`), read again after every start and when a replan lands on
+   another file. A 410 `playback_session_ended` answer to progress or a replan means an
+   administrator ended the session: the player says so in a toast and closes without a DELETE.
+7. Buffering quality (`BufferingQuality.brs` + `PlayerBuffering.brs`, Silo Android #636): two
+   counted stalls in two minutes, or one of 6 s, after a 10 s start-up grace, lower Auto with a
+   `quality_change` replan carrying `bandwidth_estimate_kbps` = delivered × 7 / 10 (and, when the
+   server lists `buffering_quality_v1`, `bandwidth_estimate_source: observed_rebuffer`,
+   `observed_throughput_kbps`), then offer "Restore quality" (`learned_limit: clear`) for 15 s;
+   Ask first and picked qualities prompt instead. Settings → Playback shows the mode, the server's
+   learned limit (Reset) and the Connection speed test.
+8. A transcode may carry the selected embedded text subtitle as a WebVTT rendition of its own HLS
+   stream (`hls_subtitle_renditions_v1`); the player selects it on the Video node or asks for the
+   sidecar plan (`failure_recovery`, `subtitle_hls_rendition_failed`).
 
 Every start and replan prints one `[siku-playback]` line to the device console; see `CLAUDE.md`
 "Diagnostics" for the fields. The device facts behind these choices are in the skill's pitfalls

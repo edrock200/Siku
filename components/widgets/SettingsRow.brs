@@ -49,6 +49,7 @@ sub layout()
     m.valueText.height = h
     m.valueText.translation = [w / 2 - 24 - chevronSpace, 0]
     m.labelText.width = w / 2
+    if m.top.labelWidth > 0 then m.labelText.width = m.top.labelWidth
     m.descText.width = w - x - 24
     applyState()
 end sub
