@@ -55,17 +55,15 @@ sub Content_fillCard(node as object, card as object, style as string)
     node.title = title
     node.subtitle = subtitle
 
-    poster = Str_orEmpty(card.poster_url)
-    backdrop = Str_orEmpty(card.backdrop_url)
-    still = Str_orEmpty(card.still_url)
+    ' Spoiler protection (Spoilers.brs) drops an unwatched episode's still; the card then shows
+    ' series art the server marks as such, else the default artwork.
+    backdrop = Spoilers_imageUrl(card, "backdrop")
     if style = "landscape" then
-        img = still
-        if img = "" then img = backdrop
-        if img = "" then img = poster
+        img = Spoilers_wideImageUrl(card)
     else if style = "circle" then
         img = Str_orEmpty(card.photo_url)
     else
-        img = poster
+        img = Spoilers_imageUrl(card, "poster")
     end if
     if t = "audiobook_group" then
         node.initials = Content_initials(title)

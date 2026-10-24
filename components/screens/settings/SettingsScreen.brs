@@ -229,6 +229,15 @@ function buildPane(catId as string) as object
         out.Push({ kind: "row", row: rowDef("stillWatching", "choice", "Still Watching Prompt") })
         out.Push({ kind: "footer", text: "Rewind on Resume skips back when you return to a partly watched title. Still Watching Prompt sets how many episodes play in a row before Silo asks whether you're still watching." })
 
+        ' Spoiler protection (catalog.hide_unwatched_episode_*, revision 17, profile scope): hidden
+        ' on servers that do not know the keys.
+        if spoilersSupported() then
+            out.Push({ kind: "header", text: "Spoilers" })
+            out.Push({ kind: "row", row: rowDef("spoilerImages", "toggle", "Blur unwatched episode images") })
+            out.Push({ kind: "row", row: rowDef("spoilerOverviews", "toggle", "Hide unwatched episode descriptions") })
+            out.Push({ kind: "footer", text: "Applies to episodes you have not started, on every device that uses this profile. Roku cannot blur a picture, so a hidden episode image shows the series artwork or a plain placeholder instead." })
+        end if
+
         out.Push({ kind: "header", text: "Video" })
         out.Push({ kind: "row", row: rowDef("skipBack", "choice", "Skip Back") })
         out.Push({ kind: "row", row: rowDef("skipForward", "choice", "Skip Forward") })
@@ -286,6 +295,10 @@ function buildPane(catId as string) as object
     return out
 end function
 
+function spoilersSupported() as boolean
+    return Settings_available() and Settings_manifestRevision() >= 17 and Settings_item("catalog.hide_unwatched_episode_images") <> invalid
+end function
+
 ' Whether the server stores the revision-9 skip intervals for this profile.
 function seekIntervalsSynced() as boolean
     return Settings_available() and Settings_manifestRevision() >= 9
@@ -307,6 +320,10 @@ function rowValue(row as object) as string
     if p = invalid then p = {}
     if id = "profileSelection" then
         return ProfileLaunch_behavior().title
+    else if id = "spoilerImages" then
+        return onOff(Settings_value("catalog.hide_unwatched_episode_images", false) = true)
+    else if id = "spoilerOverviews" then
+        return onOff(Settings_value("catalog.hide_unwatched_episode_overviews", false) = true)
     else if id = "cardPreset" then
         cp = Settings_cardPresentation()
         for each pr in cardPresets()
@@ -1038,6 +1055,14 @@ sub applyChoice(row as object, value as dynamic)
         ' A timed choice starts its away clock from now.
         ProfileLaunch_markActive(0)
         renderPane()
+    else if id = "spoilerImages" then
+        beginWrites(1)
+        putValue("catalog.hide_unwatched_episode_images", "profile", value = true)
+        m.global.homeDirty = true
+    else if id = "spoilerOverviews" then
+        beginWrites(1)
+        putValue("catalog.hide_unwatched_episode_overviews", "profile", value = true)
+        m.global.homeDirty = true
     else if id = "cardPreset" then
         for each pr in cardPresets()
             if pr.id = value then writeCardPresentation(pr.posterSize, pr.caption, deviceOnly)

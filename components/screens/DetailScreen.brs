@@ -237,8 +237,10 @@ end function
 sub renderHero()
     it = m.item
     t = m.itemType
-    m.backdrop.uri = Url_resolve(it.backdrop_url)
-    if m.backdrop.uri = "" and t = "episode" then m.backdrop.uri = Url_resolve(it.still_url)
+    ' Spoiler protection: an unwatched episode's still (or a backdrop the server does not mark as
+    ' series art) is not shown (Spoilers.brs).
+    m.backdrop.uri = Url_resolve(Spoilers_imageUrl(it, "backdrop"))
+    if m.backdrop.uri = "" and t = "episode" then m.backdrop.uri = Url_resolve(Spoilers_imageUrl(it, "still"))
 
     heading = Str_orEmpty(it.title)
     epLine = ""
@@ -285,7 +287,7 @@ sub renderHero()
 
     m.tagline.text = Str_orEmpty(it.tagline)
     m.tagline.visible = m.tagline.text <> ""
-    m.overview.text = Str_orEmpty(it.overview)
+    m.overview.text = Spoilers_overview(it)
     m.overview.visible = m.overview.text <> ""
 
     factParts = []
@@ -858,12 +860,13 @@ sub onEpisodes(event as object)
     focusIdx = 0
     for i = 0 to m.episodes.Count() - 1
         ep = m.episodes[i]
+        ' Spoiler protection drops an unwatched episode's still (Content_cardNode) and description.
         node = Content_cardNode(ep, "landscape")
         node.title = Content_episodeCaptionTitle(ep)
         node.addFields({
             eyebrow: ""
             meta: Content_episodeCaptionMeta(airDateText(ep.air_date), toInt(ep.runtime))
-            synopsis: Str_orEmpty(ep.overview)
+            synopsis: Spoilers_overview(ep)
             isCurrent: Str_orEmpty(ep.content_id) = m.currentEpisodeId
         })
         if node.isCurrent then focusIdx = i

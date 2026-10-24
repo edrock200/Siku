@@ -1,0 +1,101 @@
+' Spoiler protection for unwatched episodes (settings contract revision 17, Android TV #427).
+' The profile settings catalog.hide_unwatched_episode_images and
+' catalog.hide_unwatched_episode_overviews choose what to hide; the server never changes catalog
+' responses, so every screen applies them with these helpers.
+'
+' Self-contained apart from Utils.brs (Str_orEmpty, Num_or): it reads the settings snapshot on
+' m.global.settings directly, so any component (the player's Up Next panel too) can include it:
+'   <script type="text/brightscript" uri="pkg:/components/common/Spoilers.brs" />
+' Roku cannot blur a Poster, so a hidden still is not loaded at all: callers show the default
+' artwork (MediaCardItem's brand glow) or another, non-episode image instead.
+' SPDX-License-Identifier: AGPL-3.0-or-later
+
+' { hideImages, hideOverviews } for the active server + profile. Both off until the server has
+' answered with a manifest that knows the keys, so an older server shows episodes as before.
+function Spoilers_prefs() as object
+    out = { hideImages: false, hideOverviews: false }
+    st = m.global.settings
+    if st = invalid or Type(st) <> "roAssociativeArray" or st.available <> true or st.items = invalid then return out
+    s = m.global.session
+    if s <> invalid and Str_orEmpty(st.identity) <> Str_orEmpty(s.serverUrl) + "|" + Str_orEmpty(s.profileId) then return out
+    if Int(Num_or(st.manifestRevision, 0)) < 17 then return out
+    img = st.items["catalog.hide_unwatched_episode_images"]
+    ovw = st.items["catalog.hide_unwatched_episode_overviews"]
+    if img <> invalid and Type(img) = "roAssociativeArray" and img.value = true then out.hideImages = true
+    if ovw <> invalid and Type(ovw) = "roAssociativeArray" and ovw.value = true then out.hideOverviews = true
+    return out
+end function
+
+' An episode is unwatched while it is neither played nor in progress. Missing watch state counts as
+' unwatched, so an episode is never revealed only because its payload left the state out.
+function Spoilers_isUnwatched(item as dynamic) as boolean
+    if item = invalid or Type(item) <> "roAssociativeArray" then return true
+    if item.watched = true then return false
+    seconds = Num_or(item.position_seconds, 0)
+    for each k in ["user_data", "user_state"]
+        ud = item[k]
+        if ud <> invalid and Type(ud) = "roAssociativeArray" then
+            if ud.played = true or ud.is_in_progress = true then return false
+            p = Num_or(ud.position_seconds, 0)
+            if p > seconds then seconds = p
+        end if
+    end for
+    return seconds <= 0
+end function
+
+function Spoilers_isEpisode(item as dynamic) as boolean
+    if item = invalid or Type(item) <> "roAssociativeArray" then return false
+    return LCase(Str_orEmpty(item["type"])) = "episode"
+end function
+
+' The server's provenance flag for one artwork slot ("poster", "backdrop", "still"): true when
+' that image is the episode's own still, false when it is series/season art, invalid when the
+' server does not say (older servers; treated as a still, so protection errs on the safe side).
+function Spoilers_slotIsStill(item as dynamic, slot as string) as dynamic
+    if slot = "still" then return true
+    if item = invalid or Type(item) <> "roAssociativeArray" then return invalid
+    v = item[slot + "_is_episode_still"]
+    if v = true or v = false then return v
+    return invalid
+end function
+
+' Whether the image in `slot` must be hidden for `item`.
+function Spoilers_hidesImage(item as dynamic, slot = "still" as string) as boolean
+    if not Spoilers_isEpisode(item) then return false
+    if not Spoilers_prefs().hideImages then return false
+    if not Spoilers_isUnwatched(item) then return false
+    return Spoilers_slotIsStill(item, slot) <> false
+end function
+
+function Spoilers_hidesOverview(item as dynamic) as boolean
+    if not Spoilers_isEpisode(item) then return false
+    if not Spoilers_prefs().hideOverviews then return false
+    return Spoilers_isUnwatched(item)
+end function
+
+' The episode's overview, or "" when spoiler protection hides it. For the player's Up Next panel,
+' episode rails and heroes: Spoilers_overview(episode).
+function Spoilers_overview(item as dynamic) as string
+    if item = invalid or Type(item) <> "roAssociativeArray" then return ""
+    if Spoilers_hidesOverview(item) then return ""
+    return Str_orEmpty(item.overview)
+end function
+
+' The URL of `slot` ("still", "backdrop", "poster") on `item`, or "" when protection hides it.
+' Raw (unresolved) API URL; pass the result through Url_resolve as usual.
+function Spoilers_imageUrl(item as dynamic, slot = "still" as string) as string
+    if item = invalid or Type(item) <> "roAssociativeArray" then return ""
+    if Spoilers_hidesImage(item, slot) then return ""
+    return Str_orEmpty(item[slot + "_url"])
+end function
+
+' A 16:9 image for an episode card or the player's Up Next panel: its still, else a backdrop or
+' poster that is not the episode's still when protection hides the still, else "".
+function Spoilers_wideImageUrl(item as dynamic) as string
+    if item = invalid or Type(item) <> "roAssociativeArray" then return ""
+    for each slot in ["still", "backdrop", "poster"]
+        u = Spoilers_imageUrl(item, slot)
+        if u <> "" then return u
+    end for
+    return ""
+end function

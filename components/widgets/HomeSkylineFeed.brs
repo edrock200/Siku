@@ -381,7 +381,7 @@ sub showCard(node as object)
     meta.content_rating = invalid  ' already shown as a badge
     if t = "episode" and Str_isEmpty(card.episode_title) then meta.episode_title = card.title
     m.metaLabel.text = Content_metaLine(meta)
-    m.synopsis.text = Str_orEmpty(card.overview)
+    m.synopsis.text = Spoilers_overview(card) ' empty for an unwatched episode under spoiler protection
     layoutMarquee()
 end sub
 
