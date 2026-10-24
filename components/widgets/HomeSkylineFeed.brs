@@ -554,6 +554,42 @@ end sub
 
 ' ---------- Patches from the host after mutations ----------
 
+function isProgressRowId(rowId as dynamic) as boolean
+    rid = LCase(Str_orEmpty(rowId))
+    return rid = "continue_watching" or rid = "next_up" or rid = "in_progress" or rid = "up_next"
+end function
+
+sub removeShowFromProgressRows(seriesId as string)
+    c = m.rowList.content
+    for r = 0 to c.getChildCount() - 1
+        row = c.getChild(r)
+        if isProgressRowId(row.rowId) then
+            for i = row.getChildCount() - 1 to 0 step -1
+                card = row.getChild(i).raw
+                if card <> invalid and (Str_orEmpty(card.series_id) = seriesId or Str_orEmpty(card.content_id) = seriesId) then row.removeChild(row.getChild(i))
+            end for
+        end if
+    end for
+end sub
+
+sub removeEmptyRows()
+    c = m.rowList.content
+    removed = false
+    for r = c.getChildCount() - 1 to 0 step -1
+        if c.getChild(r).getChildCount() = 0 then
+            c.removeChild(c.getChild(r))
+            removed = true
+        end if
+    end for
+    if c.getChildCount() = 0 then
+        m.top.hasRows = false
+        m.top.state = "empty"
+        return
+    end if
+    if m.focusRow >= c.getChildCount() then m.focusRow = c.getChildCount() - 1
+    if removed then syncRowMetrics()
+end sub
+
 sub onItemPatch()
     p = m.top.itemPatch
     if p = invalid then return
@@ -562,16 +598,12 @@ sub onItemPatch()
     if p.remove = true then
         row = m.rowList.content.getChild(p.rowIndex)
         row.removeChild(node)
-        if row.getChildCount() = 0 then
-            m.rowList.content.removeChild(row)
-            if m.rowList.content.getChildCount() = 0 then
-                m.top.hasRows = false
-                m.top.state = "empty"
-            else
-                if m.focusRow >= m.rowList.content.getChildCount() then m.focusRow = m.rowList.content.getChildCount() - 1
-                syncRowMetrics()
-            end if
-        end if
+        ' A dismissed episode or series drops the whole show (#632): every card of that series
+        ' leaves the Continue Watching, In Progress and Next Up rows too.
+        dropped = ""
+        if p.removeSeries <> invalid then dropped = p.removeSeries
+        if dropped <> "" then removeShowFromProgressRows(dropped)
+        removeEmptyRows()
         return
     end if
     raw = AA_copy(node.raw)

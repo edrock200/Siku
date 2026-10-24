@@ -1,5 +1,7 @@
 ' Card long-press / options actions shared by the Skyline pages and grids.
 ' Include with <script uri="pkg:/components/widgets/HomeCardActions.brs" />; needs Utils, Api, Nav, Session, Content.
+' A page that offers "dismiss" (Home's progress rows) defines `sub CardActions_onDismissed(event)`,
+' which runs when the server answers the dismissal.
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
 ' Builds the action list for a card. rowId tells whether it came from a progress row.
@@ -27,11 +29,39 @@ function CardActions_build(card as object, rowId as string) as object
     else
         actions.Push({ id: "watchlist", label: "Add to Watchlist", icon: "bookmark" })
     end if
-    rid = LCase(rowId)
-    if rid = "continue_watching" or rid = "next_up" or rid = "continue_listening" then
-        actions.Push({ id: "dismiss", label: "Remove from Continue Watching", icon: "close" })
+    if CardActions_isProgressRow(rowId) then
+        d = CardActions_dismissal(card)
+        if d <> invalid then actions.Push({ id: "dismiss", label: d.label, icon: "close" })
     end if
     return actions
+end function
+
+' Home rows built from playback state, whose cards can be removed.
+function CardActions_isProgressRow(rowId as string) as boolean
+    rid = LCase(rowId)
+    return rid = "continue_watching" or rid = "next_up" or rid = "in_progress" or rid = "continue_listening"
+end function
+
+' Which Home list a card's removal goes to (HomeDismissal, #632). The server keys the two lists
+' differently: an in-progress card leaves Continue Watching against its exact progress_updated_at
+' (playing it again brings it back); a Next Up episode has no progress row and leaves Next Up by
+' its series. Progress wins when a card has both. invalid: neither list can take the card, so it
+' gets no remove action.
+function CardActions_dismissal(card as object) as dynamic
+    anchor = Str_orEmpty(card.progress_updated_at)
+    if anchor <> "" then return { surface: "continue_watching", body: { progress_updated_at: anchor }, label: "Remove from Continue Watching", toast: "Removed from Continue Watching" }
+    sid = Str_orEmpty(card.series_id)
+    if sid <> "" then return { surface: "next_up", body: { series_id: sid }, label: "Remove from Next Up", toast: "Removed from Next Up" }
+    return invalid
+end function
+
+' The show the server drops when this card is dismissed from either list: an episode's series, or
+' the series itself. Movies and books go one card at a time.
+function CardActions_droppedSeriesId(card as object) as string
+    t = LCase(Str_orEmpty(card["type"]))
+    if t = "series" then return Str_orEmpty(card.content_id)
+    if t = "episode" then return Str_orEmpty(card.series_id)
+    return ""
 end function
 
 ' Performs an action. Returns a patch {watched?, favorite?, inWatchlist?, remove?} for the card,
@@ -77,15 +107,13 @@ function CardActions_perform(actionId as string, card as object, rowId as string
         m.global.toast = "Removed from Watchlist"
         return { inWatchlist: false }
     else if actionId = "dismiss" then
-        src = LCase(Str_orEmpty(card.item_source))
-        if src = "next_up" or LCase(rowId) = "next_up" then
-            Api_fire("PUT", "/api/v2/home/dismissals/next_up/" + enc, { series_id: Str_orEmpty(card.series_id) })
-        else
-            Api_fire("PUT", "/api/v2/home/dismissals/continue_watching/" + enc, { progress_updated_at: Str_orEmpty(card.progress_updated_at) })
-        end if
-        m.global.homeDirty = true
-        m.global.toast = "Removed from Continue Watching"
-        return { remove: true }
+        d = CardActions_dismissal(card)
+        if d = invalid or not CardActions_isProgressRow(rowId) then return invalid
+        ' The page re-reads Home once the server accepts (CardActions_onDismissed in the page);
+        ' meanwhile every card of a dropped show leaves the progress rows.
+        Api_send("PUT", "/api/v2/home/dismissals/" + d.surface + "/" + enc, d.body, "CardActions_onDismissed")
+        m.global.toast = d.toast
+        return { remove: true, removeSeries: CardActions_droppedSeriesId(card) }
     end if
     return invalid
 end function

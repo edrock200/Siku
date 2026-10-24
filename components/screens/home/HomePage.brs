@@ -213,6 +213,19 @@ sub onMenuChosen()
     end if
 end sub
 
+' The server answered a Home dismissal (HomeCardActions.brs). Accepted: re-read Home from the
+' server, as Mark as Watched does (the server dropped the whole show); a failed re-read keeps the
+' local removal. Refused: say so and re-read, which brings the card back.
+sub CardActions_onDismissed(event as object)
+    resp = Api_result(event)
+    if not resp.ok then m.global.toast = "Couldn't remove it: " + Api_errorText(resp)
+    m.global.homeDirty = true
+    if m.top.active and libraryId() = "" then
+        m.global.homeDirty = false
+        load()
+    end if
+end sub
+
 sub onMenuDismissed()
     m.feed.focusRequested = true
 end sub
