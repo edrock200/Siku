@@ -321,86 +321,74 @@ end sub
 
 ' ---------- Code card rendering ----------
 
-' Splits the user code into tile characters: "4821-7730" -> 4821 – 7730; 8 bare chars -> 4 + 4.
-function codeChars(code as string) as object
-    out = []
+' The code as Android TV shows it (DeviceCodeFormat.display): eight letters or digits read as
+' "4821 7730"; anything else as sent, dashes as spaces. Uppercase.
+function codeDisplay(code as string) as string
     clean = ""
     for i = 1 to Len(code)
         ch = UCase(Mid(code, i, 1))
-        if ch = "-" or ch = " " then
-            out.Push("-")
-        else
-            out.Push(ch)
-            clean = clean + ch
-        end if
+        if ch <> "-" and ch <> " " then clean = clean + ch
     end for
-    if Len(clean) = Len(code) and Len(clean) = 8 then
-        out = []
-        for i = 1 to 8
-            out.Push(Mid(clean, i, 1))
-            if i = 4 then out.Push("-")
-        end for
-    end if
-    return out
+    if Len(clean) = 8 then return Left(clean, 4) + " " + Mid(clean, 5)
+    return UCase(code.Trim()).Replace("-", " ")
 end function
 
+' The sign-in code in large digits without boxes (Android TV TvMarqueeCodeTiles, upstream #656):
+' one line of Inter Bold at 40 sp (69 px), the groups an en space (half the type size) apart,
+' scaled down to fit 260 dp (520 px) when a longer or wider code would overflow. Each group is its
+' own Label so the gap does not depend on the font carrying an en-space glyph.
 sub buildTiles(code as string)
     m.tiles.removeChildrenIndex(m.tiles.getChildCount(), 0)
-    chars = codeChars(code)
-    n = chars.Count()
     m.tileH = 0
-    if n = 0 then return
-    gap = 14
-    maxW = 536
-    ' Android: min(42dp, (maxWidth - gaps) / count) per tile; separators are 45% wide.
-    tileW = (maxW - gap * (n - 1)) \ n
-    if tileW > 84 then tileW = 84
-    tileH = Int(tileW * 1.24)
-    m.tileH = tileH
+    groups = []
+    for each part in codeDisplay(code).Split(" ")
+        if part <> "" then groups.Push(part)
+    end for
+    if groups.Count() = 0 then return
+    maxW = 520
+    size = 69
+    labels = []
+    for each part in groups
+        lbl = m.tiles.createChild("Label")
+        lbl.text = part
+        lbl.color = "0xEDEDEDFF"
+        labels.Push(lbl)
+    end for
+    total = layoutCodeLabels(labels, size)
+    if total > maxW then
+        size = Int(size * maxW / total)
+        if size < 24 then size = 24
+        total = layoutCodeLabels(labels, size)
+    end if
+    ' Centered in the 640 px card, like the row of tiles it replaces.
+    x = (640 - total) / 2
+    gap = size / 2
+    h = 0
+    for each lbl in labels
+        lbl.translation = [Int(x), 0]
+        x = x + lbl.width + gap
+        lh = Label_height(lbl)
+        if lh > h then h = lh
+    end for
+    m.tileH = Int(h)
+end sub
+
+' Sets every group label to `size` px and its measured width; returns the line's total width.
+function layoutCodeLabels(labels as object, size as integer) as float
     font = CreateObject("roSGNode", "Font")
     font.uri = "pkg:/fonts/Inter-bold.otf"
-    font.size = Int(tileW * 0.66 * 0.86 * 1.6)
-    if font.size > Int(tileH * 0.62) then font.size = Int(tileH * 0.62)
-    total = 0
-    for each ch in chars
-        if ch = "-" then total = total + Int(tileW * 0.45) else total = total + tileW
-    end for
-    total = total + gap * (n - 1)
-    x = (640 - total) \ 2
-    for each ch in chars
-        sep = (ch = "-")
-        w = tileW
-        if sep then w = Int(tileW * 0.45)
-        g = m.tiles.createChild("Group")
-        g.translation = [x, 0]
-        if not sep then
-            bg = g.createChild("Poster")
-            bg.uri = "pkg:/images/ui/r16.9.png"
-            bg.width = w
-            bg.height = tileH
-            bg.blendColor = "0xFFFFFF14"
-            ring = g.createChild("Poster")
-            ring.uri = "pkg:/images/ui/r16_ring2.9.png"
-            ring.width = w
-            ring.height = tileH
-            ring.blendColor = "0xFFFFFF1F"
-        end if
-        lbl = g.createChild("Label")
+    font.size = size
+    total = 0.0
+    for each lbl in labels
         lbl.font = font
+        lbl.width = 0
+        w = Int(Label_width(lbl)) + 2
         lbl.width = w
-        lbl.height = tileH
-        lbl.horizAlign = "center"
-        lbl.vertAlign = "center"
-        if sep then
-            lbl.text = "–"
-            lbl.color = "0xEDEDED66"
-        else
-            lbl.text = ch
-            lbl.color = "0xEDEDEDFF"
-        end if
-        x = x + w + gap
+        total = total + w
     end for
-end sub
+    total = total + (size / 2) * (labels.Count() - 1)
+    return total
+end function
 
 function isTrue(v as dynamic) as boolean
     t = Type(v)
