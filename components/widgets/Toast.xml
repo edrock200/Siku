@@ -4,6 +4,8 @@
 <component name="Toast" extends="Group">
   <interface>
     <field id="message" type="string" alwaysNotify="true" onChange="onMessage" />
+    <!-- Seconds the next message stays up; set before `message`. -->
+    <field id="duration" type="float" value="3.5" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/Toast.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />

@@ -31,7 +31,7 @@ STATE = {"devices": {}, "sessions": {}, "watchlist": set(), "favorites": set(), 
 LOCK = threading.Lock()
 LOG = []
 # Feature switches (main() sets them from the command line).
-OPTS = {"active_quality": True}
+OPTS = {"active_quality": True, "ai_fail": False, "ai_transcribe_only": False}
 
 GENRES = ["Science Fiction", "Drama", "Crime", "Comedy", "Thriller", "Adventure", "Animation", "Documentary"]
 MOVIE_TITLES = [
@@ -1078,7 +1078,7 @@ def playback_decision(sid, position, fid, body=None):
             continue
         idx = len(inventory)
         inventory.append({"track_id": "file:%s:subtitle:%d" % (fid, idx), "combined_index": idx, "source": "downloaded", "codec": rec["format"],
-                          "language": rec["language"], "label": rec["release_name"] or rec["provider"], "forced": False, "default": False,
+                          "language": rec["language"], "label": ("%s (%s)" % (rec["release_name"], rec["provider"]) if rec["provider"] in ("translated", "transcribed") else (rec["release_name"] or rec["provider"])), "forced": False, "default": False,
                           "hearing_impaired": rec["hearing_impaired"], "delivery": "sidecar",
                           "url": "/api/v2/stream/%s/subtitles/%d.vtt?file_id=%s&downloaded_subtitle_id=%s" % (sid, idx, fid, rec["id"]),
                           "sync_key": "stored-" + rec["id"]})
@@ -1103,7 +1103,8 @@ def subtitle_route(handler, method, p, q, b):
     if not p.startswith("/api/v2/subtitles"):
         return False
     if p == "/api/v2/subtitles/ai/status":
-        handler.send(200, {"revision": "mock-ai-1", "state": "available", "allowed": True, "enabled": True, "transcribe_enabled": True})
+        # --ai-transcribe-only: transcription without translation (Silo Android #547).
+        handler.send(200, {"revision": "mock-ai-1", "state": "available", "allowed": True, "enabled": not OPTS["ai_transcribe_only"], "transcribe_enabled": True})
         return True
     if p == "/api/v2/subtitles/ai/quota":
         handler.send(200, {"limited": True, "limit": 5, "used": 2, "remaining": 3, "period": "day"})
@@ -1117,12 +1118,17 @@ def subtitle_route(handler, method, p, q, b):
         return True
     if p == "/api/v2/subtitles/ai/translate" and method == "POST":
         LOG.append("AI TRANSLATE " + json.dumps(b))
+        print("AI TRANSLATE", json.dumps({k: b.get(k) for k in ("kind", "source_index", "source_language", "target_language")}), flush=True)
         for k in ("media_file_id", "kind", "source_index", "source_language", "target_language", "start_position"):
             if k not in b:
                 handler.problem(422, "validation_failed", "%s is required" % k)
                 return True
         if b["kind"] not in ("translate", "transcribe", "transcribe_translate"):
             handler.problem(422, "validation_failed", "unknown kind")
+            return True
+        if OPTS["ai_transcribe_only"] and b["kind"] != "transcribe":
+            # The real server's answer when translation is not configured.
+            handler.problem(422, "ai_not_configured", "AI subtitle processing is not configured")
             return True
         SUBS["seq"] += 1
         job = {"id": str(SUBS["seq"]), "media_file_id": sub_file_id(b), "kind": b["kind"], "source_index": b["source_index"],
@@ -1148,9 +1154,21 @@ def subtitle_route(handler, method, p, q, b):
             if job["_reads"] == 1:
                 job.update(status="running", progress=0.34, progress_message="Transcribing" if job["kind"] != "translate" else "Translating")
             elif job["_reads"] == 2:
-                job.update(status="running", progress=0.72, progress_message="Translating")
+                if OPTS["ai_fail"]:
+                    # --ai-fail: every job fails on its second read, with the reason the client must show.
+                    job.update(status="failed", progress=0.34, progress_message="", error_message="The transcription model ran out of memory on this server.")
+                    LOG.append("AI FAILED " + job["id"])
+                else:
+                    job.update(status="running", progress=0.72, progress_message="Translating")
             else:
-                rec = sub_store(job["media_file_id"], "ai", job["target_language"], "AI %s" % job["kind"].replace("_", " "), auto_sync=False)
+                # Stored AI tracks as the real server labels them: a "(translated)" / "(transcribed)"
+                # provider and a release name "English → German (AI)" / "English (AI transcribed)".
+                src = (job["source_language"] or "en")
+                if job["kind"] == "transcribe":
+                    provider, release, lang = "transcribed", "%s (AI transcribed)" % src, (job["target_language"] or src)
+                else:
+                    provider, release, lang = "translated", "%s → %s (AI)" % (src, job["target_language"]), job["target_language"]
+                rec = sub_store(job["media_file_id"], provider, lang, release, auto_sync=False)
                 job.update(status="completed", progress=1.0, progress_message="", result_subtitle_id=rec["id"])
         handler.send(200, {"job": {k: v for k, v in job.items() if not k.startswith("_")}})
         return True
@@ -1927,8 +1945,12 @@ def main():
     ap.add_argument("--port", type=int, default=8097)
     ap.add_argument("--no-active-quality", action="store_true",
                     help="act as a server before plan_active_quality_v1 (the client infers the lit Quality row)")
+    ap.add_argument("--ai-fail", action="store_true", help="every AI subtitle job fails on its second read")
+    ap.add_argument("--ai-transcribe-only", action="store_true", help="AI transcription on, AI translation off")
     args = ap.parse_args()
     OPTS["active_quality"] = not args.no_active_quality
+    OPTS["ai_fail"] = args.ai_fail
+    OPTS["ai_transcribe_only"] = args.ai_transcribe_only
     srv = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
     print("Mock Silo on http://127.0.0.1:%d" % args.port, flush=True)
     srv.serve_forever()

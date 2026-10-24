@@ -153,10 +153,15 @@ function Subs_buildTrack(t as object) as dynamic
     su = Subs_appendQuery(su, "token=" + s.accessToken)
     ' Language name first, as Android TV shows it; the server's label can be a bare codec
     ' name ("SUBRIP" was seen on device), so it is only a fallback.
+    ' An AI track says how it was made, "German (AI Translation)" / "English (AI Transcription)",
+    ' from the server's markers (Silo Android #544); without a language its label minus the markers.
+    aiKind = Tracks_aiSubtitleKind(t.label)
     label = ""
     if not Str_isEmpty(t.language) then label = Subs_languageName(t.language)
+    if (label = "" or label = "Unknown") and aiKind <> "" then label = Tracks_aiSubtitleSourceLabel(t.label)
     if label = "" or label = "Unknown" then label = Str_orEmpty(t.label)
     if label = "" then label = "Unknown"
+    if aiKind <> "" then label = label + " (" + aiKind + ")"
     if t.forced = true then label = label + " (Forced)"
     if t.hearing_impaired = true then label = label + " (SDH)"
     storedId = Subs_storedIdOf(t)
@@ -1268,15 +1273,19 @@ end function
 
 ' "English SRT (External)" — the TV's subtitleChoiceLabel, from the inventory item.
 function Subs_aiSubtitleLabel(t as object, position as integer) as string
+    aiKind = Tracks_aiSubtitleKind(t.label)
     name = Subs_languageName(t.language)
     if Str_isEmpty(t.language) then
         name = Str_orEmpty(t.label)
+        if aiKind <> "" then name = Tracks_aiSubtitleSourceLabel(t.label)
         if name = "" then name = "Track " + (position + 1).ToStr()
     end if
     codec = Tracks_subtitleCodec(t.codec)
     if codec <> "" then name = name + " " + codec
     src = Str_orEmpty(t.source)
-    if src = "external" then
+    if aiKind <> "" then
+        name = name + " (" + aiKind + ")"
+    else if src = "external" then
         name = name + " (External)"
     else if src = "downloaded" then
         name = name + " (Downloaded)"
@@ -1288,7 +1297,8 @@ sub Subs_openAi()
     if not Subs_aiAvailable() then return
     ai = m.subs.ai
     Api_get("/api/v2/subtitles/ai/quota", invalid, "Subs_onAiQuota", { fileId: m.fileId })
-    if ai.phase = "failed" then ai.phase = "idle"
+    ' The phase is kept (Silo Android #545): a running job shows its progress and a failure keeps
+    ' its reason above a form that stays usable for a new request.
     ' The mode row appears only when both modes are available; otherwise the available one is fixed.
     subsOk = m.subs.aiStatus.enabled and Subs_aiSubtitleSources().Count() > 0
     audioOk = m.subs.aiStatus.transcribeEnabled and Subs_aiAudioSources().Count() > 0
@@ -1304,6 +1314,11 @@ sub Subs_openAi()
     if ai.targetPos < 0 then ai.targetPos = Subs_languageIndex(Subs_preferredLanguage())
     Subs_renderAi()
 end sub
+
+' Translating a transcript needs AI translation too (TvAiTranslateDialog.canTranslateTranscript).
+function Subs_aiCanTranslateTranscript() as boolean
+    return m.subs.aiStatus.enabled = true
+end function
 
 sub Subs_onAiQuota(event as object)
     resp = Api_result(event)
@@ -1363,7 +1378,13 @@ sub Subs_renderAi()
             rows.Push({ kind: "cycler", id: "source", label: "Source audio", value: Tracks_audioSummary(audioSources[ai.audioPos], ai.audioPos) })
         end if
         if ai.targetPos < 0 or ai.targetPos >= opts.Count() then ai.targetPos = 0
-        rows.Push({ kind: "cycler", id: "target", label: "Target language", value: opts[ai.targetPos].name })
+        if ai.mode = "subtitles" or Subs_aiCanTranslateTranscript() then
+            rows.Push({ kind: "cycler", id: "target", label: "Target language", value: opts[ai.targetPos].name })
+        else
+            ' A server can offer transcription without translation (Silo Android #547): the audio
+            ' job then stays in the spoken language, so there is no target to pick.
+            rows.Push({ kind: "text", text: "Subtitles are written in the spoken language. AI translation is turned off on this server.", color: "0xEDEDEDA8" })
+        end if
         ' Quota applies to the transcribe kinds only; exempt callers (admins) get limited=false.
         if ai.mode = "audio" and ai.quota <> invalid and ai.quota.limited = true then
             q = ai.quota
@@ -1434,6 +1455,11 @@ sub Subs_aiSubmit()
         src = sources[ai.audioPos]
         kind = "transcribe_translate"
         if Subs_isSameLanguage(src.language, target) then kind = "transcribe"
+        if not Subs_aiCanTranslateTranscript() then
+            ' Without AI translation a transcribe_translate job is refused ("not configured").
+            kind = "transcribe"
+            target = ""
+        end if
         sourceIndex = ai.audioPos
         if src.index <> invalid then sourceIndex = Int(src.index)
         sourceLanguage = Str_orEmpty(src.language)
@@ -1482,6 +1508,9 @@ sub Subs_onAiJob(event as object)
     if m.closing or not Subs_sameFile(resp) or Str_orEmpty(resp.context.sessionId) <> m.sessionId then return
     ai = m.subs.ai
     if ai.job = invalid or Str_orEmpty(ai.job.id) <> Str_orEmpty(resp.context.jobId) then return
+    ' A poll answered after the job already finished (polls can overlap on a slow link) must not
+    ' adopt the result twice.
+    if ai.phase <> "running" then return
     if resp.ok and resp.data <> invalid and resp.data.job <> invalid then
         Subs_applyAiJob(resp.data.job)
     else if resp.status = 404 then
@@ -1515,6 +1544,13 @@ sub Subs_applyAiJob(job as object)
         ai.phase = "failed"
         ai.error = Str_orEmpty(job.error_message)
         if ai.error = "" then ai.error = "Translation failed"
+        ' The dialog may have been closed while the job ran (Silo Android #545): say why in the
+        ' player, long enough to read a full sentence on a TV. Reopening the dialog shows it too.
+        if m.subs.dialog <> "ai" then
+            if not m.global.hasField("toastSeconds") then m.global.addFields({ toastSeconds: 0.0 })
+            m.global.toastSeconds = 10.0
+            m.global.toast = "AI subtitles failed. " + ai.error
+        end if
     else if st = "cancelled" then
         m.subsAiTimer.control = "stop"
         ai.phase = "idle"

@@ -141,6 +141,14 @@ end sub
 sub onToast()
     msg = m.global.toast
     if Str_isEmpty(msg) then return
+    ' A longer message (a full sentence to read on a TV) sets m.global.toastSeconds first.
+    secs = 3.5
+    if m.global.hasField("toastSeconds") then
+        asked = Num_or(m.global.toastSeconds, 0)
+        if asked > 0 then secs = asked
+        m.global.toastSeconds = 0
+    end if
+    m.toast.duration = secs
     m.toast.message = msg
 end sub
 
