@@ -663,6 +663,8 @@ function PlaybackCaps_diagLine(body as object, plan as object) as string
     req = "quality=" + Str_orEmpty(body.quality_preference) + " cap=" + PlaybackCaps_str(body.bandwidth_cap_kbps) + " metered=" + PlaybackCaps_str(body.metered)
     if not Str_isEmpty(body.operation) then req = req + " op=" + body.operation
     req = req + " audio_req=" + Str_orEmpty(body.audio_track_id) + " sub_req=" + Str_orEmpty(body.subtitle_track_id)
+    ' Buffering quality: the estimate sent (and its source), the learned-limit instruction.
+    req = req + " est=" + PlaybackCaps_str(body.bandwidth_estimate_kbps) + "/" + Str_orEmpty(body.bandwidth_estimate_source) + " ll=" + Str_orEmpty(body.learned_limit)
     dec = "none"
     if plan <> invalid then
         dec = "delivery=" + Str_orEmpty(plan.delivery) + " reason=" + Str_orEmpty(plan.decision_reason)
@@ -679,6 +681,7 @@ function PlaybackCaps_diagLine(body as object, plan as object) as string
             if aq = "" then aq = "none"
         end if
         dec = dec + " active_q=" + aq
+        if plan.bandwidth_limit <> invalid and Type(plan.bandwidth_limit) = "roAssociativeArray" then dec = dec + " learned_limit=" + PlaybackCaps_str(plan.bandwidth_limit.kbps)
         r = plan.effective_recipe
         if r <> invalid then
             dec = dec + " recipe=" + Str_orEmpty(r.video_codec) + " " + PlaybackCaps_str(r.width) + "x" + PlaybackCaps_str(r.height) + " " + Str_orEmpty(r.dynamic_range)

@@ -31,7 +31,7 @@ STATE = {"devices": {}, "sessions": {}, "watchlist": set(), "favorites": set(), 
 LOCK = threading.Lock()
 LOG = []
 # Feature switches (main() sets them from the command line).
-OPTS = {"active_quality": True, "ai_fail": False, "ai_transcribe_only": False}
+OPTS = {"active_quality": True, "ai_fail": False, "ai_transcribe_only": False, "buffering_quality": True, "probe_kbps": 40000}
 
 GENRES = ["Science Fiction", "Drama", "Crime", "Comedy", "Thriller", "Adventure", "Animation", "Documentary"]
 MOVIE_TITLES = [
@@ -1066,9 +1066,44 @@ def active_quality_for(delivery, recipe, qualities, quality):
     return min(same, key=lambda q: abs(q.get("bitrate_kbps", 0) - (recipe.get("bitrate_kbps") or 0)))["label"]
 
 
+def learned_limit_apply(body):
+    """buffering_quality_v1 (Silo Android #636): a lowering replan (bandwidth_estimate_source
+    observed_rebuffer) teaches this device a learned limit, learned_limit "clear" forgets it, and
+    Auto then plans under min(estimate, learned limit) unless the request says "ignore". Returns the
+    body the planner sees (the budget as a cap) and the plan's bandwidth_limit, if one applied."""
+    b = dict(body or {})
+    bq = STATE.setdefault("bq", {"learned_limit": None, "probe": None})
+    features = b.get("client_features") or []
+    supported = OPTS["buffering_quality"] and "buffering_quality_v1" in features
+    est = b.get("bandwidth_estimate_kbps")
+    if supported and b.get("learned_limit") == "clear":
+        bq["learned_limit"] = None
+        print("LEARNED LIMIT cleared", flush=True)
+    if supported and est and b.get("bandwidth_estimate_source") == "observed_rebuffer":
+        observed = b.get("observed_throughput_kbps")
+        kbps = min(est, observed) if observed else est
+        bq["learned_limit"] = {"kbps": kbps, "observed_at": "2026-10-17T20:15:00Z", "expires_at": "2026-10-24T20:15:00Z"}
+        print("LEARNED LIMIT set %d kbps" % kbps, flush=True)
+    quality = str(b.get("quality_preference") or "auto").lower()
+    limit = None
+    budget = est
+    if supported and quality == "auto" and b.get("learned_limit") != "ignore" and bq["learned_limit"]:
+        limit = bq["learned_limit"]["kbps"]
+        budget = min(budget, limit) if budget else limit
+    if budget and quality == "auto":
+        cap = b.get("bandwidth_cap_kbps")
+        b["bandwidth_cap_kbps"] = min(cap, budget) if cap else budget
+    bandwidth_limit = {"kbps": limit, "source": "observed_rebuffer", "expires_at": bq["learned_limit"]["expires_at"]} if limit else None
+    return b, bandwidth_limit
+
+
 def playback_decision(sid, position, fid, body=None):
     """The start / replan decision: inventory = the file's sidecar plus every stored subtitle."""
-    delivery, reason, recipe, claims, source, qualities, warnings = playback_route(fid, body)
+    planned_body, bandwidth_limit = learned_limit_apply(body)
+    print("BUFFERING request est=%s source=%s observed=%s learned_limit=%s features=%s" % (
+        (body or {}).get("bandwidth_estimate_kbps"), (body or {}).get("bandwidth_estimate_source"), (body or {}).get("observed_throughput_kbps"),
+        (body or {}).get("learned_limit"), ",".join((body or {}).get("client_features") or [])), flush=True)
+    delivery, reason, recipe, claims, source, qualities, warnings = playback_route(fid, planned_body)
     quality = str((body or {}).get("quality_preference") or "auto").lower()
     features = ["playback_plan_v3", "neutral_playback_v3_contract_v1", "sequenced_progress_v1"]
     active = active_quality_for(delivery, recipe, qualities, quality)
@@ -1105,6 +1140,10 @@ def playback_decision(sid, position, fid, body=None):
     plan_extra = {}
     if OPTS["active_quality"] and active is not None:
         plan_extra["active_quality"] = active
+    if bandwidth_limit:
+        plan_extra["bandwidth_limit"] = bandwidth_limit
+    if OPTS["buffering_quality"]:
+        features.append("buffering_quality_v1")
     # The selected subtitle (a start's subtitle_track_id, a replan's selected_tracks.subtitle). An
     # embedded text track on a transcode comes back as a WebVTT rendition of the HLS stream when the
     # client lists hls_subtitle_renditions_v1 (Silo Android #611); a failure_recovery classified
@@ -1303,6 +1342,36 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         if data:
             self.wfile.write(data)
+
+    def send_probe(self, q):
+        """The bandwidth probe: `size` bytes of filler, throttled to --probe-kbps. A second probe
+        within 10 s gets 429 with Retry-After, as the real server rate-limits them."""
+        now = time.time()
+        last = STATE.get("probe_at", 0)
+        if now - last < 10:
+            return self.send(429, {"type": "about:blank", "title": "Too many probes", "status": 429}, extra={"Retry-After": "30"})
+        STATE["probe_at"] = now
+        size = min(int((q.get("size") or ["8000000"])[0]), 64 * 1024 * 1024)
+        print("PROBE GET size=%d at %d kbps" % (size, OPTS["probe_kbps"]), flush=True)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(size))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        chunk = b"\0" * 65536
+        bytes_per_s = OPTS["probe_kbps"] * 1000 / 8
+        sent = 0
+        start = time.time()
+        try:
+            while sent < size:
+                n = min(len(chunk), size - sent)
+                self.wfile.write(chunk[:n])
+                sent += n
+                ahead = sent / bytes_per_s - (time.time() - start)
+                if ahead > 0:
+                    time.sleep(ahead)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def problem(self, code, name, title):
         self.send(code, {"type": "https://siloserver.org/docs/api/v2/problems/" + name, "title": title, "status": code}, "application/problem+json")
@@ -1577,8 +1646,42 @@ class Handler(BaseHTTPRequestHandler):
                                    "effective_subtitle_mode": settings_effective(self, "playback.subtitle_mode", q)["value"],
                                    "effective_show_forced_subtitles": settings_effective(self, "playback.show_forced_subtitles", q)["value"]})
         if p == "/api/v2/playback/capabilities":
-            return self.send(200, {"revision": "1", "state": "available", "allowed": True, "installation_id": "11111111-1111-4111-8111-111111111111",
-                                   "protocol_versions": [3], "features": ["playback_plan_v3", "sequenced_progress_v1"], "deliveries": ["original_http", "server_transcode_hls"]})
+            caps = {"revision": "1", "state": "available", "allowed": True, "installation_id": "11111111-1111-4111-8111-111111111111",
+                    "protocol_versions": [3], "features": ["playback_plan_v3", "sequenced_progress_v1"], "deliveries": ["original_http", "server_transcode_hls"]}
+            if OPTS["buffering_quality"]:
+                # Buffering quality and the connection speed test (Silo Android #636).
+                caps["features"] += ["buffering_quality_v1", "connection_speed_v1"]
+                caps.update({"bandwidth_probe_url": "/api/v2/playback/bandwidth-probe", "bandwidth_probe_target_kbps": 30000,
+                             "bandwidth_probe_automatic": True, "bandwidth_probe_max_age_seconds": 604800})
+            return self.send(200, caps)
+        if p == "/api/v2/playback/connection" and method == "GET" and OPTS["buffering_quality"]:
+            bq = STATE.setdefault("bq", {"learned_limit": None, "probe": None})
+            out = {"connection": "local"}
+            if bq["learned_limit"]:
+                out["learned_limit"] = bq["learned_limit"]
+            if bq["probe"]:
+                out["probe"] = bq["probe"]
+            # The server's Auto budget: 80 % of the lower of the reading and the learned limit.
+            reading = bq["probe"]["kbps"] if bq["probe"] else None
+            limit = bq["learned_limit"]["kbps"] if bq["learned_limit"] else None
+            base = min(x for x in (reading, limit) if x) if (reading or limit) else None
+            if base:
+                out["auto_budget_kbps"] = base * 8 // 10
+            return self.send(200, out)
+        if p == "/api/v2/playback/connection/learned-limit" and method == "DELETE" and OPTS["buffering_quality"]:
+            STATE.setdefault("bq", {"learned_limit": None, "probe": None})["learned_limit"] = None
+            print("LEARNED LIMIT reset from Settings", flush=True)
+            return self.send(204)
+        if p == "/api/v2/playback/bandwidth-probe" and method == "GET" and OPTS["buffering_quality"]:
+            return self.send_probe(q)
+        if p == "/api/v2/playback/bandwidth-probe/results" and method == "POST" and OPTS["buffering_quality"]:
+            print("PROBE RESULT " + json.dumps(b), flush=True)
+            STATE.setdefault("bq", {"learned_limit": None, "probe": None})["probe"] = {
+                "kbps": b.get("kbps"), "measured_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "transport": b.get("transport"), "lower_bound": bool(b.get("lower_bound"))}
+            if b.get("manual") and STATE["bq"]["learned_limit"] and (b.get("kbps") or 0) > STATE["bq"]["learned_limit"]["kbps"]:
+                STATE["bq"]["learned_limit"] = None
+            return self.send(204)
         if p == "/api/v2/playback/start" and method == "POST":
             sid = uuid.uuid4().hex
             STATE["sessions"][sid] = b
@@ -1818,7 +1921,7 @@ def shuffle_view(sh):
 # DELETE /api/v2/settings/values/{key}?scope=... -> 204 (404 when nothing is stored there)
 # profile_device rows key on the X-Silo-Device-Id header, profile_client on X-Silo-Client-Family.
 # ---------------------------------------------------------------------------
-SETTINGS_REVISION = 16
+SETTINGS_REVISION = 21
 SETTINGS_DEFS = {
     # key: (introduced_in, default, allowed scopes, resolution order)
     "playback.preferred_quality": (1, "auto", ["profile", "profile_device"], ["profile_device", "profile"]),
@@ -1828,6 +1931,7 @@ SETTINGS_DEFS = {
     "playback.subtitle_mode": (1, "auto", ["profile", "profile_device", "profile_library", "profile_series"], ["profile_device", "profile"]),
     "playback.show_forced_subtitles": (1, True, ["profile", "profile_device", "profile_library", "profile_series"], ["profile_device", "profile"]),
     "playback.intro_skip_mode": (7, "ask", ["profile", "profile_device"], ["profile_device", "profile"]),
+    "playback.buffering_quality_mode": (21, "always", ["profile", "profile_device"], ["profile_device", "profile"]),
     "playback.auto_skip_credits": (1, False, ["profile", "profile_device"], ["profile_device", "profile"]),
     "playback.auto_skip_recap": (1, False, ["profile", "profile_device"], ["profile_device", "profile"]),
     "playback.auto_play_next": (1, True, ["profile", "profile_device"], ["profile_device", "profile"]),
@@ -2005,10 +2109,14 @@ def main():
                     help="act as a server before plan_active_quality_v1 (the client infers the lit Quality row)")
     ap.add_argument("--ai-fail", action="store_true", help="every AI subtitle job fails on its second read")
     ap.add_argument("--ai-transcribe-only", action="store_true", help="AI transcription on, AI translation off")
+    ap.add_argument("--no-buffering-quality", action="store_true", help="act as a server before buffering_quality_v1 / connection_speed_v1")
+    ap.add_argument("--probe-kbps", type=int, default=40000, help="rate the bandwidth probe download is throttled to")
     args = ap.parse_args()
     OPTS["active_quality"] = not args.no_active_quality
     OPTS["ai_fail"] = args.ai_fail
     OPTS["ai_transcribe_only"] = args.ai_transcribe_only
+    OPTS["buffering_quality"] = not args.no_buffering_quality
+    OPTS["probe_kbps"] = args.probe_kbps
     srv = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
     print("Mock Silo on http://127.0.0.1:%d" % args.port, flush=True)
     srv.serve_forever()

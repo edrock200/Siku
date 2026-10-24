@@ -107,6 +107,7 @@ sub init()
     m.picker.observeField("chosen", "onPickerChosen")
     m.picker.observeField("dismissed", "onPickerDismissed")
     Subs_init()
+    Bufq_init()
 end sub
 
 ' State for one playback attempt (reset again when Up Next chains to another episode).
@@ -177,6 +178,7 @@ sub resetPlaybackState()
     m.watchBackTarget = invalid
     m.waitingForToken = false
     if m.subs <> invalid then Subs_resetPlayback()
+    if m.bq <> invalid then Bufq_resetPlayback()
 end sub
 
 ' ---------- Lifecycle ----------
@@ -203,6 +205,9 @@ sub restoreFocus()
         focusHud()
     else if m.controls.visible then
         focusControls()
+    else if m.bufqPill.visible then
+        m.bufqFocused = true
+        m.bufqPrimary.setFocus(true)
     else if m.skipGroup.visible and m.skipBtn.visible then
         m.skipBtn.setFocus(true)
     else
@@ -525,6 +530,7 @@ sub startSession(installation as string)
     if subId <> "" and Left(subId, Len(prefix)) <> prefix then subId = ""
     m.explicitSubtitleId = subId
     body = PlaybackCaps_startBody(installation, m.fileId, m.attemptId, startPos, audioId, subId)
+    Bufq_decorateBody(body, invalid)
     m.lastRequestBody = body
     Api_send("POST", "/api/v2/playback/start", body, "onStart")
 end sub
@@ -566,9 +572,10 @@ sub onStart(event as object)
     m.sequence = 0
     m.stopId = ""
     PlaybackCaps_notePlanFeatures(d)
+    Bufq_noteDecision(d)
     ' One line per start for the debug console (telnet 8085): declared caps, request, decision.
     print PlaybackCaps_diagLine(m.lastRequestBody, d.playback_plan)
-    applyPlan(d.playback_plan)
+    applyPlan(d.playback_plan, { mountKind: "start" })
     ' Every new session reads the playing file's markers again (the start may also have landed on
     ' another version than the one asked for).
     if planFileId(d.playback_plan) <> m.markersFileId then
@@ -727,6 +734,10 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
     m.video.control = "play"
     setBuffering(true)
     m.progressTimer.control = "start"
+    ' Buffering quality: a new adoption, or a same-plan remount (a source reload only).
+    mountKind = Str_orEmpty(opts.mountKind)
+    if mountKind = "" then mountKind = "start"
+    Bufq_onPlanMounted(plan, mountKind)
     updateHudQualityLabel()
     ' Follow the syncable subtitles of this file (their timing and running sync jobs).
     if not m.subs.syncLoaded then Subs_syncReload()
@@ -761,13 +772,14 @@ sub remountSubtitles()
     keepId = Subs_selectedTrackId()
     resumeAt = m.position
     m.video.control = "stop"
-    applyPlan(m.plan, { resumeAt: resumeAt, subtitleTrackId: keepId })
+    applyPlan(m.plan, { resumeAt: resumeAt, subtitleTrackId: keepId, mountKind: "remount" })
 end sub
 
 ' ---------- Video events ----------
 
 sub onVideoState()
     st = m.video.state
+    Bufq_onVideoState(st)
     if st = "buffering" then
         setBuffering(true)
     else if st = "playing" then
@@ -826,6 +838,7 @@ end sub
 sub onDownloadedSegment()
     seg = m.video.downloadedSegment
     if seg = invalid or Type(seg) <> "roAssociativeArray" then return
+    Bufq_onSegment(seg)
     startS = Num_or(seg.segStartTime, -1)
     if startS < 0 then startS = Num_or(seg.startTime, -1)
     if startS < 0 then startS = Num_or(seg.start, -1)
@@ -869,6 +882,7 @@ sub seekToSource(seconds as float)
     if seconds < 0 then seconds = 0
     if m.duration > 0 and seconds > m.duration - 1 then seconds = m.duration - 1
     resetBuffered()
+    Bufq_onSeek()
     m.video.seek = seconds - m.timelineOffset
     m.position = seconds
     m.scrubber.position = seconds
@@ -951,6 +965,8 @@ sub exitPlayer()
     m.subsSyncTimer.control = "stop"
     m.subsAiTimer.control = "stop"
     hadSession = m.sessionId <> ""
+    Bufq_onStopped()
+    m.bufqTimer.control = "stop"
     if m.video.hasField("bufferingStatus") then m.video.unobserveField("bufferingStatus")
     if m.video.hasField("downloadedSegment") then m.video.unobserveField("downloadedSegment")
     m.video.control = "stop"
@@ -975,6 +991,8 @@ sub onScreenHidden()
     m.hideTimer.control = "stop"
     m.subsSyncTimer.control = "stop"
     m.subsAiTimer.control = "stop"
+    Bufq_onStopped()
+    m.bufqTimer.control = "stop"
     m.video.control = "stop"
     stopSession()
 end sub
@@ -1110,7 +1128,10 @@ sub hideControls()
     m.hideTimer.control = "stop"
     positionSkipPill()
     if not m.hud.visible and not m.upNext.visible and not m.errorGroup.visible and not m.picker.visible and not m.subsDialog.visible then
-        if m.skipGroup.visible and m.skipBtn.visible then
+        if m.bufqPill.visible then
+            m.bufqFocused = true
+            m.bufqPrimary.setFocus(true)
+        else if m.skipGroup.visible and m.skipBtn.visible then
             m.skipBtn.setFocus(true)
         else
             m.focusSink.setFocus(true)
@@ -1853,7 +1874,10 @@ function qualityMenu() as object
         end if
     end for
     if out.Count() = 0 then return out
-    out.Unshift({ id: "auto", name: "Auto", bitrate: "" })
+    ' A learned limit (buffering quality, Silo Android #636) held Auto down for this plan.
+    autoName = "Auto"
+    if m.plan.bandwidth_limit <> invalid and Type(m.plan.bandwidth_limit) = "roAssociativeArray" then autoName = "Auto · limited after buffering"
+    out.Unshift({ id: "auto", name: autoName, bitrate: "" })
     return out
 end function
 
@@ -2381,6 +2405,7 @@ sub requestQualityChange(label as string)
     if m.plan = invalid or m.sessionId = "" then return
     m.prevQualityPref = m.qualityPref
     m.qualityPref = label
+    Bufq_onQualityPickSent()
     sendReplan("quality_change", "quality")
 end sub
 
@@ -2405,7 +2430,9 @@ sub onHudSettingWritten(event as object)
 end sub
 
 ' POST /playback/{session}/replan at the current position; onReplan swaps the plan in.
-sub sendReplan(operation as string, kind as string, failure = invalid as dynamic, selectedOverride = invalid as dynamic)
+' extra: request fields to add (the buffering-quality estimate); lowering: the buffering
+' controller's replan output when it asked for this one (the kept-estimate rule needs it).
+sub sendReplan(operation as string, kind as string, failure = invalid as dynamic, selectedOverride = invalid as dynamic, extra = invalid as dynamic, lowering = invalid as dynamic)
     inst = installationId()
     if inst = "" then return
     selected = {}
@@ -2415,6 +2442,8 @@ sub sendReplan(operation as string, kind as string, failure = invalid as dynamic
     ' remux_hls answer to it gets one more recovery attempt.
     if operation = "track_change" or operation = "quality_change" or operation = "output_change" then m.remuxRecoveryTried = false
     body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, operation, m.qualityPref, m.position, selected, failure)
+    if extra <> invalid then body.Append(extra)
+    Bufq_decorateBody(body, lowering)
     m.lastRequestBody = body
     m.replanKind = kind
     setBuffering(true)
@@ -2429,10 +2458,12 @@ sub onReplan(event as object)
     if m.replanKind = "audio" then failText = "Couldn't change the audio track"
     if m.replanKind = "subtitle" then failText = "Couldn't show these subtitles"
     if m.replanKind = "recovery" then failText = "No sound expected: the server has no other way to stream this file to a Roku"
+    if m.replanKind = "bq" then failText = "" ' the buffering controller's own lowering: it re-arms by itself
     if not resp.ok or resp.data = invalid or resp.data.outcome <> "playable" or resp.data.playback_plan = invalid then
         setBuffering(false)
-        m.global.toast = failText
-        if m.plan <> invalid and m.replanKind = "quality" and m.prevQualityPref <> invalid then m.qualityPref = m.prevQualityPref
+        if failText <> "" then m.global.toast = failText
+        if m.plan <> invalid and (m.replanKind = "quality" or m.replanKind = "bq") and m.prevQualityPref <> invalid then m.qualityPref = m.prevQualityPref
+        Bufq_onReplanFailed(m.replanKind)
         m.pendingAudioIndex = -1
         if m.hud.visible then buildHudRows()
         return
@@ -2440,14 +2471,17 @@ sub onReplan(event as object)
     plan = resp.data.playback_plan
     if PlaybackCaps_planProblem(resp.data) <> "" then
         setBuffering(false)
-        m.global.toast = failText
+        if failText <> "" then m.global.toast = failText
+        if (m.replanKind = "quality" or m.replanKind = "bq") and m.prevQualityPref <> invalid then m.qualityPref = m.prevQualityPref
+        Bufq_onReplanFailed(m.replanKind)
         return
     end if
     PlaybackCaps_notePlanFeatures(resp.data)
+    Bufq_noteDecision(resp.data)
     print PlaybackCaps_diagLine(m.lastRequestBody, plan)
     resumeAt = m.position
     m.video.control = "stop"
-    applyPlan(plan, { resumeAt: resumeAt, subtitleTrackId: Subs_selectedTrackId() })
+    applyPlan(plan, { resumeAt: resumeAt, subtitleTrackId: Subs_selectedTrackId(), mountKind: m.replanKind })
     if planFileId(plan) <> m.markersFileId then adoptFileMarkers(planFileId(plan))
     if m.replanKind = "audio" and m.pendingAudioIndex >= 0 then m.chosenAudioIndex = m.pendingAudioIndex
     m.pendingAudioIndex = -1
@@ -2527,6 +2561,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         return true
     end if
     if m.picker.visible or m.subsDialog.visible then return true
+    if Bufq_handleKey(key) then return true
     if m.upNext.visible then return handleUpNextKey(key)
     if m.hud.visible then return handleHudKey(key)
     if key = "play" then

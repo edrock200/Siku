@@ -16,6 +16,8 @@
   <script type="text/brightscript" uri="pkg:/components/player/PlayerScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/PlaybackCaps.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/SubtitleSuite.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/BufferingQuality.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/PlayerBuffering.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Shuffle.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />
   <children>
@@ -63,6 +65,21 @@
         <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />
       </Label>
       <PillButton id="skipBtn" text="Skip Intro" variant="glass" height="72" padX="48" fontSize="28" scaleOnFocus="1.0" />
+    </Group>
+
+    <!-- Buffering quality pill (PlayerBuffering.brs): "Playback keeps buffering" with Lower / Keep
+         quality, or "Quality lowered to stop buffering" with Restore quality; 15 s countdown. -->
+    <Group id="bufqPill" visible="false">
+      <Poster id="bufqBg" uri="pkg:/images/ui/r28.9.png" blendColor="0x0A0A0AEB" width="760" height="176" />
+      <Rectangle id="bufqFill" color="0xEDEDED33" width="760" height="4" translation="[0, 172]" />
+      <Label id="bufqTitle" translation="[32, 24]" width="600" height="44" vertAlign="center" color="0xEDEDEDFF">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="28" />
+      </Label>
+      <Label id="bufqCount" width="80" height="44" horizAlign="right" vertAlign="center" color="0xEDEDED9E">
+        <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="26" />
+      </Label>
+      <PillButton id="bufqPrimary" text="Lower quality" variant="glass" height="64" padX="36" fontSize="25" scaleOnFocus="1.0" translation="[32, 84]" />
+      <PillButton id="bufqSecondary" text="Keep quality" variant="glass" height="64" padX="36" fontSize="25" scaleOnFocus="1.0" />
     </Group>
 
     <Group id="hud" visible="false">
@@ -135,5 +152,7 @@
     <Timer id="subsAiTimer" duration="2" repeat="true" />
     <!-- How long a playing stream may take to list the plan's HLS subtitle rendition. -->
     <Timer id="renditionTimer" duration="8" />
+    <!-- Drives the buffering-quality controller's timers and the pill countdown. -->
+    <Timer id="bufqTimer" duration="0.25" repeat="true" />
   </children>
 </component>

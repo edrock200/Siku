@@ -13,6 +13,7 @@
   </interface>
   <script type="text/brightscript" uri="pkg:/components/screens/settings/SettingsScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/screens/settings/SettingsHomeSections.brs" />
+  <script type="text/brightscript" uri="pkg:/components/screens/settings/SettingsConnection.brs" />
   <children>
     <Rectangle width="1920" height="1080" color="0x000000FF" />
     <Label id="title" text="Settings" translation="[100, 80]" color="0xEDEDEDFF" />

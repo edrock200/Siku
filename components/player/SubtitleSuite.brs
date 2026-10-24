@@ -1229,6 +1229,7 @@ sub Subs_adoptStored(storedId as string, origin as string)
     selected = {}
     if m.plan.selected_tracks <> invalid then selected = m.plan.selected_tracks
     body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, "track_change", m.qualityPref, m.position, selected)
+    Bufq_decorateBody(body, invalid)
     Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/replan", body, "Subs_onAdoptReplan", { fileId: m.fileId, sessionId: m.sessionId, storedId: storedId })
 end sub
 
@@ -1265,7 +1266,7 @@ sub Subs_onAdoptReplan(event as object)
         trackId = Subs_selectedTrackId()
     end if
     m.video.control = "stop"
-    applyPlan(plan, { resumeAt: m.position, subtitleTrackId: trackId })
+    applyPlan(plan, { resumeAt: m.position, subtitleTrackId: trackId, mountKind: "track" })
     if planFileId(plan) <> m.markersFileId then adoptFileMarkers(planFileId(plan))
     Subs_adoptDone(origin)
 end sub

@@ -31,6 +31,7 @@ function Settings_keyDefs() as object
         { key: "playback.subtitle_mode", rev: 1, def: "auto" }
         { key: "playback.show_forced_subtitles", rev: 1, def: true }
         { key: "playback.intro_skip_mode", rev: 7, def: "ask" }
+        { key: "playback.buffering_quality_mode", rev: 21, def: "always" }
         { key: "playback.auto_skip_credits", rev: 1, def: false }
         { key: "playback.auto_play_next", rev: 1, def: true }
         { key: "playback.next_up_prompt_seconds", rev: 1, def: 30 }
@@ -50,7 +51,7 @@ end function
 
 ' The keys written at profile_device scope; "Reset Playback Overrides" deletes each of them.
 function Settings_deviceKeys() as object
-    return ["playback.preferred_quality", "playback.max_bitrate_kbps", "playback.audio_language", "playback.intro_skip_mode", "playback.auto_skip_credits", "playback.auto_play_next", "playback.next_up_prompt_seconds", "playback.subtitle_appearance", "player.hdr_enabled", "player.dolby_vision_enabled", "player.dv_profile7_hdr10_fallback"]
+    return ["playback.preferred_quality", "playback.max_bitrate_kbps", "playback.audio_language", "playback.intro_skip_mode", "playback.buffering_quality_mode", "playback.auto_skip_credits", "playback.auto_play_next", "playback.next_up_prompt_seconds", "playback.subtitle_appearance", "player.hdr_enabled", "player.dolby_vision_enabled", "player.dv_profile7_hdr10_fallback"]
 end function
 
 function Settings_defaultAppearance() as object
@@ -259,6 +260,20 @@ end function
 ' The bandwidth axis in kbps; 0 = uncapped (the setting is null or absent).
 function Settings_maxBitrateKbps() as integer
     return Int(Content_numOr(Settings_value("playback.max_bitrate_kbps", invalid), 0))
+end function
+
+' playback.buffering_quality_mode (settings contract revision 21, Silo Android #636): what happens
+' on Auto when playback keeps buffering. "never" | "ask" | "always" (the default, also on a server
+' that does not know the key).
+function Settings_bufferingQualityMode() as string
+    v = LCase(Str_orEmpty(Settings_value("playback.buffering_quality_mode", invalid)))
+    if v = "never" or v = "ask" then return v
+    return "always"
+end function
+
+' The server knows playback.buffering_quality_mode (manifest revision 21 or later).
+function Settings_supportsBufferingQualityMode() as boolean
+    return Settings_state().manifestRevision >= 21
 end function
 
 ' "never" | "ask" | "always"

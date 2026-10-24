@@ -704,6 +704,37 @@ Rules:
   ```
 - Optional diagnostics: `POST /api/v2/playback/route-events` with `{... ,installation_id, event_id}` → 202. Do not retry.
 
+### 8.2b Newer playback fields Siku uses (Silo Android #527, #611, #613, #636, #649)
+The contract snapshot behind this spec predates these; they are taken from the Android client.
+- `quality_preference` never `"original"` for video (older servers read it as "never convert");
+  a stored `original` is Auto. Auto plays the source whenever the device and connection can.
+- `plan_active_quality_v1` in a decision's `server_features`: `playback_plan.active_quality` names
+  the `available_qualities` label the plan delivers (absent = none). The Quality menu drops the
+  `original` / `preserves_source` entry and checks that row.
+- `hls_subtitle_renditions_v1` (client feature): a `server_transcode_hls` plan may answer
+  `subtitle: {mode: "render"|"convert", track_id, hls_rendition: {group_id, name, format: "vtt",
+  mime_type}}`; the track is then a `SUBTITLES` rendition of `stream.url`'s master playlist. A
+  rendition the player can't select is reported with `failure_recovery`, classification
+  `subtitle_hls_rendition_failed`, which returns the sidecar plan.
+- `GET /api/v2/watch/{id}?file_id=<file>`: names the file being played so the server fills that
+  version's on-demand markers; `versions[].intro|recap|credits|preview` are per file.
+- Buffering quality (`buffering_quality_v1` in `/playback/capabilities` features or a decision's
+  `server_features`): start and replan may carry `bandwidth_estimate_kbps` (always accepted),
+  `bandwidth_estimate_source` (`probe` on starts, `observed_rebuffer` on lowerings; only with an
+  estimate), `observed_throughput_kbps` (lowerings only) and `learned_limit` (`ignore` in Never
+  mode, `clear` on Restore); `buffering_quality_v1` then joins `client_features`. A plan lowered by
+  a learned limit carries `bandwidth_limit: {kbps, source, expires_at}`.
+  `GET /api/v2/playback/connection` → `{connection, learned_limit?: {kbps, observed_at, expires_at},
+  probe?: {kbps, measured_at, transport, lower_bound}, playback_sample?, auto_budget_kbps?}`;
+  `DELETE /api/v2/playback/connection/learned-limit` → 204.
+  Setting `playback.buffering_quality_mode` (`never` | `ask` | `always`, default `always`;
+  settings contract revision 21), written at `profile_device`.
+- Connection speed (`connection_speed_v1` with `bandwidth_probe_url`, `bandwidth_probe_target_kbps`,
+  `bandwidth_probe_max_age_seconds` in the capabilities): `GET <bandwidth_probe_url>?size=<bytes>`
+  (authenticated; 429 with `Retry-After` when too frequent), then
+  `POST /api/v2/playback/bandwidth-probe/results` with `{kbps, bytes, duration_ms, transport:
+  wifi|ethernet|cellular|other, lower_bound?, manual?}`.
+
 ### 8.3 Progress reporting
 - **Interval: every 10 s** while a session is active (`PlaybackSessionLifecycle.kt:931`, `PROGRESS_REPORT_INTERVAL_MS = 10_000`). Also send a final sample on pause, exit, or episode change.
 - `POST /api/v2/playback/{session_id}/progress`:
