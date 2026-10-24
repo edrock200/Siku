@@ -14,6 +14,7 @@ sub init()
     m.rowHeights = []
     m.index = 0
     m.rowH = 72
+    m.trailingW = 200      ' width of the optional trailing text column (a bitrate such as "12.5 Mbps")
     m.pad = 32
     m.maxListH = 576        ' tallest visible list (6 two-line rows); longer lists scroll
     m.scrollY = 0
@@ -63,6 +64,7 @@ sub rebuild()
     for i = 0 to acts.Count() - 1
         a = acts[i]
         detail = Str_orEmpty(a.detail)
+        trailing = Str_orEmpty(a.trailing)
         rowH = m.rowH
         if detail <> "" then rowH = 96
         row = m.rows.createChild("Group")
@@ -79,6 +81,7 @@ sub rebuild()
         lbl.text = Str_orEmpty(a.label)
         lbl.translation = [24, 0]
         lbl.width = rowW - 48 - 48
+        if trailing <> "" then lbl.width = rowW - 48 - 48 - m.trailingW
         lbl.color = "0xEDEDEDFF"
         f = CreateObject("roSGNode", "Font")
         f.uri = "pkg:/fonts/Inter-medium.otf"
@@ -102,6 +105,23 @@ sub rebuild()
         else
             lbl.height = rowH
             lbl.vertAlign = "center"
+        end if
+        if trailing <> "" then
+            ' Secondary text at the row's end, before the check (a quality's bitrate), always
+            ' right-aligned in the same column whether or not the row is checked.
+            tr = row.createChild("Label")
+            tr.id = "trailing"
+            tr.text = trailing
+            tr.width = m.trailingW
+            tr.height = rowH
+            tr.translation = [rowW - 24 - 36 - 16 - m.trailingW, 0]
+            tr.horizAlign = "right"
+            tr.vertAlign = "center"
+            tr.color = "0xEDEDED9E"
+            tf = CreateObject("roSGNode", "Font")
+            tf.uri = "pkg:/fonts/Inter-regular.otf"
+            tf.size = 24
+            tr.font = tf
         end if
         chk = row.createChild("Poster")
         chk.id = "check"
@@ -142,6 +162,10 @@ sub applyFocus()
         focused = (i = m.index)
         Node_find(row, "bg").visible = focused
         det = Node_find(row, "detail")
+        trl = Node_find(row, "trailing")
+        if trl <> invalid then
+            if focused then trl.color = "0x000000A0" else trl.color = "0xEDEDED9E"
+        end if
         if focused then
             Node_find(row, "label").color = "0x000000FF"
             Node_find(row, "check").blendColor = "0x000000FF"

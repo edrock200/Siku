@@ -1182,6 +1182,7 @@ sub Subs_onAdoptReplan(event as object)
         Subs_adoptFailed(origin, Subs_adoptPrefix(origin) + ", but the subtitle list could not be refreshed.")
         return
     end if
+    PlaybackCaps_notePlanFeatures(resp.data)
     plan = resp.data.playback_plan
     trackId = ""
     renderable = false

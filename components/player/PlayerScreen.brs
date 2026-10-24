@@ -125,7 +125,8 @@ sub resetPlaybackState()
     m.subtitleTracks = []
     m.subtitleIndex = -1
     m.pendingSubtitleTrackId = ""
-    m.qualityPref = PlaybackCaps_qualityPreference()
+    m.qualityPref = PlaybackCaps_qualityPreference()   ' the session's preference: the saved one, then a pick
+    m.prevQualityPref = invalid
     m.lastRequestBody = invalid   ' the start/replan body the current plan answered (diagnostics)
     m.replanKind = ""             ' "quality" | "output": what the pending replan was for
     m.skipShownFor = ""
@@ -478,6 +479,7 @@ sub onStart(event as object)
     if m.sessionId = "" then m.sessionId = Str_orEmpty(d.playback_plan.session_id)
     m.sequence = 0
     m.stopId = ""
+    PlaybackCaps_notePlanFeatures(d)
     ' One line per start for the debug console (telnet 8085): declared caps, request, decision.
     print PlaybackCaps_diagLine(m.lastRequestBody, d.playback_plan)
     applyPlan(d.playback_plan)
@@ -1720,25 +1722,111 @@ function currentSubtitleName() as string
     return m.subtitleTracks[m.subtitleIndex].label
 end function
 
-' The Quality row: the chosen preference as the server names it (available_qualities carries a
-' display_name for ladder rungs), with the presets' own labels for the fixed values.
-function qualityLabel() as string
-    q = LCase(Str_orEmpty(m.qualityPref))
-    if q = "" or q = "auto" then return "Auto"
-    if m.plan <> invalid then
-        for each aq in Arr_or(m.plan.available_qualities)
-            if LCase(Str_orEmpty(aq.label)) = q and not Str_isEmpty(aq.display_name) then return aq.display_name
-        end for
-    end if
-    return qualityChoiceLabel(q)
+' ---------- Quality menu (PlaybackQualityMenu.kt; Silo Android #495, #613, #649) ----------
+
+' The plan's Quality menu: Auto, then available_qualities in server order, each with its bitrate as
+' secondary text. The source entry ("original" / preserves_source) that servers before the
+' Original removal still list is dropped, because Auto is the way back to the source. A plan with
+' no entries left gets no menu (and the HUD hides the Quality row).
+function qualityMenu() as object
+    out = []
+    if m.plan = invalid then return out
+    for each q in Arr_or(m.plan.available_qualities)
+        if q <> invalid and Type(q) = "roAssociativeArray" then
+            l = Str_orEmpty(q.label)
+            if l <> "" and not PlaybackCaps_truthy(q.preserves_source) and LCase(l) <> "original" then
+                name = Str_orEmpty(q.display_name).Trim()
+                if name = "" then name = l
+                out.Push({ id: l, name: name, bitrate: Settings_formatKbps(Int(Num_or(q.bitrate_kbps, 0))) })
+            end if
+        end if
+    end for
+    if out.Count() = 0 then return out
+    out.Unshift({ id: "auto", name: "Auto", bitrate: "" })
+    return out
 end function
 
-function qualityChoiceLabel(label as string) as string
-    l = LCase(label)
-    if l = "original" then return "Original"
-    if l = "2160p" or l = "4k" then return "4K"
-    if l = "auto" then return "Auto"
-    return label
+' activePlaybackQualityId: the menu row the session's preference lights, or "" for none. Auto
+' lights only for an "auto" preference (also "original" and its aliases). When the decision
+' listed plan_active_quality_v1, the plan's active_quality names the row (none when it names
+' none); older servers fall back to the inference: a picked rung lights its own row, and a
+' resolution such as "1080p" lights nothing while the source plays unreduced under it, otherwise
+' the delivered ladder class's Medium entry.
+function activeQualityId(menu as object, preference as dynamic) as string
+    if menu.Count() = 0 or m.plan = invalid then return ""
+    norm = PlaybackCaps_videoQuality(preference)
+    if m.plan.siku_reports_active_quality = true then
+        id = "auto"
+        if norm <> "auto" then
+            id = Str_orEmpty(m.plan.active_quality)
+            if id = "auto" then id = ""
+        end if
+        for each o in menu
+            if o.id = id then return o.id
+        end for
+        return ""
+    end if
+    for each o in menu
+        if LCase(o.id) = norm then return o.id
+    end for
+    aliasH = qualityPreferenceHeight(norm)
+    if aliasH = 0 then return ""
+    srcH = 0
+    srcK = 0
+    if m.plan.source <> invalid and Type(m.plan.source) = "roAssociativeArray" then
+        srcH = Int(Num_or(m.plan.source.height, 0))
+        srcK = Int(Num_or(m.plan.source.bitrate_kbps, 0))
+    end if
+    delW = 0
+    delH = 0
+    delK = 0
+    r = m.plan.effective_recipe
+    if r <> invalid and Type(r) = "roAssociativeArray" then
+        delW = Int(Num_or(r.width, 0))
+        delH = Int(Num_or(r.height, 0))
+        delK = Int(Num_or(r.bitrate_kbps, 0))
+    end if
+    ' A shorter delivered frame shows a reduction even when the bitrate does not.
+    reduced = (delK > 0 and srcK > 0 and delK < srcK) or (delH > 0 and srcH > 0 and delH < srcH)
+    if srcH > 0 and not reduced and srcH <= aliasH then return ""
+    classH = ladderClassHeight(delW, delH)
+    if classH = 0 then classH = aliasH
+    rung = classH.ToStr() + "p-medium"
+    if classH = 480 then rung = "480p"
+    if classH = 540 then rung = "" ' a low cap can choose the 540p class, which has no menu entry
+    for each o in menu
+        if o.id = rung then return o.id
+    end for
+    return ""
+end function
+
+function qualityPreferenceHeight(pref as string) as integer
+    if pref = "2160p" or pref = "4k" or pref = "uhd" then return 2160
+    if pref = "1080p" or pref = "fhd" then return 1080
+    if pref = "720p" or pref = "hd" then return 720
+    if pref = "480p" or pref = "sd" then return 480
+    return 0
+end function
+
+' The server's ladder class for an encoded frame: the smallest box that holds it (1280x688 is
+' 720p); larger than every box is 2160p; 0 when the height is unknown.
+function ladderClassHeight(w as integer, h as integer) as integer
+    if h <= 0 then return 0
+    for each ladderBox in [[854, 480], [960, 540], [1280, 720], [1920, 1080], [3840, 2160]]
+        if h <= ladderBox[1] and (w <= 0 or w <= ladderBox[0]) then return ladderBox[1]
+    end for
+    return 2160
+end function
+
+' The Quality row's value: the lit row's name, or with none lit (a saved resolution the source
+' plays under) that resolution, such as "1080p".
+function qualityLabel() as string
+    menu = qualityMenu()
+    active = activeQualityId(menu, m.qualityPref)
+    for each o in menu
+        if o.id = active and active <> "" then return o.name
+    end for
+    return Settings_resolutionLabel(PlaybackCaps_videoQuality(m.qualityPref))
 end function
 
 sub updateHudQualityLabel()
@@ -1773,7 +1861,8 @@ function hudRowSpecs() as object
     else if tabName = "Video" then
         ' HudVideoPane: Quality, HDR, Dolby Vision (both as on Android TV's Playback column), the
         ' auto toggles, and the dynamic range the plan promises.
-        rows.Push({ id: "quality", label: "Quality", value: qualityLabel(), actionable: true })
+        ' The quality menu exists whenever the plan lists a rung: even a single one shows Auto + it.
+        if qualityMenu().Count() > 0 then rows.Push({ id: "quality", label: "Quality", value: qualityLabel(), actionable: true })
         if displayHasHdr() then rows.Push({ id: "hdr", label: "HDR", value: onOffLabel(Settings_hdrEnabled()), actionable: true })
         if displayHasDolbyVision() then rows.Push({ id: "dolbyvision", label: "Dolby Vision", value: onOffLabel(Settings_dolbyVision()), actionable: true })
         rows.Push({ id: "autoplay", label: "Auto-play next", value: onOffLabel(autoPlayNext()), actionable: true })
@@ -2018,20 +2107,12 @@ sub openPicker(kind as string)
         end for
         m.picker.title = "Subtitles"
     else if kind = "quality" then
-        acts.Push({ id: "auto", label: "Auto", checked: m.qualityPref = "auto" or m.qualityPref = "" })
-        if m.plan <> invalid then
-            for each q in Arr_or(m.plan.available_qualities)
-                l = Str_orEmpty(q.label)
-                if l <> "" then
-                    text = Str_orEmpty(q.display_name)
-                    if text = "" then text = qualityChoiceLabel(l)
-                    hp = ""
-                    if q.height <> invalid then hp = PlaybackCaps_str(q.height) + "p"
-                    if hp <> "" and LCase(l) <> hp and LCase(text) <> hp then text = text + " · " + hp
-                    acts.Push({ id: l, label: text, checked: LCase(m.qualityPref) = LCase(l) })
-                end if
-            end for
-        end if
+        ' Auto first, then the server's entries in its order with their bitrate, the delivered row checked.
+        menu = qualityMenu()
+        active = activeQualityId(menu, m.qualityPref)
+        for each o in menu
+            acts.Push({ id: o.id, label: o.name, trailing: o.bitrate, checked: active <> "" and o.id = active })
+        end for
         m.picker.title = "Quality"
     end if
     m.picker.actions = acts
@@ -2076,7 +2157,7 @@ sub onPickerChosen()
             setSubtitle(Int(Val(id)))
         end if
     else if kind = "quality" then
-        if LCase(id) <> LCase(m.qualityPref) then requestQualityChange(id)
+        if id <> PlaybackCaps_videoQuality(m.qualityPref) then requestQualityChange(id)
     else if kind = "subtiming" then
         Subs_timingChosen(id)
     end if
@@ -2098,6 +2179,7 @@ end sub
 ' Quality change: replan and hand the new plan to the player at the current position.
 sub requestQualityChange(label as string)
     if m.plan = invalid or m.sessionId = "" then return
+    m.prevQualityPref = m.qualityPref
     m.qualityPref = label
     sendReplan("quality_change", "quality")
 end sub
@@ -2149,7 +2231,7 @@ sub onReplan(event as object)
     if not resp.ok or resp.data = invalid or resp.data.outcome <> "playable" or resp.data.playback_plan = invalid then
         setBuffering(false)
         m.global.toast = failText
-        if m.plan <> invalid and m.replanKind = "quality" then m.qualityPref = PlaybackCaps_qualityPreference()
+        if m.plan <> invalid and m.replanKind = "quality" and m.prevQualityPref <> invalid then m.qualityPref = m.prevQualityPref
         m.pendingAudioIndex = -1
         if m.hud.visible then buildHudRows()
         return
@@ -2160,6 +2242,7 @@ sub onReplan(event as object)
         m.global.toast = failText
         return
     end if
+    PlaybackCaps_notePlanFeatures(resp.data)
     print PlaybackCaps_diagLine(m.lastRequestBody, plan)
     resumeAt = m.position
     m.video.control = "stop"

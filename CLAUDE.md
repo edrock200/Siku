@@ -49,8 +49,10 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   start, lower-case quoted keys). The *Force Dolby Audio Passthrough* setting overrides the
   report for AC3/E-AC3 and announces itself on screen; on a stereo-only sink it yields direct play
   with no sound, which is the TV's doing.
-- `playback.max_bitrate_kbps` is nullable: uncapped presets PUT `null` at `profile_device`;
-  deleting the row let a profile-scope 6 Mbps cap force 720p transcodes. "Original" never sends a cap.
+- `playback.max_bitrate_kbps` is nullable: Maximum Bitrate "No limit" PUTs `null` at
+  `profile_device`; deleting the row let a profile-scope 6 Mbps cap force 720p transcodes. There
+  is no Original quality any more (Silo Android #613): a saved `original` reads as Auto and a
+  video request never sends `"original"` (older servers take it as "never convert").
 - Direct play of a non-default audio track needs the `client_selected_audio_track_v1` claim;
   Dolby Vision profile 8 on a non-DV output needs `client_dv8_base_layer_fallback_v1`. Both are
   declared on `original_http`.

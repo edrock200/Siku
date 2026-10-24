@@ -30,6 +30,8 @@ FONT = "/usr/share/fonts/opentype/inter/Inter-Bold.otf"
 STATE = {"devices": {}, "sessions": {}, "watchlist": set(), "favorites": set(), "watched": set(), "progress": {}, "shuffles": {}}
 LOCK = threading.Lock()
 LOG = []
+# Feature switches (main() sets them from the command line).
+OPTS = {"active_quality": True}
 
 GENRES = ["Science Fiction", "Drama", "Crime", "Comedy", "Thriller", "Adventure", "Animation", "Documentary"]
 MOVIE_TITLES = [
@@ -1018,7 +1020,8 @@ def playback_route(fid, b):
         return transcode(height, "quality_bandwidth_cap", min(cap, 8000))
     if quality in ("1080p", "720p", "480p") or quality.startswith(("1080p-", "720p-", "480p-")):
         height = int(quality.split("p")[0])
-        return transcode(height, "quality_fixed_rung", {1080: 6000, 720: 4000, 480: 1500}.get(height, 4000))
+        rung_kbps = {"1080p-high": 10000, "1080p-medium": 6000, "720p-high": 4000}.get(quality)
+        return transcode(height, "quality_fixed_rung", rung_kbps or {1080: 6000, 720: 4000, 480: 1500}.get(height, 4000))
     if caps.get("max_resolution") in ("1080p", "720p") and quality == "auto":
         return transcode(1080, "quality_device_limit", 8000)
     if 8 in dv and audio_ok:
@@ -1038,9 +1041,31 @@ def playback_route(fid, b):
     return transcode(2160, "quality_auto_source", 20000)
 
 
+def active_quality_for(delivery, recipe, qualities, quality):
+    """plan_active_quality_v1: the available_qualities label the plan delivers, or None (the source
+    plays unchanged, or the encode falls between entries). A picked rung names itself; otherwise
+    the entry of the delivered height whose bitrate is closest to the recipe's."""
+    if delivery != "server_transcode_hls":
+        return None
+    entries = [q for q in qualities if not q.get("preserves_source")]
+    if quality in [q["label"] for q in entries]:
+        return quality
+    same = [q for q in entries if q.get("height") == recipe.get("height")]
+    if not same:
+        return None
+    return min(same, key=lambda q: abs(q.get("bitrate_kbps", 0) - (recipe.get("bitrate_kbps") or 0)))["label"]
+
+
 def playback_decision(sid, position, fid, body=None):
     """The start / replan decision: inventory = the file's sidecar plus every stored subtitle."""
     delivery, reason, recipe, claims, source, qualities, warnings = playback_route(fid, body)
+    quality = str((body or {}).get("quality_preference") or "auto").lower()
+    features = ["playback_plan_v3", "neutral_playback_v3_contract_v1", "sequenced_progress_v1"]
+    active = active_quality_for(delivery, recipe, qualities, quality)
+    if OPTS["active_quality"]:
+        features.append("plan_active_quality_v1")
+    LOG.append("DECISION delivery=%s reason=%s quality=%s active_quality=%s" % (delivery, reason, quality, active))
+    print("DECISION delivery=%s reason=%s quality=%s cap=%s active_quality=%s" % (delivery, reason, quality, (body or {}).get("bandwidth_cap_kbps"), active), flush=True)
     if delivery == "original_http":
         stream = {"url": "/mock-media/%s.mp4?st=abc" % sid, "protocol": "http_progressive", "container": source["container"], "mime_type": "video/mp4", "headers": {}, "header_refresh": "none"}
     else:
@@ -1057,7 +1082,10 @@ def playback_decision(sid, position, fid, body=None):
                           "hearing_impaired": rec["hearing_impaired"], "delivery": "sidecar",
                           "url": "/api/v2/stream/%s/subtitles/%d.vtt?file_id=%s&downloaded_subtitle_id=%s" % (sid, idx, fid, rec["id"]),
                           "sync_key": "stored-" + rec["id"]})
-    return {"protocol_version": 3, "server_features": ["playback_plan_v3", "neutral_playback_v3_contract_v1", "sequenced_progress_v1"],
+    plan_extra = {}
+    if OPTS["active_quality"] and active is not None:
+        plan_extra["active_quality"] = active
+    return {"protocol_version": 3, "server_features": features,
             "outcome": "playable", "session_id": sid,
             "playback_plan": {"protocol_version": 3, "plan_id": "plan:%d" % (len(SUBS["stored"]) + 1), "plan_attempt_key": "v3:%d" % (len(SUBS["stored"]) + 1), "session_id": sid,
                               "delivery": delivery, "decision_reason": reason,
@@ -1068,7 +1096,7 @@ def playback_decision(sid, position, fid, body=None):
                               "degradation_warnings": warnings, "transformations": [], "applied_quirks": [], "runtime_corrections": [],
                               "requested_media_file_id": fid, "effective_media_file_id": fid,
                               "subtitle": {"mode": "off", "inventory": inventory},
-                              "source": source}}
+                              "source": source, **plan_extra}}
 
 
 def subtitle_route(handler, method, p, q, b):
@@ -1897,7 +1925,10 @@ def tokens(username="laura"):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8097)
+    ap.add_argument("--no-active-quality", action="store_true",
+                    help="act as a server before plan_active_quality_v1 (the client infers the lit Quality row)")
     args = ap.parse_args()
+    OPTS["active_quality"] = not args.no_active_quality
     srv = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
     print("Mock Silo on http://127.0.0.1:%d" % args.port, flush=True)
     srv.serve_forever()

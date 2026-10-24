@@ -235,17 +235,28 @@ function Settings_prefs() as object
     return p
 end function
 
-' The resolution axis of the quality choice ("auto" | "original" | "480p" ... "2160p").
+' The resolution axis of the quality choice ("auto" | "480p" | "720p" | "1080p" | "2160p"), as
+' QualityPresets.normalizeResolution reads it: there is no Original any more (Silo Android #613),
+' so a stored "original" (and "source" / "max") is Auto, which plays the file itself whenever the
+' device and connection can. Compound spellings older builds wrote ("1080p-high") keep only
+' their resolution; anything unknown is Auto. Video requests therefore never send "original".
 function Settings_quality() as string
     q = Settings_value("playback.preferred_quality", invalid)
     if Str_isEmpty(q) then q = Settings_prefs().quality
-    q = LCase(Str_orEmpty(q))
-    if q = "4k" then q = "2160p"
-    if q = "" then q = "auto"
-    return q
+    return Settings_normalizeResolution(q)
 end function
 
-' The bandwidth axis in kbps; 0 = uncapped.
+function Settings_normalizeResolution(value as dynamic) as string
+    q = LCase(Str_orEmpty(value)).Trim()
+    if q = "" or q = "auto" or q = "original" or q = "source" or q = "max" then return "auto"
+    dash = Instr(1, q, "-")
+    if dash > 0 then q = Left(q, dash - 1)
+    if q = "4k" then return "2160p"
+    if q = "480p" or q = "720p" or q = "1080p" or q = "2160p" then return q
+    return "auto"
+end function
+
+' The bandwidth axis in kbps; 0 = uncapped (the setting is null or absent).
 function Settings_maxBitrateKbps() as integer
     return Int(Content_numOr(Settings_value("playback.max_bitrate_kbps", invalid), 0))
 end function
@@ -486,63 +497,83 @@ end sub
 
 ' ---------- Option tables (ported from the shared Kotlin models) ----------
 
-' QualityPresets.kt: one picker over the two axes.
-function Settings_qualityPresets() as object
+' QualityChoices.kt (Silo Android #613): the main quality is two independent pickers, as the
+' Android TV app and the web app show them, a resolution ceiling (playback.preferred_quality) and a
+' bitrate ceiling (playback.max_bitrate_kbps, null for no limit). There is no Original choice:
+' Auto plays the original file whenever the device and connection can. (The phone's cellular
+' quality pair is phone-only and not ported.)
+function Settings_resolutionChoices() as object
     return [
-        { id: "auto", label: "Auto", description: "Silo picks based on your connection.", resolution: "auto", kbps: 0 }
-        { id: "original", label: "Original", description: "Never transcode. Needs bandwidth to match the file.", resolution: "original", kbps: 0 }
-        { id: "2160p", label: "4K", description: "Up to 2160p.", resolution: "2160p", kbps: 0 }
-        { id: "1080p-high", label: "1080p High", description: "1080p at up to 10 Mbps.", resolution: "1080p", kbps: 10000 }
-        { id: "1080p", label: "1080p", description: "1080p at up to 6 Mbps.", resolution: "1080p", kbps: 6000 }
-        { id: "1080p-low", label: "1080p Low", description: "1080p at up to 3 Mbps, for a slower link.", resolution: "1080p", kbps: 3000 }
-        { id: "720p-high", label: "720p High", description: "720p at up to 4 Mbps.", resolution: "720p", kbps: 4000 }
-        { id: "720p", label: "720p", description: "720p at up to 2 Mbps.", resolution: "720p", kbps: 2000 }
-        { id: "480p", label: "480p", description: "480p at up to 1.5 Mbps, for the tightest connections.", resolution: "480p", kbps: 1500 }
+        { value: "auto", label: "Auto" }
+        { value: "2160p", label: "4K" }
+        { value: "1080p", label: "1080p" }
+        { value: "720p", label: "720p" }
+        { value: "480p", label: "480p" }
     ]
 end function
 
-' The preset for a stored pair, or invalid when no preset covers it.
-function Settings_qualityPresetFor(resolution as string, kbps as integer) as dynamic
-    r = LCase(resolution)
-    if r = "4k" then r = "2160p"
-    if r = "" then r = "auto"
-    if kbps < 0 then kbps = 0
-    for each p in Settings_qualityPresets()
-        if p.resolution = r and p.kbps = kbps then return p
-    end for
-    return invalid
+' The bitrate ceilings offered, highest first (the web app's BITRATE_CHOICES_KBPS).
+function Settings_bitrateChoicesKbps() as object
+    return [200000, 100000, 60000, 40000, 20000, 15000, 10000, 6000, 4000, 2000, 1500]
 end function
 
-function Settings_qualityPresetById(id as string) as dynamic
-    for each p in Settings_qualityPresets()
-        if p.id = id then return p
+function Settings_resolutionLabel(value as dynamic) as string
+    r = Settings_normalizeResolution(value)
+    for each c in Settings_resolutionChoices()
+        if c.value = r then return c.label
     end for
-    return invalid
+    return r
 end function
 
-' QualityPresets.describe(): a label for any pair, including ones no preset covers.
-function Settings_describeQuality(resolution as string, kbps as integer) as string
-    p = Settings_qualityPresetFor(resolution, kbps)
-    if p <> invalid then return p.label
-    r = LCase(resolution)
-    if r = "" then r = "auto"
+' "No limit", "40 Mbps", "1.5 Mbps"; a cap one decimal of Mbps can't show exactly reads in kbps.
+function Settings_bitrateLabel(kbps as integer) as string
+    if kbps <= 0 then return "No limit"
+    if kbps mod 100 <> 0 then return kbps.ToStr() + " kbps"
+    return Settings_formatKbps(kbps)
+end function
+
+' formatPlaybackQualityBitrate: Mbps to one decimal, dropping a zero decimal ("40 Mbps",
+' "1.5 Mbps"); below 1 Mbps in kbps; "" when unknown.
+function Settings_formatKbps(kbps as integer) as string
+    if kbps <= 0 then return ""
+    if kbps < 1000 then return kbps.ToStr() + " kbps"
+    tenths = (kbps + 50) \ 100
+    frac = tenths mod 10
+    if frac = 0 then return (tenths \ 10).ToStr() + " Mbps"
+    return (tenths \ 10).ToStr() + "." + frac.ToStr() + " Mbps"
+end function
+
+' "No limit", then the choices; a stored cap that is not one of them is listed in its place by
+' size, so it stays visible and selected. Values: kbps as integers, 0 for no limit.
+function Settings_bitrateChoices(current as integer) as object
+    values = []
+    stored = current
+    for each v in Settings_bitrateChoicesKbps()
+        if stored > 0 and stored > v then
+            values.Push(stored)
+            stored = 0
+        end if
+        if v = stored then stored = 0
+        values.Push(v)
+    end for
+    if stored > 0 then values.Push(stored)
+    out = [{ value: 0, label: "No limit" }]
+    for each v in values
+        out.Push({ value: v, label: Settings_bitrateLabel(v) })
+    end for
+    return out
+end function
+
+' QualityChoices.description: what both choices do, shown under them.
+function Settings_qualityDescription(resolution as dynamic, kbps as integer) as string
+    r = Settings_normalizeResolution(resolution)
     if r = "auto" then
-        label = "Auto"
-    else if r = "original" then
-        label = "Original"
-    else if r = "2160p" or r = "4k" then
-        label = "4K"
+        text = "Plays the original file whenever your Roku and connection can handle it."
     else
-        label = r
+        text = "Plays the original file up to " + Settings_resolutionLabel(r) + ". Larger files are converted."
     end if
-    if kbps <= 0 then return label
-    if kbps mod 1000 = 0 then
-        mb = (kbps / 1000).ToStr()
-    else
-        tenths = Int(kbps / 100 + 0.5)
-        mb = (tenths \ 10).ToStr() + "." + (tenths mod 10).ToStr()
-    end if
-    return label + " at " + mb + " Mbps"
+    if kbps > 0 then text = text + " Files above this bitrate are converted to fit."
+    return text
 end function
 
 ' LanguageOptions: the contract's language floor (revision 7, two-letter tags) plus the

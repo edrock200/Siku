@@ -423,7 +423,7 @@ end function
 
 ' POST /api/v2/playback/start body. startPosition: invalid = server resume, 0 = start over.
 function PlaybackCaps_startBody(installation as string, fileId as string, attemptId as string, startPosition as dynamic, audioTrackId as dynamic, subtitleTrackId as dynamic) as object
-    quality = PlaybackCaps_qualityPreference()
+    quality = PlaybackCaps_videoQuality(PlaybackCaps_qualityPreference())
     body = {
         protocol_version: 3
         installation_id: installation
@@ -439,7 +439,7 @@ function PlaybackCaps_startBody(installation as string, fileId as string, attemp
         client_playback_context: PlaybackCaps_playbackContext()
     }
     if startPosition <> invalid and startPosition >= 0 then body.start_position = startPosition
-    cap = PlaybackCaps_bandwidthCap(quality)
+    cap = PlaybackCaps_bandwidthCap()
     if cap > 0 then body.bandwidth_cap_kbps = cap
     if not Str_isEmpty(audioTrackId) then body.audio_track_id = audioTrackId
     if not Str_isEmpty(subtitleTrackId) then body.subtitle_track_id = subtitleTrackId
@@ -462,33 +462,43 @@ function PlaybackCaps_replanBody(installation as string, attemptId as string, pl
         plan_attempt_key: Str_orEmpty(plan.plan_attempt_key)
         attempted_plan_keys: [Str_orEmpty(plan.plan_attempt_key)]
         attempt_count: 1
-        quality_preference: qualityPreference
+        quality_preference: PlaybackCaps_videoQuality(qualityPreference)
         position_seconds: positionSeconds
         metered: false
         selected_tracks: selectedTracks
         client_capabilities: PlaybackCaps_clientCapabilities()
         client_playback_context: PlaybackCaps_playbackContext()
     }
-    cap = PlaybackCaps_bandwidthCap(qualityPreference)
+    cap = PlaybackCaps_bandwidthCap()
     if cap > 0 then body.bandwidth_cap_kbps = cap
     if failure <> invalid then body.failure = failure
     return body
 end function
 
-' playback.max_bitrate_kbps (the bandwidth half of the Quality preset; 0 = uncapped). The server
-' treats the cap as a hard ceiling that outranks "original" (ResolveQualityPolicyV3), and a cap
-' inherited from the profile scope would turn "Original" into a 720p transcode, so "Original"
-' (never transcode) sends no cap at all.
-function PlaybackCaps_bandwidthCap(quality as string) as integer
-    if LCase(quality) = "original" then return 0
+' playback.max_bitrate_kbps (the Maximum Bitrate setting; 0 = No limit). The server treats the
+' cap as a hard ceiling, and the replan copies it from every request, so it is sent on each start
+' and replan whatever the quality preference: an Auto picked in the player keeps the saved cap
+' (Android's inPlayerQualityPair), and so does a rung. No limit sends none: the setting is PUT
+' as JSON null at profile_device, so a profile-scope cap cannot show through (pitfall 13).
+function PlaybackCaps_bandwidthCap() as integer
     cap = Settings_maxBitrateKbps()
     if cap < 100 then return 0
     return cap
 end function
 
-' playback.preferred_quality (server, profile_device scope) with the device pref as fallback.
+' The saved preference as a video quality_preference: playback.preferred_quality (server,
+' profile_device scope) with the device pref as fallback, "original" read as Auto.
 function PlaybackCaps_qualityPreference() as string
     return Settings_quality()
+end function
+
+' videoQualityPreference (PlaybackQualityMenu.kt): trimmed, lower-cased, with "original" and its
+' aliases read as Auto. Older servers take "original" to mean never convert, so a video request
+' must never send it.
+function PlaybackCaps_videoQuality(preference as dynamic) as string
+    q = LCase(Str_orEmpty(preference)).Trim()
+    if q = "" or q = "original" or q = "source" or q = "max" then return "auto"
+    return q
 end function
 
 ' The HDR block we advertise: the display's types, then the user's choices, as Android TV's
@@ -560,6 +570,19 @@ function PlaybackCaps_planProblem(decision as object) as string
     return ""
 end function
 
+' Records on the plan what the decision's server_features say about it, so code that only holds
+' the plan can tell: plan_active_quality_v1 makes plan.active_quality authoritative (an absent
+' value then means the plan delivers no menu entry; Silo Android #649). Call once per decision,
+' before applyPlan.
+sub PlaybackCaps_notePlanFeatures(decision as object)
+    if decision = invalid or decision.playback_plan = invalid then return
+    reports = false
+    for each f in Arr_or(decision.server_features)
+        if f = "plan_active_quality_v1" then reports = true
+    end for
+    decision.playback_plan.siku_reports_active_quality = reports
+end sub
+
 ' ---------- Diagnostics ----------
 
 ' One line for the debug console (telnet 8085), printed once per start/replan:
@@ -616,6 +639,13 @@ function PlaybackCaps_diagLine(body as object, plan as object) as string
         dec = "delivery=" + Str_orEmpty(plan.delivery) + " reason=" + Str_orEmpty(plan.decision_reason)
         if plan.selected_tracks <> invalid and plan.selected_tracks.audio <> invalid then dec = dec + " sel_audio=" + PlaybackCaps_str(plan.selected_tracks.audio.index)
         if plan.subtitle <> invalid then dec = dec + " sub_mode=" + Str_orEmpty(plan.subtitle.mode)
+        ' active_q: the menu entry the server says the plan delivers ("none" = none, "?" = not reported).
+        aq = "?"
+        if plan.siku_reports_active_quality = true then
+            aq = Str_orEmpty(plan.active_quality)
+            if aq = "" then aq = "none"
+        end if
+        dec = dec + " active_q=" + aq
         r = plan.effective_recipe
         if r <> invalid then
             dec = dec + " recipe=" + Str_orEmpty(r.video_codec) + " " + PlaybackCaps_str(r.width) + "x" + PlaybackCaps_str(r.height) + " " + Str_orEmpty(r.dynamic_range)

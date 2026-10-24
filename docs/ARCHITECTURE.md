@@ -182,8 +182,10 @@ The pipeline (`components/player/PlayerScreen.brs`, `startPipeline`):
    `client_dv8_base_layer_fallback_v1` and `client_selected_audio_track_v1`), `hls` (declared
    H.264 / SDR / AAC+MP3 only, because Silo's HLS remux is fMP4 with muxed audio, which Roku plays
    silent) and, behind an experimental setting, `progressive` (fails on device; kept for other models).
-   `quality_preference` and `bandwidth_cap_kbps` come from the Quality preset; "original" never
-   sends a cap.
+   `quality_preference` and `bandwidth_cap_kbps` come from the Resolution and Maximum Bitrate
+   settings (a saved "original" is Auto; "original" is never sent for video; No limit sends no
+   cap). The player's Quality menu is Auto plus the plan's `available_qualities` without the
+   source entry, with the row the server reports in `active_quality` checked.
 3. The plan is handed to the Video node by `applyPlan`: stream URL and format, auth headers,
    `PlayStart` from the timeline, sidecar subtitle tracks (`Subs_buildTrack`, SRT/WebVTT only), and
    the default subtitle (`Subs_autoChoice`: the profile's language and Off/Auto/Always as Android TV
