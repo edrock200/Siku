@@ -9,6 +9,10 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="DetailScreen" extends="BaseScreen">
+  <interface>
+    <!-- Set by Settings_notify when a Settings_load this screen started lands (spoiler protection). -->
+    <field id="settingsLoaded" type="boolean" alwaysNotify="true" onChange="onSettingsLoaded" />
+  </interface>
   <script type="text/brightscript" uri="pkg:/components/screens/DetailScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Shuffle.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />

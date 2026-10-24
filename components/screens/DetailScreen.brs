@@ -110,7 +110,25 @@ sub load()
     m.loading = true
     m.errorGroup.visible = false
     m.spinner.visible = true
+    ' Opened without the shell (a deep link): the profile's settings decide spoiler protection.
+    if not Settings_available() then Settings_load()
+    m.spoilerSig = spoilerSignature()
     Api_get(itemPath(), Artwork_query({ image_size: "large" }, "detail"), "onItem")
+end sub
+
+function spoilerSignature() as string
+    prefs = Spoilers_prefs()
+    return Str_orEmpty(prefs.hideImages) + "|" + Str_orEmpty(prefs.hideOverviews)
+end function
+
+' The settings snapshot landed: redraw what spoiler protection changes (hero, episode rail).
+sub onSettingsLoaded()
+    sig = spoilerSignature()
+    if sig = m.spoilerSig then return
+    m.spoilerSig = sig
+    if m.item = invalid then return
+    renderHero()
+    if m.selectedSeason <> invalid then loadEpisodes(m.selectedSeason)
 end sub
 
 sub showError(msg as string)
