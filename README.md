@@ -27,6 +27,11 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Discover | Search, For You (Watchlist and Favorites), release Calendar | ✅ |
 | Playback | Direct Play or Transcode chosen by the server from the Roku's real capabilities (4K, Dolby Vision, HDR10/HDR10+/HLG, surround passthrough) | ✅ (Silo's lighter remux route awaits a server-side packaging change, [details](docs/upstream/silo-server-roku-hls-audio.md)) |
 | Playback | Resume, progress sync, mark watched, Skip Intro, Up Next, audio and version selection, automatic subtitles from your Off / Auto / Always setting | ✅ |
+| Playback | Up Next with artwork and an On Deck row; Resolution / Maximum Bitrate settings; lower quality when buffering (automatically, ask first or never) and a connection speed test | 🟡 needs device testing |
+| Detail | Trailers & More: the server's trailers and extras play in Siku; YouTube trailers open the YouTube channel, or show a link and QR code | 🟡 needs device testing (YouTube hand-off) |
+| Detail | Optional theme music, "Translated by AI" marks | 🟡 needs device testing |
+| Profiles | "Who's watching?" at launch (Profile Selection setting), recovery when an administrator changes access | ✅ simulator, device pending |
+| Settings | Spoilers (hide unwatched episodes' pictures and descriptions), hidden libraries, remembered sort and filters | ✅ simulator, device pending |
 | Settings | Android TV's General, Playback, Subtitles and Server pages (quality and bandwidth, Dolby Vision, skip intro/credits, auto-play, home sections, cards), synced with your Silo profile | ✅ |
 | Audio | Audiobooks (chapters, parts, resume, sleep timer) and music albums/artists with a now-playing screen | 🟡 needs device testing; music waits on server support |
 | Requests | Request movies and series, track their status, cancel a pending request (when the server enables it; approving and declining stay in the server's web admin) | ✅ |
@@ -146,6 +151,8 @@ What that means on a Roku today:
 - The debug console shows exactly what happened: run `telnet <roku-ip> 8085`, start a video, and
   copy the line beginning `[siku-playback]`. It lists what Siku told the server and what the
   server decided (`plan: delivery=… reason=…`). Please include it in bug reports.
+- **YouTube trailers** open the YouTube channel. If the QR code appears instead, check that YouTube is installed and that *Settings › System › Advanced system settings › Control by mobile apps* is not set to Disabled, then copy the `[siku-trailer]` lines from the debug console into a bug report.
+- **Lower quality when buffering** (Settings › Playback) prints `buffering …` lines on the debug console; *Reset* under the learned limit undoes a limit Siku learned on a slow connection.
 - To test what your Roku's player accepts, open the stream test screen with
   `curl -d '' "http://<roku-ip>:8060/launch/dev?debugScreen=StreamTestScreen"` and play the
   reference streams; results appear on screen and as `[siku-streamtest]` lines.

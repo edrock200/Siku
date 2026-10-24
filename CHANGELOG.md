@@ -3,6 +3,42 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.21
+
+Brings Siku up to date with Silo's Android TV app as of October 24, 2026.
+
+**New**
+- **Trailers & More** on movie and show pages: the server's own trailers, featurettes and deleted scenes play right away. YouTube trailers open in the YouTube channel; if your Roku can't open it, Siku shows the link and a QR code to watch on your phone.
+- **Who's watching?** Siku can ask for a profile when it starts: Settings › General › Profile Selection (Automatic, Every Time, After 1 Hour, After 12 Hours). A new Roku asks every time and offers to remember the first profile you pick.
+- **Spoilers** settings (Settings › Playback): hide the pictures and descriptions of episodes you haven't started.
+- **Theme music** on movie and show pages, if you turn it on (Settings › General › Theme Music, with Loop). It plays at your TV's volume and stops when a video starts.
+- **Up Next** now shows the next episode's picture and an **On Deck** row of other things you're watching.
+- **Lower quality when buffering** (Settings › Playback): when a video keeps buffering, Siku can lower the quality by itself, ask first, or never; you can restore it, and Settings shows and resets any speed limit it learned. Settings can also test your connection speed.
+- Descriptions translated by AI are marked "Translated by AI".
+
+**Changed**
+- Playback settings have **Resolution** and **Maximum Bitrate** instead of one Quality list. "Original" is gone, because Auto already plays the original file whenever it can.
+- The player's Quality menu lists Auto first, shows each quality's bitrate, and ticks the quality that's actually playing.
+- Libraries you hid in the server's web settings no longer appear in Siku.
+- Library browsing remembers your sort and filters for each library and profile ("Preserve sort & filters" in the Filter panel turns it off).
+- Approving and declining requests now happens only in the server's web admin; the Requests tab shows your own requests.
+- Next Up cards say "Remove from Next Up", and removing one clears that whole show from your rows.
+- Episode cards read "S01E02 · Title" with the air date and runtime underneath.
+- Titles without artwork show a soft Siku-coloured glow with a film, TV or headphones mark instead of a blank tile.
+- Artwork is requested at the size Siku draws it, on servers that support it, so posters and backdrops look sharper.
+- The sign-in code is shown in large, easy-to-read digits.
+- AI subtitles say whether they are a translation or a transcription. On servers without AI translation, the AI dialog makes subtitles in the spoken language instead of failing.
+- Automatically chosen subtitles prefer a track inside the video over an external file, and the subtitle menu says where each track comes from.
+
+**Fixed**
+- If an administrator ends what you are watching, Siku stops playback and tells you, instead of carrying on.
+- If an administrator changes your access, Siku returns to "Who's watching?" so you can pick your profile again, instead of every screen failing to load.
+- An empty library says "This library is empty" instead of "No titles match".
+- In a library that mixes movies and series, the Movies and Series views recommend only that type and no longer offer a Shuffle that mixes them.
+- Skip Intro and Skip Credits use the markers of the version you are actually watching.
+
+**Needs testing on a real Roku:** the YouTube hand-off, theme music sound, lowering quality when buffering, the speed test, and subtitles inside converted streams. The debug log (`telnet <roku-ip> 8085`) prints `[siku-trailer]`, `[siku-theme]` and `[siku-playback]` lines for each.
+
 ## v0.1.20
 
 - **Changed:** the Progressive Remux experiment is marked as failing on the Streaming Stick 4K

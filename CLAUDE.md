@@ -60,6 +60,21 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   client-side (`Subs_autoChoice`, a port of Android's `AutoSubtitleResolver`). Roku renders only
   SRT/WebVTT sidecars; PGS/VobSub/ASS are listed as unavailable.
 
+## Working in parallel
+- Several agents can work at once in separate `git worktree`s. Give each its own mock port
+  (`python3 tools/mock_server.py --port 81xx` and `debugPort=81xx` in the deep link); the
+  simulator registry is shared, so seed state with deep-link parameters. Merge one branch at a
+  time and re-run lint after each; shared files (`Settings.brs` key list, `tools/mock_server.py`
+  options/OPTS, screen `onSettingsLoaded` hooks) are where merges collide.
+- Kill a mock by anchored pid (`ps -eo pid,args | grep "^ *[0-9]* python3 tools/mock_server.py --port 81xx"`),
+  never in the same shell command that started it.
+
+## Releases
+- Pushes to `main` or a session branch listed in `.github/workflows/release.yml` publish a
+  release when `build_version` changes. The notes are that version's `CHANGELOG.md` section, the
+  full `CHANGELOG.md` is attached, and the README's feature table must say what is new and what
+  still needs a device test.
+
 ## Diagnostics
 - `telnet <roku-ip> 8085` is the device console. Every playback start and replan prints one
   `[siku-playback]` line: declared capabilities, the request (`quality`, `cap`, `audio_req`,

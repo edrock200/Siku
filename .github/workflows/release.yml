@@ -2,13 +2,15 @@
 # Runs on every push to the default branch: reads the version from the manifest
 # (major.minor.build) and, if no release with that tag exists yet, builds the zip,
 # creates the tag and publishes the release. Bumping build_version in the manifest
-# is therefore all it takes to ship a new build.
+# is therefore all it takes to ship a new build. The release notes are this version's
+# CHANGELOG.md section, and the full CHANGELOG.md is attached to every release.
 name: Release
 
 on:
   push:
     branches:
       - ccr-26864aeb-leveko
+      - ccr-15c8f9c0-vmtb6e
       - main
   workflow_dispatch:
 
@@ -85,5 +87,7 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: Siku ${{ steps.version.outputs.tag }}
-          files: out/siku-${{ steps.version.outputs.tag }}.zip
+          files: |
+            out/siku-${{ steps.version.outputs.tag }}.zip
+            CHANGELOG.md
           body_path: out/release-notes.md

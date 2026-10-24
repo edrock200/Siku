@@ -126,6 +126,22 @@ with a separate audio rendition play with sound on the same Roku, and Silo's pro
 demuxed CMAF.
 
 ## Porting notes worth keeping
+- Channel hand-off (YouTube trailers, channel 837): brs-engine's `roAppManager.IsAppInstalled`
+  always answers false, so a hand-off can only be tested on a device. Run it in a Task, log every
+  step (`[siku-trailer]`), and treat "this channel is still running a few seconds after LaunchApp
+  / ECP launch" as failure, then fall back (Siku shows the watch URL and a QR code). Launching
+  another channel closes Siku (no instant resume). Never extract YouTube streams: Roku has no
+  WebView, and ripping streams breaks YouTube's terms.
+- The SceneGraph `Audio` node has no volume field: theme music cannot be faded or played quieter.
+- A screen opened by deep link (no ShellScreen) has no settings loaded. A feature gated on a
+  setting must call `Settings_load()` itself and react to its `settingsLoaded` field; merge such
+  hooks into one `onSettingsLoaded` per screen (two features each adding one is a compile error).
+- Problem codes newer than the server contract checkout (`playback_session_ended`,
+  `profile_verification_required`) come from the Android repo: the code is the last path segment
+  of the problem `type`, which `Http_problem` already parses.
+- State machines kept free of SceneGraph can be tested without the simulator by replaying JSON
+  vectors through `brs-cli -n -r <root> a.brs b.brs` (see `tools/bq_vectors.py`, which runs the
+  server's 66 buffering-quality conformance cases against `BufferingQuality.brs`).
 - Roku cannot blur a Poster. Where Android blurs (spoiler protection of an unwatched episode's
   still), Siku does not load the image at all and shows series art the server marks as such
   (`*_is_episode_still = false`) or the default artwork (`Spoilers.brs`).
@@ -244,3 +260,4 @@ released version is missing here.
 - **v0.1.18** Device test of the forced-Dolby declaration: direct play with E-AC3 arrived and played silent, confirming a Streaming Stick 4K does not decode Dolby itself and a sink advertising LPCM only will not take the bitstream. An override that bypasses a device report must announce itself on screen.
 - **v0.1.19** `StreamTestScreen` (debug deep link `debugScreen=StreamTestScreen`, optional `debugUrl=`) plays reference HLS streams and the last Silo stream and logs `[siku-streamtest]` state and track counts: the way to prove a packaging claim on device instead of arguing from the spec. The `progressive` delivery is declared only behind the experimental setting until a device confirms Roku plays fragmented MP4 over HTTP.
 - **v0.1.20** Device result: Roku's Video node does not play a fragmented MP4 served progressively (Silo's `server_remux_progressive` failed at once), so copied video reaches a Roku only as MPEG-TS or demuxed CMAF HLS. Always print the Video node's errorCode/errorMsg to the console; the on-screen message is too short to diagnose.
+- **v0.1.21** Catch-up with Silo Android TV (Oct 6–24): built by four agents in parallel worktrees and merged. Lessons: parallel simulator runs need their own mock port (`debugPort=`) and share one brs-cli registry; two features adding the same `onSettingsLoaded`/`settingsLoaded` hook collide at merge; a channel hand-off can only be verified on a device. Device checks pending: YouTube hand-off (`mediaType`), theme music, buffering lowering (`observed=` must be non-zero on HLS), speed test `method=`, HLS subtitle rendition selection.
