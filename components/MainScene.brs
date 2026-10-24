@@ -14,6 +14,7 @@ sub init()
         prefs: Prefs_load()         ' device-local preferences
         toast: ""                   ' set to show a toast message
         authExpired: false          ' set by ApiTask when the refresh token is rejected
+        staleProfile: {}            ' set by ApiTask on 403 profile_verification_required (see onStaleProfile)
         sessionChanged: 0           ' bumped whenever the session is saved
         homeDirty: false            ' set after playback or state changes so Home refreshes
         settings: { ready: false, available: false, identity: "", revision: 0, manifestRevision: 0, items: {}, error: "" } ' server-synced settings snapshot (Settings.brs)
@@ -25,6 +26,8 @@ sub init()
 
     m.global.observeField("toast", "onToast")
     m.global.observeField("authExpired", "onAuthExpired")
+    m.global.observeField("staleProfile", "onStaleProfile")
+    m.profilePrompt = invalid       ' a pending "pick your profile again" prompt (onStaleProfile)
 
     routeToStart()
 end sub
@@ -71,6 +74,7 @@ sub pushScreen(name as string, params = {} as object)
     m.stack.Push(screen)
     screen.visible = true
     screen.active = true
+    checkProfilePrompt()
 end sub
 
 sub popScreen()
@@ -89,6 +93,7 @@ sub popScreen()
     prev.visible = true
     if result <> invalid then prev.screenResult = result
     prev.active = true
+    checkProfilePrompt()
 end sub
 
 sub resetTo(name as string, params = {} as object)
@@ -151,6 +156,54 @@ sub onAuthExpired()
     Session_signOutLocal(s)
     m.global.toast = "Your session expired. Please sign in again."
     routeToStart()
+end sub
+
+' ---------- Profile access recovery (Android TV ProfileVerificationRecovery, upstream #440) ----------
+' An administrator changed the account's access, so the server stopped accepting the active PIN
+' profile's token and answers 403 profile_verification_required. Instead of letting every screen
+' fail, clear the profile selection (never the sign-in) and send the viewer to the profile picker.
+' Only a refusal for the identity that is active right now counts, so a late or repeated report
+' (or one for a profile already switched away from) does nothing and cannot loop.
+
+sub onStaleProfile()
+    r = m.global.staleProfile
+    if r = invalid or Type(r) <> "roAssociativeArray" or Str_isEmpty(r.profileId) then return
+    s = m.global.session
+    if Str_isEmpty(s.accessToken) or Str_isEmpty(s.profileId) then return
+    if Str_orEmpty(r.profileId) <> Str_orEmpty(s.profileId) then return
+    if Str_orEmpty(r.profileToken) <> Str_orEmpty(s.profileToken) then return
+    if Url_origin(Str_orEmpty(r.serverUrl)) <> Url_origin(Str_orEmpty(s.serverUrl)) then return
+    print "[MainScene] the server no longer accepts this profile's proof; clearing the profile selection"
+    c = AA_copy(s)
+    c.profileId = ""
+    c.profileToken = ""
+    c.profileName = ""
+    c.profileAvatar = ""
+    Session_save(c)
+    if m.global.hasField("requests") then m.global.requests = { enabled: false, resolved: false }
+    if m.global.hasField("shuffleCaps") then m.global.shuffleCaps = {}
+    m.profilePrompt = { serverUrl: Str_orEmpty(s.serverUrl) }
+    checkProfilePrompt()
+end sub
+
+' Acts on a pending prompt for the screen now on top: playback and the sign-in/server screens are
+' not interrupted (the prompt waits until the viewer leaves them), the picker itself needs nothing,
+' and a prompt that no longer applies (signed out, another server, a profile picked) is dropped.
+sub checkProfilePrompt()
+    prompt = m.profilePrompt
+    if prompt = invalid then return
+    s = m.global.session
+    if Str_isEmpty(s.accessToken) or not Str_isEmpty(s.profileId) or Str_orEmpty(s.serverUrl) <> prompt.serverUrl then
+        m.profilePrompt = invalid
+        return
+    end if
+    top = topScreen()
+    if top = invalid then return
+    name = top.subtype()
+    if name = "PlayerScreen" or name = "AudioPlayerScreen" or name = "LoginScreen" or name = "ServerConnectScreen" then return
+    m.profilePrompt = invalid
+    if name = "ProfileScreen" then return
+    resetTo("ProfileScreen", { switching: true })
 end sub
 
 ' ---------- Deep links ----------

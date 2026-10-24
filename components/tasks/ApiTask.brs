@@ -21,8 +21,30 @@ sub execute()
         end if
     end if
     resp.ok = resp.status >= 200 and resp.status < 300
+    reportStaleProfile(req, resp)
     resp.context = req.context
     m.top.response = resp
+end sub
+
+' 403 profile_verification_required: the server stopped accepting the profile proof this request
+' presented (an administrator changed the account's access). Report the identity that was sent;
+' MainScene clears the profile selection only if it is still the active one (Android TV
+' AccessChangeSignals.reportStaleProfileIfRefused, upstream #440). Household management (profile
+' create/edit/delete and the household list) uses the same code for a missing permission, so it
+' never reports.
+sub reportStaleProfile(req as object, resp as object)
+    if resp.status <> 403 or resp.error = invalid then return
+    if Str_orEmpty(resp.error.code) <> "profile_verification_required" then return
+    sent = m.sentProfile
+    if sent = invalid or Str_isEmpty(sent.profileId) then return
+    path = Str_orEmpty(req.path)
+    method = UCase(Str_orEmpty(req.method))
+    if method = "" then method = "GET"
+    if Left(path, 16) = "/api/v2/profiles" and Right(path, 11) <> "/verify-pin" then
+        if method <> "GET" or Instr(1, path, "/profiles/household") > 0 then return
+    end if
+    print "[ApiTask] stale profile proof: "; method; " "; path
+    m.global.staleProfile = { profileId: sent.profileId, profileToken: sent.profileToken, serverUrl: sent.serverUrl, at: CreateObject("roDateTime").AsSeconds(), path: path }
 end sub
 
 function perform(req as object) as object
@@ -58,9 +80,11 @@ function perform(req as object) as object
     if req.auth <> false and not Str_isEmpty(session.accessToken) then
         headers["Authorization"] = "Bearer " + session.accessToken
     end if
+    m.sentProfile = invalid
     if req.profile <> false and not Str_isEmpty(session.profileId) then
         headers["X-Profile-Id"] = session.profileId
         if not Str_isEmpty(session.profileToken) then headers["X-Profile-Token"] = session.profileToken
+        m.sentProfile = { profileId: session.profileId, profileToken: Str_orEmpty(session.profileToken), serverUrl: Str_orEmpty(session.serverUrl) }
     end if
     if req.headers <> invalid then
         for each k in req.headers
