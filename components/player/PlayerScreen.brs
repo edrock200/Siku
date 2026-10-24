@@ -57,6 +57,7 @@ sub init()
     m.refreshTimeout = m.top.findNode("refreshTimeout")
     m.stopTimeout = m.top.findNode("stopTimeout")
     m.captionTimer = m.top.findNode("captionTimer")
+    m.renditionTimer = m.top.findNode("renditionTimer")
 
     m.di = CreateObject("roDeviceInfo")
     m.started = false
@@ -84,6 +85,9 @@ sub init()
     m.refreshTimeout.observeField("fire", "onTokenRefreshed")
     m.stopTimeout.observeField("fire", "finishClose")
     m.captionTimer.observeField("fire", "hideCaption")
+    m.renditionTimer.observeField("fire", "onRenditionTimeout")
+    ' In-manifest subtitle tracks (an HLS WebVTT rendition) appear here once the stream is parsed.
+    if m.video.hasField("availableSubtitleTracks") then m.video.observeField("availableSubtitleTracks", "onAvailableSubtitles")
 
     m.skipBackBtn.observeField("buttonSelected", "onSkipBack")
     m.playPauseBtn.observeField("buttonSelected", "togglePlay")
@@ -121,6 +125,9 @@ sub resetPlaybackState()
     m.position = 0.0
     m.isPaused = false
     m.markers = []
+    m.markersFileId = ""   ' the file m.markers belong to
+    if m.markerTicket = invalid then m.markerTicket = 0
+    m.markerTicket = m.markerTicket + 1
     m.chapters = []
     m.subtitleTracks = []
     m.subtitleIndex = -1
@@ -141,6 +148,10 @@ sub resetPlaybackState()
     m.forceSubtitlesOff = false
     m.explicitSubtitleId = ""
     m.remuxRecoveryTried = false
+    m.renditionWanted = false          ' the selected track is an HLS rendition not yet found on the Video node
+    m.renditionRecoveryTried = false   ' failure_recovery (subtitle_hls_rendition_failed) asked once per playback
+    m.renditionTimerArmed = false
+    if m.renditionTimer <> invalid then m.renditionTimer.control = "stop"
     m.pendingAudioIndex = -1
     m.chosenAudioIndex = -1
     m.plannedAudioApplied = true
@@ -224,7 +235,10 @@ sub startPipeline()
         showError("Nothing to play.")
         return
     end if
-    Api_get("/api/v2/watch/" + Str_urlEncode(m.itemId), { image_size: "medium" }, "onWatch")
+    ' Naming the file makes the server fill that version's on-demand markers (Silo Android #527).
+    q = { image_size: "medium" }
+    if not Str_isEmpty(p.fileId) then q.file_id = Str_orEmpty(p.fileId)
+    Api_get("/api/v2/watch/" + Str_urlEncode(m.itemId), q, "onWatch")
 end sub
 
 sub retry()
@@ -288,6 +302,7 @@ sub onWatch(event as object)
         if Str_orEmpty(v.file_id) = fileId then m.version = v
     end for
     collectMarkers()
+    m.markersFileId = fileId
     if m.version <> invalid then m.chapters = Arr_or(m.version.chapters)
     m.scrubber.markers = m.markers
     m.scrubber.chapters = m.chapters
@@ -304,33 +319,104 @@ sub onWatch(event as object)
     ensureFreshToken()
 end sub
 
-' Markers in {kind, start, end} form; marker_segments preferred, then per-version and top-level fields.
+' Markers in {kind, start, end} form for the file that plays (Silo Android #527): the version's
+' marker_segments, else its own intro / recap / credits / preview ranges. The title-level ranges
+' belong to the default version, so they are used only when the server reports no per-version
+' markers at all (an older server).
 sub collectMarkers()
+    m.markers = markersOf(m.version, m.watch)
+end sub
+
+function markersOf(version as dynamic, w as dynamic) as object
     out = []
-    w = m.watch
     segs = []
-    if m.version <> invalid then segs = Arr_or(m.version.marker_segments)
+    if version <> invalid then segs = Arr_or(version.marker_segments)
     if segs.Count() > 0 then
-        for each s in segs
-            if s.start_seconds <> invalid and s.end_seconds <> invalid then
-                out.Push({ kind: LCase(Str_orEmpty(s.kind)), start: Content_num(s.start_seconds), "end": Content_num(s.end_seconds) })
+        for each sg in segs
+            if sg <> invalid and sg.start_seconds <> invalid and sg.end_seconds <> invalid then
+                out.Push({ kind: LCase(Str_orEmpty(sg.kind)), start: Content_num(sg.start_seconds), "end": Content_num(sg.end_seconds) })
             end if
         end for
-    else
-        for each kind in ["intro", "recap", "credits"]
-            mk = invalid
-            if m.version <> invalid and m.version[kind] <> invalid then mk = m.version[kind]
-            if mk = invalid then mk = w[kind]
-            if mk <> invalid then
-                s = mk.start_seconds
-                e = mk.end_seconds
-                if s = invalid then s = mk.start
-                if e = invalid then e = mk["end"]
-                if s <> invalid and e <> invalid then out.Push({ kind: kind, start: Content_num(s), "end": Content_num(e) })
-            end if
+        return out
+    end if
+    perVersion = false
+    if version <> invalid then
+        for each kind in ["intro", "recap", "credits", "preview"]
+            if version.DoesExist(kind) then perVersion = true
         end for
     end if
-    m.markers = out
+    for each kind in ["intro", "recap", "credits", "preview"]
+        mk = invalid
+        if perVersion then
+            mk = version[kind]
+        else if w <> invalid then
+            mk = w[kind]
+        end if
+        if mk <> invalid and Type(mk) = "roAssociativeArray" then
+            s0 = mk.start_seconds
+            e0 = mk.end_seconds
+            if s0 = invalid then s0 = mk.start
+            if e0 = invalid then e0 = mk["end"]
+            if s0 <> invalid and e0 <> invalid then out.Push({ kind: kind, start: Content_num(s0), "end": Content_num(e0) })
+        end if
+    end for
+    return out
+end function
+
+' Adopts the marker ranges of one file and redraws the scrubber's bands. A Skip pill shown for a
+' range that no longer exists goes away at the next position tick (checkMarkers).
+sub applyMarkers(markers as object)
+    m.markerTicket = m.markerTicket + 1   ' a reconcile read sent before this is stale now
+    m.markers = markers
+    m.scrubber.markers = m.markers
+end sub
+
+' The file the plan plays (a replan or recovery can land on another version of the title).
+function planFileId(plan as dynamic) as string
+    f = ""
+    if plan <> invalid then f = Str_orEmpty(plan.effective_media_file_id)
+    if f = "" then f = m.fileId
+    return f
+end function
+
+' Reads the playing file's markers again, naming the file so the server fills that version's
+' on-demand markers (TvPlayerViewModel.reconcileMarkers, Silo Android #527). Android does this after
+' every control connection; Siku has no control socket, so it reads after every session start and
+' after a replan that lands on another file. A late answer never replaces newer ranges.
+sub reconcileMarkers()
+    if m.sessionId = "" or m.itemId = "" or m.markersFileId = "" then return
+    m.markerTicket = m.markerTicket + 1
+    ctx = { ticket: m.markerTicket, sessionId: m.sessionId, fileId: m.markersFileId, itemId: m.itemId }
+    Api_get("/api/v2/watch/" + Str_urlEncode(m.itemId), { image_size: "medium", file_id: m.markersFileId }, "onMarkersReconciled", ctx)
+end sub
+
+sub onMarkersReconciled(event as object)
+    resp = Api_result(event)
+    if m.closing or resp.context = invalid then return
+    c = resp.context
+    if c.ticket <> m.markerTicket or c.sessionId <> m.sessionId or c.fileId <> m.markersFileId or c.itemId <> m.itemId then return
+    if not resp.ok or resp.data = invalid or Type(resp.data) <> "roAssociativeArray" then return
+    version = invalid
+    for each v in Arr_or(resp.data.versions)
+        if v <> invalid and Str_orEmpty(v.file_id) = c.fileId then version = v
+    end for
+    if version = invalid then return
+    applyMarkers(markersOf(version, resp.data))
+    print "[siku-playback] markers file=" + c.fileId + " count=" + m.markers.Count().ToStr()
+end sub
+
+' A replan that lands on another file takes that file's markers from the watch detail, then
+' reads them again (TvPlayerViewModel.adoptFileMarkersAfterReplan).
+sub adoptFileMarkers(fileId as string)
+    m.markersFileId = fileId
+    version = invalid
+    if m.watch <> invalid then
+        for each v in Arr_or(m.watch.versions)
+            if v <> invalid and Str_orEmpty(v.file_id) = fileId then version = v
+        end for
+    end if
+    applyMarkers(markersOf(version, m.watch))
+    reconcileMarkers()
 end sub
 
 ' Refresh the token first when it is about to expire: the Video node can't refresh headers mid-stream.
@@ -483,6 +569,13 @@ sub onStart(event as object)
     ' One line per start for the debug console (telnet 8085): declared caps, request, decision.
     print PlaybackCaps_diagLine(m.lastRequestBody, d.playback_plan)
     applyPlan(d.playback_plan)
+    ' Every new session reads the playing file's markers again (the start may also have landed on
+    ' another version than the one asked for).
+    if planFileId(d.playback_plan) <> m.markersFileId then
+        adoptFileMarkers(planFileId(d.playback_plan))
+    else
+        reconcileMarkers()
+    end if
     maybeRecoverSilentRemux(d.playback_plan)
     warnForcedDolby(d.playback_plan)
 end sub
@@ -576,15 +669,30 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
     ' the `token=` fallback and the timestamp_offset for the timeline offset and the viewer's delay).
     m.subtitleTracks = []
     m.subtitleIndex = -1
+    m.renditionWanted = false
+    m.renditionTimerArmed = false
+    m.renditionTimer.control = "stop"
     tracks = []
     subInv = []
     if plan.subtitle <> invalid then subInv = Arr_or(plan.subtitle.inventory)
     m.subs.subtitleInventory = subInv
+    ' A transcode may carry the selected embedded track as a WebVTT rendition of its own HLS stream
+    ' (hls_subtitle_renditions_v1, Silo Android #611). That row is not mounted as a sidecar (its URL
+    ' is a slow whole-file extraction); it is selected on the Video node instead. A rendition in a
+    ' shape the client must refuse is ignored, so the row stays an ordinary sidecar.
+    rendition = PlaybackCaps_hlsRendition(plan)
+    if rendition <> invalid and rendition.problem = true then rendition = invalid
     for each t in subInv
-        track = Subs_buildTrack(t)
-        if track <> invalid then
+        track = invalid
+        if rendition <> invalid and Str_orEmpty(t.track_id) = rendition.trackId then
+            track = Subs_renditionTrack(t, rendition)
             m.subtitleTracks.Push(track)
-            tracks.Push({ Language: track.language, TrackName: track.url, Description: track.label })
+        else
+            track = Subs_buildTrack(t)
+            if track <> invalid then
+                m.subtitleTracks.Push(track)
+                tracks.Push({ Language: track.language, TrackName: track.url, Description: track.label })
+            end if
         end if
     end for
     if tracks.Count() > 0 then content.SubtitleTracks = tracks
@@ -608,6 +716,8 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
         autoPick = Subs_autoChoice(planAudioLanguage(plan))
         if autoPick >= 0 then
             m.pendingSubtitleTrackId = m.subtitleTracks[autoPick].trackId
+            picked = m.subtitleTracks[autoPick]
+            print "[siku-playback] subtitle auto: " + picked.trackId + " source=" + picked.source + " codec=" + picked.codec + " of " + m.subtitleTracks.Count().ToStr() + " renderable"
         else if autoPick = -2 then
             m.pendingSubtitleTrackId = planSubId
         end if
@@ -677,6 +787,7 @@ sub onVideoState()
             end for
             m.pendingSubtitleTrackId = ""
         end if
+        if m.renditionWanted then selectRendition()
     else if st = "paused" then
         m.isPaused = true
         m.playPauseBtn.iconUri = "pkg:/images/icons/play.png"
@@ -2093,8 +2204,9 @@ sub openPicker(kind as string)
     else if kind = "subtitle" then
         acts.Push({ id: "-1", label: "Off", checked: m.subtitleIndex < 0 })
         for i = 0 to m.subtitleTracks.Count() - 1
-            ' The detail line is the track's sync status ("Syncing… 40%", "Synced +2.3 s"), when it has one.
-            acts.Push({ id: i.ToStr(), label: m.subtitleTracks[i].label, checked: i = m.subtitleIndex, detail: Subs_trackStatus(m.subtitleTracks[i]) })
+            ' The detail line: where the track comes from (an embedded and an external track of one
+            ' language otherwise read the same), then its sync status ("Syncing… 40%", "Synced +2.3 s").
+            acts.Push({ id: i.ToStr(), label: m.subtitleTracks[i].label, checked: i = m.subtitleIndex, detail: Str_joinDots([Subs_sourceLabel(m.subtitleTracks[i]), Subs_trackStatus(m.subtitleTracks[i])]) })
         end for
         ' The file's other subtitle tracks, so the viewer sees they exist and why they are not offered:
         ' image formats (PGS, VobSub) and styled ASS have no Roku renderer.
@@ -2172,8 +2284,96 @@ sub setSubtitle(idx as integer)
     else
         m.subtitleIndex = idx
         m.video.globalCaptionMode = "On"
-        m.video.subtitleTrack = m.subtitleTracks[idx].url
+        if Str_isEmpty(m.subtitleTracks[idx].rendition) then
+            m.renditionWanted = false
+            m.renditionTimerArmed = false
+            m.renditionTimer.control = "stop"
+            m.video.subtitleTrack = m.subtitleTracks[idx].url
+        else
+            m.renditionWanted = true
+            selectRendition()
+        end if
     end if
+    if idx < 0 then
+        m.renditionWanted = false
+        m.renditionTimerArmed = false
+        m.renditionTimer.control = "stop"
+    end if
+end sub
+
+' ---------- HLS subtitle rendition (Silo Android #611) ----------
+
+' Selects the plan's WebVTT rendition among the Video node's in-manifest tracks, or waits for it to
+' be listed (renditionTimer bounds the wait; then the server is asked for the sidecar plan).
+sub selectRendition()
+    if not m.renditionWanted or m.subtitleIndex < 0 or m.subtitleIndex >= m.subtitleTracks.Count() then return
+    t = m.subtitleTracks[m.subtitleIndex]
+    name = findRenditionTrack(t)
+    if name <> "" then
+        m.renditionWanted = false
+        m.renditionTimerArmed = false
+        m.renditionTimer.control = "stop"
+        m.video.subtitleTrack = name
+        print "[siku-playback] hls subtitle rendition " + t.renditionGroup + ":" + t.rendition + " selected as " + name
+        return
+    end if
+    if m.video.state = "playing" and not m.renditionTimerArmed then
+        m.renditionTimerArmed = true
+        m.renditionTimer.control = "start"
+    end if
+end sub
+
+' The Video node's TrackName for the rendition named NAME: the one in-manifest track whose
+' Description is NAME, else the only in-manifest text track; "" when none or ambiguous. Sidecars
+' (our own URLs) and closed captions (eia608/708) never match; language never identifies it, the
+' rendition declares none.
+function findRenditionTrack(t as object) as string
+    ours = {}
+    for each st in m.subtitleTracks
+        if not Str_isEmpty(st.url) then ours[st.url] = true
+    end for
+    exact = []
+    others = []
+    for each a in Arr_or(m.video.availableSubtitleTracks)
+        if a <> invalid and Type(a) = "roAssociativeArray" then
+            tn = Str_orEmpty(a.TrackName)
+            ltn = LCase(tn)
+            if tn <> "" and not ours.DoesExist(tn) and Left(ltn, 6) <> "eia608" and Left(ltn, 6) <> "eia708" then
+                if Str_orEmpty(a.Description).Trim() = t.rendition then exact.Push(tn) else others.Push(tn)
+            end if
+        end if
+    end for
+    if exact.Count() = 1 then return exact[0]
+    if exact.Count() = 0 and others.Count() = 1 then return others[0]
+    return ""
+end function
+
+sub onAvailableSubtitles()
+    if m.renditionWanted then selectRendition()
+end sub
+
+sub onRenditionTimeout()
+    if not m.renditionWanted or m.closing then return
+    failHlsRendition()
+end sub
+
+' The Roku never listed the rendition: ask once for the plan without it (failure_recovery,
+' subtitle_hls_rendition_failed), which keeps the video and brings the track back as a sidecar.
+sub failHlsRendition()
+    m.renditionWanted = false
+    m.renditionTimerArmed = false
+    m.renditionTimer.control = "stop"
+    listed = []
+    for each a in Arr_or(m.video.availableSubtitleTracks)
+        if a <> invalid and Type(a) = "roAssociativeArray" then listed.Push(Str_orEmpty(a.TrackName) + "|" + Str_orEmpty(a.Description))
+    end for
+    print "[siku-playback] hls subtitle rendition not found; listed=" + PlaybackCaps_join(listed, ";")
+    if m.renditionRecoveryTried or m.plan = invalid or m.sessionId = "" then
+        m.global.toast = "Couldn't show these subtitles"
+        return
+    end if
+    m.renditionRecoveryTried = true
+    sendReplan("failure_recovery", "subtitle", { classification: "subtitle_hls_rendition_failed", message: "The Roku Video node did not list the stream's WebVTT subtitle rendition" })
 end sub
 
 ' Quality change: replan and hand the new plan to the player at the current position.
@@ -2227,6 +2427,7 @@ sub onReplan(event as object)
     failText = "Couldn't change the quality"
     if m.replanKind = "output" then failText = "Couldn't change the video output"
     if m.replanKind = "audio" then failText = "Couldn't change the audio track"
+    if m.replanKind = "subtitle" then failText = "Couldn't show these subtitles"
     if m.replanKind = "recovery" then failText = "No sound expected: the server has no other way to stream this file to a Roku"
     if not resp.ok or resp.data = invalid or resp.data.outcome <> "playable" or resp.data.playback_plan = invalid then
         setBuffering(false)
@@ -2247,6 +2448,7 @@ sub onReplan(event as object)
     resumeAt = m.position
     m.video.control = "stop"
     applyPlan(plan, { resumeAt: resumeAt, subtitleTrackId: Subs_selectedTrackId() })
+    if planFileId(plan) <> m.markersFileId then adoptFileMarkers(planFileId(plan))
     if m.replanKind = "audio" and m.pendingAudioIndex >= 0 then m.chosenAudioIndex = m.pendingAudioIndex
     m.pendingAudioIndex = -1
     ' The overlay was rebuilt when the picker closed, before this answer: refresh it with the new plan.

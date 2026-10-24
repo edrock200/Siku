@@ -279,8 +279,37 @@ function PlaybackCaps_truthy(v as dynamic) as boolean
 end function
 
 ' client_features we advertise. We don't implement seek_reanchor or header refresh.
+' hls_subtitle_renditions_v1 (Silo Android #611): a server_transcode_hls plan may carry the
+' selected embedded text subtitle as a WebVTT SUBTITLES rendition of its own HLS stream instead of
+' a whole-file sidecar extraction. Android offers it only for its own HLS player (not a Cast
+' receiver); Siku's HLS is always the Roku's own Video node, which lists in-manifest WebVTT
+' renditions in availableSubtitleTracks. It changes nothing for direct play, and a rendition the
+' Roku cannot find is handed back with failure_recovery (subtitle_hls_rendition_failed), which
+' returns the sidecar plan (PlayerScreen.failHlsRendition). Needs a device test.
 function PlaybackCaps_clientFeatures() as object
-    return ["playback_plan_v3"]
+    return ["playback_plan_v3", "hls_subtitle_renditions_v1"]
+end function
+
+' The plan's subtitle.hls_rendition when it is a usable one ({group_id, name}), "invalid" when the
+' plan has none, or { problem: true } when it carries one in a shape the client must refuse
+' (validateForMedia3): only a server_transcode_hls / hls plan rendering or converting the selected
+' track, with no artifact or embedded decision beside it.
+function PlaybackCaps_hlsRendition(plan as dynamic) as dynamic
+    if plan = invalid or plan.subtitle = invalid or Type(plan.subtitle) <> "roAssociativeArray" then return invalid
+    r = plan.subtitle.hls_rendition
+    if r = invalid or Type(r) <> "roAssociativeArray" then return invalid
+    sub_ = plan.subtitle
+    mode = LCase(Str_orEmpty(sub_.mode))
+    selId = ""
+    if plan.selected_tracks <> invalid and plan.selected_tracks.subtitle <> invalid then selId = Str_orEmpty(plan.selected_tracks.subtitle.id)
+    proto = ""
+    if plan.stream <> invalid then proto = LCase(Str_orEmpty(plan.stream.protocol))
+    ok = LCase(Str_orEmpty(plan.delivery)) = "server_transcode_hls" and proto = "hls"
+    ok = ok and (mode = "render" or mode = "convert") and sub_.artifact = invalid and sub_.embedded = invalid
+    ok = ok and Str_orEmpty(r.group_id).Trim() <> "" and Str_orEmpty(r.name).Trim() <> ""
+    ok = ok and selId <> "" and selId = Str_orEmpty(sub_.track_id)
+    if not ok then return { problem: true }
+    return { group_id: Str_orEmpty(r.group_id).Trim(), name: Str_orEmpty(r.name).Trim(), trackId: selId }
 end function
 
 ' client_capabilities block.
@@ -639,6 +668,10 @@ function PlaybackCaps_diagLine(body as object, plan as object) as string
         dec = "delivery=" + Str_orEmpty(plan.delivery) + " reason=" + Str_orEmpty(plan.decision_reason)
         if plan.selected_tracks <> invalid and plan.selected_tracks.audio <> invalid then dec = dec + " sel_audio=" + PlaybackCaps_str(plan.selected_tracks.audio.index)
         if plan.subtitle <> invalid then dec = dec + " sub_mode=" + Str_orEmpty(plan.subtitle.mode)
+        hr = PlaybackCaps_hlsRendition(plan)
+        if hr <> invalid then
+            if hr.problem = true then dec = dec + " sub_hls=invalid" else dec = dec + " sub_hls=" + hr.group_id + ":" + hr.name
+        end if
         ' active_q: the menu entry the server says the plan delivers ("none" = none, "?" = not reported).
         aq = "?"
         if plan.siku_reports_active_quality = true then

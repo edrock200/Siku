@@ -942,6 +942,16 @@ def sub_store(fid, provider, language, release, fmt="srt", score=0.0, hi=False, 
     return rec
 
 
+# Per-file marker ranges for the watch detail; files in ON_DEMAND_MARKER_FILES report them only to a
+# read that names them (file_id), the way the server fills on-demand markers.
+FILE_MARKERS = {
+    "default": {"intro": {"start_seconds": 30, "end_seconds": 90}},
+    "52": {"intro": {"start_seconds": 40, "end_seconds": 100}, "credits": {"start_seconds": 2800, "end_seconds": 2990}},
+    "56": {"recap": {"start_seconds": 5, "end_seconds": 45}, "intro": {"start_seconds": 60, "end_seconds": 120}},
+}
+ON_DEMAND_MARKER_FILES = {"56"}
+
+
 # Files the mock treats as a 4K Dolby Vision (profile 8.1) HEVC MKV with E-AC3 5.1: the 2160p
 # variants of movie:glass-city. Everything else is the 1080p H.264/AAC MP4.
 FOUR_K_FILES = {"52", "56"}
@@ -1073,6 +1083,16 @@ def playback_decision(sid, position, fid, body=None):
     inventory = [{"track_id": "file:%s:subtitle:0" % fid, "combined_index": 0, "source": "external", "codec": "srt", "language": "eng",
                   "label": "English", "forced": False, "default": False, "hearing_impaired": False, "delivery": "sidecar",
                   "url": "/api/v2/stream/%s/subtitles/0.vtt?file_id=%s&external_subtitle_key=f903" % (sid, fid), "sync_key": EXTERNAL_SYNC_KEY}]
+    if fid in FOUR_K_FILES:
+        # The 4K MKV also carries embedded tracks: an English SubRip (served as a WebVTT sidecar, so a
+        # Roku can show it; auto-selection prefers it over the external file, Silo Android #529) and
+        # an English PGS (image-based: Roku lists it as unavailable). Inventory order: externals first.
+        inventory.append({"track_id": "file:%s:subtitle:1" % fid, "combined_index": 1, "source": "embedded", "codec": "subrip", "language": "eng",
+                          "label": "English", "forced": False, "default": True, "hearing_impaired": False, "delivery": "sidecar",
+                          "url": "/api/v2/stream/%s/subtitles/1.vtt?file_id=%s&embedded_stream_index=0" % (sid, fid)})
+        inventory.append({"track_id": "file:%s:subtitle:2" % fid, "combined_index": 2, "source": "embedded", "codec": "hdmv_pgs_subtitle", "language": "eng",
+                          "label": "English (PGS)", "forced": False, "default": False, "hearing_impaired": False, "delivery": "sidecar",
+                          "url": "/api/v2/stream/%s/subtitles/2.sup?file_id=%s&embedded_stream_index=1" % (sid, fid)})
     for rec in SUBS["stored"]:
         if rec["media_file_id"] != fid:
             continue
@@ -1085,17 +1105,40 @@ def playback_decision(sid, position, fid, body=None):
     plan_extra = {}
     if OPTS["active_quality"] and active is not None:
         plan_extra["active_quality"] = active
+    # The selected subtitle (a start's subtitle_track_id, a replan's selected_tracks.subtitle). An
+    # embedded text track on a transcode comes back as a WebVTT rendition of the HLS stream when the
+    # client lists hls_subtitle_renditions_v1 (Silo Android #611); a failure_recovery classified
+    # subtitle_hls_rendition_failed gets the sidecar plan instead.
+    b = body or {}
+    wanted = b.get("subtitle_track_id") or ((b.get("selected_tracks") or {}).get("subtitle") or {}).get("id")
+    subtitle = {"mode": "off", "inventory": inventory}
+    selected_sub = None
+    row = next((r for r in inventory if r["track_id"] == wanted), None) if wanted else None
+    if row is not None:
+        selected_sub = {"id": row["track_id"], "index": row["combined_index"]}
+        failed_rendition = b.get("operation") == "failure_recovery" and (b.get("failure") or {}).get("classification") == "subtitle_hls_rendition_failed"
+        if (delivery == "server_transcode_hls" and row["source"] == "embedded" and row["codec"] in ("subrip", "srt", "webvtt")
+                and "hls_subtitle_renditions_v1" in (b.get("client_features") or []) and not failed_rendition):
+            subtitle = {"mode": "render", "track_id": row["track_id"], "inventory": inventory,
+                        "hls_rendition": {"group_id": "subs", "name": "Subtitles", "format": "vtt", "mime_type": "text/vtt"}}
+            features.append("hls_subtitle_renditions_v1")
+        else:
+            subtitle = {"mode": "convert" if row["delivery"] == "sidecar" else "burn_in", "track_id": row["track_id"], "inventory": inventory}
+        print("SUBTITLE decision track=%s mode=%s rendition=%s" % (row["track_id"], subtitle["mode"], "hls_rendition" in subtitle), flush=True)
+    selected = {"audio": {"id": "file:%s:audio:0" % fid, "index": 0}}
+    if selected_sub:
+        selected["subtitle"] = selected_sub
     return {"protocol_version": 3, "server_features": features,
             "outcome": "playable", "session_id": sid,
             "playback_plan": {"protocol_version": 3, "plan_id": "plan:%d" % (len(SUBS["stored"]) + 1), "plan_attempt_key": "v3:%d" % (len(SUBS["stored"]) + 1), "session_id": sid,
                               "delivery": delivery, "decision_reason": reason,
                               "stream": stream,
                               "timeline": {"player_start_seconds": position, "timeline_offset_seconds": 0, "can_seek_anywhere": True},
-                              "selected_tracks": {"audio": {"id": "file:%s:audio:0" % fid, "index": 0}},
+                              "selected_tracks": selected,
                               "effective_recipe": recipe, "claims": claims, "available_qualities": qualities,
                               "degradation_warnings": warnings, "transformations": [], "applied_quirks": [], "runtime_corrections": [],
                               "requested_media_file_id": fid, "effective_media_file_id": fid,
-                              "subtitle": {"mode": "off", "inventory": inventory},
+                              "subtitle": subtitle,
                               "source": source, **plan_extra}}
 
 
@@ -1509,15 +1552,30 @@ class Handler(BaseHTTPRequestHandler):
             d = detail(m.group(1))
             if not d:
                 return self.problem(404, "not_found", "Not found")
+            # File-specific markers (Silo Android #527): each version carries its own ranges, and a
+            # version whose markers the server fills on demand (file 56 here) has them only when the
+            # read names it with file_id.
+            asked = (q.get("file_id") or [""])[0]
+            print("WATCH %s file_id=%s" % (m.group(1), asked or "-"), flush=True)
             vs = []
             for v in d["versions"]:
                 v = dict(v)
-                v["marker_segments"] = [{"kind": "intro", "start_seconds": 30, "end_seconds": 90}]
+                fid = str(v.get("file_id"))
+                ranges = FILE_MARKERS.get(fid, FILE_MARKERS["default"])
+                if fid in ON_DEMAND_MARKER_FILES and asked != fid:
+                    ranges = {}
+                for kind in ("intro", "recap", "credits", "preview"):
+                    v[kind] = ranges.get(kind)
+                v["marker_segments"] = [{"kind": k, "start_seconds": r["start_seconds"], "end_seconds": r["end_seconds"]} for k, r in ranges.items()]
                 vs.append(v)
             return self.send(200, {"content_id": d["content_id"], "type": d["type"], "title": d["title"], "versions": vs,
                                    "series_title": d.get("series_title"),
                                    "user_data": d["user_data"], "series_id": d.get("series_id"), "season_number": d.get("season_number"),
-                                   "episode_number": d.get("episode_number"), "intro": {"start_seconds": 30, "end_seconds": 90}})
+                                   "episode_number": d.get("episode_number"), "intro": {"start_seconds": 30, "end_seconds": 90},
+                                   # The profile's subtitle preferences as the server resolves them for this title.
+                                   "effective_subtitle_language": settings_effective(self, "playback.subtitle_language", q)["value"],
+                                   "effective_subtitle_mode": settings_effective(self, "playback.subtitle_mode", q)["value"],
+                                   "effective_show_forced_subtitles": settings_effective(self, "playback.show_forced_subtitles", q)["value"]})
         if p == "/api/v2/playback/capabilities":
             return self.send(200, {"revision": "1", "state": "available", "allowed": True, "installation_id": "11111111-1111-4111-8111-111111111111",
                                    "protocol_versions": [3], "features": ["playback_plan_v3", "sequenced_progress_v1"], "deliveries": ["original_http", "server_transcode_hls"]})

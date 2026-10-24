@@ -151,10 +151,59 @@ function Subs_buildTrack(t as object) as dynamic
         su = Subs_appendQuery(su, "timestamp_offset=" + Subs_formatSeconds(shift))
     end if
     su = Subs_appendQuery(su, "token=" + s.accessToken)
-    ' Language name first, as Android TV shows it; the server's label can be a bare codec
-    ' name ("SUBRIP" was seen on device), so it is only a fallback.
-    ' An AI track says how it was made, "German (AI Translation)" / "English (AI Transcription)",
-    ' from the server's markers (Silo Android #544); without a language its label minus the markers.
+    return {
+        label: Subs_trackLabel(t)
+        url: su
+        language: Str_orEmpty(t.language)
+        trackId: Str_orEmpty(t.track_id)
+        syncKey: Str_orEmpty(t.sync_key)
+        source: Str_orEmpty(t.source)
+        codec: Str_orEmpty(t.codec)
+        combinedIndex: t.combined_index
+        isVtt: isVtt
+        storedId: Subs_storedIdOf(t)
+        forced: t.forced = true
+        hearingImpaired: t.hearing_impaired = true or Subs_labelIsSdh(Str_orEmpty(t.label))
+    }
+end function
+
+' The selected track as the transcode's own WebVTT rendition (Silo Android #611): no sidecar URL;
+' the Video node lists it in availableSubtitleTracks and PlayerScreen selects it there. No delay or
+' timing tools: those work on a sidecar's URL.
+function Subs_renditionTrack(t as object, rendition as object) as object
+    return {
+        label: Subs_trackLabel(t)
+        url: ""
+        language: Str_orEmpty(t.language)
+        trackId: Str_orEmpty(t.track_id)
+        syncKey: ""
+        source: Str_orEmpty(t.source)
+        codec: Str_orEmpty(t.codec)
+        combinedIndex: t.combined_index
+        isVtt: false
+        storedId: ""
+        forced: t.forced = true
+        hearingImpaired: t.hearing_impaired = true or Subs_labelIsSdh(Str_orEmpty(t.label))
+        rendition: rendition.name
+        renditionGroup: rendition.group_id
+    }
+end function
+
+' "Embedded" / "External" / "Downloaded" ("In stream" for an HLS rendition), for the picker's detail.
+function Subs_sourceLabel(t as object) as string
+    if not Str_isEmpty(t.rendition) then return "In stream"
+    rank = Subs_autoSourceRank(t)
+    if rank = 2 then return "Downloaded"
+    if rank = 1 then return "External"
+    if LCase(Str_orEmpty(t.source)) = "embedded" then return "Embedded"
+    return ""
+end function
+
+' Language name first, as Android TV shows it; the server's label can be a bare codec name
+' ("SUBRIP" was seen on device), so it is only a fallback. An AI track says how it was made,
+' "German (AI Translation)" / "English (AI Transcription)", from the server's markers (Silo
+' Android #544); without a language its label minus the markers.
+function Subs_trackLabel(t as object) as string
     aiKind = Tracks_aiSubtitleKind(t.label)
     label = ""
     if not Str_isEmpty(t.language) then label = Subs_languageName(t.language)
@@ -164,22 +213,8 @@ function Subs_buildTrack(t as object) as dynamic
     if aiKind <> "" then label = label + " (" + aiKind + ")"
     if t.forced = true then label = label + " (Forced)"
     if t.hearing_impaired = true then label = label + " (SDH)"
-    storedId = Subs_storedIdOf(t)
-    if storedId <> "" and Instr(1, label, "(") = 0 then label = label + " (Downloaded)"
-    return {
-        label: label
-        url: su
-        language: Str_orEmpty(t.language)
-        trackId: Str_orEmpty(t.track_id)
-        syncKey: Str_orEmpty(t.sync_key)
-        source: Str_orEmpty(t.source)
-        codec: Str_orEmpty(t.codec)
-        combinedIndex: t.combined_index
-        isVtt: isVtt
-        storedId: storedId
-        forced: t.forced = true
-        hearingImpaired: t.hearing_impaired = true or Subs_labelIsSdh(Str_orEmpty(t.label))
-    }
+    if Subs_storedIdOf(t) <> "" and Instr(1, label, "(") = 0 then label = label + " (Downloaded)"
+    return label
 end function
 
 ' ---------- Automatic subtitle choice ----------
@@ -188,9 +223,16 @@ end function
 ' -2 when the preferences pick nothing (the server's own selection, if any, then stands).
 '   mode off, or no tracks                → off / nothing
 '   no preferred language                 → only "always" picks (the best track of any language)
-'   "auto" and the audio is that language → off, or that language's forced track if forced subs are on
-'   otherwise                             → the best track in that language, else any forced track
-' Best within a pool: full dialogue (not forced, not SDH) → not forced → any.
+'   "auto" and the audio is that language → off, or that language's best forced track if forced subs are on
+'   otherwise                             → the best track in that language, else the best forced track
+' "Best" is autoSubtitlePreferenceOrder (Silo Android #529, server/web parity silo-server #1849):
+' full dialogue beats forced, plain beats SDH, then embedded beats external beats downloaded
+' (external sidecars are the ones that drift out of sync); full ties keep the inventory order.
+' Upstream's first tier, "a track the device renders itself beats one the server must burn in",
+' is settled before ranking on Roku: the candidates are m.subtitleTracks, which hold only the
+' WebVTT/SRT sidecars the Video node can show (an embedded text track is served as one), while
+' embedded PGS/VobSub/ASS tracks need a burn-in Siku never asks for, so they are not candidates.
+' "Prefer embedded" therefore applies only between tracks this Roku can actually display.
 function Subs_autoChoice(audioLanguage as string) as integer
     tracks = m.subtitleTracks
     if tracks.Count() = 0 then return -2
@@ -199,40 +241,54 @@ function Subs_autoChoice(audioLanguage as string) as integer
     target = Subs_autoLangKey(prefs.language)
     if target = "" then
         if prefs.mode <> "always" then return -2
-        return Subs_autoBest(tracks, "")
+        return Subs_autoBest(tracks, "", false)
     end if
     if prefs.mode = "auto" and Subs_autoLangKey(audioLanguage) = target then
         if prefs.showForced then
-            for i = 0 to tracks.Count() - 1
-                if tracks[i].forced and Subs_autoLangKey(tracks[i].language) = target and not tracks[i].hearingImpaired then return i
-            end for
-            for i = 0 to tracks.Count() - 1
-                if tracks[i].forced and Subs_autoLangKey(tracks[i].language) = target then return i
-            end for
+            forced = Subs_autoBest(tracks, target, true)
+            if forced >= 0 then return forced
         end if
         return -1
     end if
-    best = Subs_autoBest(tracks, target)
+    best = Subs_autoBest(tracks, target, false)
     if best >= 0 then return best
-    if prefs.showForced then
-        for i = 0 to tracks.Count() - 1
-            if tracks[i].forced then return i
-        end for
-    end if
+    if prefs.showForced then return Subs_autoBest(tracks, "", true)
     return -2
 end function
 
-function Subs_autoBest(tracks as object, target as string) as integer
-    for pass = 0 to 2
-        for i = 0 to tracks.Count() - 1
-            t = tracks[i]
-            if target = "" or Subs_autoLangKey(t.language) = target then
-                if pass = 2 then return i
-                if not t.forced and (pass = 1 or not t.hearingImpaired) then return i
+' The best-ranked track in a language ("" = any), forced ones only when forcedOnly; -2 for none.
+function Subs_autoBest(tracks as object, target as string, forcedOnly as boolean) as integer
+    best = -2
+    bestRank = 0
+    for i = 0 to tracks.Count() - 1
+        t = tracks[i]
+        if (target = "" or Subs_autoLangKey(t.language) = target) and (not forcedOnly or t.forced) then
+            r = Subs_autoRank(t)
+            if best < 0 or r < bestRank then
+                best = i
+                bestRank = r
             end if
-        end for
+        end if
     end for
-    return -2
+    return best
+end function
+
+' autoSubtitlePreferenceOrder as one number, lower is better: forced, then SDH, then the source.
+function Subs_autoRank(t as object) as integer
+    r = Subs_autoSourceRank(t)
+    if t.hearingImpaired then r = r + 10
+    if t.forced then r = r + 100
+    return r
+end function
+
+' Embedded 0 (also unknown, as on the web player), external 1, downloaded 2 (a stored provider
+' download or AI result, whatever its inventory source says).
+function Subs_autoSourceRank(t as object) as integer
+    if Str_orEmpty(t.storedId) <> "" then return 2
+    src = LCase(Str_orEmpty(t.source))
+    if src = "downloaded" then return 2
+    if src = "external" then return 1
+    return 0
 end function
 
 ' The cascaded preferences, as Android TV's player reads them: the watch detail's effective values
@@ -1210,6 +1266,7 @@ sub Subs_onAdoptReplan(event as object)
     end if
     m.video.control = "stop"
     applyPlan(plan, { resumeAt: m.position, subtitleTrackId: trackId })
+    if planFileId(plan) <> m.markersFileId then adoptFileMarkers(planFileId(plan))
     Subs_adoptDone(origin)
 end sub
 
