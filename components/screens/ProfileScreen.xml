@@ -3,13 +3,16 @@
   "Who's watching?" profile picker (Android TvProfileSelectionScreen). Centered header,
   then up to six 220 px round avatars per row (focused: larger with an Ink ring, name
   drops lower and brightens), then "Change server" and "Sign out" glass buttons.
-  A single profile without a PIN is picked automatically unless params.switching = true.
+  A single profile without a PIN is picked automatically unless params.switching = true or the
+  Profile Selection launch rule opened the screen (params.atLaunch = true). On a new Roku the first
+  pick asks whether to open that profile automatically from now on (Remember / Ask every time).
   PIN profiles open AuthPinDialog and POST /api/v2/profiles/{id}/verify-pin.
-  Params: { switching: bool }
+  Params: { switching: bool, atLaunch: bool }
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="ProfileScreen" extends="BaseScreen">
   <script type="text/brightscript" uri="pkg:/components/screens/ProfileScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/ProfileLaunch.brs" />
   <children>
     <AuthMarqueeChrome id="chrome" backdropUri="pkg:/images/marquee_profiles.jpg" showLogo="false" />
     <Group id="content" visible="false">
@@ -30,5 +33,14 @@
       <PillButton id="signOutButton" text="Sign out" variant="glass" iconUri="pkg:/images/icons/logout.png" height="61" fontSize="21" padX="28" />
     </Group>
     <LoadingSpinner id="spinner" size="72" translation="[924, 504]" visible="false" />
+    <!-- A new Roku offers to open the first profile picked automatically (ProfileLaunch.brs). -->
+    <Group id="offer" visible="false">
+      <Rectangle width="1920" height="1080" color="0x000000E0" />
+      <Poster id="offerBg" uri="pkg:/images/ui/r22.9.png" blendColor="0x15171CFF" />
+      <Poster id="offerRing" uri="pkg:/images/ui/r22_ring2.9.png" blendColor="0xFFFFFF17" />
+      <Label id="offerTitle" color="0xEDEDEDFF" wrap="true" maxLines="2" />
+      <SettingsRow id="offerRemember" />
+      <SettingsRow id="offerAsk" />
+    </Group>
   </children>
 </component>

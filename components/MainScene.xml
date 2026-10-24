@@ -11,6 +11,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/Theme.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/ProfileLaunch.brs" />
   <children>
     <Rectangle id="bg" width="1920" height="1080" color="0x000000FF" />
     <Group id="screens" />

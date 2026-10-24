@@ -91,7 +91,7 @@ sub onProfiles(event as object)
 
     ' One profile and no PIN: nothing to pick (unless the person asked to switch).
     params = m.top.params
-    switching = params <> invalid and isTrue(params.switching)
+    switching = params <> invalid and (isTrue(params.switching) or isTrue(params.atLaunch))
     if items.Count() = 1 and not isTrue(items[0].has_pin) and not switching then
         chooseProfile(items[0], "")
         return
@@ -248,6 +248,10 @@ end function
 
 sub applyFocus()
     if not m.active then return
+    if m.offerVisible = true then
+        m.top.setFocus(true)
+        return
+    end if
     if m.pinDialog <> invalid then
         m.pinDialog.setFocus(true)
         return
@@ -267,6 +271,7 @@ end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
+    if m.offerVisible = true then return onOfferKey(key)
     if m.pinDialog <> invalid then return true ' the dialog handles its own keys
     if key = "back" then return false
     if m.busy then return true
@@ -321,8 +326,89 @@ end sub
 sub chooseProfile(p as object, token as string)
     Session_save(Session_withProfile(m.global.session, p, token))
     m.global.homeDirty = true
+    ' A chosen profile ends any away interval (Profile Selection's timed choices).
+    ProfileLaunch_markActive(0)
+    if ProfileLaunch_offerPending() then
+        showOffer(p)
+        return
+    end if
     Nav_reset("ShellScreen")
 end sub
+
+' ---------- Remember offer (a new Roku, TvProfileSelectionScreen #542) ----------
+
+sub showOffer(p as object)
+    name = Str_orEmpty(p.name)
+    m.offerTitleLabel = m.top.findNode("offerTitle")
+    m.offerRows = [m.top.findNode("offerRemember"), m.top.findNode("offerAsk")]
+    Label_setFont(m.offerTitleLabel, "bold", 36)
+    w = 980
+    m.offerTitleLabel.width = w - 72
+    m.offerTitleLabel.text = "Open " + name + " automatically?"
+    titleH = Int(Label_height(m.offerTitleLabel))
+    if titleH <= 0 then titleH = 44
+    rowH = 140
+    labels = [["Remember", "Open " + name + " when Siku starts on this Roku."], ["Ask every time", "Show Who's watching when Siku starts. Change this in Settings > General > Profile Selection."]]
+    h = 40 + titleH + 28 + 2 * (rowH + 8) + 28
+    x = (1920 - w) \ 2
+    top = (1080 - h) \ 2
+    bg = m.top.findNode("offerBg")
+    ring = m.top.findNode("offerRing")
+    for each node in [bg, ring]
+        node.width = w
+        node.height = h
+        node.translation = [x, top]
+    end for
+    m.offerTitleLabel.translation = [x + 36, top + 40]
+    y = top + 40 + titleH + 28
+    for i = 0 to 1
+        r = m.offerRows[i]
+        r.rowWidth = w - 48
+        r.rowHeight = rowH
+        r.label = labels[i][0]
+        r.description = labels[i][1]
+        r.showChevron = false
+        r.translation = [x + 24, y]
+        y = y + rowH + 8
+    end for
+    m.offerIndex = 0
+    m.offerVisible = true
+    m.content.visible = false
+    m.buttonsGroup.visible = false
+    m.top.findNode("offer").visible = true
+    renderOffer()
+    m.top.setFocus(true)
+end sub
+
+sub renderOffer()
+    for i = 0 to m.offerRows.Count() - 1
+        m.offerRows[i].focusedState = i = m.offerIndex
+    end for
+end sub
+
+sub answerOffer(remember as boolean)
+    m.offerVisible = false
+    m.top.findNode("offer").visible = false
+    ProfileLaunch_answerOffer(remember)
+    Nav_reset("ShellScreen")
+end sub
+
+function onOfferKey(key as string) as boolean
+    if key = "up" and m.offerIndex > 0 then
+        m.offerIndex = m.offerIndex - 1
+    else if key = "down" and m.offerIndex < m.offerRows.Count() - 1 then
+        m.offerIndex = m.offerIndex + 1
+    else if key = "OK" then
+        answerOffer(m.offerIndex = 0)
+        return true
+    else if key = "back" then
+        ' Closing the question keeps asking, as upstream's dismiss does.
+        answerOffer(false)
+        return true
+    end if
+    renderOffer()
+    return true
+end function
 
 sub openPin(p as object)
     m.pinProfile = p

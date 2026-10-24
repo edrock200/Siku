@@ -152,6 +152,12 @@ end function
 function buildPane(catId as string) as object
     out = []
     if catId = "general" then
+        ' tvOS / Android TV General → PROFILE AT LAUNCH. Device-wide and never synced, so it reads
+        ' the same whichever profile is active (ProfileLaunch.brs).
+        out.Push({ kind: "header", text: "Profile at Launch" })
+        out.Push({ kind: "row", row: rowDef("profileSelection", "choice", "Profile Selection") })
+        out.Push({ kind: "footer", text: ProfileLaunch_behavior().detail })
+
         out.Push({ kind: "header", text: "Home Sections" })
         out.Push({ kind: "row", row: rowDef("homeSections", "action", "Home Sections") })
         out.Push({ kind: "footer", text: "Choose which Home rows are visible and edit the order in which they appear on this Roku." })
@@ -299,7 +305,9 @@ function rowValue(row as object) as string
     s = m.global.session
     p = m.global.prefs
     if p = invalid then p = {}
-    if id = "cardPreset" then
+    if id = "profileSelection" then
+        return ProfileLaunch_behavior().title
+    else if id = "cardPreset" then
         cp = Settings_cardPresentation()
         for each pr in cardPresets()
             if pr.posterSize = cp.posterSize and pr.caption = cp.caption then return pr.label
@@ -408,7 +416,13 @@ end function
 ' Picker options for a choice row: [{value, label}].
 function rowOptions(row as object) as object
     id = row.id
-    if id = "cardPreset" then
+    if id = "profileSelection" then
+        out = []
+        for each b in ProfileLaunch_behaviors()
+            out.Push({ value: b.id, label: b.title, detail: b.detail })
+        end for
+        return out
+    else if id = "cardPreset" then
         out = []
         for each pr in cardPresets()
             out.Push({ value: pr.id, label: pr.label })
@@ -472,7 +486,9 @@ end function
 ' The value a choice row currently holds, for the picker's check mark.
 function rowCurrent(row as object) as dynamic
     id = row.id
-    if id = "cardPreset" then
+    if id = "profileSelection" then
+        return ProfileLaunch_behavior().id
+    else if id = "cardPreset" then
         cp = Settings_cardPresentation()
         for each pr in cardPresets()
             if pr.posterSize = cp.posterSize and pr.caption = cp.caption then return pr.id
@@ -832,6 +848,14 @@ sub layoutPicker(title as string, subtitle as string, message as string)
     rowH = 72
     maxVisible = 8
     count = m.pickerOptions.Count()
+    ' Options with a second line explaining the choice (Profile Selection) get taller rows.
+    for each o in m.pickerOptions
+        if not Str_isEmpty(o.detail) then
+            w = 900
+            rowH = 140
+            maxVisible = 5
+        end if
+    end for
     shownCount = count
     if shownCount > maxVisible then shownCount = maxVisible
     for i = 0 to count - 1
@@ -840,6 +864,7 @@ sub layoutPicker(title as string, subtitle as string, message as string)
         item.rowWidth = w - 48
         item.rowHeight = rowH
         item.label = o.label
+        item.description = Str_orEmpty(o.detail)
         item.showChevron = false
         item.destructive = o.destructive = true
         m.pickerItems.Push(item)
@@ -897,7 +922,7 @@ sub updatePicker()
         item.visible = shown
         if shown then
             item.translation = [0, y]
-            y = y + 78
+            y = y + item.rowHeight + 6
         end if
         item.focusedState = i = m.pickerIndex
         if m.pickerMode = "options" and sameValue(m.pickerOptions[i].value, current) then
@@ -1008,7 +1033,12 @@ sub applyChoice(row as object, value as dynamic)
     id = row.id
     cp = Settings_cardPresentation()
     deviceOnly = Settings_source("ui.card_presentation") = "profile_device"
-    if id = "cardPreset" then
+    if id = "profileSelection" then
+        ProfileLaunch_setBehavior(Str_orEmpty(value))
+        ' A timed choice starts its away clock from now.
+        ProfileLaunch_markActive(0)
+        renderPane()
+    else if id = "cardPreset" then
         for each pr in cardPresets()
             if pr.id = value then writeCardPresentation(pr.posterSize, pr.caption, deviceOnly)
         end for
