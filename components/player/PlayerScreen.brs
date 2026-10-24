@@ -803,10 +803,32 @@ end sub
 
 sub onProgressResult(event as object)
     resp = Api_result(event)
+    if isSessionEndedByServer(resp) then
+        leaveServerEndedSession()
+        return
+    end if
     if resp.status = 404 or resp.status = 410 then
         ' The session is gone on the server; stop reporting.
         m.sessionId = ""
     end if
+end sub
+
+' 410 playback_session_ended: an administrator stopped this session while the server could not
+' tell the player directly. Renewing would undo that stop (Android TV isPlaybackSessionEnded, #548).
+function isSessionEndedByServer(resp as object) as boolean
+    if resp = invalid or resp.status <> 410 or resp.error = invalid then return false
+    return Str_orEmpty(resp.error.code) = "playback_session_ended"
+end function
+
+' Leaves the player the way a remote stop does, saying why once. The session is already over on
+' the server, so no DELETE is sent for it.
+sub leaveServerEndedSession()
+    if m.closing then return
+    print "[siku-playback] the server ended this playback session; leaving playback"
+    m.sessionId = ""
+    m.progressTimer.control = "stop"
+    m.global.toast = "An administrator ended this playback session."
+    exitPlayer()
 end sub
 
 ' DELETE the session with a final sample. Safe to call twice.
@@ -2142,6 +2164,11 @@ end sub
 sub onReplan(event as object)
     resp = Api_result(event)
     if m.closing then return
+    if isSessionEndedByServer(resp) then
+        setBuffering(false)
+        leaveServerEndedSession()
+        return
+    end if
     failText = "Couldn't change the quality"
     if m.replanKind = "output" then failText = "Couldn't change the video output"
     if m.replanKind = "audio" then failText = "Couldn't change the audio track"
