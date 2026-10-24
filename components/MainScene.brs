@@ -168,7 +168,10 @@ sub handleDeepLink(args as dynamic)
     ' Developer aids for the simulator (tools/simulate.py, tools/mock_server.py).
     if args.debugSession = "mock" then
         s = AA_copy(m.global.session)
-        s.serverUrl = "http://127.0.0.1:8097"
+        ' debugPort lets several simulator runs use separate mock servers.
+        port = "8097"
+        if not Str_isEmpty(args.debugPort) then port = args.debugPort
+        s.serverUrl = "http://127.0.0.1:" + port
         s.serverOrigin = s.serverUrl
         s.serverName = "Mock Silo"
         s.serverId = "mock-server-1"

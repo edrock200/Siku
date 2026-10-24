@@ -166,7 +166,8 @@ demuxed CMAF.
    ```
    Steps: `wait:N`, `snap:NAME`, `up/down/left/right/ok/back/options/play`. Put `wait:1` between
    keys (the simulator lags). View the PNGs; read `out/sim-<name>/console.log` for runtime errors.
-   `debugSession=mock` seeds a signed-in session against the mock; `debugScreen` opens a screen
+   `debugSession=mock` seeds a signed-in session against the mock (port 8097, or
+   `debugPort=<port>` for a mock started with `--port <port>`, so parallel runs don't collide); `debugScreen` opens a screen
    directly; `debugItem` becomes `params.itemId`. Useful ids: `movie:glass-city`,
    `series:orbital`, `audiobook:the-long-orbit`, person `100`.
 5. Build: `npm run package` → `out/siku.zip`. Side-load on a Roku in developer mode
