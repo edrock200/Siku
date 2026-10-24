@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Episode rail card (design-spec §4.3 Episodes): a 16:9 still with a 10 px progress bar and a watched
-  check, then eyebrow "S1 · E1", title, meta line and a 3-line synopsis. Focus: 3 dp white ring, no scale.
+  check, then the caption "S01E02 · Title" over "Feb 18, 2026  ·  52m" (an optional eyebrow above
+  it) and a 3-line synopsis. Focus: 3 dp white ring, no scale.
   The current episode (itemContent.isCurrent) gets a white 70% ring.
   Expected ContentNode fields: title, HDPosterUrl, progress, watched, eyebrow, meta, synopsis, isCurrent.
   SPDX-License-Identifier: AGPL-3.0-or-later

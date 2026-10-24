@@ -859,13 +859,10 @@ sub onEpisodes(event as object)
     for i = 0 to m.episodes.Count() - 1
         ep = m.episodes[i]
         node = Content_cardNode(ep, "landscape")
-        node.title = Str_orEmpty(ep.title)
-        metaParts = []
-        if toInt(ep.runtime) > 0 then metaParts.Push(Time_runtime(toInt(ep.runtime) * 60))
-        metaParts.Push(airDateText(ep.air_date))
+        node.title = Content_episodeCaptionTitle(ep)
         node.addFields({
-            eyebrow: Content_seShort(ep.season_number, ep.episode_number)
-            meta: Str_joinDots(metaParts)
+            eyebrow: ""
+            meta: Content_episodeCaptionMeta(airDateText(ep.air_date), toInt(ep.runtime))
             synopsis: Str_orEmpty(ep.overview)
             isCurrent: Str_orEmpty(ep.content_id) = m.currentEpisodeId
         })

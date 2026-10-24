@@ -74,13 +74,19 @@ sub layout()
         m.fill.height = 10
     end if
 
-    m.eyebrow.translation = [0, h + 14]
+    ' Caption: "S01E02 · Title" over "Feb 18, 2026  ·  52m", then the description (#644). The
+    ' meta line keeps its place when empty so every card in the rail lines up.
+    top = h + 14
+    if m.eyebrow.text <> "" then
+        m.eyebrow.translation = [0, top]
+        top = top + 24
+    end if
     m.eyebrow.width = w
-    m.title.translation = [0, h + 38]
+    m.title.translation = [0, top]
     m.title.width = w
-    m.meta.translation = [0, h + 76]
+    m.meta.translation = [0, top + 40]
     m.meta.width = w
-    m.synopsis.translation = [0, h + 108]
+    m.synopsis.translation = [0, top + 74]
     m.synopsis.width = w
     m.eyebrow.visible = m.eyebrow.text <> ""
     m.meta.visible = m.meta.text <> ""
