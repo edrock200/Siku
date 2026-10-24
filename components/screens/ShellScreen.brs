@@ -83,7 +83,12 @@ end function
 sub refreshData(force = false as boolean)
     now = Time_nowSeconds()
     maxAge = 300
-    if force or (not m.libsLoading and (m.libsLoadedAt = 0 or now - m.libsLoadedAt > maxAge)) then loadLibraries()
+    if force or (not m.libsLoading and (m.libsLoadedAt = 0 or now - m.libsLoadedAt > maxAge)) then
+        ' A stale list also re-reads the settings, so a library hidden or shown again on another
+        ' device is picked up (Android TV re-reads ui.disabled_library_ids on foreground).
+        if not force and m.libsLoadedAt > 0 then Settings_load()
+        loadLibraries()
+    end if
     if force or (not m.gateLoading and (m.gateLoadedAt = 0 or now - m.gateLoadedAt > maxAge)) then loadRequestsGate()
 end sub
 
@@ -140,7 +145,14 @@ end sub
 
 sub buildTabs()
     groups = { movies: [], series: [], music: [], audiobooks: [] }
-    for each lib in m.libraries
+    ' Libraries the profile hid (ui.disabled_library_ids) stay out of the tabs and their panels,
+    ' as on Android TV (upstream #517); the filter runs again whenever the settings snapshot lands.
+    visible = Settings_withoutHiddenLibraries(m.libraries)
+    visibleIds = {}
+    for each lib in visible
+        visibleIds[Str_orEmpty(lib.id)] = true
+    end for
+    for each lib in visible
         mode = Library_mode(lib.type)
         if mode = "mixed" then
             groups.movies.Push(lib)
@@ -176,6 +188,16 @@ sub buildTabs()
     if si < 0 then si = 0
     m.bar.selectedIndex = si
     if m.bar.focusIndex >= tabs.Count() then m.bar.focusIndex = si
+    ' The library on screen was just hidden (on this device or another): fall back to Home.
+    if m.currentLibraryId <> "" and not visibleIds.DoesExist(m.currentLibraryId) then
+        m.currentLibraryId = ""
+        if panelOpen() and (m.panelKind = "libs" or m.panelKind = "sections") then closePanel()
+        if Left(m.currentKey, 4) = "lib:" then
+            showHome()
+            m.bar.selectedIndex = 0
+            if m.focusArea = "content" then focusContent()
+        end if
+    end if
 end sub
 
 function tabIndex(id as string) as integer
@@ -255,7 +277,7 @@ sub commitLibrary(tabDef as object, lib as object, section as string)
     if Library_mode(lib.type) = "mixed" then mediaType = Str_orEmpty(tabDef.mediaType)
     key = "lib:" + libId + ":" + section + ":" + mediaType
     if section = "recommended" then
-        showPage(key, "HomePage", { libraryId: libId, libraryName: libName, mode: Library_mode(lib.type) })
+        showPage(key, "HomePage", { libraryId: libId, libraryName: libName, mode: Library_mode(lib.type), mediaType: mediaType })
     else
         showPage(key, "LibraryPage", { section: section, libraryId: libId, libraryName: libName, mode: Library_mode(lib.type), mediaType: mediaType })
     end if

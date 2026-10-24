@@ -1143,8 +1143,11 @@ function shuffleScope() as dynamic
     return invalid
 end function
 
-' Movie, TV and mixed libraries (and collections) shuffle when the server offers it.
+' Movie, TV and mixed libraries (and collections) shuffle when the server offers it. A Movies- or
+' Series-scoped view of a mixed library does not: a shuffle request carries no media type, so it
+' would draw from both (Android TV, upstream #441).
 function shuffleOffered() as boolean
+    if not Str_isEmpty(prm("mediaType")) then return false
     sc = shuffleScope()
     if sc = invalid or sc.id = "" then return false
     return Shuffle_supports(sc.kind)

@@ -44,6 +44,7 @@ function Settings_keyDefs() as object
         { key: "home.hide_watched_items", rev: 12, def: false }
         { key: "ui.card_presentation", rev: 5, def: { poster_size: "standard", caption: "title_metadata" } }
         { key: "ui.title_art", rev: 16, def: true }
+        { key: "ui.disabled_library_ids", rev: 1, def: invalid }
     ]
     return m.siku_settingKeys
 end function
@@ -395,7 +396,75 @@ end function
 function Settings_uiSignature() as string
     cp = Settings_cardPresentation()
     sig = cp.posterSize + "|" + cp.caption + "|" + Str_orEmpty(Settings_hideWatched()) + "|" + Str_orEmpty(Settings_showTitleArt())
-    return sig
+    hidden = []
+    for each id in Settings_hiddenLibraryIds()
+        hidden.Push(id)
+    end for
+    hidden.Sort()
+    return sig + "|" + hidden.Join(",")
+end function
+
+' ---------- Hidden libraries (ui.disabled_library_ids) ----------
+' The libraries the profile hid from its own navigation (the web's Settings > Libraries > "Visible
+' in navigation"; Android TV HiddenLibrariesStore, upstream #517). A preference, not access control:
+' the server still lists them in GET /api/v2/user/libraries, so the client leaves them out.
+' Nothing is hidden until the server answered for this profile.
+
+' A set { "<id>": true } of normalised ids. The value is the canonical array, or the legacy JSON
+' string of one; entries may be numbers or numeric strings.
+function Settings_hiddenLibraryIds() as object
+    out = {}
+    v = Settings_value("ui.disabled_library_ids", invalid)
+    if v = invalid then return out
+    t = Type(v)
+    if t = "roString" or t = "String" then
+        if v.Trim() = "" then return out
+        v = ParseJson(v)
+        if v = invalid then return out
+    end if
+    if Type(v) <> "roArray" then return out
+    for each e in v
+        id = Settings_libraryIdKey(e)
+        if id <> "" then out[id] = true
+    end for
+    return out
+end function
+
+' The comparable form of a library id: positive whole numbers as plain digits ("7" for 7, 7.0 or
+' " 7 "), any other non-empty string as itself, "" for anything else.
+function Settings_libraryIdKey(v as dynamic) as string
+    if v = invalid then return ""
+    t = Type(v)
+    if t = "roString" or t = "String" then
+        s = v.Trim()
+        if s = "" then return ""
+        re = CreateObject("roRegex", "^[0-9]+(\.0+)?$", "")
+        if re.IsMatch(s) then
+            parts = s.Split(".")
+            digits = parts[0]
+            while Len(digits) > 1 and Left(digits, 1) = "0"
+                digits = Mid(digits, 2)
+            end while
+            return digits
+        end if
+        return s
+    end if
+    n = Content_numOr(v, -1)
+    if n < 1 or n <> Int(n) then return ""
+    return Int(n).ToStr()
+end function
+
+' `libraries` minus the ones the profile hid.
+function Settings_withoutHiddenLibraries(libraries as object) as object
+    hidden = Settings_hiddenLibraryIds()
+    if hidden.Count() = 0 then return libraries
+    out = []
+    for each lib in libraries
+        if Type(lib) = "roAssociativeArray" then
+            if not hidden.DoesExist(Settings_libraryIdKey(lib.id)) then out.Push(lib)
+        end if
+    end for
+    return out
 end function
 
 ' ---------- Home Sections layout (device-local, like Android TV's TvHomeSectionPreferences) ----------
