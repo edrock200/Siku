@@ -86,6 +86,8 @@ jobs:
         if: steps.exists.outputs.released == 'false'
         with:
           tag_name: ${{ steps.version.outputs.tag }}
+          # Tag the commit that was built; without it the tag lands on the default branch.
+          target_commitish: ${{ github.sha }}
           name: Siku ${{ steps.version.outputs.tag }}
           files: |
             out/siku-${{ steps.version.outputs.tag }}.zip
