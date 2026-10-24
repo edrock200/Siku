@@ -1,4 +1,4 @@
-' Cursor-paged request lists (GET /api/v2/requests/mine, GET /api/v2/admin/requests).
+' Cursor-paged request lists (GET /api/v2/requests/mine).
 ' Follows page.next_cursor (limit 50) and hands the whole list to the component's
 '   sub onRequestsListLoaded(tag as string, ok as boolean, items as object, resp as object)
 ' A failed page, a missing or repeated cursor, or the page bound fails the whole load instead of

@@ -1,8 +1,8 @@
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 ' Ports RequestDetailViewModel / RequestDetailUiState: the page reads the title
 ' (GET /api/v2/requests/detail/{media_type}/{tmdb_id}), then the user's own requests for it
-' (GET /api/v2/requests/mine) and, for an admin who can moderate, a pending or failed request on it
-' (GET /api/v2/admin/requests?…&media_type=&q=<tmdb_id>). Every button is derived from those reads.
+' (GET /api/v2/requests/mine). Every button is derived from those reads. Request administration
+' (approve, decline, retry) stays in web admin, as on Android TV.
 
 sub init()
     m.page = m.top.findNode("page")
@@ -28,9 +28,6 @@ sub init()
     m.track = m.top.findNode("track")
     m.actions = m.top.findNode("actions")
     m.primaryBtn = m.top.findNode("primaryBtn")
-    m.approveBtn = m.top.findNode("approveBtn")
-    m.declineBtn = m.top.findNode("declineBtn")
-    m.retryBtn = m.top.findNode("retryBtn")
     m.cancelBtn = m.top.findNode("cancelBtn")
     m.actionError = m.top.findNode("actionError")
     m.moreSection = m.top.findNode("moreSection")
@@ -39,31 +36,20 @@ sub init()
     m.errorGroup = m.top.findNode("errorGroup")
     m.errorBody = m.top.findNode("errorBody")
     m.errorRetry = m.top.findNode("errorRetry")
-    m.menu = m.top.findNode("menu")
     m.scrollAnim = m.top.findNode("scrollAnim")
     m.scrollInterp = m.top.findNode("scrollInterp")
 
     m.primaryBtn.observeField("buttonSelected", "onPrimary")
-    m.approveBtn.observeField("buttonSelected", "onApprove")
-    m.declineBtn.observeField("buttonSelected", "onDecline")
-    m.retryBtn.observeField("buttonSelected", "onRetryRequest")
     m.cancelBtn.observeField("buttonSelected", "onCancel")
     m.errorRetry.observeField("buttonSelected", "load")
     m.moreRow.observeField("rowItemSelected", "onMoreSelected")
-    m.menu.observeField("chosen", "onMenuChosen")
-    m.menu.observeField("dismissed", "onMenuDismissed")
     m.backdrop.observeField("loadStatus", "onBackdropStatus")
 
     m.detail = invalid
     m.record = invalid           ' the user's own current record for this title
-    m.moderation = invalid       ' a pending or failed request an admin can decide on
-    m.openedForModeration = false
-    m.selectedModerationId = ""
     m.isSubmitting = false
     m.isCancelling = false
-    m.isModerating = false
     m.submissionUnconfirmed = false
-    m.moderationUnconfirmed = false
     m.cancelUnconfirmed = false
     m.actionErrorText = ""
     m.recommendations = []
@@ -89,8 +75,6 @@ sub onScreenShown()
                 m.tmdbId = parts[1]
             end if
         end if
-        m.selectedModerationId = Str_orEmpty(p.moderationRequestId)
-        m.openedForModeration = m.selectedModerationId <> ""
         load()
     else if m.detail <> invalid then
         ' Back from another page (a recommendation, the library item): re-read what may have changed.
@@ -123,7 +107,6 @@ sub onDetail(event as object)
     if not resp.ok or resp.data = invalid then
         m.isSubmitting = false
         m.isCancelling = false
-        m.isModerating = false
         if m.detail = invalid then
             m.errorBody.text = Req_failureText(resp, "Failed to load request details")
             m.errorGroup.visible = true
@@ -136,24 +119,9 @@ sub onDetail(event as object)
     end if
     m.detail = resp.data
     render()
-    ' Supporting reads; each keeps its previous value on failure.
+    ' The user's list keeps its previous value on failure, so a slow list never blocks the page.
     m.pendingReads = { mine: true }
     ReqApi_loadList("mine", "/api/v2/requests/mine", invalid, 100)
-    if Req_gate().canModerate = true then
-        m.pendingReads.modPending = true
-        m.pendingReads.modFailed = true
-        m.modMatches = []
-        m.modOk = true
-        q = { q: m.tmdbId }
-        if m.mediaType = "movie" or m.mediaType = "series" then q.media_type = m.mediaType
-        q1 = AA_copy(q)
-        q1.status = "pending"
-        q1.outcome = "active"
-        q2 = AA_copy(q)
-        q2.outcome = "failed"
-        ReqApi_loadList("modPending", "/api/v2/admin/requests", q1, 40)
-        ReqApi_loadList("modFailed", "/api/v2/admin/requests", q2, 40)
-    end if
 end sub
 
 sub onRequestsListLoaded(tag as string, ok as boolean, items as object, resp as object)
@@ -161,52 +129,20 @@ sub onRequestsListLoaded(tag as string, ok as boolean, items as object, resp as 
     if resp = invalid then resp = {}
     if m.pendingReads = invalid or not m.pendingReads.DoesExist(tag) then return
     m.pendingReads.Delete(tag)
-    if tag = "mine" then
-        if ok then
-            own = []
-            for each r in items
-                if Str_orEmpty(r.media_type) = m.mediaType and Str_orEmpty(r.tmdb_id) = m.tmdbId then own.Push(r)
-            end for
-            m.record = Req_currentRecord(own)
-            if m.cancelUnconfirmed and (m.record = invalid or Req_displayOfRecord(m.record).kind <> "pending") then
-                m.cancelUnconfirmed = false
-                clearMessage("We couldn't confirm the cancellation. Refresh your requests to check it.")
-            end if
-        end if
-    else
-        if ok then
-            for each r in items
-                if Str_orEmpty(r.media_type) = m.mediaType and Str_orEmpty(r.tmdb_id) = m.tmdbId then m.modMatches.Push(r)
-            end for
-        else
-            m.modOk = false
-        end if
-        if not m.pendingReads.DoesExist("modPending") and not m.pendingReads.DoesExist("modFailed") and m.modOk then
-            chosen = invalid
-            if m.selectedModerationId <> "" then
-                ' Stay on the exact request the page opened with; once decided, offer nothing.
-                for each r in m.modMatches
-                    if Str_orEmpty(r.id) = m.selectedModerationId then chosen = r
-                end for
-                if chosen = invalid and m.moderation <> invalid and Str_orEmpty(m.moderation.id) = m.selectedModerationId then
-                    ' Keep the decided record (from the action's answer) so its status still shows.
-                    chosen = m.moderation
-                end if
-            else if m.modMatches.Count() > 0 then
-                chosen = m.modMatches[0]
-                m.selectedModerationId = Str_orEmpty(chosen.id)
-            end if
-            m.moderation = chosen
-            if m.moderationUnconfirmed then
-                m.moderationUnconfirmed = false
-                clearMessage("We couldn't confirm that decision. Refresh to see where the request stands.")
-            end if
+    if tag = "mine" and ok then
+        own = []
+        for each r in items
+            if Str_orEmpty(r.media_type) = m.mediaType and Str_orEmpty(r.tmdb_id) = m.tmdbId then own.Push(r)
+        end for
+        m.record = Req_currentRecord(own)
+        if m.cancelUnconfirmed and (m.record = invalid or Req_displayOfRecord(m.record).kind <> "pending") then
+            m.cancelUnconfirmed = false
+            clearMessage("We couldn't confirm the cancellation. Refresh your requests to check it.")
         end if
     end if
     if m.pendingReads.Count() = 0 then
         m.isSubmitting = false
         m.isCancelling = false
-        m.isModerating = false
         if m.submissionUnconfirmed and primaryAction().kind <> "request" then
             m.submissionUnconfirmed = false
             clearMessage("We couldn't confirm the request. Check My Requests before trying again.")
@@ -250,22 +186,12 @@ function activeRecordState() as dynamic
     return invalid
 end function
 
+' The user's own request for this title that ended without landing (failed or declined), when
+' that's the latest word on it.
 function endedRequest() as dynamic
-    if m.openedForModeration then
-        order = [m.moderation, currentOwnRecord()]
-    else
-        order = [currentOwnRecord(), m.moderation]
-    end if
-    for each r in order
-        if r <> invalid and Req_displayOfRecord(r).kind = "attention" then return r
-    end for
+    own = currentOwnRecord()
+    if own <> invalid and Req_displayOfRecord(own).kind = "attention" then return own
     return invalid
-end function
-
-function isRetryableByAdmin() as boolean
-    if m.moderation = invalid then return false
-    d = Req_displayOfRecord(m.moderation)
-    return d.kind = "attention" and d.attention = "failed"
 end function
 
 ' {kind: "loading"|"request"|"submitting"|"status"|"open", state?, contentId?}
@@ -276,20 +202,15 @@ function primaryAction() as object
     if cid <> "" then return { kind: "open", contentId: cid }
     if m.isSubmitting then return { kind: "submitting" }
     if m.submissionUnconfirmed then return { kind: "status", state: Req_display("unavailable", "", "request_unconfirmed") }
-    if m.openedForModeration and m.moderation <> invalid then return { kind: "status", state: Req_displayOfRecord(m.moderation) }
     endedButRequestable = st <> invalid and st.kind = "attention" and detailRequest().requestable = true
     if st <> invalid and not endedButRequestable then return { kind: "status", state: st }
     act = activeRecordState()
     if act <> invalid then return { kind: "status", state: act }
-    ended = endedRequest()
-    if ended <> invalid and isRetryableByAdmin() then return { kind: "status", state: Req_displayOfRecord(ended) }
     return { kind: "request" }
 end function
 
 function currentProgress() as dynamic
     own = currentOwnRecord()
-    md = m.moderation
-    if md <> invalid and (m.openedForModeration or own = invalid) then return Req_progressOfRecord(md)
     if own <> invalid then
         ended = endedRequest()
         endedOwn = ended <> invalid and Str_orEmpty(ended.id) = Str_orEmpty(own.id)
@@ -303,23 +224,9 @@ function currentProgress() as dynamic
     return p
 end function
 
-function displayedRecord() as dynamic
-    if m.openedForModeration and m.moderation <> invalid then return m.moderation
-    if m.record <> invalid then return m.record
-    return m.moderation
-end function
-
 function canCancel() as boolean
-    if m.record = invalid or m.openedForModeration or m.isCancelling or m.cancelUnconfirmed then return false
+    if m.record = invalid or m.isCancelling or m.cancelUnconfirmed then return false
     return Req_displayOfRecord(m.record).kind = "pending"
-end function
-
-function moderationActions() as object
-    if m.moderation = invalid or m.isModerating or m.moderationUnconfirmed then return []
-    d = Req_displayOfRecord(m.moderation)
-    if d.kind = "pending" then return ["approve", "decline"]
-    if d.kind = "attention" and d.attention = "failed" then return ["retry"]
-    return []
 end function
 
 function primaryTitle(action as object, p as dynamic) as string
@@ -399,7 +306,7 @@ sub render()
         m.statusStrip.translation = [0, y + 4]
         m.fieldStatusDot.blendColor = p.tint
         m.fieldStatusValue.text = p.long
-        rec = displayedRecord()
+        rec = m.record
         day = ""
         quality = ""
         if rec <> invalid then
@@ -483,25 +390,14 @@ sub renderActions(p as dynamic)
     else
         m.primaryBtn.iconUri = ""
     end if
-    mods = moderationActions()
-    m.approveBtn.visible = false
-    m.declineBtn.visible = false
-    m.retryBtn.visible = false
-    for each a in mods
-        if a = "approve" then m.approveBtn.visible = true
-        if a = "decline" then m.declineBtn.visible = true
-        if a = "retry" then m.retryBtn.visible = true
-    end for
     m.cancelBtn.visible = canCancel()
     m.actionButtons = [m.primaryBtn]
     x = m.primaryBtn.width + 18
-    for each b in [m.approveBtn, m.declineBtn, m.retryBtn, m.cancelBtn]
-        if b.visible then
-            b.translation = [x, 0]
-            x = x + b.width + 18
-            m.actionButtons.Push(b)
-        end if
-    end for
+    if m.cancelBtn.visible then
+        m.cancelBtn.translation = [x, 0]
+        x = x + m.cancelBtn.width + 18
+        m.actionButtons.Push(m.cancelBtn)
+    end if
     m.actionError.text = m.actionErrorText
     m.actionError.visible = m.actionErrorText <> ""
     m.actionError.translation = [x + 6, 4]
@@ -541,10 +437,6 @@ end sub
 ' ---------- Focus ----------
 
 sub restoreFocus()
-    if m.menu.visible then
-        m.menu.setFocus(true)
-        return
-    end if
     if m.errorGroup.visible then
         m.errorRetry.setFocus(true)
         return
@@ -674,62 +566,6 @@ sub onCancelled(event as object)
     render()
 end sub
 
-sub onApprove()
-    moderate("approve")
-end sub
-
-sub onRetryRequest()
-    moderate("retry")
-end sub
-
-' Decline asks first; Keep comes first so a stray press doesn't decide on someone's request.
-sub onDecline()
-    m.menu.title = "Decline this request?"
-    m.menu.actions = [{ id: "keep", label: "Keep" }, { id: "decline", label: "Decline", icon: "close" }]
-    m.menu.visible = true
-    m.menu.setFocus(true)
-end sub
-
-sub onMenuChosen()
-    chosen = m.menu.chosen
-    restoreFocus()
-    if chosen = "decline" then moderate("decline")
-end sub
-
-sub onMenuDismissed()
-    restoreFocus()
-end sub
-
-sub moderate(action as string)
-    if m.moderation = invalid or m.isModerating then return
-    m.isModerating = true
-    m.actionErrorText = ""
-    render()
-    path = "/api/v2/admin/requests/" + Str_urlEncode(Str_orEmpty(m.moderation.id)) + "/" + action
-    Api_send("POST", path, {}, "onModerated")
-end sub
-
-sub onModerated(event as object)
-    resp = Api_result(event)
-    if resp.ok and resp.data <> invalid then
-        ' Still moderating through the re-read, so the buttons can't come back for this decision.
-        m.moderation = resp.data
-        m.global.homeDirty = true
-        fetch()
-        return
-    end if
-    m.isModerating = false
-    if Req_isUncertain(resp) then
-        m.moderationUnconfirmed = true
-        m.actionErrorText = "We couldn't confirm that decision. Refresh to see where the request stands."
-        render()
-        fetch()
-        return
-    end if
-    m.actionErrorText = Req_failureText(resp, "Something went wrong")
-    render()
-end sub
-
 ' "More like this": the same routing rule as every request card.
 sub onMoreSelected()
     sel = m.moreRow.rowItemSelected
@@ -748,7 +584,6 @@ end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
-    if m.menu.visible then return false
     if m.detail = invalid then return false
     if m.focusZone = "more" then
         if key = "up" then

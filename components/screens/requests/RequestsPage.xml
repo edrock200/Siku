@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Requests tab (design-spec §4.8, Android TV TvRequestsPage): the Skyline feed with rows
-  "Waiting for your approval" (admins who can moderate), "Your requests", "Failed requests" (admins),
-  then the "Discover" carousels ("Trending now", "Crowd favorites").
+  "Your requests", then the "Discover" carousels ("Trending now", "Crowd favorites").
+  Request administration (approve, decline, retry) stays in web admin, as on Android TV.
   The feed's own marquee is replaced by a request marquee: title, "year · Movie · Requested Sep 24",
   synopsis, and the status line with its four-step stage track.
-  Options (*) on a request card: Cancel Request / Approve / Decline / Retry.
+  Options (*) on one of the user's own pending requests: Cancel Request.
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="RequestsPage" extends="ShellPage">

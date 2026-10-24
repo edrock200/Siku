@@ -104,8 +104,8 @@ sub onLibraries(event as object)
 end sub
 
 ' Requests feature gate (RequestsFeatureStore): the tab and the search row appear only when the
-' server enables requests for this profile; admins who can moderate also get the approval rows.
-' A transient failure keeps the previous answer.
+' server enables requests for this profile. Request administration stays in web admin, so there is
+' no admin capability probe. A transient failure keeps the previous answer.
 sub loadRequestsGate()
     if m.gateLoading then return
     m.gateLoading = true
@@ -113,36 +113,20 @@ sub loadRequestsGate()
 end sub
 
 sub resetRequestsGate()
-    Req_setGate({ enabled: false, canModerate: false, resolved: false })
+    Req_setGate({ enabled: false, resolved: false })
 end sub
 
 sub onRequestsStatus(event as object)
     resp = Api_result(event)
     if resp.context = invalid or resp.context.profileId <> m.profileId then return
+    m.gateLoading = false
     prev = Req_gate()
     enabled = prev.enabled = true
-    if resp.ok then enabled = Req_statusAvailable(resp.data)
-    if not enabled then
-        m.gateLoading = false
-        if resp.ok then m.gateLoadedAt = Time_nowSeconds()
-        applyRequestsGate({ enabled: false, canModerate: false, resolved: true })
-        return
+    if resp.ok then
+        enabled = Req_statusAvailable(resp.data)
+        m.gateLoadedAt = Time_nowSeconds()
     end if
-    Api_get("/api/v2/admin/requests/capabilities", invalid, "onRequestsCapabilities", { profileId: m.profileId })
-end sub
-
-sub onRequestsCapabilities(event as object)
-    resp = Api_result(event)
-    if resp.context = invalid or resp.context.profileId <> m.profileId then return
-    m.gateLoading = false
-    m.gateLoadedAt = Time_nowSeconds()
-    moderates = false
-    if resp.ok and resp.data <> invalid then
-        moderates = resp.data.available = true
-    else if resp.status = 0 then
-        moderates = Req_gate().canModerate = true
-    end if
-    applyRequestsGate({ enabled: true, canModerate: moderates, resolved: true })
+    applyRequestsGate({ enabled: enabled, resolved: true })
 end sub
 
 sub applyRequestsGate(g as object)

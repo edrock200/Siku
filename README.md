@@ -29,7 +29,7 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Playback | Resume, progress sync, mark watched, Skip Intro, Up Next, audio and version selection, automatic subtitles from your Off / Auto / Always setting | ✅ |
 | Settings | Android TV's General, Playback, Subtitles and Server pages (quality and bandwidth, Dolby Vision, skip intro/credits, auto-play, home sections, cards), synced with your Silo profile | ✅ |
 | Audio | Audiobooks (chapters, parts, resume, sleep timer) and music albums/artists with a now-playing screen | 🟡 needs device testing; music waits on server support |
-| Requests | Request movies and series, track their status, approve or decline as a moderator (when the server enables it) | ✅ |
+| Requests | Request movies and series, track their status, cancel a pending request (when the server enables it; approving and declining stay in the server's web admin) | ✅ |
 | Subtitles | Display and selection of SRT/WebVTT tracks, automatic choice from the profile's preference | ✅ |
 | Subtitles | Search and download from providers, AI translate/transcribe, sync to audio, subtitle delay (server-gated) | 🟡 needs device testing |
 | Notifications | Inbox from the profile menu, mark read, mark all read | ✅ |

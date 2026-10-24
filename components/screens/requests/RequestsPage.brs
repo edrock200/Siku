@@ -31,8 +31,6 @@ sub init()
     m.loadSeq = 0
     m.discover = []        ' merged discover carousels
     m.mine = []            ' the user's requests, bucketed
-    m.awaiting = []        ' admin: pending, oldest first
-    m.failed = []          ' admin: failed, most recently updated first
     m.rowsSpec = []
     m.lastSig = ""
     m.busy = {}            ' request ids with an action in flight
@@ -60,23 +58,12 @@ sub load()
     m.loading = true
     m.loadSeq = m.loadSeq + 1
     if not m.loaded then m.feed.state = "loading"
-    gate = Req_gate()
-    m.canModerate = gate.canModerate = true
     m.pending = { discover: true, mine: true }
     m.hubError = invalid
-    m.approvalsError = false
     m.newDiscover = invalid
     m.newMine = invalid
-    m.newAwaiting = invalid
-    m.newFailed = invalid
     Api_get("/api/v2/requests/discover", invalid, "onDiscover", { seq: m.loadSeq })
     ReqApi_loadList("mine", "/api/v2/requests/mine", invalid, 100)
-    if m.canModerate then
-        m.pending.approvals = true
-        m.pending.failed = true
-        ReqApi_loadList("approvals", "/api/v2/admin/requests", { status: "pending", outcome: "active" }, 40)
-        ReqApi_loadList("failed", "/api/v2/admin/requests", { outcome: "failed" }, 40)
-    end if
 end sub
 
 sub onRetry()
@@ -101,18 +88,6 @@ sub onRequestsListLoaded(tag as string, ok as boolean, items as object, resp as 
         else
             m.hubError = resp
         end if
-    else if tag = "approvals" then
-        if ok then
-            m.newAwaiting = Req_sortByTime(items, "created_at", false)
-        else
-            m.approvalsError = true
-        end if
-    else if tag = "failed" then
-        if ok then
-            m.newFailed = Req_sortByTime(items, "updated_at", true)
-        else
-            m.approvalsError = true
-        end if
     end if
     readDone(tag)
 end sub
@@ -128,30 +103,14 @@ sub readDone(tag as string)
         m.discover = m.newDiscover
         m.mine = m.newMine
     end if
-    if m.canModerate then
-        if not m.approvalsError then
-            m.awaiting = m.newAwaiting
-            m.failed = m.newFailed
-        else
-            m.global.toast = "Couldn't load requests waiting for approval"
-        end if
-    else
-        m.awaiting = []
-        m.failed = []
-    end if
     m.loaded = true
     render()
 end sub
 
 sub render()
+    ' Request administration (approve, decline, retry) stays in web admin, as on Android TV.
     rows = []
-    if m.canModerate and m.awaiting.Count() > 0 then
-        rows.Push(rowSpec("approvals", "Waiting for your approval", "approval", m.awaiting))
-    end if
     if m.mine.Count() > 0 then rows.Push(rowSpec("mine", "Your requests", "record", m.mine))
-    if m.canModerate and m.failed.Count() > 0 then
-        rows.Push(rowSpec("failed", "Failed requests", "approval", m.failed))
-    end if
     for each s in m.discover
         rows.Push(rowSpec("discover:" + s.key, s.title, "result", s.results))
     end for
@@ -289,12 +248,6 @@ sub onItemSelected()
     if data = invalid then return
     mt = Str_orEmpty(data.media_type)
     params = { mediaType: mt, tmdbId: data.tmdb_id, title: Str_orEmpty(data.title) }
-    if card.req_kind = "approval" then
-        ' From an approval queue: the page decides on that exact request.
-        params.moderationRequestId = Str_orEmpty(data.id)
-        Nav_push("RequestDetailScreen", params)
-        return
-    end if
     if card.req_kind = "result" then
         d = Req_displayOfAnnotation(data.availability, data.request)
     else
@@ -316,14 +269,6 @@ function actionsFor(card as object) as object
     if data = invalid or m.busy.DoesExist(Str_orEmpty(data.id)) then return out
     if card.req_kind = "record" then
         if Req_displayOfRecord(data).kind = "pending" then out.Push({ id: "cancel", label: "Cancel Request", icon: "close" })
-    else if card.req_kind = "approval" then
-        d = Req_displayOfRecord(data)
-        if d.kind = "pending" then
-            out.Push({ id: "approve", label: "Approve", icon: "check" })
-            out.Push({ id: "decline", label: "Decline", icon: "close" })
-        else if d.kind = "attention" and d.attention = "failed" then
-            out.Push({ id: "retry", label: "Retry", icon: "refresh" })
-        end if
     end if
     return out
 end function
@@ -336,7 +281,7 @@ sub onItemOptions()
     if acts.Count() = 0 then return
     m.menuTarget = opt.card
     m.menuMode = "actions"
-    ' Close first, so a stray press doesn't send a non-retryable action.
+    ' Close first, so a stray press doesn't cancel the request.
     rows = [{ id: "close", label: "Close" }]
     rows.Append(acts)
     m.menu.title = Str_orEmpty(opt.card.req.title)
@@ -348,20 +293,11 @@ end sub
 sub onMenuChosen()
     chosen = m.menu.chosen
     target = m.menuTarget
-    if m.menuMode = "actions" and chosen = "decline" and target <> invalid then
-        ' Decline asks first; Keep comes first so a stray press doesn't decide on someone's request.
-        m.menuMode = "confirmDecline"
-        m.menu.title = "Decline this request?"
-        m.menu.actions = [{ id: "keep", label: "Keep" }, { id: "decline", label: "Decline", icon: "close" }]
-        m.menu.visible = true
-        m.menu.setFocus(true)
-        return
-    end if
     m.menuMode = ""
     m.menuTarget = invalid
     m.feed.focusRequested = true
     if target = invalid then return
-    if chosen = "cancel" or chosen = "approve" or chosen = "decline" or chosen = "retry" then perform(chosen, target.req)
+    if chosen = "cancel" then perform(chosen, target.req)
 end sub
 
 sub onMenuDismissed()
@@ -374,13 +310,7 @@ sub perform(action as string, rec as object)
     id = Str_orEmpty(rec.id)
     if id = "" or m.busy.DoesExist(id) then return
     m.busy[id] = true
-    enc = Str_urlEncode(id)
-    if action = "cancel" then
-        path = "/api/v2/requests/" + enc + "/cancel"
-    else
-        path = "/api/v2/admin/requests/" + enc + "/" + action
-    end if
-    Api_send("POST", path, {}, "onMutation", { action: action, id: id })
+    Api_send("POST", "/api/v2/requests/" + Str_urlEncode(id) + "/cancel", {}, "onMutation", { action: action, id: id })
 end sub
 
 sub onMutation(event as object)
@@ -395,19 +325,11 @@ sub onMutation(event as object)
     end if
     if Req_isUncertain(resp) then
         ' Never resend: re-read to see where the request stands.
-        if ctx.action = "cancel" then
-            m.global.toast = "We couldn't confirm the cancellation. Refresh your requests to check it."
-        else
-            m.global.toast = "We couldn't confirm that decision. Refresh to see where the request stands."
-        end if
+        m.global.toast = "We couldn't confirm the cancellation. Refresh your requests to check it."
         load()
         return
     end if
-    if ctx.action = "cancel" then
-        m.global.toast = Req_failureText(resp, "Couldn't cancel the request")
-    else
-        m.global.toast = Req_failureText(resp, "Something went wrong")
-    end if
+    m.global.toast = Req_failureText(resp, "Couldn't cancel the request")
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean

@@ -5,15 +5,16 @@
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
 ' ---------- Feature gate (m.global.requests) ----------
-' {enabled, canModerate, resolved}. enabled = requests_enabled and allowed and state "available"
-' (GET /api/v2/requests/status); canModerate = GET /api/v2/admin/requests/capabilities → available.
+' {enabled, resolved}. enabled = requests_enabled and allowed and state "available"
+' (GET /api/v2/requests/status). Request administration (approve, decline, retry) stays in web
+' admin, as on Android TV, so Siku never calls the /api/v2/admin/requests endpoints.
 
 function Req_gate() as object
     if m.global.hasField("requests") then
         g = m.global.requests
         if g <> invalid then return g
     end if
-    return { enabled: false, canModerate: false, resolved: false }
+    return { enabled: false, resolved: false }
 end function
 
 sub Req_setGate(g as object)
@@ -430,7 +431,7 @@ end sub
 
 ' ---------- Cards ----------
 ' Builds a card AA for MediaCardItem rows (Content_cardNode reads title/year/poster_url/backdrop_url).
-' kind: "record" (the user's own request), "approval" (someone's, for an admin), "result" (TMDB title).
+' kind: "record" (the user's own request) or "result" (TMDB title).
 function Req_card(kind as string, data as object, rowId as string) as object
     if kind = "result" then
         key = "tmdb:" + Str_orEmpty(data.media_type) + ":" + Str_orEmpty(data.tmdb_id)
