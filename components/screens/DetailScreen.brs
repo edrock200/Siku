@@ -125,15 +125,11 @@ sub onScreenHidden()
 end sub
 
 ' Opened without the shell (a deep link): the profile's settings were never read, and theme music
-' depends on them. Read them once; the answer lands in onSettingsLoaded.
+' and spoiler protection depend on them. Read them once; the answer lands in onSettingsLoaded.
 sub ensureSettings()
     if Settings_available() or m.settingsRequested = true then return
     m.settingsRequested = true
     Settings_load()
-end sub
-
-sub onSettingsLoaded()
-    if m.onTop = true and m.item <> invalid then ThemeMusic_show(m.item)
 end sub
 
 function itemPath() as string
@@ -144,7 +140,26 @@ sub load()
     m.loading = true
     m.errorGroup.visible = false
     m.spinner.visible = true
-    Api_get(itemPath(), { image_size: "large" }, "onItem")
+    ensureSettings()
+    m.spoilerSig = spoilerSignature()
+    Api_get(itemPath(), Artwork_query({ image_size: "large" }, "detail"), "onItem")
+end sub
+
+function spoilerSignature() as string
+    prefs = Spoilers_prefs()
+    return Str_orEmpty(prefs.hideImages) + "|" + Str_orEmpty(prefs.hideOverviews)
+end function
+
+' The settings snapshot landed: start theme music if it is now on, and redraw what spoiler
+' protection changes (hero, episode rail).
+sub onSettingsLoaded()
+    if m.onTop = true and m.item <> invalid then ThemeMusic_show(m.item)
+    sig = spoilerSignature()
+    if sig = m.spoilerSig then return
+    m.spoilerSig = sig
+    if m.item = invalid then return
+    renderHero()
+    if m.selectedSeason <> invalid then loadEpisodes(m.selectedSeason)
 end sub
 
 sub showError(msg as string)
@@ -189,7 +204,7 @@ sub onItem(event as object)
         end if
     end if
     if m.itemType = "movie" or m.itemType = "series" then
-        Api_get("/api/v2/recommendations/similar/" + Str_urlEncode(Str_orEmpty(m.item.content_id)), { limit: 12, image_size: "medium" }, "onSimilar")
+        Api_get("/api/v2/recommendations/similar/" + Str_urlEncode(Str_orEmpty(m.item.content_id)), Artwork_query({ limit: 12, image_size: "medium" }, "similar", Theme_posterScale()), "onSimilar")
     end if
     ' Shuffle entry points in the More menu depend on the server's capability.
     Shuffle_refreshCaps("onShuffleCaps")
@@ -201,7 +216,7 @@ end sub
 
 ' After playback or a state change elsewhere: refetch user state silently.
 sub refreshUserState()
-    Api_get(itemPath(), { image_size: "large" }, "onItemRefreshed")
+    Api_get(itemPath(), Artwork_query({ image_size: "large" }, "detail"), "onItemRefreshed")
 end sub
 
 sub onItemRefreshed(event as object)
@@ -274,8 +289,10 @@ end function
 sub renderHero()
     it = m.item
     t = m.itemType
-    m.backdrop.uri = Url_resolve(it.backdrop_url)
-    if m.backdrop.uri = "" and t = "episode" then m.backdrop.uri = Url_resolve(it.still_url)
+    ' Spoiler protection: an unwatched episode's still (or a backdrop the server does not mark as
+    ' series art) is not shown (Spoilers.brs).
+    m.backdrop.uri = Url_resolve(Spoilers_imageUrl(it, "backdrop"))
+    if m.backdrop.uri = "" and t = "episode" then m.backdrop.uri = Url_resolve(Spoilers_imageUrl(it, "still"))
 
     heading = Str_orEmpty(it.title)
     epLine = ""
@@ -340,9 +357,9 @@ sub renderHero()
     layoutHero()
 end sub
 
-' The hero's description. One place, so a later spoiler setting can hide it.
+' The hero's description; spoiler protection may hide it (Spoilers.brs).
 function heroOverviewText(it as object) as string
-    return Str_orEmpty(it.overview)
+    return Spoilers_overview(it)
 end function
 
 ' "Translated by AI" marks only a machine-translated overview (upstream hasMachineTranslatedOverview).
@@ -853,7 +870,7 @@ sub loadEpisodes(n as integer)
         m.episodesMsg.text = "Loading episodes…"
     end if
     m.episodesRequestSeason = n
-    Api_get("/api/v2/catalog/series/" + Str_urlEncode(sid) + "/seasons/" + n.ToStr() + "/episodes", { image_size: "medium" }, "onEpisodes")
+    Api_get("/api/v2/catalog/series/" + Str_urlEncode(sid) + "/seasons/" + n.ToStr() + "/episodes", Artwork_query({ image_size: "medium" }, "episodes"), "onEpisodes")
 end sub
 
 function airDateText(d as dynamic) as string
@@ -921,14 +938,12 @@ sub onEpisodes(event as object)
     focusIdx = 0
     for i = 0 to m.episodes.Count() - 1
         ep = m.episodes[i]
+        ' Spoiler protection drops an unwatched episode's still (Content_cardNode) and description.
         node = Content_cardNode(ep, "landscape")
-        node.title = Str_orEmpty(ep.title)
-        metaParts = []
-        if toInt(ep.runtime) > 0 then metaParts.Push(Time_runtime(toInt(ep.runtime) * 60))
-        metaParts.Push(airDateText(ep.air_date))
+        node.title = Content_episodeCaptionTitle(ep)
         node.addFields({
-            eyebrow: Content_seShort(ep.season_number, ep.episode_number)
-            meta: Str_joinDots(metaParts)
+            eyebrow: ""
+            meta: Content_episodeCaptionMeta(airDateText(ep.air_date), toInt(ep.runtime))
             synopsis: episodeSynopsis(ep)
             aiTranslated: overviewMachineTranslated(ep) and episodeSynopsis(ep) <> ""
             isCurrent: Str_orEmpty(ep.content_id) = m.currentEpisodeId
@@ -941,9 +956,9 @@ sub onEpisodes(event as object)
     buildZones()
 end sub
 
-' An episode card's synopsis. One place, so a later spoiler setting can hide it.
+' An episode card's synopsis; spoiler protection may hide it (Spoilers.brs).
 function episodeSynopsis(ep as object) as string
-    return Str_orEmpty(ep.overview)
+    return Spoilers_overview(ep)
 end function
 
 sub onEpisodeSelected()

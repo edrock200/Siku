@@ -75,7 +75,7 @@ end sub
 sub loadFilmography()
     m.emptyLabel.visible = false
     m.gridSpinner.visible = true
-    q = { source: "person", person_id: personId(), sort: "-year", limit: 60, image_size: "medium" }
+    q = Artwork_query({ source: "person", person_id: personId(), sort: "-year", limit: 60, image_size: "medium" }, "browse", Theme_posterScale())
     if m.filter <> "" then q["type"] = m.filter
     m.filmographyFilter = m.filter
     Api_get("/api/v2/catalog", q, "onFilmography")

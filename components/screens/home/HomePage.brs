@@ -46,13 +46,29 @@ sub load()
     m.loading = true
     m.loadSeq = m.loadSeq + 1
     m.feed.state = "loading"
+    ' Artwork at drawn size (Artwork.brs): ask the server once whether it takes per-slot widths;
+    ' Home waits for that answer (at most 3 s) so its first read is already sized.
+    if not Artwork_capsSettled() and m.artCapsAsked <> true then
+        m.artCapsAsked = true
+        Artwork_fetchCaps("onArtworkCaps")
+        return
+    end if
     lib = libraryId()
     if lib <> "" then
-        Api_get("/api/v2/library/" + Str_urlEncode(lib) + "/sections", { image_size: "medium" }, "onSections", { seq: m.loadSeq })
+        Api_get("/api/v2/library/" + Str_urlEncode(lib) + "/sections", artworkQuery(), "onSections", { seq: m.loadSeq })
     else
-        Api_get("/api/v2/home/sections", { image_size: "medium" }, "onSections", { seq: m.loadSeq })
+        Api_get("/api/v2/home/sections", artworkQuery(), "onSections", { seq: m.loadSeq })
     end if
 end sub
+
+sub onArtworkCaps(event as object)
+    Artwork_storeCaps(event)
+    load()
+end sub
+
+function artworkQuery() as object
+    return Artwork_query({ image_size: "medium" }, "home", Theme_posterScale())
+end function
 
 ' The Movies or Series view of a mixed library ("movie" | "series"), or "" for every other page.
 function mediaScope() as string
@@ -100,7 +116,7 @@ sub onSections(event as object)
             else
                 path = "/api/v2/home/sections/" + Str_urlEncode(sid) + "/items"
             end if
-            Api_get(path, { image_size: "medium" }, "onSectionItems", { index: idx, seq: m.loadSeq })
+            Api_get(path, artworkQuery(), "onSectionItems", { index: idx, seq: m.loadSeq })
         end if
     end for
     pumpRefills()
@@ -351,6 +367,19 @@ sub onMenuChosen()
         patch.rowIndex = target.rowIndex
         patch.itemIndex = target.itemIndex
         m.feed.itemPatch = patch
+    end if
+end sub
+
+' The server answered a Home dismissal (HomeCardActions.brs). Accepted: re-read Home from the
+' server, as Mark as Watched does (the server dropped the whole show); a failed re-read keeps the
+' local removal. Refused: say so and re-read, which brings the card back.
+sub CardActions_onDismissed(event as object)
+    resp = Api_result(event)
+    if not resp.ok then m.global.toast = "Couldn't remove it: " + Api_errorText(resp)
+    m.global.homeDirty = true
+    if m.top.active and libraryId() = "" then
+        m.global.homeDirty = false
+        load()
     end if
 end sub
 

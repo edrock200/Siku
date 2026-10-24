@@ -427,6 +427,10 @@ Files: `S/network/apiv2/HomeSectionsV2Api.kt`, `S/viewmodel/HomeViewModel.kt`, `
   - Body for `continue_watching`: `{"progress_updated_at":"<card's value>"}`.
   - Body for `next_up`: `{"series_id":"..."}`.
   - Undo: `DELETE` on the same path.
+  - Which list (`HomeDismissal`, upstream #632): a card with `progress_updated_at` goes to `continue_watching`
+    ("Remove from Continue Watching"); otherwise a card with `series_id` goes to `next_up` ("Remove from Next Up");
+    a card with neither has no remove action. Dismissing an episode or series drops the whole show from the
+    progress rows, so the client removes every card of that series and then re-reads Home.
 
 ---
 
@@ -494,6 +498,14 @@ Files: `S/network/ArtworkUrls.kt`, `S/network/api/ImageCapabilitiesApi.kt`, `SV/
    "original_max_width_px":1920,"storage_backend":"local","delivery":"server"}
   ```
   Only send `image_size` when `state == "available"`.
+- **Per-slot widths (upstream #612):** a server whose capability lists
+  `"slot_width_params":{"poster":"poster_width","backdrop":"backdrop_width","logo":"logo_width","photo":"photo_width","still":"still_width"}`
+  takes those query parameters (pixels, 1..7680) on every v2 read that returns artwork and answers each slot with the
+  narrowest cached size at least that wide. Older servers reject them, so send them only to the server that advertised
+  them, and keep `image_size` as the fallback. Siku's widths per screen are in `components/common/Artwork.brs`.
+- **Provenance:** `poster_is_episode_still` / `backdrop_is_episode_still` say whether an episode's poster or backdrop
+  slot holds the episode's own still (spoiler protection hides it) or series art (shown). Missing means unknown, and
+  is treated as a still.
 - **Placeholders:** an empty URL means no image; show a placeholder. `*_thumbhash` is a ThumbHash for placeholders and is optional.
 - **Season lists:** `include_artwork=false` skips posters.
 - **Trickplay:** `GET /api/v2/watch/{id}/trickplay?file_id=` returns signed sheet URLs and is optional.
@@ -813,6 +825,11 @@ Android TV's Settings screen is mostly server-synced per profile (`shared/.../ne
 - **Read:** `GET /api/v2/settings/values/effective?keys=a&keys=b` (one `keys` parameter per key; `X-Profile-Id` required) → `{"items":[{"key","value","source":"default|profile|profile_device|profile_client|...","scope"?,"profile_id"?,"device_id"?,"client_family"?,"stored_value"?,"constrained"?,"suggested_values"?[]}],"revision":16}`. The `X-Silo-Device-Id` header selects the `profile_device` rows and `X-Silo-Client-Family` the `profile_client` rows; `ApiTask` sends both on every call.
 - **Write:** `PUT /api/v2/settings/values/{key}?scope=profile|profile_device|profile_client` with `{"value": ...}` → 200, the stored row `{key, scope, profile_id, device_id?, client_family?, value, revision, updated_at}`. `DELETE` with the same query → 204 (404 when nothing was stored there, which callers treat as done). A language tag is cleared with DELETE, never written as `""`.
 - **Scopes the TV app uses** (and Siku copies): `profile` for `playback.subtitle_language`, `playback.subtitle_mode`, `playback.show_forced_subtitles`, `catalog.metadata_language`, `player.video_skip_back/forward_seconds` (revision 9) and `ui.title_art` while "Apply to all devices" is on; `profile_device` for `playback.preferred_quality` + `playback.max_bitrate_kbps` (one Quality preset = both axes), `playback.audio_language`, `playback.intro_skip_mode`, `playback.auto_skip_credits`, `playback.auto_play_next`, `playback.next_up_prompt_seconds`, `playback.subtitle_appearance` (the whole object; `textOpacity` only when `manifest_revision >= 14`) and `player.dolby_vision_enabled`; `profile_client` for `ui.card_presentation` (`{poster_size, caption}`), `profile_device` while "Only This Device" is on. "Reset Playback Overrides" deletes every `profile_device` row above.
+- **Spoiler protection (revision 17, `profile` scope only):** `catalog.hide_unwatched_episode_images` and
+  `catalog.hide_unwatched_episode_overviews` (both default `false`). Clients apply them; the server never changes
+  catalog responses. An episode is unwatched while it is neither played nor in progress (no saved position). A
+  server can reach revision 17 without the keys; Siku then re-reads the effective values without them
+  (`Settings.brs`, the `optional` key flag).
 - **Client-local (contract `client_local`, never written):** `nav.show_audiobooks`, `player.resume_rewind_seconds`, `player.passout_threshold`, `subtitle.matches_device`, and the Home row order / hidden set (`prefs`).
 - `tools/mock_server.py` serves all of this with the contract defaults and a per-scope store.
 

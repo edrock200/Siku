@@ -19,6 +19,13 @@ clears one); GET /mock/switch lists them.
   user_code=<code>               the device sign-in code to show (default 4821-7730)
   stale_profile=<profile id>     every request on that profile answers 403
                                  profile_verification_required until GET /api/v2/profiles runs
+Options that emulate other servers:
+  --settings-revision N   settings manifest revision (default 17: spoiler keys; 16 hides them)
+  --no-slot-widths        images capability without slot_width_params (older server)
+  --empty-library ID      that library holds nothing (empty library vs filters that match nothing)
+Missing artwork: "Velvet Static" has none, "Copper Sky"'s poster 404s, and "Wild Coast" episodes
+have no stills (the default artwork). Home dismissals are kept (PUT/DELETE
+/api/v2/home/dismissals/{surface}/{id}); an episode or series dismissal drops the whole show.
 """
 import argparse
 import hashlib
@@ -39,11 +46,13 @@ except ImportError:  # artwork is optional
     Image = None
 
 FONT = "/usr/share/fonts/opentype/inter/Inter-Bold.otf"
-STATE = {"devices": {}, "sessions": {}, "watchlist": set(), "favorites": set(), "watched": set(), "progress": {}, "shuffles": {}, "switches": {}}
+STATE = {"devices": {}, "sessions": {}, "watchlist": set(), "favorites": set(), "watched": set(), "progress": {}, "shuffles": {},
+         "switches": {}, "dismissed_series": set(), "dismissed_items": set()}
 LOCK = threading.Lock()
 LOG = []
 # Feature switches (main() sets them from the command line).
-OPTS = {"active_quality": True, "ai_fail": False, "ai_transcribe_only": False, "buffering_quality": True, "probe_kbps": 40000}
+OPTS = {"active_quality": True, "ai_fail": False, "ai_transcribe_only": False, "buffering_quality": True, "probe_kbps": 40000,
+        "slot_widths": True, "empty_libraries": set()}
 
 GENRES = ["Science Fiction", "Drama", "Crime", "Comedy", "Thriller", "Adventure", "Animation", "Documentary"]
 MOVIE_TITLES = [
@@ -85,10 +94,20 @@ def movie(i):
         "tagline": "Every light has a shadow.",
         "rating_imdb": round(5.5 + (h(title) % 40) / 10, 1),
         "poster_url": img("poster", cid), "backdrop_url": img("backdrop", cid), "logo_url": img("logo", cid),
+        "poster_is_episode_still": False, "backdrop_is_episode_still": False,
         "release_date": "%d-0%d-1%d" % (year, 1 + h(title) % 9, h(title) % 9),
         "overlay_summary": {"resolution": ["4K", "1080p", "1080p"][h(title) % 3], "hdr": ["HDR10", "", "Dolby Vision"][h(title) % 3], "audio": "EAC3"},
         "user_state": {"played": cid in STATE["watched"], "is_favorite": cid in STATE["favorites"], "in_watchlist": cid in STATE["watchlist"]},
-    }
+    } | missing_artwork(title)
+
+
+def missing_artwork(title):
+    """Titles that exercise the default artwork: none at all, or a poster that fails to load."""
+    if title == "Velvet Static":
+        return {"poster_url": None, "backdrop_url": None, "logo_url": None}
+    if title == "Copper Sky":
+        return {"poster_url": "/mock-img/missing/copper-sky.jpg"}
+    return {}
 
 
 def series(i):
@@ -118,7 +137,10 @@ def episode(si, s, e):
         "content_id": cid, "type": "episode", "title": "Chapter %d" % e, "series_id": sr["content_id"],
         "series_title": sr["title"], "season_number": s, "episode_number": e, "runtime": 48, "duration_seconds": 2880,
         "overview": "The crew faces a new problem in episode %d of season %d." % (e, s), "air_date": "2024-0%d-%02d" % (1 + s % 9, e),
-        "still_url": img("still", cid), "backdrop_url": sr["backdrop_url"], "poster_url": sr["poster_url"],
+        "still_url": None if sr["title"] == "Wild Coast" else img("still", cid),
+        "backdrop_url": sr["backdrop_url"], "poster_url": sr["poster_url"],
+        # Provenance (images capability episode_still_provenance): the backdrop and poster are the series'.
+        "backdrop_is_episode_still": False, "poster_is_episode_still": False,
         "files": [{"file_id": str(1000 + si * 100 + s * 10 + e), "resolution": "1080p", "codec_video": "h264", "container": "mp4"}],
         "user_data": {"position_seconds": pos, "duration_seconds": 2880, "played": cid in STATE["watched"]},
         "user_state": {"played": cid in STATE["watched"], "is_favorite": False, "in_watchlist": False},
@@ -272,16 +294,28 @@ def page(items, q):
             "total": len(items), "total_exact": True}
 
 
+def home_dismissed(item):
+    """Home dismissals: an episode or series drops its whole show, anything else one card."""
+    if item["content_id"] in STATE["dismissed_items"]:
+        return True
+    show = item["content_id"] if item.get("type") == "series" else item.get("series_id")
+    return item.get("type") in ("episode", "series") and show in STATE["dismissed_series"]
+
+
 def home_sections():
     ms = all_movies()
     ss = all_series()
     cw = []
-    m0 = dict(ms[3]); m0.update(position_seconds=1800, item_source="in_progress"); cw.append(m0)
-    e = episode(0, 1, 3); e.update(position_seconds=900, item_source="in_progress"); cw.append(e)
+    m0 = dict(ms[3]); m0.update(position_seconds=1800, item_source="in_progress", progress_updated_at="2026-10-20T19:00:00Z"); cw.append(m0)
+    e = episode(0, 1, 3); e.update(position_seconds=900, item_source="in_progress", progress_updated_at="2026-10-21T20:00:00Z"); cw.append(e)
     e2 = episode(1, 2, 1); e2.update(item_source="next_up"); cw.append(e2)
-    m1 = dict(ms[8]); m1.update(position_seconds=3000, item_source="in_progress"); cw.append(m1)
+    m1 = dict(ms[8]); m1.update(position_seconds=3000, item_source="in_progress", progress_updated_at="2026-10-19T18:00:00Z"); cw.append(m1)
+    e3 = episode(3, 1, 2); e3.update(item_source="next_up"); cw.append(e3)
+    cw = [c for c in cw if not home_dismissed(c)]
+    nu = [c for c in cw if c["item_source"] == "next_up"]
     return {"sections": [
         {"id": "continue_watching", "section_type": "continue_watching", "title": "Continue Watching", "featured": False, "total_count": len(cw), "items": cw},
+        {"id": "next_up", "section_type": "next_up", "title": "Next Up", "featured": False, "total_count": len(nu), "items": nu},
         {"id": "recent_movies", "section_type": "recently_added", "title": "Recently Added in Movies", "featured": False, "total_count": 12, "items": ms[:12]},
         {"id": "recent_series", "section_type": "recently_added", "title": "Recently Added in Shows", "featured": False, "total_count": len(ss), "items": ss},
         {"id": "hidden_gems", "section_type": "hidden_gems", "title": "Hidden Gems", "featured": False, "total_count": 10, "items": ms[12:22]},
@@ -1520,6 +1554,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if p.startswith("/mock-img/"):
             _, _, kind, name = p.split("/", 3)
+            if kind == "missing":  # artwork that fails to load (default artwork test)
+                return self.send(404)
             return self.send(200, make_image(kind, name.rsplit(".", 1)[0]), "image/png" if kind == "logo" else "image/jpeg")
         if p.startswith("/mock-media/"):
             return self.send(404)
@@ -1688,6 +1724,8 @@ class Handler(BaseHTTPRequestHandler):
                 items = all_movies()
             elif lib == "2":
                 items = all_series()
+            if lib in OPTS["empty_libraries"]:
+                items = []
             if typ:
                 items = [i for i in items if i["type"] == typ]
             if src == "favorites":
@@ -1887,8 +1925,36 @@ class Handler(BaseHTTPRequestHandler):
             elif method == "DELETE":
                 STATE[key].discard(m.group(2))
             return self.send(204)
-        if p.startswith("/api/v2/home/dismissals/"):
+        m = re.match(r"^/api/v2/home/dismissals/(continue_watching|next_up)/(.+)$", p)
+        if m and method in ("PUT", "DELETE"):
+            surface, item = m.group(1), m.group(2)
+            if method == "PUT" and surface == "next_up" and not b.get("series_id"):
+                return self.problem(422, "validation_failed", "series_id is required for next_up")
+            if method == "PUT" and surface == "continue_watching" and not b.get("progress_updated_at"):
+                return self.problem(422, "validation_failed", "progress_updated_at is required for continue_watching")
+            it = find(item) or {}
+            show = item if it.get("type") == "series" else (it.get("series_id") or b.get("series_id"))
+            target = STATE["dismissed_series"] if it.get("type") in ("episode", "series") and show else STATE["dismissed_items"]
+            key = show if target is STATE["dismissed_series"] else item
+            if method == "PUT":
+                target.add(key)
+            else:
+                target.discard(key)
+            LOG.append("DISMISS %s %s %s %s" % (method, surface, item, json.dumps(b)))
+            print("DISMISS", method, surface, item, json.dumps(b), flush=True)
             return self.send(204)
+        if p == "/api/v2/images/capabilities":
+            caps = {"revision": "mock-images", "state": "available", "allowed": True, "param": "image_size",
+                    "season_list_artwork_param": "include_artwork", "episode_still_provenance": True,
+                    "sizes": ["small", "medium", "large", "original"], "original_max_width_px": 3840,
+                    "widths": {"poster": {"small": 300, "medium": 500, "large": 1000}, "backdrop": {"small": 300, "medium": 1920, "large": 2560},
+                               "still": {"small": 300, "medium": 500, "large": 1280}, "logo": {"small": 500, "medium": 500, "large": 1280},
+                               "profile": {"small": 300, "medium": 500, "large": 500}},
+                    "storage_backend": "local", "delivery": "server"}
+            if OPTS["slot_widths"]:
+                caps["slot_width_params"] = {"backdrop": "backdrop_width", "logo": "logo_width", "photo": "photo_width",
+                                             "poster": "poster_width", "still": "still_width"}
+            return self.send(200, caps)
         if p == "/api/v2/shuffles/capabilities":
             return self.send(200, {"state": "available", "allowed": True, "revision": "1",
                                    "scope_kinds": ["library", "series", "season", "library_collection", "user_collection"]})
@@ -2083,7 +2149,7 @@ def shuffle_view(sh):
 # DELETE /api/v2/settings/values/{key}?scope=... -> 204 (404 when nothing is stored there)
 # profile_device rows key on the X-Silo-Device-Id header, profile_client on X-Silo-Client-Family.
 # ---------------------------------------------------------------------------
-SETTINGS_REVISION = 21
+SETTINGS_REVISION = 21  # --settings-revision (17 adds the spoiler keys; 16 hides them)
 SETTINGS_DEFS = {
     # key: (introduced_in, default, allowed scopes, resolution order)
     "playback.preferred_quality": (1, "auto", ["profile", "profile_device"], ["profile_device", "profile"]),
@@ -2119,6 +2185,8 @@ SETTINGS_DEFS = {
     "ui.disabled_library_ids": (1, None, ["profile"], ["profile"]),
     "ui.theme_music_enabled": (11, False, ["profile", "profile_device"], ["profile_device", "profile"]),
     "ui.theme_music_loop": (11, False, ["profile", "profile_device"], ["profile_device", "profile"]),
+    "catalog.hide_unwatched_episode_images": (17, False, ["profile"], ["profile"]),
+    "catalog.hide_unwatched_episode_overviews": (17, False, ["profile"], ["profile"]),
     "ui.theme": (1, "cinema-dark", ["account", "profile"], ["profile", "account"]),
 }
 SETTINGS_SCOPES = ["account", "profile", "profile_client", "profile_device", "profile_library", "profile_series"]
@@ -2213,16 +2281,16 @@ def settings_route(handler, method, p, q, b):
     if p == "/api/v2/settings/values/effective" and method == "GET":
         if not handler.headers.get("X-Profile-Id"):
             return handler.problem(400, "profile_required", "X-Profile-Id is required") or True
-        keys = q.get("keys") or sorted(SETTINGS_DEFS)
+        keys = q.get("keys") or sorted(k for k in SETTINGS_DEFS if SETTINGS_DEFS[k][0] <= SETTINGS_REVISION)
         for k in keys:
-            if k not in SETTINGS_DEFS:
+            if k not in SETTINGS_DEFS or SETTINGS_DEFS[k][0] > SETTINGS_REVISION:
                 return settings_validation(handler, "query.keys", "No setting named %s exists in this server's contract" % k) or True
         LOG.append("SETTINGS effective %s" % ",".join(keys))
         return handler.send(200, {"items": [settings_effective(handler, k, q) for k in keys], "revision": SETTINGS_REVISION}) or True
     m = re.match(r"^/api/v2/settings/values/([^/]+)$", p)
     if m and method in ("GET", "PUT", "DELETE"):
         key = m.group(1)
-        if key not in SETTINGS_DEFS:
+        if key not in SETTINGS_DEFS or SETTINGS_DEFS[key][0] > SETTINGS_REVISION:
             return settings_validation(handler, "path.key", "No setting named %s exists in this server's contract" % key) or True
         scope = (q.get("scope") or [""])[0]
         if scope not in SETTINGS_SCOPES:
@@ -2271,6 +2339,7 @@ def tokens(username="laura"):
 
 
 def main():
+    global SETTINGS_REVISION
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8097)
     ap.add_argument("--switch", action="append", default=[], metavar="NAME=VALUE",
@@ -2282,7 +2351,13 @@ def main():
     ap.add_argument("--ai-transcribe-only", action="store_true", help="AI transcription on, AI translation off")
     ap.add_argument("--no-buffering-quality", action="store_true", help="act as a server before buffering_quality_v1 / connection_speed_v1")
     ap.add_argument("--probe-kbps", type=int, default=40000, help="rate the bandwidth probe download is throttled to")
+    ap.add_argument("--settings-revision", type=int, default=SETTINGS_REVISION)
+    ap.add_argument("--no-slot-widths", action="store_true")
+    ap.add_argument("--empty-library", action="append", default=[])
     args = ap.parse_args()
+    SETTINGS_REVISION = args.settings_revision
+    OPTS["slot_widths"] = not args.no_slot_widths
+    OPTS["empty_libraries"] = set(args.empty_library)
     for sw in args.switch:
         k, _, v = sw.partition("=")
         STATE["switches"][k.strip()] = v.strip() or "1"

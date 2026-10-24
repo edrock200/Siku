@@ -13,7 +13,7 @@
 -->
 <component name="DetailScreen" extends="BaseScreen">
   <interface>
-    <!-- Settings_load lands here when this page had to load the settings itself (deep link). -->
+    <!-- Set when a Settings_load this page started lands (deep link; theme music and spoiler protection). -->
     <field id="settingsLoaded" type="boolean" alwaysNotify="true" onChange="onSettingsLoaded" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/screens/DetailScreen.brs" />

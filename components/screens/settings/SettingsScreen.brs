@@ -153,6 +153,12 @@ end function
 function buildPane(catId as string) as object
     out = []
     if catId = "general" then
+        ' tvOS / Android TV General → PROFILE AT LAUNCH. Device-wide and never synced, so it reads
+        ' the same whichever profile is active (ProfileLaunch.brs).
+        out.Push({ kind: "header", text: "Profile at Launch" })
+        out.Push({ kind: "row", row: rowDef("profileSelection", "choice", "Profile Selection") })
+        out.Push({ kind: "footer", text: ProfileLaunch_behavior().detail })
+
         out.Push({ kind: "header", text: "Home Sections" })
         out.Push({ kind: "row", row: rowDef("homeSections", "action", "Home Sections") })
         out.Push({ kind: "footer", text: "Choose which Home rows are visible and edit the order in which they appear on this Roku." })
@@ -246,6 +252,15 @@ function buildPane(catId as string) as object
         out.Push({ kind: "row", row: rowDef("stillWatching", "choice", "Still Watching Prompt") })
         out.Push({ kind: "footer", text: "Rewind on Resume skips back when you return to a partly watched title. Still Watching Prompt sets how many episodes play in a row before Silo asks whether you're still watching." })
 
+        ' Spoiler protection (catalog.hide_unwatched_episode_*, revision 17, profile scope): hidden
+        ' on servers that do not know the keys.
+        if spoilersSupported() then
+            out.Push({ kind: "header", text: "Spoilers" })
+            out.Push({ kind: "row", row: rowDef("spoilerImages", "toggle", "Blur unwatched episode images") })
+            out.Push({ kind: "row", row: rowDef("spoilerOverviews", "toggle", "Hide unwatched episode descriptions") })
+            out.Push({ kind: "footer", text: "Applies to episodes you have not started, on every device that uses this profile. Roku cannot blur a picture, so a hidden episode image shows the series artwork or a plain placeholder instead." })
+        end if
+
         out.Push({ kind: "header", text: "Video" })
         out.Push({ kind: "row", row: rowDef("skipBack", "choice", "Skip Back") })
         out.Push({ kind: "row", row: rowDef("skipForward", "choice", "Skip Forward") })
@@ -303,6 +318,10 @@ function buildPane(catId as string) as object
     return out
 end function
 
+function spoilersSupported() as boolean
+    return Settings_available() and Settings_manifestRevision() >= 17 and Settings_item("catalog.hide_unwatched_episode_images") <> invalid
+end function
+
 ' Whether the server stores the revision-9 skip intervals for this profile.
 function seekIntervalsSynced() as boolean
     return Settings_available() and Settings_manifestRevision() >= 9
@@ -322,7 +341,13 @@ function rowValue(row as object) as string
     s = m.global.session
     p = m.global.prefs
     if p = invalid then p = {}
-    if id = "cardPreset" then
+    if id = "profileSelection" then
+        return ProfileLaunch_behavior().title
+    else if id = "spoilerImages" then
+        return onOff(Settings_value("catalog.hide_unwatched_episode_images", false) = true)
+    else if id = "spoilerOverviews" then
+        return onOff(Settings_value("catalog.hide_unwatched_episode_overviews", false) = true)
+    else if id = "cardPreset" then
         cp = Settings_cardPresentation()
         for each pr in cardPresets()
             if pr.posterSize = cp.posterSize and pr.caption = cp.caption then return pr.label
@@ -439,7 +464,13 @@ end function
 ' Picker options for a choice row: [{value, label}].
 function rowOptions(row as object) as object
     id = row.id
-    if id = "cardPreset" then
+    if id = "profileSelection" then
+        out = []
+        for each b in ProfileLaunch_behaviors()
+            out.Push({ value: b.id, label: b.title, detail: b.detail })
+        end for
+        return out
+    else if id = "cardPreset" then
         out = []
         for each pr in cardPresets()
             out.Push({ value: pr.id, label: pr.label })
@@ -503,7 +534,9 @@ end function
 ' The value a choice row currently holds, for the picker's check mark.
 function rowCurrent(row as object) as dynamic
     id = row.id
-    if id = "cardPreset" then
+    if id = "profileSelection" then
+        return ProfileLaunch_behavior().id
+    else if id = "cardPreset" then
         cp = Settings_cardPresentation()
         for each pr in cardPresets()
             if pr.posterSize = cp.posterSize and pr.caption = cp.caption then return pr.id
@@ -867,6 +900,14 @@ sub layoutPicker(title as string, subtitle as string, message as string)
     rowH = 72
     maxVisible = 8
     count = m.pickerOptions.Count()
+    ' Options with a second line explaining the choice (Profile Selection) get taller rows.
+    for each o in m.pickerOptions
+        if not Str_isEmpty(o.detail) then
+            w = 900
+            rowH = 140
+            maxVisible = 5
+        end if
+    end for
     shownCount = count
     if shownCount > maxVisible then shownCount = maxVisible
     for i = 0 to count - 1
@@ -875,6 +916,7 @@ sub layoutPicker(title as string, subtitle as string, message as string)
         item.rowWidth = w - 48
         item.rowHeight = rowH
         item.label = o.label
+        item.description = Str_orEmpty(o.detail)
         item.showChevron = false
         item.destructive = o.destructive = true
         m.pickerItems.Push(item)
@@ -932,7 +974,7 @@ sub updatePicker()
         item.visible = shown
         if shown then
             item.translation = [0, y]
-            y = y + 78
+            y = y + item.rowHeight + 6
         end if
         item.focusedState = i = m.pickerIndex
         if m.pickerMode = "options" and sameValue(m.pickerOptions[i].value, current) then
@@ -1043,7 +1085,20 @@ sub applyChoice(row as object, value as dynamic)
     id = row.id
     cp = Settings_cardPresentation()
     deviceOnly = Settings_source("ui.card_presentation") = "profile_device"
-    if id = "cardPreset" then
+    if id = "profileSelection" then
+        ProfileLaunch_setBehavior(Str_orEmpty(value))
+        ' A timed choice starts its away clock from now.
+        ProfileLaunch_markActive(0)
+        renderPane()
+    else if id = "spoilerImages" then
+        beginWrites(1)
+        putValue("catalog.hide_unwatched_episode_images", "profile", value = true)
+        m.global.homeDirty = true
+    else if id = "spoilerOverviews" then
+        beginWrites(1)
+        putValue("catalog.hide_unwatched_episode_overviews", "profile", value = true)
+        m.global.homeDirty = true
+    else if id = "cardPreset" then
         for each pr in cardPresets()
             if pr.id = value then writeCardPresentation(pr.posterSize, pr.caption, deviceOnly)
         end for

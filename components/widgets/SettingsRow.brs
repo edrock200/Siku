@@ -35,7 +35,9 @@ sub layout()
         m.labelText.height = h * 0.58
         m.descText.text = m.top.description
         m.descText.translation = [x, h * 0.48]
+        ' Room for two wrapped lines on tall rows (picker details, the remember offer).
         m.descText.height = h * 0.42
+        if h >= 120 then m.descText.height = h - h * 0.48 - 6
         m.descText.vertAlign = "top"
     else
         m.labelText.height = h

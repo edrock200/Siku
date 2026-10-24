@@ -26,7 +26,7 @@
     <Label id="labelText" vertAlign="center">
       <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="26" />
     </Label>
-    <Label id="descText" vertAlign="center" visible="false">
+    <Label id="descText" vertAlign="center" visible="false" wrap="true" maxLines="2">
       <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="22" />
     </Label>
     <Label id="valueText" vertAlign="center" horizAlign="right">

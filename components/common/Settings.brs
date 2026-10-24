@@ -48,6 +48,10 @@ function Settings_keyDefs() as object
         { key: "ui.disabled_library_ids", rev: 1, def: invalid }
         { key: "ui.theme_music_enabled", rev: 11, def: false }
         { key: "ui.theme_music_loop", rev: 11, def: false }
+        ' Spoiler protection (Spoilers.brs). "optional": a server can reach the revision without the
+        ' keys (upstream #427 saw revision 16 taken by other settings), so a refused read retries without them.
+        { key: "catalog.hide_unwatched_episode_images", rev: 17, def: false, optional: true }
+        { key: "catalog.hide_unwatched_episode_overviews", rev: 17, def: false, optional: true }
     ]
     return m.siku_settingKeys
 end function
@@ -138,11 +142,26 @@ sub Settings_onCaps(event as object)
         return
     end if
     rev = Int(Content_numOr(resp.data.manifest_revision, 1))
+    Settings_readEffective(identity, rev, true)
+end sub
+
+' One batched read of every key the manifest revision knows; withOptional = false leaves out the
+' keys a server at that revision may still refuse.
+sub Settings_readEffective(identity as string, rev as integer, withOptional as boolean)
     keys = []
+    hasOptional = false
     for each d in Settings_keyDefs()
-        if d.rev <= rev then keys.Push(d.key)
+        if d.rev <= rev then
+            if d.optional = true then
+                hasOptional = true
+                if withOptional then keys.Push(d.key)
+            else
+                keys.Push(d.key)
+            end if
+        end if
     end for
-    Api_call({ method: "GET", path: "/api/v2/settings/values/effective", query: { keys: keys }, context: { identity: identity, manifestRevision: rev } }, "Settings_onEffective")
+    mayRetry = withOptional and hasOptional
+    Api_call({ method: "GET", path: "/api/v2/settings/values/effective", query: { keys: keys }, context: { identity: identity, manifestRevision: rev, canRetry: mayRetry } }, "Settings_onEffective")
 end sub
 
 sub Settings_onEffective(event as object)
@@ -154,6 +173,11 @@ sub Settings_onEffective(event as object)
         rev = Int(Content_numOr(resp.context.manifestRevision, 0))
     end if
     if identity <> Settings_identity() then return
+    ' 404 unknown_setting / 422: the server does not know an optional key; read the rest.
+    if not resp.ok and (resp.status = 404 or resp.status = 422) and resp.context <> invalid and resp.context.canRetry = true then
+        Settings_readEffective(identity, rev, false)
+        return
+    end if
     if not resp.ok or Type(resp.data) <> "roAssociativeArray" then
         Settings_publishError(identity, Api_errorText(resp))
         return
@@ -434,6 +458,9 @@ end function
 function Settings_uiSignature() as string
     cp = Settings_cardPresentation()
     sig = cp.posterSize + "|" + cp.caption + "|" + Str_orEmpty(Settings_hideWatched()) + "|" + Str_orEmpty(Settings_showTitleArt())
+    ' Spoiler protection changes what episode cards draw (Spoilers.brs).
+    spoilers = Spoilers_prefs()
+    sig = sig + "|" + Str_orEmpty(spoilers.hideImages) + "|" + Str_orEmpty(spoilers.hideOverviews)
     hidden = []
     for each id in Settings_hiddenLibraryIds()
         hidden.Push(id)

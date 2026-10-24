@@ -29,7 +29,39 @@ sub init()
     m.global.observeField("staleProfile", "onStaleProfile")
     m.profilePrompt = invalid       ' a pending "pick your profile again" prompt (onStaleProfile)
 
+    ' Profile Selection (ProfileLaunch.brs): settle a new Roku's starting choice, then apply the
+    ' launch rule before anything records this run as "in use".
+    ProfileLaunch_settleFirstLaunch(not Str_isEmpty(m.global.session.profileId))
+    applyLaunchProfileRule()
+    m.pendingDeepLink = invalid
     routeToStart()
+
+    ' The away clock for the timed choices: Home closes a channel without telling it, so "last in
+    ' use" is refreshed every few minutes while Siku runs (and on Back out of the app).
+    m.activeTimer = CreateObject("roSGNode", "Timer")
+    m.activeTimer.duration = 120
+    m.activeTimer.repeat = true
+    m.activeTimer.observeField("fire", "onActiveTick")
+    m.activeTimer.control = "start"
+end sub
+
+' At launch, when the setting asks: forget the saved profile and its PIN proof, so Who's Watching
+' shows and a protected profile needs its PIN again. The account stays signed in.
+sub applyLaunchProfileRule()
+    s = m.global.session
+    if Str_isEmpty(s.accessToken) or Str_isEmpty(s.profileId) then return
+    if not ProfileLaunch_requiresSelectionAtLaunch() then return
+    c = AA_copy(s)
+    c.profileId = ""
+    c.profileToken = ""
+    c.profileName = ""
+    c.profileAvatar = ""
+    Session_save(c)
+    m.askedAtLaunch = true
+end sub
+
+sub onActiveTick()
+    ProfileLaunch_markActive(100)
 end sub
 
 ' Decides the first screen from what we have stored.
@@ -40,6 +72,12 @@ sub routeToStart(params = {} as object)
     else if Str_isEmpty(s.accessToken) then
         resetTo("LoginScreen", params)
     else if Str_isEmpty(s.profileId) then
+        ' Asked by the launch rule: show the picker even for a one-profile household.
+        if m.askedAtLaunch = true then
+            m.askedAtLaunch = false
+            params = AA_copy(params)
+            params.atLaunch = true
+        end if
         resetTo("ProfileScreen", params)
     else
         resetTo("ShellScreen", params)
@@ -79,6 +117,7 @@ end sub
 
 sub popScreen()
     if m.stack.Count() <= 1 then
+        ProfileLaunch_markActive(0)
         m.top.exitApp = true
         return
     end if
@@ -105,6 +144,12 @@ sub resetTo(name as string, params = {} as object)
     m.screens.removeChildrenIndex(m.screens.getChildCount(), 0)
     m.stack = []
     pushScreen(name, params)
+    ' A content link that arrived while Who's Watching was up opens once a profile is chosen.
+    if name = "ShellScreen" and m.pendingDeepLink <> invalid and not Str_isEmpty(m.global.session.profileId) then
+        link = m.pendingDeepLink
+        m.pendingDeepLink = invalid
+        handleDeepLink(link)
+    end if
 end sub
 
 sub replaceTop(name as string, params = {} as object)
@@ -244,6 +289,21 @@ sub handleDeepLink(args as dynamic)
         s.profileName = "Laura"
         s.profileAvatar = "/mock-img/avatar/laura.jpg"
         Session_save(s)
+        ' debugProfileLaunch=<automatic|askEveryLaunch|afterOneHour|afterTwelveHours|new>[&debugAwaySeconds=N]
+        ' replays the launch rule against the seeded profile ("new" = a Roku with no saved choice).
+        if not Str_isEmpty(args.debugProfileLaunch) then
+            p = AA_copy(m.global.prefs)
+            p.profileLaunch = ""
+            p.profileLaunchOffer = false
+            Prefs_save(p)
+            if args.debugProfileLaunch = "new" then
+                ProfileLaunch_settleFirstLaunch(false)
+            else
+                ProfileLaunch_setBehavior(args.debugProfileLaunch)
+            end if
+            if not Str_isEmpty(args.debugAwaySeconds) then Registry_write("profileLastActive", Time_nowSeconds() - Int(Val(args.debugAwaySeconds)))
+            applyLaunchProfileRule()
+        end if
         if Str_isEmpty(args.debugScreen) then routeToStart()
     end if
     if not Str_isEmpty(args.debugScreen) then
@@ -257,7 +317,11 @@ sub handleDeepLink(args as dynamic)
         return
     end if
     if Str_isEmpty(args.contentId) then return
-    if Str_isEmpty(m.global.session.profileId) then return
+    if Str_isEmpty(m.global.session.profileId) then
+        ' Signed in but no profile yet (Who's Watching): hold the link until one is chosen.
+        if not Str_isEmpty(m.global.session.accessToken) then m.pendingDeepLink = args
+        return
+    end if
     mediaType = LCase(Str_orEmpty(args.mediaType))
     if mediaType = "album" or mediaType = "artist" or mediaType = "audiobook" or mediaType = "track" then
         pushScreen("AudioDetailScreen", { itemId: args.contentId, itemType: mediaType })

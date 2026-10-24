@@ -55,17 +55,15 @@ sub Content_fillCard(node as object, card as object, style as string)
     node.title = title
     node.subtitle = subtitle
 
-    poster = Str_orEmpty(card.poster_url)
-    backdrop = Str_orEmpty(card.backdrop_url)
-    still = Str_orEmpty(card.still_url)
+    ' Spoiler protection (Spoilers.brs) drops an unwatched episode's still; the card then shows
+    ' series art the server marks as such, else the default artwork.
+    backdrop = Spoilers_imageUrl(card, "backdrop")
     if style = "landscape" then
-        img = still
-        if img = "" then img = backdrop
-        if img = "" then img = poster
+        img = Spoilers_wideImageUrl(card)
     else if style = "circle" then
         img = Str_orEmpty(card.photo_url)
     else
-        img = poster
+        img = Spoilers_imageUrl(card, "poster")
     end if
     if t = "audiobook_group" then
         node.initials = Content_initials(title)
@@ -110,6 +108,30 @@ function Content_seShort(season as dynamic, episode as dynamic) as string
     if season <> invalid then parts.Push("S" + Str_orEmpty(season))
     if episode <> invalid then parts.Push("E" + Str_orEmpty(episode))
     return Str_joinDots(parts)
+end function
+
+' Episode card caption (EpisodeCardCaption, #644), the same on the Apple and web clients:
+' "S01E02 · Pilot", or the code alone when the episode has no title.
+function Content_episodeCaptionTitle(ep as object) as string
+    code = "S" + Str_padLeft(Int(Num_or(ep.season_number, 0)).ToStr(), 2) + "E" + Str_padLeft(Int(Num_or(ep.episode_number, 0)).ToStr(), 2)
+    title = Str_orEmpty(ep.title).Trim()
+    if title = "" then return code
+    return code + " · " + title
+end function
+
+' The caption's second line: "Feb 18, 2026  ·  52m" (air date, then "52m" / "1h 5m"); "" when
+' neither is known.
+function Content_episodeCaptionMeta(airDate as string, runtimeMinutes as integer) as string
+    parts = []
+    if airDate <> "" then parts.Push(airDate)
+    if runtimeMinutes > 0 then
+        if runtimeMinutes >= 60 then
+            parts.Push((runtimeMinutes \ 60).ToStr() + "h " + (runtimeMinutes mod 60).ToStr() + "m")
+        else
+            parts.Push(runtimeMinutes.ToStr() + "m")
+        end if
+    end if
+    return Str_joinDots(parts, "  ·  ")
 end function
 
 ' Builds a RowList content tree: rows = [{title, items: [card...], style}]

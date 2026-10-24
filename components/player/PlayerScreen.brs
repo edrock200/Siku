@@ -1726,21 +1726,18 @@ sub layoutUpNext()
 end sub
 
 ' The Up Next artwork: the next episode's still (a shuffled movie's backdrop), else the first On
-' Deck item's art. One place, so a later spoiler setting can withhold an unwatched episode's still.
+' Deck item's art. Spoiler protection withholds an unwatched episode's still (Spoilers.brs).
 function upNextStillUrl(ep as dynamic) as string
     u = ""
-    if ep <> invalid then
-        u = Str_orEmpty(ep.still_url)
-        if u = "" then u = Str_orEmpty(ep.backdrop_url)
-    end if
+    if ep <> invalid then u = Spoilers_wideImageUrl(ep)
     if u = "" and onDeckShown() then u = Str_orEmpty(m.onDeck[0].backdrop_url)
     return Url_resolve(u)
 end function
 
-' The Up Next synopsis. One place, so a later spoiler setting can hide it.
+' The Up Next synopsis; spoiler protection hides an unwatched episode's (Spoilers.brs).
 function upNextOverviewText(ep as dynamic) as string
     if ep = invalid then return ""
-    return Str_orEmpty(ep.overview)
+    return Spoilers_overview(ep)
 end function
 
 ' Fills the Up Next panel from m.nextEpisode (a next episode, or a shuffle's random pick).

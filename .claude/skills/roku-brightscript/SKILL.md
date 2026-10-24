@@ -125,6 +125,14 @@ with a separate audio rendition play with sound on the same Roku, and Silo's pro
 (fragmented MP4 over HTTP) fails at once, so copied video reaches a Roku only as MPEG-TS or
 demuxed CMAF.
 
+## Porting notes worth keeping
+- Roku cannot blur a Poster. Where Android blurs (spoiler protection of an unwatched episode's
+  still), Siku does not load the image at all and shows series art the server marks as such
+  (`*_is_episode_still = false`) or the default artwork (`Spoilers.brs`).
+- A Roku channel has no background state: it runs or it is closed, and Home closes it without
+  notice. "Time away" rules (Profile Selection) measure from a periodically written last-active
+  time (`ProfileLaunch.brs`), never from an exit hook alone.
+
 ## Project conventions (short version; `docs/ARCHITECTURE.md` has the full one)
 - 1920×1080 canvas, pixel coordinates. Android dp × 2 = px; Android sp × 1.72 = px.
 - Every component is an XML file plus a sibling `.brs` referenced by `<script uri>`. No inline
@@ -170,6 +178,14 @@ demuxed CMAF.
    `debugPort=<port>` for a mock started with `--port <port>`, so parallel runs don't collide); `debugScreen` opens a screen
    directly; `debugItem` becomes `params.itemId`. Useful ids: `movie:glass-city`,
    `series:orbital`, `audiobook:the-long-orbit`, person `100`.
+   The simulator's registry is one file shared by every brs-cli run on the machine
+   (`~/.local/share/brs-cli/registry.json`, keyed by the app), so parallel and earlier runs leak
+   prefs and sessions into yours (a session pointing at another worktree's mock port, the Profile
+   Selection choice from your last test). Seed what a test needs through deep-link parameters
+   (`debugSession=mock`, `debugProfileLaunch=<choice|new>`, `debugAwaySeconds=N`) instead of
+   trusting stored state. With several simulators running, a page can take 40-70 s to load: keys
+   pressed while it loads are lost, so start with a long `wait` and run long scripts in the
+   background. `tools/mock_server.py --help` lists switches that emulate older servers.
 5. Build: `npm run package` → `out/siku.zip`. Side-load on a Roku in developer mode
    (`http://<roku-ip>`, user `rokudev`) and watch `telnet <roku-ip> 8085` for errors. A compile
    error prints `Syntax Error ... in pkg:/...(line)`; a runtime crash prints a full backtrace with

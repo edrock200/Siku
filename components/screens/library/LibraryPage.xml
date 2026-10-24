@@ -17,6 +17,9 @@
   as square group cards and drill into the group's books (POST /api/v2/catalog/query, rule
   {field: author|series, op: is}); Back (or the "All Authors" pill) returns to the groups.
   Browse and A-Z show the right-edge AlphabetRail, which drives name_prefix.
+  Browse keeps its sort and filters on this Roku per server, profile, library (and media type)
+  while "Preserve sort & filters" is on; an empty result asks for one unfiltered item to tell an
+  empty library from filters that match nothing.
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="LibraryPage" extends="ShellPage">
@@ -53,6 +56,7 @@
         <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="27" />
       </Label>
       <PillButton id="retryBtn" text="Retry" height="64" fontSize="24" translation="[0, 600]" visible="false" />
+      <PillButton id="errClearBtn" text="Clear filters" height="64" fontSize="24" translation="[0, 600]" visible="false" />
     </Group>
     <ShellPanel id="sortPanel" visible="false" />
     <ShellPanel id="filterPanel" visible="false" />

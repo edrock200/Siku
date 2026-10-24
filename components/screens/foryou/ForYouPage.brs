@@ -29,7 +29,7 @@ end sub
 sub load()
     m.loading = true
     m.feed.state = "loading"
-    Api_get("/api/v2/recommendations/discover", { image_size: "medium" }, "onDiscover")
+    Api_get("/api/v2/recommendations/discover", Artwork_query({ image_size: "medium" }, "discover", Theme_posterScale()), "onDiscover")
 end sub
 
 sub onDiscover(event as object)

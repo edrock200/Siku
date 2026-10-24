@@ -45,6 +45,9 @@ components/common/
   Settings.brs  Settings_* server-synced settings (effective cascade read/write, typed getters, Home row layout)
   Trailers.brs  Trailer_* "Trailers & More" entries (local extras, then YouTube videos; TrailerRail.kt)
   ThemeMusic.brs ThemeMusic_* opt-in detail-page theme music (capability, playback grant, Audio node)
+  Spoilers.brs  Spoilers_* spoiler protection for unwatched episodes (hidden stills and overviews; any component may include it)
+  Artwork.brs   Artwork_* per-slot artwork widths when GET /api/v2/images/capabilities lists slot_width_params
+  ProfileLaunch.brs  ProfileLaunch_* the Profile Selection setting (who's watching at launch, the new-Roku remember offer)
 components/tasks/
   ApiTask       one HTTP request (Task); JSON in and out; 401 → refresh → retry
   ProbeTask     the connection speed test (bandwidth probe download, timed; results POSTed)
@@ -82,7 +85,8 @@ A screen is `<component name="XScreen" extends="BaseScreen">` (`components/BaseS
 - `Nav_push("DetailScreen", { itemId: "movie:heat-1995" })` opens a screen on top.
 - `Nav_replace(...)` swaps the current screen.
 - `Nav_reset(...)` clears the stack.
-- `Nav_reset("@start")` re-runs startup routing:
+- `Nav_reset("@start")` re-runs startup routing (at app launch, the Profile Selection rule in
+  `ProfileLaunch.brs` may first clear the saved profile so Who's watching shows):
   - no server → `ServerConnectScreen`
   - no token → `LoginScreen`
   - no profile → `ProfileScreen`
@@ -119,7 +123,8 @@ Music: the Silo v2 contract has no album/artist/track types yet, and Android TV 
 | Field | Contents |
 |---|---|
 | `session` | `{serverUrl, serverOrigin, serverId, serverName, accessToken, refreshToken, expiresAt, user, profileId, profileToken, profileName, profileAvatar, deviceId}`. Never mutate it in place: edit a copy, then call `Session_save(copy)`. |
-| `prefs` | Device-local settings (`Prefs_load`, `Prefs_save`). |
+| `prefs` | Device-local settings (`Prefs_load`, `Prefs_save`), including `profileLaunch` / `profileLaunchOffer` (Profile Selection). Library Browse sort and filters are saved separately in the registry under `browsePrefs.<server>.<profile>.<library>[.type-<mediaType>]`. |
+| `imageCaps` | `{serverUrl, slots}`: the image capability probe for the active server (`Artwork_storeCaps`); `slots` maps an artwork slot to its width parameter. |
 | `toast` | Set a string to show a toast, e.g. `m.global.toast = "Added to Watchlist"`. |
 | `authExpired` | Set by the network layer. MainScene then signs out and routes to the login screen. |
 | `staleProfile` | Set by `ApiTask` on 403 `profile_verification_required` with the profile id/token the request sent (household-management calls excepted). If that is still the active profile, MainScene clears the profile selection (keeping the sign-in) and opens `ProfileScreen`; it waits while the player or the sign-in/server screens are on top. |

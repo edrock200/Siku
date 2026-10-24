@@ -4,6 +4,9 @@
   Reads the ContentNode fields set by Content_cardNode (components/common/Content.brs).
   Styles: poster (2:3), landscape (16:9, Continue Watching / episodes), circle (people),
   square (1:1, audiobooks / albums / audiobook groups).
+  A card without artwork (no URL, or the image failed to load) shows the default artwork: the
+  art_default_* glow with a type mark (Android TV DefaultArtwork, #530); people keep the plain circle
+  and audiobook groups their initials.
   Focus: scale 1.10, 4 px #EDEDED border, soft white glow; caption brightens (docs/design-spec.md §1.5).
   The containing list must set drawFocusFeedback="false".
   playGlyph (optional boolean field on the content node): a centered play button over the image,
@@ -36,6 +39,8 @@
           <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="72" />
         </Label>
         <MaskGroup id="mask" maskUri="pkg:/images/ui/mask_poster.png">
+          <!-- Missing artwork: a faint glow in Siku's colours (scripts/make_default_artwork.py). -->
+          <Poster id="defaultArt" loadDisplayMode="scaleToFill" visible="false" />
           <Poster id="image" loadDisplayMode="scaleToZoom" />
           <Poster id="shade" uri="pkg:/images/ui/scrim_bottom.png" opacity="0" />
           <Rectangle id="progressTrack" color="0xFFFFFF33" visible="false" />
@@ -45,6 +50,8 @@
           <Poster id="playGlyphBg" uri="pkg:/images/ui/circle.png" blendColor="0x0000008C" width="60" height="60" />
           <Poster id="playGlyphIcon" uri="pkg:/images/icons/play.png" blendColor="0xFFFFFFFF" width="36" height="36" translation="[13, 12]" />
         </Group>
+        <!-- The type mark centred on the default artwork: film, TV or headphones, 13% white. -->
+        <Poster id="defaultMark" blendColor="0xFFFFFF21" visible="false" />
         <Group id="watchedBadge" visible="false">
           <Poster id="watchedBg" uri="pkg:/images/ui/circle.png" blendColor="0xEDEDEDFF" />
           <Poster id="watchedIcon" uri="pkg:/images/icons/check.png" blendColor="0x000000FF" />

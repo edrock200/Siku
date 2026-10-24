@@ -116,6 +116,15 @@ Letter spacing is 0 unless noted. Pixel values use 1 sp = 1.72 px.
 | Marquee text field | 8 dp |
 | Capsules (tabs, pills, chips, filter pills) | fully round (50% / 999 dp) |
 
+### 1.4b Missing artwork (upstream #530, `DefaultArtwork`)
+
+A poster, cover or still with no image (or one that fails to load) shows a faint glow on `#16171C` with a small
+type mark: film for movies and anything unknown, TV for series, seasons and episodes, headphones for audiobooks
+and podcasts. Siku uses its own logo colours (blue `#0B55EC` top-left, orange `#FF8010` bottom-right, red `#E81E4C`
+upper right), pre-rendered by `scripts/make_default_artwork.py` into `images/ui/art_default_{poster,landscape,square}.png`
+because Roku has no blur or gradient brush. The mark is a white icon at 13% opacity, 24% of the card width
+(28–128 px). People keep the plain circle and audiobook groups their initials.
+
 ### 1.5 Focus treatment (`UI/theme/FocusModifier.kt`)
 
 - **Cards** (`siloCardDefaults`): scale **1.10**, border **2 dp `#EDEDED`**, glow white @ 28% at 12 dp elevation.
@@ -529,7 +538,7 @@ The page background is opaque: the sampled tint at 42% over black (default `rgb(
 1. **Series only, "Episodes":**
    - **Season row**: capsule chips, 52 px tall, 24 px horizontal padding, 14 sp. A "Show" chip first, then "Specials" / "Season 1" …. Selected chip: white fill with black text. Focused: translucent fill.
    - **Episode rail**: 16:9 stills, 360 px wide, 40 px gaps, with a progress bar (10 px) and a watched check.
-   - Episode card text: eyebrow "S1 · E1" (11 sp), title 18 sp, a 14 sp meta line, and a 3-line synopsis at 16 sp.
+   - Episode card text (upstream #644, `EpisodeCardCaption`): "S01E02 · Title" (18 sp SemiBold, one line), then "Feb 18, 2026  ·  52m" (14 sp; air date, then runtime as "52m" / "1h 5m"; kept as an empty line when unknown so cards line up), and a 3-line synopsis at 16 sp. Android TV's Series page moves the focused episode's synopsis into the hero; Siku's hero does not follow rail focus, so its cards keep the synopsis, as Android TV does on season and episode pages. Spoiler protection empties the synopsis and replaces the still with the default artwork.
    - The current episode has a ring and is centered.
    - OK on a card plays that episode on the series page (combined Series page). On season/episode pages it opens the episode.
    - Messages: "Loading episodes…", "Press again to retry", "No episodes available".
@@ -647,8 +656,8 @@ The page background is opaque: the sampled tint at 42% over black (default `rgb(
 
 - Rows are 76 px tall, 14 px radius, 15 sp text: a label on the left and the value with a chevron on the right. Focused rows invert.
 - Groups have a 14 sp uppercase SemiBold header with tracking 1.
-- **General:** Home Sections; Cards & Posters (Preset, Poster Size, Captions, Only This Device); Top Menu (Show Audiobooks); Profile; Metadata (Metadata Language); Experimental.
-- **Playback:** Streaming (Quality, Audio Language); Episodes (Show Next Up, Skip Intros = Never / Ask to skip / Skip automatically, Rewind on Resume, Still Watching Prompt); Reset.
+- **General:** Profile at Launch (Profile Selection: Automatic / Every Time / After 1 Hour / After 12 Hours, with its description as the footer; the picker shows each choice's description as a second line); Home Sections; Cards & Posters (Preset, Poster Size, Captions, Only This Device); Top Menu (Show Audiobooks); Profile; Metadata (Metadata Language); Experimental.
+- **Playback:** Streaming (Quality, Audio Language); Episodes (Show Next Up, Skip Intros = Never / Ask to skip / Skip automatically, Rewind on Resume, Still Watching Prompt); Spoilers (Blur unwatched episode images, Hide unwatched episode descriptions; only when the server knows the revision-17 keys); Reset.
 - **Subtitles:** Behavior, Language, Font Size, Font Family, Font Color, Text Opacity, Outline Color, Background Style, Background Opacity, Background Color, Position.
 - **Server:** Active Server; About.
 
