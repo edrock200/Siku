@@ -20,6 +20,7 @@ sub init()
     m.actions = m.top.findNode("actions")
     m.playBtn = m.top.findNode("playBtn")
     m.startOverBtn = m.top.findNode("startOverBtn")
+    m.trailerBtn = m.top.findNode("trailerBtn")
     m.versionBtn = m.top.findNode("versionBtn")
     m.audioBtn = m.top.findNode("audioBtn")
     m.subtitlesBtn = m.top.findNode("subtitlesBtn")
@@ -80,13 +81,14 @@ sub init()
 
     m.playBtn.observeField("buttonSelected", "onPlay")
     m.startOverBtn.observeField("buttonSelected", "onStartOver")
+    m.trailerBtn.observeField("buttonSelected", "onTrailerButton")
     m.watchlistBtn.observeField("buttonSelected", "onWatchlistToggle")
     m.favBtn.observeField("buttonSelected", "onFavoriteToggle")
     m.moreBtn.observeField("buttonSelected", "onMore")
     m.versionBtn.observeField("buttonSelected", "onVersionButton")
     m.audioBtn.observeField("buttonSelected", "onAudioButton")
     m.subtitlesBtn.observeField("buttonSelected", "onSubtitlesButton")
-    for each b in [m.startOverBtn, m.versionBtn, m.audioBtn, m.subtitlesBtn, m.watchlistBtn, m.favBtn, m.moreBtn]
+    for each b in [m.startOverBtn, m.trailerBtn, m.versionBtn, m.audioBtn, m.subtitlesBtn, m.watchlistBtn, m.favBtn, m.moreBtn]
         b.observeField("width", "layoutActions")
     end for
     m.playBtn.observeField("width", "layoutActions")
@@ -431,7 +433,7 @@ sub layoutActions()
     x = 0
     gap = 18
     m.actionButtons = []
-    for each b in [m.playBtn, m.startOverBtn, m.versionBtn, m.audioBtn, m.subtitlesBtn, m.watchlistBtn, m.favBtn, m.moreBtn]
+    for each b in [m.playBtn, m.startOverBtn, m.trailerBtn, m.versionBtn, m.audioBtn, m.subtitlesBtn, m.watchlistBtn, m.favBtn, m.moreBtn]
         if b.visible then
             b.translation = [x, 0]
             x = x + b.width + gap
@@ -1054,6 +1056,8 @@ sub renderTrailers()
     t = m.itemType
     m.trailers = []
     if t = "movie" or t = "series" or t = "season" or t = "episode" then m.trailers = Trailer_entries(m.item)
+    m.trailerBtn.visible = primaryTrailerIndex() >= 0
+    layoutActions()
     if m.trailers.Count() = 0 then
         m.trailersSection.visible = false
         return
@@ -1079,12 +1083,34 @@ end sub
 sub onTrailerSelected()
     sel = m.trailersRow.rowItemSelected
     if sel = invalid or sel.Count() < 2 or sel[1] >= m.trailers.Count() then return
-    e = m.trailers[sel[1]]
+    openTrailerEntry(m.trailers[sel[1]])
+end sub
+
+sub openTrailerEntry(e as object)
     if e.isLocal then
         playExtra(e)
     else
         openYouTube(e)
     end if
+end sub
+
+' The Trailer button (a Siku addition; Android TV has only the row): the first local trailer, else
+' the first YouTube trailer, else a teaser (local first). Featurettes and clips don't count.
+function primaryTrailerIndex() as integer
+    for each wanted in ["trailer", "teaser"]
+        for each localFirst in [true, false]
+            for i = 0 to m.trailers.Count() - 1
+                e = m.trailers[i]
+                if e.isLocal = localFirst and LCase(Str_orEmpty(e.raw.kind).Trim()) = wanted then return i
+            end for
+        end for
+    end for
+    return -1
+end function
+
+sub onTrailerButton()
+    i = primaryTrailerIndex()
+    if i >= 0 then openTrailerEntry(m.trailers[i])
 end sub
 
 ' A local extra plays in Siku's player from the beginning, like Android TV's onPlay(..., "extra",

@@ -65,6 +65,8 @@
         <Group id="actions" visible="false">
           <PillButton id="playBtn" text="Play" variant="solid" iconUri="pkg:/images/icons/play.png" height="76" padX="54" fontSize="27" />
           <DetailCircleButton id="startOverBtn" iconUri="pkg:/images/icons/start_over.png" label="Start Over" visible="false" />
+          <!-- Plays the title's trailer (local first, else YouTube); shown only when it has one. Siku-only: Android TV offers trailers in the row alone. -->
+          <DetailCircleButton id="trailerBtn" iconUri="pkg:/images/icons/trailer.png" label="Trailer" visible="false" />
           <!-- Version / Audio / Subtitles selectors: shown only when the title offers a real choice. -->
           <DetailCircleButton id="versionBtn" iconUri="pkg:/images/icons/video.png" label="Version" visible="false" />
           <DetailCircleButton id="audioBtn" iconUri="pkg:/images/icons/audio.png" label="Audio" visible="false" />
