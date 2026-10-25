@@ -3,6 +3,10 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.22
+
+- **New:** a **Trailer** button next to Play on movies and shows that have a trailer. It plays the server's own trailer, or opens the YouTube trailer when there isn't one. Other extras (featurettes, deleted scenes) stay in the Trailers & More row further down the page.
+
 ## v0.1.21
 
 Brings Siku up to date with Silo's Android TV app as of October 24, 2026.
