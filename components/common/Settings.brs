@@ -377,6 +377,13 @@ function Settings_forceDolbyPassthrough() as boolean
     return Settings_prefs().forceDolbyPassthrough = true
 end function
 
+' Experimental: MPEG-TS Copy (device-local, Siku only, on by default): offer the server's
+' hls_copy_mpegts_v1 route, which keeps the original H.264/HEVC video and repackages it as MPEG-TS.
+' Not yet verified on a Roku; turning it off restores the H.264/SDR/AAC-only HLS declaration.
+function Settings_tsCopy() as boolean
+    return Settings_prefs().tsCopyDisabled <> true
+end function
+
 ' Experimental: declare Silo's "progressive" delivery (a fragmented MP4 streamed over plain HTTP,
 ' video copied, audio converted when needed). Roku's spec lists fragmented MP4 only under DASH
 ' and HLS, so whether the Video node plays it progressively is what this switch finds out.

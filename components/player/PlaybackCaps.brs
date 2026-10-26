@@ -356,6 +356,7 @@ end function
 ' copies of H.264/HEVC packaged as MPEG-TS, which Roku's HLS player reads audio from (pitfall 14).
 ' Negotiated only when the server advertises the feature and the remux delivery.
 function PlaybackCaps_tsCopyNegotiable() as boolean
+    if not Settings_tsCopy() then return false
     return PlaybackCaps_serverHas("hls_copy_mpegts_v1") and PlaybackCaps_serverDelivers("server_remux_hls")
 end function
 
