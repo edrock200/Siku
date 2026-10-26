@@ -28,6 +28,13 @@ Options that emulate other servers:
   --no-slot-widths        images capability without slot_width_params (older server)
   --empty-library ID      that library holds nothing (empty library vs filters that match nothing)
   --trickplay MODE        seek-bar previews of file 42: ok | off | refused | invalid | expiring
+  --hls-copy-ts           a server with hls_copy_mpegts_v1 (2026-10-26): capabilities list it,
+                          seek_reanchor_v1, hls_remux_subtitle_renditions_v1 and server_remux_hls;
+                          a remux for a client listing hls_copy_mpegts_v1 in deliveries.hls.features
+                          comes back as MPEG-TS (effective_recipe.segment_container "mpegts", no
+                          video_sample_entry) on an open-ended timeline (keyframes every 6 s,
+                          can_seek_anywhere false), and a seek_reanchor replan re-anchors it there.
+                          File 56 always remuxes; file 52 remuxes when the client declares HDR10.
 Missing artwork: "Velvet Static" has none, "Copper Sky"'s poster 404s, and "Wild Coast" episodes
 have no stills (the default artwork). Home dismissals are kept (PUT/DELETE
 /api/v2/home/dismissals/{surface}/{id}); an episode or series dismissal drops the whole show.
@@ -57,7 +64,7 @@ LOCK = threading.Lock()
 LOG = []
 # Feature switches (main() sets them from the command line).
 OPTS = {"active_quality": True, "ai_fail": False, "ai_transcribe_only": False, "buffering_quality": True, "probe_kbps": 40000,
-        "slot_widths": True, "empty_libraries": set(), "trickplay": "ok"}
+        "slot_widths": True, "empty_libraries": set(), "trickplay": "ok", "hls_copy_ts": False}
 
 GENRES = ["Science Fiction", "Drama", "Crime", "Comedy", "Thriller", "Adventure", "Animation", "Documentary"]
 MOVIE_TITLES = [
@@ -1171,11 +1178,23 @@ def playback_summary(b):
     out = ctx.get("output") or {}
     disp = out.get("display") or {}
     pt = (caps.get("audio_passthrough") or {}).get("passthrough_codecs")
+    hls = (ctx.get("deliveries") or {}).get("hls") or {}
+    hls_hd = hls.get("hdr_details") or {}
     return ("quality=%s cap=%s metered=%s max_res=%s video=%s audio=%s passthru=%s hdr=%s hdr10=%s hdr10+=%s hlg=%s dv=%s display_evidence=%s deliveries=%s"
+            " hls_features=%s hls_video=%s hls_audio=%s hls_passthru=%s hls_hdr10=%s hls_hlg=%s hls_dv=%s client_features=%s"
             % (b.get("quality_preference"), b.get("bandwidth_cap_kbps"), b.get("metered"), caps.get("max_resolution"),
                ",".join(caps.get("codecs_video") or []), ",".join(caps.get("codecs_audio") or []), ",".join(pt or []),
                caps.get("hdr"), hd.get("hdr10"), hd.get("hdr10_plus"), hd.get("hlg"), hd.get("dolby_vision_profiles"),
-               disp.get("hdr_evidence"), ",".join(sorted((ctx.get("deliveries") or {}).keys()))))
+               disp.get("hdr_evidence"), ",".join(sorted((ctx.get("deliveries") or {}).keys())),
+               ",".join(hls.get("features") or []), ",".join(hls.get("video_codecs") or []), ",".join(hls.get("audio_decode_codecs") or []),
+               ",".join(hls.get("audio_passthrough_codecs") or []), hls_hd.get("hdr10"), hls_hd.get("hlg"), hls_hd.get("dolby_vision_profiles"),
+               ",".join(b.get("client_features") or [])))
+
+
+def wants_ts_copy(b):
+    """--hls-copy-ts: the client listed hls_copy_mpegts_v1 in client_playback_context.deliveries.hls.features."""
+    hls = (((b or {}).get("client_playback_context") or {}).get("deliveries") or {}).get("hls") or {}
+    return OPTS["hls_copy_ts"] and "hls_copy_mpegts_v1" in (hls.get("features") or [])
 
 
 def playback_route(fid, b):
@@ -1317,10 +1336,28 @@ def playback_decision(sid, position, fid, body=None):
         features.append("plan_active_quality_v1")
     LOG.append("DECISION delivery=%s reason=%s quality=%s active_quality=%s" % (delivery, reason, quality, active))
     print("DECISION delivery=%s reason=%s quality=%s cap=%s active_quality=%s" % (delivery, reason, quality, (body or {}).get("bandwidth_cap_kbps"), active), flush=True)
+    timeline = {"player_start_seconds": position, "timeline_offset_seconds": 0, "can_seek_anywhere": True}
+    if delivery == "server_remux_hls":
+        recipe = dict(recipe)
+        if wants_ts_copy(body):
+            # hls_copy_mpegts_v1: TS segments, no sample entry, and FFmpeg's growing playlist from
+            # the keyframe before the position (every 6 s here): open-ended, so seeks re-anchor.
+            recipe["segment_container"] = "mpegts"
+            origin = float(int(position // 6) * 6)
+            timeline = {"source_start_seconds": position, "stream_origin_seconds": origin, "player_start_seconds": position - origin,
+                        "timeline_offset_seconds": origin, "seek_window_start_seconds": origin, "can_seek_anywhere": False,
+                        "seek_restoration": "source_position"}
+        else:
+            recipe["video_sample_entry"] = "hvc1"
+        print("REMUX segment_container=%s video_sample_entry=%s origin=%s" % (recipe.get("segment_container", "fmp4"), recipe.get("video_sample_entry", "-"),
+                                                                               timeline["timeline_offset_seconds"]), flush=True)
+        LOG.append("REMUX segment_container=%s" % recipe.get("segment_container", "fmp4"))
+    if OPTS["hls_copy_ts"]:
+        features.append("seek_reanchor_v1")
     if delivery == "original_http":
         stream = {"url": "/mock-media/%s.mp4?st=abc" % sid, "protocol": "http_progressive", "container": source["container"], "mime_type": "video/mp4", "headers": {}, "header_refresh": "none"}
     else:
-        stream = {"url": "/api/v2/playback/transcode/%s/master.m3u8?st=abc" % sid, "protocol": "hls", "container": "hls", "mime_type": "application/vnd.apple.mpegurl", "headers": {}, "header_refresh": "none"}
+        stream = {"url": "/api/v2/playback/transcode/%s/master.m3u8?st=abc&origin=%d" % (sid, int(timeline["timeline_offset_seconds"])), "protocol": "hls", "container": "hls", "mime_type": "application/vnd.apple.mpegurl", "headers": {}, "header_refresh": "none"}
     inventory = [{"track_id": "file:%s:subtitle:0" % fid, "combined_index": 0, "source": "external", "codec": "srt", "language": "eng",
                   "label": "English", "forced": False, "default": False, "hearing_impaired": False, "delivery": "sidecar",
                   "url": "/api/v2/stream/%s/subtitles/0.vtt?file_id=%s&external_subtitle_key=f903" % (sid, fid), "sync_key": EXTERNAL_SYNC_KEY}]
@@ -1362,8 +1399,11 @@ def playback_decision(sid, position, fid, body=None):
     if row is not None:
         selected_sub = {"id": row["track_id"], "index": row["combined_index"]}
         failed_rendition = b.get("operation") == "failure_recovery" and (b.get("failure") or {}).get("classification") == "subtitle_hls_rendition_failed"
-        if (delivery == "server_transcode_hls" and row["source"] == "embedded" and row["codec"] in ("subrip", "srt", "webvtt")
-                and "hls_subtitle_renditions_v1" in (b.get("client_features") or []) and not failed_rendition):
+        cf = b.get("client_features") or []
+        # A copy remux carries it too for a client that also lists hls_remux_subtitle_renditions_v1.
+        rendition_route = delivery == "server_transcode_hls" or (delivery == "server_remux_hls" and OPTS["hls_copy_ts"] and "hls_remux_subtitle_renditions_v1" in cf)
+        if (rendition_route and row["source"] == "embedded" and row["codec"] in ("subrip", "srt", "webvtt")
+                and "hls_subtitle_renditions_v1" in cf and not failed_rendition):
             subtitle = {"mode": "render", "track_id": row["track_id"], "inventory": inventory,
                         "hls_rendition": {"group_id": "subs", "name": "Subtitles", "format": "vtt", "mime_type": "text/vtt"}}
             features.append("hls_subtitle_renditions_v1")
@@ -1378,7 +1418,7 @@ def playback_decision(sid, position, fid, body=None):
             "playback_plan": {"protocol_version": 3, "plan_id": "plan:%d" % (len(SUBS["stored"]) + 1), "plan_attempt_key": "v3:%d" % (len(SUBS["stored"]) + 1), "session_id": sid,
                               "delivery": delivery, "decision_reason": reason,
                               "stream": stream,
-                              "timeline": {"player_start_seconds": position, "timeline_offset_seconds": 0, "can_seek_anywhere": True},
+                              "timeline": timeline,
                               "selected_tracks": selected,
                               "effective_recipe": recipe, "claims": claims, "available_qualities": qualities,
                               "degradation_warnings": warnings, "transformations": [], "applied_quirks": [], "runtime_corrections": [],
@@ -1984,6 +2024,9 @@ class Handler(BaseHTTPRequestHandler):
                 caps["features"] += ["buffering_quality_v1", "connection_speed_v1"]
                 caps.update({"bandwidth_probe_url": "/api/v2/playback/bandwidth-probe", "bandwidth_probe_target_kbps": 30000,
                              "bandwidth_probe_automatic": True, "bandwidth_probe_max_age_seconds": 604800})
+            if OPTS["hls_copy_ts"]:
+                caps["features"] += ["seek_reanchor_v1", "hls_subtitle_renditions_v1", "hls_remux_subtitle_renditions_v1", "hls_copy_mpegts_v1"]
+                caps["deliveries"] = ["original_http", "server_remux_hls", "server_transcode_hls"]
             return self.send(200, caps)
         if p == "/api/v2/playback/connection" and method == "GET" and OPTS["buffering_quality"]:
             bq = STATE.setdefault("bq", {"learned_limit": None, "probe": None})
@@ -2036,7 +2079,13 @@ class Handler(BaseHTTPRequestHandler):
             start = STATE["sessions"][m.group(1)]
             decision = playback_decision(m.group(1), b.get("position_seconds") or 0, start.get("file_id") or "42", b)
             plan = decision.get("playback_plan") or {}
-            if b.get("operation") == "failure_recovery" and plan.get("delivery") == "server_remux_hls":
+            if b.get("operation") == "seek_reanchor":
+                tl = plan.get("timeline") or {}
+                print("SEEK REANCHOR position=%s origin=%s player_start=%s quality=%s failure=%s" % (b.get("position_seconds"), tl.get("timeline_offset_seconds"),
+                      tl.get("player_start_seconds"), b.get("quality_preference"), b.get("failure")), flush=True)
+                LOG.append("SEEK REANCHOR position=%s" % b.get("position_seconds"))
+            if (b.get("operation") == "failure_recovery" and plan.get("delivery") == "server_remux_hls"
+                    and (plan.get("effective_recipe") or {}).get("segment_container") != "mpegts"):
                 # The real planner skips the attempted remux and falls through to an H.264 MPEG-TS
                 # transcode for a client whose HEVC decoder is level-bound (Roku).
                 plan["delivery"] = "server_transcode_hls"
@@ -2593,6 +2642,8 @@ def main():
     ap.add_argument("--empty-library", action="append", default=[])
     ap.add_argument("--trickplay", choices=["ok", "off", "refused", "invalid", "expiring"], default="ok",
                     help="seek-bar previews for file 42: served, not offered, 404, a sheet missing, or URLs expiring in 75 s")
+    ap.add_argument("--hls-copy-ts", action="store_true",
+                    help="a server with hls_copy_mpegts_v1 and seek_reanchor_v1: MPEG-TS remuxes on an open-ended timeline")
     args = ap.parse_args()
     SETTINGS_REVISION = args.settings_revision
     OPTS["slot_widths"] = not args.no_slot_widths
@@ -2609,6 +2660,7 @@ def main():
     OPTS["buffering_quality"] = not args.no_buffering_quality
     OPTS["probe_kbps"] = args.probe_kbps
     OPTS["trickplay"] = args.trickplay
+    OPTS["hls_copy_ts"] = args.hls_copy_ts
     srv = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
     print("Mock Silo on http://127.0.0.1:%d" % args.port, flush=True)
     srv.serve_forever()

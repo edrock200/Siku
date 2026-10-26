@@ -31,6 +31,7 @@
   <script type="text/brightscript" uri="pkg:/components/player/Trickplay.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/PlayerTrickplay.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/PlayerHoldSeek.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/PlayerSeekReanchor.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Shuffle.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/SeriesChoice.brs" />

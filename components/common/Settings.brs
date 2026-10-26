@@ -355,9 +355,9 @@ function Settings_hdrEnabled() as boolean
     return Settings_value("player.hdr_enabled", true) <> false
 end function
 
-' player.dv_profile7_hdr10_fallback: on, dual-layer Dolby Vision (profile 7) is asked for as its
-' HDR10 base layer (PlaybackCaps leaves profile 7 out of the declared profiles). Contract default
-' false, as on Android TV after hydration.
+' player.dv_profile7_hdr10_fallback: on Android TV, on asks for dual-layer Dolby Vision (profile 7)
+' as its HDR10 base layer. Siku never declares profile 7 (Roku decodes DV profiles 5 and 8 only),
+' so it reads the same either way; the row stays for parity. Contract default false.
 function Settings_dvProfile7Fallback() as boolean
     return Settings_value("player.dv_profile7_hdr10_fallback", false) = true
 end function

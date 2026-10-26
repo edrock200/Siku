@@ -195,6 +195,7 @@ sub resetPlaybackState()
     m.resumeAfterStart = invalid
     m.watchBackTarget = invalid
     m.waitingForToken = false
+    SeekReanchor_reset()
     if m.subs <> invalid then Subs_resetPlayback()
     if m.bq <> invalid then Bufq_resetPlayback()
     if m.hs <> invalid then HoldSeek_stop()
@@ -529,7 +530,8 @@ sub onCapabilities(event as object)
         showError("Playback isn't available on this server.")
         return
     end if
-    entry = { installation_id: caps.installation_id, features: Arr_or(caps.features), fetchedAt: Time_nowSeconds() }
+    ' deliveries: PlaybackCaps offers the MPEG-TS copy only to a server listing server_remux_hls.
+    entry = { installation_id: caps.installation_id, features: Arr_or(caps.features), deliveries: Arr_or(caps.deliveries), fetchedAt: Time_nowSeconds() }
     if m.global.hasField("playbackCaps") then
         m.global.playbackCaps = entry
     else
@@ -657,6 +659,8 @@ end sub
 ' remux_hls answer means nothing better exists on this server: say so.
 sub maybeRecoverSilentRemux(plan as object)
     if plan = invalid or LCase(Str_orEmpty(plan.delivery)) <> "server_remux_hls" then return
+    ' The MPEG-TS copy (hls_copy_mpegts_v1) is the packaging Roku plays audio from: keep it.
+    if PlaybackCaps_isTsRemux(plan) then return
     if m.remuxRecoveryTried then
         m.global.toast = "No sound expected: this file needs Silo's HLS remux, whose format Roku can't play audio from yet"
         return
@@ -955,6 +959,8 @@ end function
 sub seekToSource(seconds as float)
     if seconds < 0 then seconds = 0
     if m.duration > 0 and seconds > m.duration - 1 then seconds = m.duration - 1
+    ' A copy remux's open-ended window: the server re-anchors the stream there (PlayerSeekReanchor).
+    if SeekReanchor_intercept(seconds) then return
     resetBuffered()
     Bufq_onSeek()
     m.video.seek = seconds - m.timelineOffset

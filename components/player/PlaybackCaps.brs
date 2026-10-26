@@ -117,6 +117,10 @@ function PlaybackCaps_reprobe() as object
         if e = invalid then decodeInfo = {}
     end try
 
+    ' The MPEG-TS copy lane (hls_copy_mpegts_v1): what this Roku plays from TS segments, probed
+    ' with the container named, as jellyfin-roku probes for its TS-only HLS profiles.
+    ts = PlaybackCaps_probeTs(di, forcedDolby, audioOutput)
+
     props = di.GetDisplayProperties()
     display = { known: false, hdr10: false, hdr10Plus: false, hlg: false, dolbyVision: false }
     if props <> invalid and Type(props) = "roAssociativeArray" and props.Count() > 0 then
@@ -151,6 +155,7 @@ function PlaybackCaps_reprobe() as object
         audioOutput: audioOutput
         audioChannels: audioChannels
         audioDecodeInfo: decodeInfo
+        ts: ts
         device: {
             platform: "roku"
             os_version: osVersion
@@ -228,6 +233,31 @@ function PlaybackCaps_probeDecoder(di as object, spec as object) as object
     return entry
 end function
 
+' What the HLS delivery may declare when the server packages copied video as MPEG-TS
+' (hls_copy_mpegts_v1). Roku's streaming spec lists HLS in TS with H.264 or HEVC video and AAC,
+' AC3 or E-AC3 audio, so only those are probed, each with "container": "ts":
+'  - hevc: only when Main 10 at level 5.1 (4K60) decodes from TS. A box that takes HEVC only up to
+'    1080p would otherwise be sent a 4K copy it cannot play, so it keeps H.264 (a transcode).
+'  - audio: decoded on the box or passed to the HDMI sink (passthru 1), as for direct play; the
+'    Force Dolby Audio Passthrough setting and the "5.1 surround" AC3 assumption apply here too.
+' Returns { hevc, audio, passthrough }. Unverified on a device (see docs/upstream/
+' silo-server-roku-hls-audio.md); the [siku-playback] caps show what was found (tsvideo=, tsaudio=).
+function PlaybackCaps_probeTs(di as object, forcedDolby as boolean, audioOutput as string) as object
+    hevc = PlaybackCaps_canDecodeVideo(di, { "codec": "hevc", "profile": "main 10", "level": "5.1", "container": "ts" })
+    passthrough = []
+    ' AAC is the HLS baseline every Roku decodes (declared even where a simulator lacks the probe).
+    audio = ["aac"]
+    for each c in ["ac3", "eac3"]
+        ok = PlaybackCaps_canDecodeAudio(di, { "codec": c, "container": "ts" })
+        pt = PlaybackCaps_canDecodeAudio(di, { "codec": c, "passthru": 1, "container": "ts" })
+        if forcedDolby then pt = true
+        if c = "ac3" and LCase(audioOutput) = "5.1 surround" then ok = true
+        if ok or pt then audio.Push(c)
+        if pt then passthrough.Push(c)
+    end for
+    return { hevc: hevc, audio: audio, passthrough: passthrough }
+end function
+
 function PlaybackCaps_str(v as dynamic) as string
     if v = invalid then return ""
     if Type(v) = "roString" or Type(v) = "String" then return v
@@ -278,7 +308,7 @@ function PlaybackCaps_truthy(v as dynamic) as boolean
     return false
 end function
 
-' client_features we advertise. We don't implement seek_reanchor or header refresh.
+' client_features we advertise. No header refresh (a Video node cannot change its headers).
 ' hls_subtitle_renditions_v1 (Silo Android #611): a server_transcode_hls plan may carry the
 ' selected embedded text subtitle as a WebVTT SUBTITLES rendition of its own HLS stream instead of
 ' a whole-file sidecar extraction. Android offers it only for its own HLS player (not a Cast
@@ -286,14 +316,65 @@ end function
 ' renditions in availableSubtitleTracks. It changes nothing for direct play, and a rendition the
 ' Roku cannot find is handed back with failure_recovery (subtitle_hls_rendition_failed), which
 ' returns the sidecar plan (PlayerScreen.failHlsRendition). Needs a device test.
+' hls_remux_subtitle_renditions_v1 (only meaningful with the one above): a server_remux_hls copy
+' carries the track the same way, on a subtitle playlist cut at the remux's keyframes. It matters
+' only on the MPEG-TS copy lane; an fMP4 remux is handed back anyway (maybeRecoverSilentRemux).
+' seek_reanchor_v1 is a server feature; like Silo's Android apps, Siku lists it too when the
+' server advertises it, since it answers can_seek_anywhere:false plans with seek_reanchor replans
+' (PlayerSeekReanchor.brs).
 function PlaybackCaps_clientFeatures() as object
-    return ["playback_plan_v3", "hls_subtitle_renditions_v1"]
+    out = ["playback_plan_v3", "hls_subtitle_renditions_v1", "hls_remux_subtitle_renditions_v1"]
+    if PlaybackCaps_serverHas("seek_reanchor_v1") then out.Push("seek_reanchor_v1")
+    return out
+end function
+
+' The server's playback capability document (GET /api/v2/playback/capabilities, cached on
+' m.global.playbackCaps by PlayerScreen) lists `feature` in features.
+function PlaybackCaps_serverHas(feature as string) as boolean
+    if not m.global.hasField("playbackCaps") then return false
+    c = m.global.playbackCaps
+    if c = invalid or Type(c) <> "roAssociativeArray" then return false
+    for each f in Arr_or(c.features)
+        if f = feature then return true
+    end for
+    return false
+end function
+
+' The same document lists `delivery` (original_http, server_remux_hls, ...) in deliveries.
+function PlaybackCaps_serverDelivers(delivery as string) as boolean
+    if not m.global.hasField("playbackCaps") then return false
+    c = m.global.playbackCaps
+    if c = invalid or Type(c) <> "roAssociativeArray" then return false
+    for each d in Arr_or(c.deliveries)
+        if d = delivery then return true
+    end for
+    return false
+end function
+
+' hls_copy_mpegts_v1 (silo-server, 2026-10-26): a client that lists it in
+' client_playback_context.deliveries.hls.features (not client_features) gets server_remux_hls
+' copies of H.264/HEVC packaged as MPEG-TS, which Roku's HLS player reads audio from (pitfall 14).
+' Negotiated only when the server advertises the feature and the remux delivery.
+function PlaybackCaps_tsCopyNegotiable() as boolean
+    return PlaybackCaps_serverHas("hls_copy_mpegts_v1") and PlaybackCaps_serverDelivers("server_remux_hls")
+end function
+
+' A server_remux_hls plan packaged as MPEG-TS: effective_recipe.segment_container "mpegts" and no
+' video_sample_entry (an fMP4 copy always names one). Anything else is the fMP4 remux that Roku
+' plays silent.
+function PlaybackCaps_isTsRemux(plan as dynamic) as boolean
+    if plan = invalid or Type(plan) <> "roAssociativeArray" then return false
+    if LCase(Str_orEmpty(plan.delivery)) <> "server_remux_hls" then return false
+    r = plan.effective_recipe
+    if r = invalid or Type(r) <> "roAssociativeArray" then return false
+    return LCase(Str_orEmpty(r.segment_container)) = "mpegts" and Str_orEmpty(r.video_sample_entry) = ""
 end function
 
 ' The plan's subtitle.hls_rendition when it is a usable one ({group_id, name}), "invalid" when the
 ' plan has none, or { problem: true } when it carries one in a shape the client must refuse
-' (validateForMedia3): only a server_transcode_hls / hls plan rendering or converting the selected
-' track, with no artifact or embedded decision beside it.
+' (validateForMedia3): only a server_transcode_hls or server_remux_hls (hls_remux_subtitle_
+' renditions_v1) plan over hls rendering or converting the selected track, with no artifact or
+' embedded decision beside it.
 function PlaybackCaps_hlsRendition(plan as dynamic) as dynamic
     if plan = invalid or plan.subtitle = invalid or Type(plan.subtitle) <> "roAssociativeArray" then return invalid
     r = plan.subtitle.hls_rendition
@@ -304,7 +385,8 @@ function PlaybackCaps_hlsRendition(plan as dynamic) as dynamic
     if plan.selected_tracks <> invalid and plan.selected_tracks.subtitle <> invalid then selId = Str_orEmpty(plan.selected_tracks.subtitle.id)
     proto = ""
     if plan.stream <> invalid then proto = LCase(Str_orEmpty(plan.stream.protocol))
-    ok = LCase(Str_orEmpty(plan.delivery)) = "server_transcode_hls" and proto = "hls"
+    delivery = LCase(Str_orEmpty(plan.delivery))
+    ok = (delivery = "server_transcode_hls" or delivery = "server_remux_hls") and proto = "hls"
     ok = ok and (mode = "render" or mode = "convert") and sub_.artifact = invalid and sub_.embedded = invalid
     ok = ok and Str_orEmpty(r.group_id).Trim() <> "" and Str_orEmpty(r.name).Trim() <> ""
     ok = ok and selId <> "" and selId = Str_orEmpty(sub_.track_id)
@@ -368,8 +450,26 @@ function PlaybackCaps_delivery(containers as object, features as object, kind = 
     videoCodecs = p.codecsVideo
     hdr = PlaybackCaps_hdrDetails()
     claims = []
-    if kind = "hls" then
-        ' Roku's HLS player does not take audio muxed into fMP4 (CMAF) segments (Roku streaming
+    if kind = "hls" and PlaybackCaps_tsCopyNegotiable() then
+        ' MPEG-TS copy lane (hls_copy_mpegts_v1): remuxes of H.264/HEVC arrive as TS segments with
+        ' the audio muxed in, which Roku's spec lists ("video: TS ...; audio: aac, ac3, eac3"), and
+        ' transcodes were TS already. Declared from TS probes (PlaybackCaps_probeTs). HDR10 / HLG as
+        ' for direct play; no HDR10+ and no Dolby Vision profiles on this lane until a device shows
+        ' them surviving TS (the server then strips Dolby Vision to its HDR10 base layer or
+        ' transcodes). Implemented, not yet verified on a Roku.
+        videoCodecs = ["h264"]
+        if p.ts.hevc and PlaybackCaps_has(p.codecsVideo, "hevc") then videoCodecs.Push("hevc")
+        audioCodecs = p.ts.audio
+        passthrough = p.ts.passthrough
+        tsHdr = { hdr10: hdr.hdr10, hdr10_plus: false, hlg: hdr.hlg, dolby_vision_profiles: [] }
+        if hdr.hdr10_max_height <> invalid then
+            tsHdr.hdr10_max_width = hdr.hdr10_max_width
+            tsHdr.hdr10_max_height = hdr.hdr10_max_height
+            tsHdr.hdr10_max_frame_rate = hdr.hdr10_max_frame_rate
+        end if
+        hdr = tsHdr
+    else if kind = "hls" then
+        ' No MPEG-TS copy on this server. Roku's HLS player does not take audio muxed into fMP4 (CMAF) segments (Roku streaming
         ' specifications: "muxing audio and video not supported for CMAF"), and Silo's HLS remux
         ' copies the video into fMP4 with the audio muxed in, so every server_remux_hls plan
         ' played silent on device (v0.1.12/13). Silo packages MPEG-TS only when it transcodes the
@@ -411,6 +511,13 @@ function PlaybackCaps_delivery(containers as object, features as object, kind = 
     }
 end function
 
+' deliveries.hls.features: hls_copy_mpegts_v1 when the server offers the MPEG-TS copy.
+function PlaybackCaps_hlsFeatures() as object
+    out = ["hls"]
+    if PlaybackCaps_tsCopyNegotiable() then out.Push("hls_copy_mpegts_v1")
+    return out
+end function
+
 ' client_playback_context block.
 function PlaybackCaps_playbackContext() as object
     p = PlaybackCaps_probe()
@@ -434,7 +541,7 @@ function PlaybackCaps_playbackContext() as object
     end if
     dl = {
         original_http: PlaybackCaps_delivery(p.containers, [])
-        hls: PlaybackCaps_delivery(["m3u8", "hls"], ["hls"], "hls")
+        hls: PlaybackCaps_delivery(["m3u8", "hls"], PlaybackCaps_hlsFeatures(), "hls")
     }
     ' Experimental (Settings › Playback): Silo's progressive remux, a fragmented MP4 over HTTP with
     ' the video copied. The planner prefers it to HLS whenever the audio needs converting.
@@ -534,9 +641,15 @@ end function
 ' DolbyVisionPolicy and DisplayHdrProbe apply them:
 '  - HDR off (player.hdr_enabled): nothing is HDR; the server tone-maps to SDR.
 '  - Dolby Vision off: the DV profiles are dropped so the server serves the HDR10 base layer.
-'  - Profile 7 HDR10 Fallback on: profile 7 is not declared, so dual-layer files come as their
-'    HDR10 base layer (server strip); off declares 7 and the file plays as-is through the HEVC
-'    decoder, which presents the base layer.
+'  - Profile 7 is never declared, whatever the Profile 7 HDR10 Fallback setting says: Roku's
+'    Dolby Vision decoder takes profiles 5 and 8 only (Roku media spec; ManavA/silo-roku makes no
+'    profile-7 claim either), so a dual-layer file always comes as its HDR10 base layer from the
+'    server. The setting stays for Android TV parity and the server-synced cascade.
+'  - No dolby_vision_profile_levels: once a client sends any bound the server requires one for
+'    every profile and refuses Dolby Vision for files scanned without dv_level whose bitrate is
+'    unknown (plan_v3.go dolbyVisionSourceFitsLevelV3). Mapping the HEVC Main 10 level probe to a
+'    DV level (5.1 -> 9, 5 -> 7, 4.1 -> 5, as ManavA/silo-roku does) adds no fact a Roku device
+'    test has established, so the list stays omitted ("any level") as before.
 '  - Force HDR Passthrough: HDR10 / HDR10+ / HLG are declared even when the TV does not report
 '    them (Roku's own HDR→SDR conversion then applies). Dolby Vision still needs the display's word.
 function PlaybackCaps_hdrDetails() as object
@@ -550,7 +663,6 @@ function PlaybackCaps_hdrDetails() as object
     if d.dolbyVision and Settings_dolbyVision() then
         ' Roku Dolby Vision devices decode profiles 5 and 8 (8.1 HDR10-compatible, 8.4 HLG-compatible).
         dvProfiles = [5, 8]
-        if not Settings_dvProfile7Fallback() then dvProfiles = [5, 7, 8]
     end if
     if not Settings_hdrEnabled() then
         hdr10 = false
@@ -601,15 +713,19 @@ end function
 
 ' Records on the plan what the decision's server_features say about it, so code that only holds
 ' the plan can tell: plan_active_quality_v1 makes plan.active_quality authoritative (an absent
-' value then means the plan delivers no menu entry; Silo Android #649). Call once per decision,
-' before applyPlan.
+' value then means the plan delivers no menu entry; Silo Android #649), and seek_reanchor_v1 there
+' (or in the capability document) lets PlayerSeekReanchor move the plan's timeline. Call once per
+' decision, before applyPlan.
 sub PlaybackCaps_notePlanFeatures(decision as object)
     if decision = invalid or decision.playback_plan = invalid then return
     reports = false
+    reanchor = PlaybackCaps_serverHas("seek_reanchor_v1")
     for each f in Arr_or(decision.server_features)
         if f = "plan_active_quality_v1" then reports = true
+        if f = "seek_reanchor_v1" then reanchor = true
     end for
     decision.playback_plan.siku_reports_active_quality = reports
+    decision.playback_plan.siku_seek_reanchor = reanchor
 end sub
 
 ' ---------- Diagnostics ----------
@@ -639,6 +755,10 @@ function PlaybackCaps_diagLine(body as object, plan as object) as string
     caps = caps + " passthru=" + PlaybackCaps_join(p.passthroughAudio) + " surround=" + PlaybackCaps_join(p.surroundAudio)
     caps = caps + " out=" + p.audioOutput + " decodeinfo=" + PlaybackCaps_join(decode)
     caps = caps + " forcedolby=" + PlaybackCaps_str(p.forcedDolby) + " forcehdr=" + PlaybackCaps_str(Settings_forceHdrPassthrough()) + " progressive=" + PlaybackCaps_str(Settings_progressiveRemux())
+    ' The MPEG-TS copy lane: offered by the server (tscopy=), and what the TS probes found.
+    tsv = "h264"
+    if p.ts.hevc then tsv = "h264,hevc"
+    caps = caps + " tscopy=" + PlaybackCaps_str(PlaybackCaps_tsCopyNegotiable()) + " tsvideo=" + tsv + " tsaudio=" + PlaybackCaps_join(p.ts.audio) + " tspassthru=" + PlaybackCaps_join(p.ts.passthrough)
     caps = caps + " display=" + PlaybackCaps_str(p.display.known) + " hdr10=" + PlaybackCaps_str(hd.hdr10) + " hdr10+=" + PlaybackCaps_str(hd.hdr10_plus) + " hlg=" + PlaybackCaps_str(hd.hlg) + " dv=" + PlaybackCaps_join(dvs)
     ' Raw display report and model, so a missing Dolby Vision or HDR flag can be traced on device.
     di = CreateObject("roDeviceInfo")
@@ -687,6 +807,22 @@ function PlaybackCaps_diagLine(body as object, plan as object) as string
             dec = dec + " recipe=" + Str_orEmpty(r.video_codec) + " " + PlaybackCaps_str(r.width) + "x" + PlaybackCaps_str(r.height) + " " + Str_orEmpty(r.dynamic_range)
             dec = dec + " " + Str_orEmpty(r.audio_codec) + " " + PlaybackCaps_str(r.audio_channels) + "ch " + PlaybackCaps_str(r.bitrate_kbps) + "kbps"
         end if
+        ' seg=: the HLS segment container ("mpegts" on the TS copy lane, "-" when the server names
+        ' none: fMP4 for a remux, TS for a transcode); vse=: the fMP4 sample entry (hvc1/dvh1).
+        seg = "-"
+        vse = "-"
+        if r <> invalid then
+            if Str_orEmpty(r.segment_container) <> "" then seg = Str_orEmpty(r.segment_container)
+            if Str_orEmpty(r.video_sample_entry) <> "" then vse = Str_orEmpty(r.video_sample_entry)
+        end if
+        dec = dec + " seg=" + seg + " vse=" + vse
+        ' The timeline: offset, and whether the player may seek anywhere (reanchor= the server
+        ' moves it with seek_reanchor replans when it may not).
+        tl = plan.timeline
+        if tl <> invalid and Type(tl) = "roAssociativeArray" then
+            dec = dec + " tl_offset=" + PlaybackCaps_str(Num_or(tl.timeline_offset_seconds, 0)) + " seek_any=" + PlaybackCaps_str(tl.can_seek_anywhere)
+        end if
+        dec = dec + " reanchor=" + PlaybackCaps_str(PlaybackCaps_truthy(plan.siku_seek_reanchor))
         s = plan.source
         if s <> invalid then
             dec = dec + " source=" + Str_orEmpty(s.video_codec) + " " + PlaybackCaps_str(s.width) + "x" + PlaybackCaps_str(s.height) + " " + Str_orEmpty(s.dynamic_range)
