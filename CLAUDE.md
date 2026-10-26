@@ -102,7 +102,8 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   hand-off (installed check, `LaunchApp`, ECP status, outcome). `[siku-theme]` lines show the
   theme-music capability, grant (delivery, type, loop) and Audio errors; grant URLs are never printed.
 - Phone features (`components/lan/`, `components/remote/`): `[siku-lan]` (sockets, sealed frames,
-  mDNS bind/answers), `[siku-cast]` (remote control: handoff, launch, commands, borrowed profile),
+  mDNS bind steps/answers, send queues, Find servers: `discovery complete: N server(s)`,
+  `found server identity ... matched=`), `[siku-cast]` (remote control: handoff, launch, commands, borrowed profile),
   `[siku-pair]` (phone sign-in). Keys, nonces and tokens are never printed. `tools/silo_phone.py`
   acts as Silo's phone app against the simulator; `tools/lan_vectors.py` checks the crypto and
   framing against the phone's own test vectors.

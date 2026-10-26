@@ -61,6 +61,8 @@ components/lan/                 the LAN side of Silo's phone app (see "Phone fea
   LanBytes.brs  byte helpers (hex slices, base32/base64url, frames, server ids, Lan_isTrue)
   SiloSealed.brs level `sealed` (HKDF, AES-128-CBC, HMAC-SHA256); Task-only (crypto objects)
   Mdns.brs      DNS message parsing/building for the responder (pure)
+  LanDiscovery.brs Find servers on this network: the strict `_silo._tcp` answer reader and scan
+                state (pure; rules ported from ManavA/silo-roku)
 components/remote/
   RemoteControl the SiloCast receiver's decisions on the render thread (MainScene child)
   RemotePrefs.brs Remote Control settings and helpers (RemoteControl_*, RemoteState_*)
@@ -117,7 +119,7 @@ A screen is `<component name="XScreen" extends="BaseScreen">` (`components/BaseS
 
 | Screen | Params |
 |---|---|
-| `ServerConnectScreen` | none |
+| `ServerConnectScreen` | none (`debugLanSelf: true` from the deep link `debugLanSelf=1`: Find servers also accepts this machine's own address, for `tools/silo_responder.py` in the simulator). Lists saved servers and the Silo servers found on this network; see "Phone features" › Find servers |
 | `LoginScreen` | none |
 | `ProfileScreen` | `{ switching: bool }` |
 | `ShellScreen` | none. Top bar and root tabs: Home, Movies, Series, Music, Audiobooks, For You, Calendar, Requests (only when `GET /api/v2/requests/status` enables it; page `RequestsPage`). Libraries listed in the profile's `ui.disabled_library_ids` setting are left out of the tabs and panels (`Settings_withoutHiddenLibraries`), re-filtered whenever the settings snapshot lands. A mixed library appears under both Movies and Series; its pages get `mediaType` (`movie`/`series`): Recommended (`HomePage`) filters each shelf to that type and refills short shelves from `GET /api/v2/catalog?source=section`, Browse and collections send `type`, and Shuffle is not offered there (a shuffle request carries no media type) |
@@ -345,11 +347,56 @@ Tokens never cross the LAN; the server gives them to the Roku over HTTPS after t
 - Crypto: `roEVPCipher` (aes-128-cbc), `roHMAC` (sha256), `roEVPDigest` exist on every current
   Roku OS; their output is checked against the phone's vectors only in brs-engine.
 
+**Find servers on this network (`_silo._tcp`, Silo Android #597).** Silo servers advertise
+themselves over DNS-SD (Silo server `docs/architecture/server-discovery.md`: instance = server
+name, SRV = the plain-HTTP API port, TXT `v=1` and `id=<server_id>`; they answer only multicast
+queries sent from port 5353, by multicast). ServerConnectScreen scans once when it first shows and
+again on *Find servers on this network*; the field, the chips and Connect keep working meanwhile.
+- `LanTask` owns the only 5353 socket, so the scan runs there (field `discover {kind: start,
+  token}`, which the Task also reads when it starts: the screen can ask first): the PTR query goes out from 5353 at 0, 1 and 3 s, answers are read for 5 s and
+  published on `discovery` as they arrive. A failed bind reports `unavailable` and the screen says
+  the Roku can't search.
+- `LanDiscovery.brs` reads answers strictly (adapted from ManavA/silo-roku, AGPL-3.0, device
+  evidence on a C208X / Roku OS 16.0.4): private IPv4 sender, source port 5353, a clean response,
+  bounded names (16 jumps, no pointer twice, 255 bytes), PTR + SRV + TXT + an A record equal to the
+  sender, TXT `v=1` and one `id` of 1..128 `[A-Za-z0-9_-]`; goodbyes remove, conflicting values
+  block an instance, at most 16 offers. Nothing is repaired; a broken packet is ignored whole.
+- The card lists each offer by its cleaned instance name and the literal `http://ip:port`
+  (never a `.local` name). Picking one asks "Connect to this server?", then
+  `GET http://ip:port/api/v2/system/identity` with `anonymous: true` (only `Accept`: no token,
+  profile or device headers reach an address that merely advertised itself) must answer exactly
+  the TXT id. Then the typed-address flow runs as usual (`/system/info`, the plain-HTTP consent,
+  identity and branding, save); its identity read must repeat the same id or nothing is saved.
+  `roUrlTransfer` follows redirects and has no switch to stop that; the probe carries no secret.
+- An advertised id is a hint, not proof (the server docs say so): it never authorizes anything;
+  sign-in still needs the server's own login or a phone's approval.
+
+**LAN robustness.** Sends never block the Task: each connection has an outbound queue (128
+frames / 512 KiB, then it is closed; 10 s without progress closes it too) drained on every loop
+pass, and the loop waits at most 25 ms while a queue or a scan is pending (250 ms otherwise).
+Receive and Accept run only on sockets that are readable (a socket that is neither readable nor
+`eOK` is closed). The 5353 socket is opened in silo-roku's verified order (SO_REUSEADDR set and read
+back, bind 0.0.0.0:5353 and the bound port read back, join, TTL 255 read back), one
+`[siku-lan] mdns step` line per step. Queries from a port other than 5353 are answered only when
+they ask for a unicast reply (and then only to the asker); multicast answers repeat a record at
+most once a second (RFC 6762 §6). Datagram sends check the byte count.
+
+**Privacy on the LAN.** While Remote Control is on, anyone on the network can read the
+`_silocast-roku._tcp` TXT record: `server` is the base64url of the server's URL (the phone app's
+registry key), next to `serverName`, `serverIdentity` and `playing`. That tells a neighbour which
+Silo server this Roku uses and whether something is playing; it carries no account, token or
+title. Turning Remote Control off stops the advertisement (a goodbye clears phones' caches). The
+`_silopair-roku._tcp` record (only while the server or sign-in screen is up) carries the sign-in
+screen's server identity (`srv`).
+
 **Testing.** `tools/lan_vectors.py` runs the BrightScript crypto, framing and mDNS code in brs-cli
 against the phone's `SiloCastSealedTest` vectors and a Python reference (`tools/silo_lan.py`).
 `tools/silo_phone.py` plays the phone: `browse` (mDNS), `pair` (sign-in; `--approve` with the
 mock's `device_manual=1`), `cast` (plain or sealed via `--link`/`--key`; `--check-refusals`,
-`--stop`). brs-cli supports listening and multicast sockets, so the whole flow runs against the
+`--stop`). `tools/silo_responder.py` plays a Silo server's `_silo._tcp` advertisement: on a real
+network it shares 5353 and answers like Silo's responder; for the simulator (`--raw-to`, root) it
+writes raw packets with source port 5353 to the simulator's socket and logs the queries it hears,
+with scenarios for conflicts, wrong ports, bad TXT, 20 servers and goodbyes. brs-cli supports listening and multicast sockets, so the whole flow runs against the
 simulator, with one simulator bug: a socket assigned straight to `m.<name>` is disposed at once
 (the listener closes), so LanTask keeps sockets one level down (`m.io.*`, `m.conns[id].sock`).
 Console tags: `[siku-lan]` (listeners, connections, sealed handshake, hello, mDNS),

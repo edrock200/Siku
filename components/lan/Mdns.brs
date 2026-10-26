@@ -8,6 +8,9 @@
 ' building are pure so tools/lan_vectors.py checks them against Python; LanTask owns the socket.
 ' Known-answer suppression, probing and name-conflict renaming are left out: instance and host
 ' names carry 8 hex digits of the device id, so a collision on one network is not expected.
+' LanTask multicasts each record at most once a second (RFC 6762 section 6) and answers a query
+' from a port other than 5353 only when it asks for a unicast reply. Finding Silo servers
+' (`_silo._tcp`) is LanDiscovery.brs, a separate strict reader for answers.
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
 function Mdns_service(serviceType as string, instance as string, port as integer, txt as object) as object
@@ -157,8 +160,9 @@ function Mdns_message(answers as object, additionals as object) as object
     return Lan_hexBytes(hex)
 end function
 
-' The answer to a parsed query, {bytes, unicast} (unicast: some question asked for a unicast
-' reply), or invalid when nothing in it is ours.
+' The answer to a parsed query, {bytes, answers, additionals, unicast} (unicast: some question
+' asked for a unicast reply; answers/additionals: the record hex strings, so LanTask can hold back
+' a record it multicast less than a second ago), or invalid when nothing in it is ours.
 function Mdns_respond(query as dynamic, services as object, host as string, ip as string) as dynamic
     if query = invalid or query.isResponse then return invalid
     answers = []
@@ -201,7 +205,7 @@ function Mdns_respond(query as dynamic, services as object, host as string, ip a
         if matched and q.unicast then unicast = true
     end for
     if answers.Count() = 0 then return invalid
-    return { bytes: Mdns_message(answers, additionals), unicast: unicast }
+    return { bytes: Mdns_message(answers, additionals), answers: answers, additionals: additionals, unicast: unicast }
 end function
 
 sub Mdns_addOnce(list as object, seen as object, key as string, record as string)

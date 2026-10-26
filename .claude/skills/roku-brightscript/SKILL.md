@@ -176,6 +176,27 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
   224.0.0.251 (`[siku-lan] mdns bind ... bound= joined=`; without it phones need the QR link),
   `roEVPCipher`/`roHMAC` output on a Roku (`[siku-lan] sealed: cN paired` then commands work),
   and Video `mute`.
+- Never nest `for each` over the *same* array (an outer `for each ptr in records` calling a helper
+  that does `for each rr in records`): brs-engine shares one iterator per array, so the outer loop
+  ended after its first item and Find servers listed one server of two. Use index loops
+  (`for i = 0 to a.Count() - 1`) whenever a loop body may walk the same array.
+- brs-engine's datagram socket differs from a Roku's: `GetReuseAddr` is registered under another
+  name ("Member function not found"; call it in `try`), `JoinGroup` only records the group (and
+  makes `GetAddress()` return it, so read the bound port *before* joining), `SetSendToAddress`
+  returns `invalid` (never test its result), multicast loop/TTL are ignored, and the bind of
+  5353 is exclusive: only one simulator on the machine gets mDNS, and parallel agents' simulators
+  take it (wait until `grep -i ":14E9 " /proc/net/udp` is empty). LanTask opens 5353 in the order
+  ManavA/silo-roku verified on a C208X (reuse set + read, bind 0.0.0.0:5353 + port read, join,
+  TTL 255 + read) and logs each `[siku-lan] mdns step`.
+- A Task only hears field changes made after its thread runs `observeField(..., port)`: a
+  screen that shows as the app starts set LanTask's `command` too early and the scan was lost
+  (it worked in some runs, by timing). A request a screen may send at start-up gets its own field
+  that the Task also reads once when it starts (`discover`, like `config`).
+- A Task loop that sends must never block: LanTask queues frames per connection and drains them
+  every pass (25 ms waits while anything is queued), reads only readable sockets, and checks
+  datagram byte counts. Device checks still open: `[siku-lan] mdns step` lines on a Roku with
+  AirPlay (shared 5353?), Find servers against a real Silo server (`discovery complete: N`,
+  `found server identity ... matched=true`), and the `send queue full` / `send stalled` paths.
 - Silo's phone keys a server by base64url of its URL (`Lan_serverIdFor`) and matches by that or
   by the deployment identity (`/api/v2/system/identity` `server_id`, Siku's `session.serverId`).
 - A Roku channel has no background state: it runs or it is closed, and Home closes it without
@@ -240,7 +261,12 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
 6. LAN code (`components/lan/`): `python3 tools/lan_vectors.py` must print `0 failure(s)` (the
    phone's sealed vectors, framing, mDNS); then run the simulator with `debugSession=mock` and
    `python3 tools/silo_phone.py cast --key <lanPairingKey from the brs-cli registry> ...` /
-   `pair ...` against it (see the tool's docstring).
+   `pair ...` against it (see the tool's docstring). Find servers: with nothing else holding UDP
+   5353, start `sudo python3 tools/silo_responder.py --raw-to <this machine's IP> --address <same>
+   --port <mock port> --id mock-server-1` and the simulator with
+   `debugScreen=ServerConnectScreen,debugLanSelf=1` (the deep link lets the strict reader accept
+   this machine's non-private address); `--scenario conflict|wrongport|badtxt|many|second` covers
+   the refusals. On a real network run it without `--raw-to` from a machine on the Roku's LAN.
 7. Build: `npm run package` → `out/siku.zip`. Side-load on a Roku in developer mode
    (`http://<roku-ip>`, user `rokudev`) and watch `telnet <roku-ip> 8085` for errors. A compile
    error prints `Syntax Error ... in pkg:/...(line)`; a runtime crash prints a full backtrace with

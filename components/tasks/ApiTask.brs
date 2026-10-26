@@ -76,6 +76,14 @@ function perform(req as object) as object
         if Instr(1, url, "?") > 0 then url = url + "&" + qs else url = url + "?" + qs
     end if
 
+    if isAnonymous(req) then
+        ' An address that only advertised itself (Find servers) gets no credentials and no device
+        ' metadata, as on Silo Android (LanServerProbe): Accept is the only header.
+        m.sentProfile = invalid
+        timeout = 8
+        if req.timeout <> invalid then timeout = req.timeout
+        return Http_send(method, url, { "Accept": "application/json" }, req.body, timeout)
+    end if
     headers = Http_deviceHeaders(session)
     if req.auth <> false and not Str_isEmpty(session.accessToken) then
         headers["Authorization"] = "Bearer " + session.accessToken
@@ -95,6 +103,14 @@ function perform(req as object) as object
     timeout = 20
     if req.timeout <> invalid then timeout = req.timeout
     return Http_send(method, url, headers, req.body, timeout)
+end function
+
+' True only for a request that sets anonymous: true (a missing flag is never compared with a boolean).
+function isAnonymous(req as object) as boolean
+    v = req.anonymous
+    t = Type(v)
+    if t = "Boolean" or t = "roBoolean" then return v
+    return false
 end function
 
 ' Asks the single AuthTask to refresh, then waits for it. Returns true when a usable token exists.

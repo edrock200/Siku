@@ -13,17 +13,26 @@
       _silopair-roku._tcp. Whether a channel may bind 5353 is decided by the device; the result
       is in `status.mdns` and on the console ([siku-lan] mdns ...). The pairing link in the QR
       code works without it.
+    - Find servers on this network: on `discover` {kind: start} a five-second `_silo._tcp` scan from the
+      same 5353 socket (query at 0, 1 and 3 s; answers read strictly by LanDiscovery.brs). Results
+      go to the screen through `discovery`; the screen confirms and checks identity itself.
+    - Sending never blocks: each connection has an outbound queue drained on every loop pass
+      (the loop waits at most 25 ms while a queue or a scan is pending); a full queue closes it.
     - The pairing key: 16 bytes generated here, kept in the registry (section "SikuLan"), shown
       by Connect a Phone through `pairingInfo`. Keys, nonces and tokens are never printed.
   Fields
     config      in:  {castEnabled, sealed, deviceId, deviceName, serverId, serverName,
                       serverIdentity, signedIn, playing, pairing: {mode: ""|"setup"|"login", srv}}
     command     in:  {kind: castSend|castClose|castCloseAll|castAuthorize|pairSend|pairClose|resetKey, ...}
+    discover    in:  {kind: start, token, allowSelf} | {kind: stop}; also read when the Task starts,
+                     since the server screen can ask before the Task observes its fields
     castState   in:  the latest SiloCast playback state, sent to every authorized controller
     castEvent   out: {type: hello|offer|handoffCancel|launch|control|presence|closed, conn, ...}
     pairEvent   out: {type: connected|message|closed, conn, message}
     status      out: {castPort, castListening, pairPort, pairListening, mdns, ip, controllers: [...]}
     pairingInfo out: {keyId, keyText (groups of four), keyBase32, ip, port, sealed}
+    discovery   out: {token, status: scanning|complete|unavailable|cancelled, sent, received,
+                      servers: [{name, url (http://ip:port), address, port, serverId}]}
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="LanTask" extends="Task">
@@ -31,14 +40,17 @@
     <field id="config" type="assocarray" />
     <field id="command" type="assocarray" alwaysNotify="true" />
     <field id="castState" type="assocarray" />
+    <field id="discover" type="assocarray" alwaysNotify="true" />
     <field id="castEvent" type="assocarray" alwaysNotify="true" />
     <field id="pairEvent" type="assocarray" alwaysNotify="true" />
     <field id="status" type="assocarray" />
     <field id="pairingInfo" type="assocarray" />
+    <field id="discovery" type="assocarray" alwaysNotify="true" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/lan/LanTask.brs" />
   <script type="text/brightscript" uri="pkg:/components/lan/LanBytes.brs" />
   <script type="text/brightscript" uri="pkg:/components/lan/SiloSealed.brs" />
   <script type="text/brightscript" uri="pkg:/components/lan/Mdns.brs" />
+  <script type="text/brightscript" uri="pkg:/components/lan/LanDiscovery.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
 </component>

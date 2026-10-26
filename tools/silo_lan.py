@@ -256,3 +256,73 @@ def dial(host, port, key=None, timeout=10.0):
         plain.close()
         raise PairingRefused("the TV refused the pairing key: %s" % reply.decode()[:200])
     return SealedConnection(sock, SessionKeys(key, nonce, hello[1]))
+
+
+# ---------- DNS-SD for Silo servers (_silo._tcp) ----------
+# Silo server docs/architecture/server-discovery.md: instance = branding server name, host
+# silo-<8 of id>-<6 hex>.local, SRV port = the API port (plain HTTP), TXT v=1 and id=<server_id>.
+
+SILO_TYPE = "_silo._tcp.local"
+
+
+def dns_message(records, flags=0x8400, questions=(), compress=True):
+    """A DNS message. records: (name, rtype, ttl, rdata) with rdata ("ptr", target),
+    ("srv", port, target[, priority, weight]), ("txt", [entries as str or bytes]), ("a", "1.2.3.4") or
+    ("raw", bytes). questions: (name, qtype[, qclass]). Names are compressed against earlier ones."""
+    buf = bytearray(12)
+    table = {}
+
+    def put_name(name):
+        labels = [l for l in name.rstrip(".").split(".") if l]
+        for i in range(len(labels)):
+            suffix = ".".join(labels[i:]).lower()
+            if compress and suffix in table:
+                buf.extend(struct.pack(">H", 0xC000 | table[suffix]))
+                return
+            if len(buf) < 0x3FFF:
+                table[suffix] = len(buf)
+            lb = labels[i].encode()
+            buf.append(len(lb))
+            buf.extend(lb)
+        buf.append(0)
+
+    for q in questions:
+        put_name(q[0])
+        buf.extend(struct.pack(">HH", q[1], q[2] if len(q) > 2 else 1))
+    for name, rtype, ttl, rdata in records:
+        put_name(name)
+        cls = 0x8001 if rtype in (1, 16, 33) else 1
+        buf.extend(struct.pack(">HHI", rtype, cls, ttl))
+        at = len(buf)
+        buf.extend(b"\0\0")
+        kind = rdata[0]
+        if kind == "ptr":
+            put_name(rdata[1])
+        elif kind == "srv":
+            prio = rdata[3] if len(rdata) > 3 else 0
+            weight = rdata[4] if len(rdata) > 4 else 0
+            buf.extend(struct.pack(">HHH", prio, weight, rdata[1]))
+            put_name(rdata[2])
+        elif kind == "txt":
+            for e in rdata[1]:
+                eb = e if isinstance(e, bytes) else e.encode()
+                buf.append(len(eb))
+                buf.extend(eb)
+        elif kind == "a":
+            buf.extend(socket.inet_aton(rdata[1]))
+        else:
+            buf.extend(rdata[1])
+        struct.pack_into(">H", buf, at, len(buf) - at - 2)
+    struct.pack_into(">HHHHHH", buf, 0, 0, flags, len(questions), len(records), 0, 0)
+    return bytes(buf)
+
+
+def silo_records(name, server_id, address, port, host=None, ttl=120, txt=None):
+    """The PTR/SRV/TXT/A records a Silo server announces (ttl 0 = goodbye)."""
+    host = host or "silo-%s-0a0b0c.local" % "".join(c for c in server_id if c.isalnum())[:8].lower()
+    inst = name + "." + SILO_TYPE
+    entries = txt if txt is not None else ["v=1", "id=" + server_id]
+    return [(SILO_TYPE, 12, 4500 if ttl else 0, ("ptr", inst)),
+            (inst, 33, ttl, ("srv", port, host)),
+            (inst, 16, 4500 if ttl else 0, ("txt", entries)),
+            (host, 1, ttl, ("a", address))]

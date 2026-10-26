@@ -395,6 +395,7 @@ sub activateBorrowed()
     t.serverUrl = Url_normalize(h.base)
     t.serverOrigin = Url_origin(t.serverUrl)
     t.serverId = Str_orEmpty(offer.serverIdentity).Trim()
+    if not Lan_isServerId(t.serverId) then t.serverId = ""
     t.serverName = Str_orEmpty(offer.serverName)
     if t.serverName = "" then t.serverName = Url_host(t.serverUrl)
     t.accessToken = a.access

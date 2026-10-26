@@ -49,6 +49,49 @@ sub main()
         if resp = invalid then out.mdns.Push(invalid) else out.mdns.Push(Lan_hex(resp.bytes))
     end for
     out["announce"] = Lan_hex(Mdns_announcement([Mdns_service("_silopair-roku._tcp", "Siku-0123abcd", 52819, [["v", "1"], ["st", "setup"]])], "siku-0123abcd.local", "192.168.1.20", 4500))
+    ' Siku's own mDNS packets must pass the strict reader Siku uses on others' (LanDiscovery.brs):
+    ' every announcement, goodbye and answer parses clean, and a _silo._tcp service built by Mdns.brs
+    ' becomes exactly one offer.
+    ownServices = [Mdns_service("_silocast-roku._tcp", "Siku-0123abcd", 52817, [["v", "2"], ["id", "roku-1"], ["name", "Den Roku"], ["server", Lan_serverIdFor("https://media.example.com")], ["sec", "sealed"], ["kid", "be45cb26"]]), Mdns_service("_silopair-roku._tcp", "Siku-0123abcd", 52819, [["v", "1"], ["st", "setup"]])]
+    own = []
+    own.Push(Lan_hex(Mdns_announcement(ownServices, "siku-0123abcd.local", "192.168.1.20", 4500)))
+    own.Push(Lan_hex(Mdns_announcement(ownServices, "siku-0123abcd.local", "192.168.1.20", 0)))
+    for each q in cases.mdns
+        resp = Mdns_respond(Mdns_parse(Lan_hexBytes(q)), ownServices, "siku-0123abcd.local", "192.168.1.20")
+        if resp <> invalid then own.Push(Lan_hex(resp.bytes))
+    end for
+    ownStrict = []
+    for each h in own
+        ownStrict.Push(LanDisc_records(Lan_hexBytes(h), "192.168.1.20", 5353) <> invalid)
+    end for
+    out["ownStrict"] = ownStrict
+    silo = Lan_hexBytes(Lan_hex(Mdns_announcement([Mdns_service("_silo._tcp", "Den Silo", 8096, [["v", "1"], ["id", "3f2a9d5e-aaaa-bbbb"]])], "silo-3f2a9d5e-0a0b0c.local", "192.168.1.30", 120)))
+    st = LanDisc_reduce(LanDisc_new(0), silo, "192.168.1.30", 5353, 10)
+    out["ownSilo"] = LanDisc_servers(st.candidates)
+    ' Crafted discovery packets: per case, whether each packet parsed clean and the final offers.
+    out["disc"] = []
+    for each c in cases.disc
+        selfIp = Str_orEmpty(c.selfIp)
+        st = LanDisc_new(0)
+        valid = []
+        for each pk in c.packets
+            b = Lan_hexBytes(pk.hex)
+            valid.Push(LanDisc_records(b, pk.sender, pk.port, selfIp) <> invalid)
+            st = LanDisc_reduce(st, b, pk.sender, pk.port, pk.at, selfIp)
+        end for
+        if c.advance <> invalid then st = LanDisc_advance(st, c.advance)
+        out.disc.Push({ valid: valid, servers: LanDisc_servers(st.candidates), conflicts: st.conflicts.Count(), closed: st.closed })
+    end for
+    names = []
+    for each n in cases.names
+        names.Push(LanDisc_displayName(n))
+    end for
+    out["names"] = names
+    ids = []
+    for each n in cases.ids
+        ids.Push(Lan_isServerId(n))
+    end for
+    out["ids"] = ids
     ' Framing: a split stream yields whole frames.
     fb = LanFrames_new()
     stream = Lan_concat([Lan_u32be(3), Lan_bytes("abc"), Lan_u32be(2), Lan_bytes("de")])
