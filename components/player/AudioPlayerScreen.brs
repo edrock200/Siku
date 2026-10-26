@@ -614,7 +614,8 @@ sub applyPlan(plan as object)
         ' Some firmware ignores PlayStart on Audio: seek once playback begins if we're far off.
         m.pendingSeek = playerStart
     end if
-    print "[AudioPlayer] playing "; url; " fmt "; fmt
+    ' Never the URL: stream URLs carry signed tokens.
+    print "[AudioPlayer] playing delivery="; Str_orEmpty(plan.delivery); " fmt="; fmt
     m.audio.content = content
     m.audio.control = "play"
     m.isPaused = false
@@ -752,7 +753,8 @@ sub onAudioState()
     else if st = "error" then
         msg = Str_orEmpty(m.audio.errorMsg)
         if msg = "" then msg = "This could not be played."
-        print "[AudioPlayer] audio error "; m.audio.errorCode; " "; msg
+        ' The Audio node's text can quote the signed stream URL: masked on the console.
+        print "[AudioPlayer] audio error "; m.audio.errorCode; " "; CreateObject("roRegex", "[a-z][a-z0-9+.-]*://[^\s]*", "i").ReplaceAll(msg, "<url>")
         m.progressTimer.control = "stop"
         if m.mode = "music" then
             stopSession(true)
