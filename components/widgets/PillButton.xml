@@ -7,6 +7,7 @@
     width (out): resulting width after layout
     buttonSelected (out, alwaysNotify): set when OK is pressed
     disabled: dims the button and ignores OK
+    a11yLabel: what the screen reader says instead of `text` (icon-only buttons)
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="PillButton" extends="Group">
@@ -24,9 +25,11 @@
     <field id="selectedState" type="boolean" value="false" onChange="applyState" />
     <field id="width" type="integer" value="0" />
     <field id="buttonSelected" type="boolean" alwaysNotify="true" />
+    <field id="a11yLabel" type="string" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/PillButton.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/A11y.brs" />
   <children>
     <Group id="body">
       <Poster id="bg" />

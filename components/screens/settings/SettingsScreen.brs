@@ -801,6 +801,11 @@ sub updateFocus()
     railHasFocus = not m.inPane
     m.accountBg.visible = railHasFocus and m.railFocus = -1
     if m.accountBg.visible then
+        A11y_say("settings:account", "Account, " + m.accountName.text, "button", -1, 0)
+    else
+        A11y_blur("settings:account")
+    end if
+    if m.accountBg.visible then
         ink = "0x000000FF"
         sub2 = "0x000000B3"
     else
@@ -981,20 +986,24 @@ sub updatePicker()
             item.translation = [0, y]
             y = y + item.rowHeight + 6
         end if
+        item.a11yIndex = i
+        item.a11yCount = count
+        ' The value first, so the screen reader hears the row once with its check mark.
+        isCurrent = m.pickerMode = "options" and sameValue(m.pickerOptions[i].value, current)
+        if isCurrent then item.value = "✓" else item.value = ""
         item.focusedState = i = m.pickerIndex
-        if m.pickerMode = "options" and sameValue(m.pickerOptions[i].value, current) then
-            item.value = "✓"
-            item.highlighted = not item.focusedState
-        else
-            item.value = ""
-            item.highlighted = false
-        end if
+        item.highlighted = isCurrent and not item.focusedState
     end for
 end sub
 
 sub closePicker()
     m.picker.visible = false
     m.pickerMode = ""
+    ' The screen reader names the row focus returns to.
+    if m.inPane and m.focusIdx >= 0 and m.focusIdx < m.entries.Count() then
+        e = m.entries[m.focusIdx]
+        if e.kind = "row" then e.node.a11yAnnounce = true
+    end if
 end sub
 
 sub choosePicker()

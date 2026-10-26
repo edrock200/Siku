@@ -86,6 +86,7 @@ sub onSections(event as object)
         m.loading = false
         m.feed.errorText = Api_errorText(resp)
         m.feed.state = "error"
+        Launch_ready("home")
         return
     end if
     sections = []
@@ -333,6 +334,7 @@ sub buildRows()
     else
         m.feed.state = "ready"
     end if
+    Launch_ready("home")
     if m.top.hasFocus() then m.feed.focusRequested = true
     if m.scopeIncomplete = true then
         m.scopeIncomplete = false

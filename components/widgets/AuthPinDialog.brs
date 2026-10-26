@@ -110,6 +110,10 @@ sub onProfile()
     m.pin = ""
     m.showError = false
     m.focusIndex = 4
+    ' The screen reader introduces the pad once, with the first key it says.
+    m.a11yIntro = "PIN for " + name + ". "
+    m.a11yIntroKey = m.focusIndex
+    A11y_reset()
     renderDots()
     renderStatus()
     renderKeys()
@@ -119,6 +123,7 @@ sub onError()
     if m.top.error <> "" then
         m.pin = ""
         m.showError = true
+        A11y_say("pin:error", m.top.error, "", -1, 0)
     else
         m.showError = false
     end if
@@ -172,6 +177,26 @@ sub renderKeys()
             if k.icon <> invalid then k.icon.blendColor = ink
         end if
     end for
+    announceKey(hasFocus)
+end sub
+
+' Screen reader: the focused key ("5, key", "Delete, key"). The digits entered and how many there
+' are are never said; a wrong PIN is announced through the status line text.
+sub announceKey(hasFocus as boolean)
+    i = m.focusIndex
+    if not hasFocus or i < 0 or i > 11 then
+        A11y_blur("pin:key")
+        return
+    end if
+    label = m.labels[i]
+    if label = "" then return
+    if label = "<" then label = "Delete"
+    ' The introduction stays with the first key until focus moves (a repaint must not drop it).
+    intro = ""
+    if m.a11yIntro <> invalid then
+        if i = m.a11yIntroKey then intro = m.a11yIntro else m.a11yIntro = invalid
+    end if
+    A11y_say("pin:key", intro + label, "key", -1, 0)
 end sub
 
 sub onFocusChanged()

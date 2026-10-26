@@ -16,9 +16,16 @@
     <field id="highlighted" type="boolean" value="false" onChange="applyState" />
     <field id="focusedState" type="boolean" value="false" onChange="applyState" />
     <field id="destructive" type="boolean" value="false" onChange="applyState" />
+    <!-- Screen reader position when the row's siblings are not the whole list (a windowed picker);
+         a11yCount 0 = count the visible SettingsRow siblings. -->
+    <field id="a11yIndex" type="integer" value="0" />
+    <field id="a11yCount" type="integer" value="0" />
+    <!-- Set to say the focused row again (focus came back from a picker). -->
+    <field id="a11yAnnounce" type="boolean" alwaysNotify="true" onChange="announce" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/SettingsRow.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/A11y.brs" />
   <children>
     <Poster id="bg" uri="pkg:/images/ui/r14.9.png" />
     <Poster id="ring" uri="pkg:/images/ui/r14_ring2.9.png" blendColor="0xFFFFFF1A" visible="false" />

@@ -526,6 +526,10 @@ sub onBackdropLoaded(event as object)
     if poster.loadStatus <> "ready" then return
     if poster.uri <> m.currentBackdrop then return
     if m.top.state <> "ready" then return
+    ' The front layer reloading its own image (artwork given back after a memory warning,
+    ' Memory.brs) must not flip the layers.
+    if m.front = "A" and poster.isSameNode(m.imgA) then return
+    if m.front = "B" and poster.isSameNode(m.imgB) then return
     if m.front = "A" then
         incoming = "bdB"
         outgoing = "bdA"

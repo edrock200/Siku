@@ -19,6 +19,11 @@ sub onContent()
     ' cardInsetY: headroom in the cell so the focused 1.10 card is not clipped (see Content_rows).
     m.padY = 0
     if c.hasField("cardInsetY") and c.cardInsetY <> invalid then m.padY = c.cardInsetY
+    ' Decode the cover at its drawn size (plus the 1.10 focus zoom); set before the uri.
+    w = m.top.width
+    if w <= 0 then w = 264
+    m.image.loadWidth = Int(w * 1.1)
+    m.image.loadHeight = Int(w * 1.1)
     m.image.uri = c.HDPosterUrl
     m.title.text = c.title
     sub2 = ""

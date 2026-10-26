@@ -17,7 +17,7 @@
     <Rectangle id="bg" width="1920" height="1080" color="0x040D0FFF" />
     <Group id="page">
       <MaskGroup id="backdropMask" maskUri="pkg:/images/ui/mask_backdrop.png" maskSize="[1229, 756]" translation="[691, 0]">
-        <Poster id="backdrop" width="1229" height="756" loadDisplayMode="scaleToZoom" />
+        <Poster id="backdrop" loadWidth="1229" loadHeight="756" width="1229" height="756" loadDisplayMode="scaleToZoom" />
       </MaskGroup>
       <Group id="hero" translation="[100, 116]" visible="false">
         <Label id="heroTitle" width="1080" wrap="true" maxLines="2" color="0xEDEDEDFF">

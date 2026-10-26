@@ -68,12 +68,14 @@ function perform(req as object) as object
         end if
     end if
 
+    refusal = ApiTask_refusal(req)
+    if refusal <> "" then
+        ' Siku speaks only the Silo v2 API (docs/api-spec.md §0); v1 is a frozen alpha surface.
+        print "[ApiTask] refused request: "; refusal
+        return { status: 0, text: "", data: invalid, error: { code: "not_v2", title: "Unsupported API path" } }
+    end if
     if not Str_isEmpty(req.url) then
         url = req.url
-    else if Left(Str_orEmpty(req.path), 8) <> "/api/v2/" then
-        ' Siku speaks only the Silo v2 API (docs/api-spec.md §0); v1 is a frozen alpha surface.
-        print "[ApiTask] refused non-v2 path: "; req.path
-        return { status: 0, text: "", data: invalid, error: { code: "not_v2", title: "Unsupported API path" } }
     else
         base = req.baseUrl
         if Str_isEmpty(base) then base = session.serverUrl
@@ -103,6 +105,51 @@ function perform(req as object) as object
     timeout = 20
     if req.timeout <> invalid then timeout = req.timeout
     return Http_send(method, url, headers, req.body, timeout)
+end function
+
+' Why a request may not be sent ("" = it may): Siku calls the Silo v2 API only. A `path` must be
+' under /api/v2/ with no dot segments (/api/v2/../v1 would reach v1); an absolute `url` must be
+' http(s) and its path likewise under /api/v2/; a `baseUrl` (a server being probed, or one a phone
+' pushed over the LAN) must be a bare http(s) origin or path prefix, with no query or fragment that
+' would turn the v2 path into a parameter of some other route (pure; tests/test_api_guard.py).
+function ApiTask_refusal(req as object) as string
+    u = Str_orEmpty(req.url)
+    if u <> "" then
+        lower = LCase(u)
+        if Left(lower, 7) = "http://" then
+            rest = Mid(u, 8)
+        else if Left(lower, 8) = "https://" then
+            rest = Mid(u, 9)
+        else
+            return "url is not http(s)"
+        end if
+        slash = Instr(1, rest, "/")
+        if slash = 0 then return "url has no /api/v2/ path"
+        return ApiTask_pathRefusal(Mid(rest, slash))
+    end if
+    base = Str_orEmpty(req.baseUrl)
+    if base <> "" then
+        lb = LCase(base)
+        if Left(lb, 7) <> "http://" and Left(lb, 8) <> "https://" then return "baseUrl is not http(s)"
+        if Instr(1, base, "?") > 0 or Instr(1, base, "#") > 0 or Instr(1, base, "\") > 0 then return "baseUrl has a query or fragment"
+        if Instr(1, base, "/..") > 0 or Instr(1, base, "/./") > 0 then return "baseUrl has dot segments"
+    end if
+    return ApiTask_pathRefusal(Str_orEmpty(req.path))
+end function
+
+function ApiTask_pathRefusal(path as string) as string
+    if Left(path, 8) <> "/api/v2/" then return "not a /api/v2/ path: " + Left(path, 40)
+    p = path
+    q = Instr(1, p, "?")
+    if q > 0 then p = Left(p, q - 1)
+    h = Instr(1, p, "#")
+    if h > 0 then p = Left(p, h - 1)
+    if Instr(1, p, "\") > 0 then return "backslash in path"
+    lp = LCase(p).Replace("%2e", ".").Replace("%2f", "/")
+    for each seg in lp.Split("/")
+        if seg = "." or seg = ".." then return "dot segment in path"
+    end for
+    return ""
 end function
 
 ' Asks the single AuthTask to refresh, then waits for it. Returns true when a usable token exists.

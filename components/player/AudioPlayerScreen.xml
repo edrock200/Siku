@@ -36,7 +36,7 @@
   <script type="text/brightscript" uri="pkg:/components/player/AudioTimeline.brs" />
   <children>
     <Rectangle width="1920" height="1080" color="0x000000FF" />
-    <Poster id="backdrop" width="1920" height="1080" loadDisplayMode="scaleToZoom" opacity="0.22" />
+    <Poster id="backdrop" loadWidth="960" loadHeight="540" width="1920" height="1080" loadDisplayMode="scaleToZoom" opacity="0.22" />
     <Rectangle width="1920" height="1080" color="0x000000A6" />
     <Poster uri="pkg:/images/ui/scrim_left.png" width="1100" height="1080" opacity="0.7" />
     <Audio id="audio" notificationInterval="0.5" />
@@ -47,7 +47,7 @@
         <Poster id="coverPlaceholder" uri="pkg:/images/ui/r16.9.png" blendColor="0x15171CFF" width="624" height="624" />
         <Poster id="coverIcon" uri="pkg:/images/icons/music.png" blendColor="0xEDEDED40" width="220" height="220" translation="[202, 202]" />
         <MaskGroup id="coverMask" maskUri="pkg:/images/ui/mask_square.png" maskSize="[624, 624]">
-          <Poster id="coverImage" width="624" height="624" loadDisplayMode="scaleToZoom" />
+          <Poster id="coverImage" loadWidth="624" loadHeight="624" width="624" height="624" loadDisplayMode="scaleToZoom" />
         </MaskGroup>
       </Group>
 

@@ -14,7 +14,7 @@
         <Poster id="portraitPlaceholder" uri="pkg:/images/ui/r12.9.png" blendColor="0x15171CFF" width="300" height="450" />
         <Poster id="portraitIcon" uri="pkg:/images/icons/person.png" blendColor="0xEDEDED40" width="96" height="96" translation="[102, 177]" />
         <MaskGroup id="portraitMask" maskUri="pkg:/images/ui/mask_poster.png" maskSize="[300, 450]">
-          <Poster id="portrait" width="300" height="450" loadDisplayMode="scaleToZoom" />
+          <Poster id="portrait" loadWidth="300" loadHeight="450" width="300" height="450" loadDisplayMode="scaleToZoom" />
         </MaskGroup>
         <Group id="textCol" translation="[348, 0]">
           <Label id="nameLabel" width="1200" maxLines="1" color="0xEDEDEDFF">

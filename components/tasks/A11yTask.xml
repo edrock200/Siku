@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Owns the app's one roAudioGuide and speaks what the render thread asks for (A11y.brs).
+  Created once by MainScene (m.global.a11yTask). roAudioGuide is kept off the render thread
+  because Roku does not promise every BrightScript object there (skill pitfall 2).
+  say  (in, alwaysNotify)  text to speak; it interrupts what is being said
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="A11yTask" extends="Task">
+  <interface>
+    <field id="say" type="string" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/tasks/A11yTask.brs" />
+</component>

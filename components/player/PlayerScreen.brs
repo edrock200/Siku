@@ -876,6 +876,7 @@ sub onVideoState()
         setBuffering(true)
     else if st = "playing" then
         setBuffering(false)
+        Launch_ready("playing")
         applyPlannedAudioTrack()
         m.bufferLabel.text = "Buffering"
         m.isPaused = false
@@ -1089,6 +1090,12 @@ sub exitPlayer()
     else
         finishClose()
     end if
+end sub
+
+' Memory warning while the player is on top (BaseScreen.onMemoryPressure): drop the seek-preview
+' sheets; they reload on the next scrub.
+sub onMemoryPressure(level as integer)
+    if level > 0 and m.tp <> invalid then Trickplay_dropSheets()
 end sub
 
 ' Covered or removed without going through Back (e.g. a stack reset after the session

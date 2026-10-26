@@ -4,6 +4,8 @@
 
 sub onActiveChanged()
     if m.top.active then
+        ' Artwork and lists dropped on a memory warning come back before the screen takes focus.
+        Memory_restore()
         onScreenShown()
     else
         onScreenHidden()
@@ -12,6 +14,20 @@ end sub
 
 sub onScreenResult()
     onChildResult(m.top.screenResult)
+end sub
+
+sub onMemoryRelease()
+    if m.top.memoryRelease <> true or m.top.active then return
+    Memory_release(m.top)
+end sub
+
+sub onMemoryPressureChanged()
+    onMemoryPressure(m.top.memoryPressure)
+end sub
+
+' Overridden by screens that keep their own caches (PlayerScreen drops seek-preview sheets).
+sub onMemoryPressure(level as integer)
+    if level < 0 then return
 end sub
 
 sub onScreenShown()

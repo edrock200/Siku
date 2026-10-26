@@ -81,4 +81,29 @@ sub applyState()
     m.valueText.color = sub2
     m.chevron.blendColor = sub2
     m.icon.blendColor = ink
+    announce()
+end sub
+
+' Screen reader: "Subtitles, Auto, button, 3 of 9" when the row becomes the focused one. A "✓"
+' value (the current choice in a picker) is said as "selected".
+sub announce()
+    if not m.top.focusedState then
+        A11y_blur(A11y_id())
+        return
+    end if
+    label = A11y_clean(m.top.label)
+    v = m.top.value
+    role = "button"
+    if v = "✓" then
+        role = "button, selected"
+    else
+        v = A11y_clean(v)
+        if v <> "" and label <> "" then label = label + ", " + v
+    end if
+    if m.top.a11yCount > 0 then
+        A11y_say(A11y_id(), label, role, m.top.a11yIndex, m.top.a11yCount)
+    else
+        p = A11y_position(m.top, ["SettingsRow"])
+        A11y_say(A11y_id(), label, role, p.idx, p.count)
+    end if
 end sub

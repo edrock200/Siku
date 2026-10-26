@@ -19,6 +19,17 @@ sub init()
         homeDirty: false            ' set after playback or state changes so Home refreshes
         settings: { ready: false, available: false, identity: "", revision: 0, manifestRevision: 0, items: {}, error: "" } ' server-synced settings snapshot (Settings.brs)
     })
+    ' Screen reader (A11y.brs): the one roAudioGuide lives in A11yTask; a11yLast is the dedupe key;
+    ' a11yForce (deep link debugA11y=1) speaks and logs even with the reader off, for the simulator.
+    a11yTask = CreateObject("roSGNode", "A11yTask")
+    m.global.addFields({ a11yTask: a11yTask, a11yLast: "", a11yForce: false })
+    a11yTask.control = "RUN"
+    m.top.observeField("dialog", "onDialogChanged")
+    ' Launch beacons (Launch_ready in Utils.brs; onLaunchReady below) and memory warnings.
+    m.global.addFields({ launchReady: "", memoryLow: false })
+    m.global.observeField("launchReady", "onLaunchReady")
+    m.launch = { done: false, dialog: false }
+
     ' Single-flight token refresher used by every ApiTask.
     authTask = CreateObject("roSGNode", "AuthTask")
     m.global.addFields({ authTask: authTask })
@@ -116,7 +127,15 @@ sub pushScreen(name as string, params = {} as object)
     m.screens.appendChild(screen)
     m.stack.Push(screen)
     screen.visible = true
+    A11y_reset()
+    Launch_onScreen(name)
     screen.active = true
+    ' Under memory pressure a screen gives back its artwork as soon as it is covered.
+    if prev <> invalid and m.global.memoryLow = true then prev.memoryRelease = true
+    if m.debugMemoryAt <> invalid and m.stack.Count() >= 2 then
+        m.top.memoryPressure = m.debugMemoryAt
+        m.debugMemoryAt = invalid
+    end if
     checkProfilePrompt()
 end sub
 
@@ -135,6 +154,7 @@ sub popScreen()
 
     prev = topScreen()
     prev.visible = true
+    A11y_reset()
     if result <> invalid then prev.screenResult = result
     prev.active = true
     checkProfilePrompt()
@@ -166,6 +186,77 @@ sub replaceTop(name as string, params = {} as object)
         m.screens.removeChild(closing)
     end if
     pushScreen(name, params)
+end sub
+
+' ---------- Launch beacons ----------
+' Roku measures launch time up to AppLaunchComplete, which is signalled once the first real screen
+' is up: Home drawn (HomePage), a deep-linked title's details shown (DetailScreen) or video playing
+' (PlayerScreen), each through Launch_ready. Time spent signing in or picking a profile at launch
+' is the viewer's, so the server, sign-in and profile screens are bracketed by AppDialogInitiate /
+' AppDialogComplete (before AppLaunchComplete only, as Roku asks). The PIN pad is part of the
+' profile screen's bracket. Adapted from ManavA/silo-roku, AGPL-3.0 (components/SiloUILaunch.brs).
+
+sub Launch_onScreen(name as string)
+    if m.launch.done then return
+    gate = name = "ServerConnectScreen" or name = "LoginScreen" or name = "ProfileScreen"
+    if gate and not m.launch.dialog then
+        m.launch.dialog = true
+        Launch_beacon("AppDialogInitiate")
+    else if not gate and m.launch.dialog then
+        m.launch.dialog = false
+        Launch_beacon("AppDialogComplete")
+    end if
+end sub
+
+sub onLaunchReady()
+    what = m.global.launchReady
+    if m.launch.done or Str_isEmpty(what) then return
+    if m.launch.dialog then
+        m.launch.dialog = false
+        Launch_beacon("AppDialogComplete")
+    end if
+    m.launch.done = true
+    Launch_beacon("AppLaunchComplete")
+    print "[siku-launch] ready: "; what
+    m.global.unobserveField("launchReady")
+end sub
+
+sub Launch_beacon(name as string)
+    print "[siku-launch] beacon "; name
+    m.top.signalBeacon(name)
+end sub
+
+' ---------- Memory and focus ----------
+
+' A memory warning (70 % of the channel's limit or more): every screen under the top one drops its
+' artwork and list content, and keeps doing so when covered until the pressure eases (50 % or
+' less); the top screen drops its own caches (onMemoryPressure).
+sub onMemoryPressure()
+    level = m.top.memoryPressure
+    print "[siku-memory] pressure "; level
+    if level <= 50 then
+        m.global.memoryLow = false
+        return
+    end if
+    if level < 70 then return
+    m.global.memoryLow = true
+    top = topScreen()
+    for each s in m.stack
+        if top <> invalid and s.isSameNode(top) then
+            s.memoryPressure = level
+        else
+            s.memoryRelease = true
+        end if
+    end for
+end sub
+
+sub onAppFocused()
+    ' Back from a system overlay: the reader should say the focused control again.
+    if m.top.appFocused then A11y_reset()
+end sub
+
+sub onDialogChanged()
+    A11y_reset()
 end sub
 
 ' ---------- Events from screens ----------
@@ -309,6 +400,11 @@ end sub
 sub handleDeepLink(args as dynamic)
     if args = invalid then return
     ' Developer aids for the simulator (tools/simulate.py, tools/mock_server.py).
+    ' debugA11y=1: speak (and log "[siku-a11y] say:") as if Roku's screen reader were on.
+    if not Str_isEmpty(args.debugA11y) then m.global.a11yForce = args.debugA11y = "1"
+    ' debugMemory=<percent>: replay a memory warning once a second screen is open (the simulator
+    ' never sends one), so the covered screen's release and restore can be watched.
+    if not Str_isEmpty(args.debugMemory) then m.debugMemoryAt = Int(Val(Str_orEmpty(args.debugMemory)))
     if args.debugSession = "mock" then
         s = AA_copy(m.global.session)
         ' debugPort lets several simulator runs use separate mock servers.

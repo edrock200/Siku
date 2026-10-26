@@ -17,9 +17,12 @@
     <field id="size" type="integer" value="76" onChange="applyState" />
     <field id="width" type="integer" value="76" />
     <field id="buttonSelected" type="boolean" alwaysNotify="true" />
+    <!-- Screen reader text when it differs from `label`. -->
+    <field id="a11yLabel" type="string" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/DetailCircleButton.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/A11y.brs" />
   <children>
     <Poster id="bg" uri="pkg:/images/ui/circle.png" blendColor="0xFFFFFF1A" />
     <Poster id="ring" uri="pkg:/images/ui/circle_ring.png" blendColor="0xFFFFFF57" />

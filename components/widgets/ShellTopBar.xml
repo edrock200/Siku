@@ -37,6 +37,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/Theme.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/A11y.brs" />
   <children>
     <Group id="bar">
       <Poster id="wordmark" uri="pkg:/images/logo_wordmark.png" />

@@ -430,6 +430,7 @@ sub buildShelves(total as integer)
                     node.subtitle = "Movie"
                 end if
                 node.badge = badgeLabel(ev.badges)
+                node.description = node.subtitle ' read by the screen reader
                 row.appendChild(node)
             end for
         end if

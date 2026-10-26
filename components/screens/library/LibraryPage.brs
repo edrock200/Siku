@@ -751,6 +751,7 @@ sub onCollections(event as object)
         if c.item_count <> invalid then
             n = Int(Content_num(c.item_count))
             if n = 1 then node.subtitle = "1 item" else node.subtitle = n.ToStr() + " items"
+            node.description = node.subtitle ' read by the screen reader
         end if
         root.appendChild(node)
     end for

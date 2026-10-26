@@ -42,10 +42,10 @@
     <!-- Ambient backdrop: top-right 64% x 70%, faded by mask_backdrop (two layers crossfade). -->
     <Group id="backdrop" translation="[691, 0]">
       <MaskGroup id="bdA" maskUri="pkg:/images/ui/mask_backdrop.png" maskSize="[1229, 756]" opacity="0">
-        <Poster id="imgA" width="1229" height="756" loadDisplayMode="scaleToZoom" />
+        <Poster id="imgA" loadWidth="1229" loadHeight="756" width="1229" height="756" loadDisplayMode="scaleToZoom" />
       </MaskGroup>
       <MaskGroup id="bdB" maskUri="pkg:/images/ui/mask_backdrop.png" maskSize="[1229, 756]" opacity="0">
-        <Poster id="imgB" width="1229" height="756" loadDisplayMode="scaleToZoom" />
+        <Poster id="imgB" loadWidth="1229" loadHeight="756" width="1229" height="756" loadDisplayMode="scaleToZoom" />
       </MaskGroup>
     </Group>
     <Poster id="wash" uri="pkg:/images/ui/scrim_bottom.png" translation="[0, 380]" width="1920" height="700" opacity="0.75" />

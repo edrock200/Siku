@@ -110,6 +110,22 @@ sub applyState()
         end if
     end if
     if m.top.disabled then m.body.opacity = 0.4 else m.body.opacity = 1.0
+    announce(focused)
+end sub
+
+' Screen reader: "Play, button, 1 of 4" among the buttons next to it.
+sub announce(focused as boolean)
+    if not focused then
+        A11y_blur(A11y_id())
+        return
+    end if
+    label = m.top.a11yLabel
+    if label = "" then label = m.top.text
+    role = "button"
+    if m.top.disabled then role = "button, unavailable"
+    if m.top.selectedState then role = "button, selected"
+    p = A11y_position(m.top, ["PillButton", "DetailCircleButton"])
+    A11y_say(A11y_id(), label, role, p.idx, p.count)
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean

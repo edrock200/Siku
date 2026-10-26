@@ -30,7 +30,9 @@ Siku is a Roku SceneGraph channel written in BrightScript. It ports the Silo **A
 ## Files
 
 ```
-source/main.brs                 creates the screen, forwards deep links (roInput)
+source/main.brs                 creates the screen, forwards deep links (roInput), memory warnings
+                                (roAppMemoryMonitor) and app focus to MainScene
+source/MainEvents.brs           pure readers for those events (host-tested)
 components/MainScene.*          screen stack, Back, startup routing, global state, toasts
 components/BaseScreen.*         base component every screen extends
 components/common/
@@ -50,11 +52,14 @@ components/common/
   Spoilers.brs  Spoilers_* spoiler protection for unwatched episodes (hidden stills and overviews; any component may include it)
   Artwork.brs   Artwork_* per-slot artwork widths when GET /api/v2/images/capabilities lists slot_width_params
   ProfileLaunch.brs  ProfileLaunch_* the Profile Selection setting (who's watching at launch, the new-Roku remember offer)
+  A11y.brs      A11y_* screen reader speech for hand-drawn controls ("label, role, N of M"; never values, URLs or e-mail)
+  Memory.brs    Memory_* a covered screen's artwork and list content dropped on a memory warning, restored on show
 components/tasks/
   ApiTask       one HTTP request (Task); JSON in and out; 401 → refresh → retry
   ProbeTask     the connection speed test (bandwidth probe download, timed; results POSTed)
   AuthTask      long-lived single-flight token refresher (rotating refresh tokens)
   YouTubeLaunchTask  hands a YouTube trailer to the YouTube channel (837): roAppManager.LaunchApp, then ECP
+  A11yTask      owns the app's one roAudioGuide and speaks what A11y_say sends it
   Http.brs      roUrlTransfer wrapper and Silo device headers
 components/lan/                 the LAN side of Silo's phone app (see "Phone features" below)
   LanTask       one long-lived Task: TCP listeners, frames, sealed level, heartbeats, mDNS responder
@@ -89,6 +94,9 @@ components/player/
   PlaybackErrors.brs PlaybackError_* numbered errors (docs/playback-errors.md) and the optional
                    route-event report
 docs/upstream/                  requests written for the Silo server team (Roku HLS audio packaging)
+tests/                          host tests: production BrightScript functions run in brs-cli through
+                                tools/brs_test.py (python3 -m unittest discover -s tests)
+tools/package_check.py          checks out/siku.zip (manifest images, secrets, LAN URLs, v1 API, SPDX)
 ```
 
 `BaseScreen.xml` already includes `Theme.brs`, `Utils.brs`, `Api.brs`, `Nav.brs`, `Content.brs` and `Session.brs`, so screens that extend it get all of those helpers. A widget that needs a helper adds the `<script uri>` itself.
@@ -153,6 +161,9 @@ Music: the Silo v2 contract has no album/artist/track types yet, and Android TV 
 | `toast` | Set a string to show a toast, e.g. `m.global.toast = "Added to Watchlist"`. |
 | `authExpired` | Set by the network layer. MainScene then signs out and routes to the login screen. |
 | `staleProfile` | Set by `ApiTask` on 403 `profile_verification_required` with the profile id/token the request sent (household-management calls excepted). If that is still the active profile, MainScene clears the profile selection (keeping the sign-in) and opens `ProfileScreen`; it waits while the player or the sign-in/server screens are on top. |
+| `a11yTask` / `a11yLast` / `a11yForce` | Screen reader (A11y.brs): the speaking Task, the last spoken control (reset on screen push/pop, dialogs and app focus) and the simulator switch (deep link `debugA11y=1` logs `[siku-a11y] say:`). |
+| `launchReady` | Set once by `Launch_ready(what)` when Home is drawn, a title's details are shown or video plays; MainScene then signals `AppLaunchComplete` (`[siku-launch]` lines). The server, sign-in and profile screens at launch are bracketed by `AppDialogInitiate` / `AppDialogComplete`. |
+| `memoryLow` | True after a memory warning of 70 % or more until one of 50 % or less: covered screens drop their remote artwork and list content (`memoryRelease`) and get it back when shown; the top screen's `onMemoryPressure(level)` drops its caches (the player's seek-preview sheets). Deep link `debugMemory=<percent>` replays a warning once a second screen opens (`[siku-memory]` lines). |
 | `homeDirty` | Set to `true` after playback or after watched/favorite/watchlist changes, so Home and the details reload on show. |
 | `shuffleCaps` | Cached `GET /api/v2/shuffles/capabilities` keyed by server+profile (`Shuffle_refreshCaps` / `Shuffle_supports`). Shuffle entry points are hidden until it says available. |
 | `keyReleaseSeen` | Set once a key release reached a card list; arms the long-OK-press card menu (`LongPress_*` in Utils.brs). |
