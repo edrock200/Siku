@@ -1,6 +1,12 @@
 ' Low-level HTTP used by ApiTask and AuthTask (Task threads only).
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
+' Response bodies larger than this are not parsed (a Silo answer is far smaller; an address that
+' only advertised itself on the LAN must not make Siku parse megabytes).
+function Http_maxBodyChars() as integer
+    return 2097152
+end function
+
 ' Performs a request and returns {status, text, data, error, headers}.
 function Http_send(method as string, url as string, headers as object, body as dynamic, timeoutSec as integer) as object
     xfer = CreateObject("roUrlTransfer")
@@ -9,8 +15,11 @@ function Http_send(method as string, url as string, headers as object, body as d
     xfer.SetUrl(url)
     xfer.EnableEncodings(true)
     xfer.RetainBodyOnError(true)
-    if LCase(Left(url, 5)) = "https" then
+    if LCase(Left(url, 6)) = "https:" then
         xfer.SetCertificatesFile("common:/certs/ca-bundle.crt")
+        ' Both are Roku's defaults; set explicitly so no later change can weaken them.
+        xfer.EnablePeerVerification(true)
+        xfer.EnableHostVerification(true)
         xfer.InitClientCertificates()
     end if
     for each k in headers
@@ -42,18 +51,31 @@ function Http_send(method as string, url as string, headers as object, body as d
     end if
     if not started then return { status: 0, text: "", data: invalid, error: { code: "network", title: "Could not start request" } }
 
-    msg = Wait(timeoutSec * 1000, port)
+    ' Only this transfer's completion counts; anything else on the port is skipped.
+    clock = CreateObject("roTimespan")
+    limitMs = timeoutSec * 1000
+    msg = invalid
+    while msg = invalid
+        remainMs = limitMs - clock.TotalMilliseconds()
+        if remainMs <= 0 then exit while
+        ev = Wait(remainMs, port)
+        if ev = invalid then exit while
+        if Type(ev) = "roUrlEvent" then
+            if ev.GetSourceIdentity() = xfer.GetIdentity() and ev.GetInt() = 1 then msg = ev
+        end if
+    end while
     if msg = invalid then
         xfer.AsyncCancel()
         return { status: 0, text: "", data: invalid, error: { code: "timeout", title: "The server took too long to answer" } }
-    end if
-    if Type(msg) <> "roUrlEvent" then
-        return { status: 0, text: "", data: invalid, error: { code: "network", title: "Network error" } }
     end if
 
     status = msg.GetResponseCode()
     text = msg.GetString()
     if text = invalid then text = ""
+    if Len(text) > Http_maxBodyChars() then
+        print "[Http] response body over the limit ("; Len(text); " chars) refused"
+        return { status: 0, text: "", data: invalid, error: { code: "too_large", title: "The server's answer was too large" } }
+    end if
     data = invalid
     if Len(text) > 0 then data = ParseJson(text)
     result = { status: status, text: text, data: data, error: invalid, headers: msg.GetResponseHeaders() }
@@ -88,7 +110,8 @@ function Http_problem(status as integer, data as dynamic, failure as dynamic) as
     return { code: code, title: title, detail: detail }
 end function
 
-' Device identification headers sent on every request (docs/api-spec.md §2.3).
+' Device identification headers sent on every request (docs/api-spec.md §2.3), except anonymous
+' probes (`anonymous: true` on an ApiTask request), which send only Accept.
 function Http_deviceHeaders(session as object) as object
     di = CreateObject("roDeviceInfo")
     ai = CreateObject("roAppInfo")
