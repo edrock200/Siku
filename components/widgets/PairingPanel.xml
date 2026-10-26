@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Phone sign-in overlay for the server and sign-in screens (Android TV TvPairingPanel): a dimmed
+  screen with one glass card: eyebrow ("Step 01 — Connect"), title, detail, an optional code in
+  large type, an optional server line, a spinner while waiting, and up to three buttons.
+  Fields
+    view    in   {eyebrow, title, detail, code, server, busy, buttons: [{id, text}]}; invalid hides
+    chosen  out  the id of the button pressed, or "back"
+  Focus stays on the buttons (left/right); a view without buttons keeps focus on the card so
+  Back still reaches it.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="PairingPanel" extends="Group">
+  <interface>
+    <field id="view" type="assocarray" onChange="render" />
+    <field id="chosen" type="string" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/widgets/PairingPanel.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <children>
+    <Rectangle id="dim" width="1920" height="1080" color="0x000000C8" />
+    <Group id="card">
+      <Poster id="cardBg" uri="pkg:/images/ui/r40.9.png" width="1000" blendColor="0x1F1F1FF2" />
+      <Poster id="cardRing" uri="pkg:/images/ui/r40_ring2.9.png" width="1000" blendColor="0xFFFFFF24" />
+      <Label id="eyebrow" width="880" translation="[60, 56]" color="0xEDEDED80">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="22" />
+      </Label>
+      <Label id="title" width="880" wrap="true" maxLines="2" color="0xEDEDEDFF">
+        <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="46" />
+      </Label>
+      <Label id="detail" width="880" wrap="true" maxLines="5" lineSpacing="6" color="0xEDEDED9E">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="26" />
+      </Label>
+      <Label id="code" width="880" horizAlign="center" color="0xEDEDEDFF">
+        <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="84" />
+      </Label>
+      <Label id="server" width="880" color="0xEDEDED66">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="22" />
+      </Label>
+      <LoadingSpinner id="spinner" size="44" color="0xEDEDED9E" visible="false" />
+      <Group id="buttons" focusable="true" />
+    </Group>
+  </children>
+</component>

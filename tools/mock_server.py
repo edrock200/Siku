@@ -19,6 +19,7 @@ clears one); GET /mock/switch lists them.
   progress_410=1                 POST /playback/{id}/progress answers 410 playback_session_ended
   replan_410=1                   POST /playback/{id}/replan answers 410 playback_session_ended
   user_code=<code>               the device sign-in code to show (default 4821-7730)
+  device_manual=1                device sign-in codes stay pending until POST /api/v2/auth/device/approve
   stale_profile=<profile id>     every request on that profile answers 403
                                  profile_verification_required until GET /api/v2/profiles runs
 Options that emulate other servers:
@@ -1644,6 +1645,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, {"status": "approved", "tokens": t, "profile_id": handoff["profile_id"],
                                        "profile_token": "ptok-" + uuid.uuid4().hex[:8], "temporary": True,
                                        "session_expires_at": "2030-01-01T00:00:00Z"})
+            if STATE["switches"].get("device_manual") and code not in STATE.setdefault("approved_devices", set()):
+                return self.send(200, {"status": "pending", "poll_after": 2, "opened": False})
             if STATE["devices"][code] < 3:
                 return self.send(200, {"status": "pending", "poll_after": 3, "opened": STATE["devices"][code] > 1})
             del STATE["devices"][code]
@@ -1655,6 +1658,10 @@ class Handler(BaseHTTPRequestHandler):
                 if h["user_code"] == uc:
                     return self.send(200, {"user_code": uc, "match_code": "warm pony", "client_purpose": "remote_playback", "temporary": True})
             return self.send(200, {"user_code": uc, "match_code": "warm pony", "client_purpose": "device_login", "temporary": False})
+        if p == "/api/v2/auth/device/approve" and method == "POST":
+            # With device_manual=1: approve every pending sign-in code (the phone's approval).
+            STATE.setdefault("approved_devices", set()).update(STATE["devices"].keys())
+            return self.send(200, {"status": "approved"})
         if p in ("/api/v2/auth/device/approve-handoff", "/api/v2/auth/device/deny") and method == "POST":
             uc = b.get("user_code", "")
             for code, h in STATE.get("handoffs", {}).items():

@@ -49,12 +49,19 @@ sub init()
 end sub
 
 sub onScreenShown()
+    Pair_start("setup")
     applyFocus()
 end sub
 
 sub onScreenHidden()
+    Pair_stop()
     Api_cancelAll()
 end sub
+
+' Phone sign-in (PhonePairing.brs): setup mode has no code of its own on screen.
+function Pair_screenCode() as dynamic
+    return invalid
+end function
 
 ' ---------- Layout ----------
 

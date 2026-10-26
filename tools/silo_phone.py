@@ -109,6 +109,9 @@ def cmd_pair(args):
         if m.get("type") == "deviceStarted":
             started = m
             log("the phone would now look up %s and ask its user to confirm, then approve" % m.get("userCode"))
+            if args.approve:
+                http("POST", args.server.rstrip("/") + "/api/v2/auth/device/approve", {"user_code": m.get("userCode")})
+                log("approved on the (mock) server")
         elif m.get("type") == "serverResult":
             ok = m.get("status") == "signedIn"
             if ok:
@@ -343,6 +346,7 @@ def main():
     p.add_argument("--identity")
     p.add_argument("--endpoint", action="append", default=[])
     p.add_argument("--timeout", type=float, default=120)
+    p.add_argument("--approve", action="store_true", help="approve the code on the mock (switch device_manual=1)")
     c = sub.add_parser("cast")
     c.add_argument("--link")
     c.add_argument("--host")

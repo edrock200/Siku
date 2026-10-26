@@ -8,10 +8,15 @@
     password  "Sign in with a password": Username / Password fields (Roku keyboard), Sign in,
               "Use your phone instead", "Change server".
   Back in password mode returns to the code (unless the server only supports passwords).
+  While it is up, Silo's phone app can approve the code on screen (PhonePairing.brs, state "login",
+  advertised with the server's deployment identity so only phones signed in to it offer it).
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="LoginScreen" extends="BaseScreen">
   <script type="text/brightscript" uri="pkg:/components/screens/LoginScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/remote/PhonePairing.brs" />
+  <script type="text/brightscript" uri="pkg:/components/remote/RemotePrefs.brs" />
+  <script type="text/brightscript" uri="pkg:/components/lan/LanBytes.brs" />
   <children>
     <AuthMarqueeChrome id="chrome" backdropUri="pkg:/images/marquee_bg.jpg" />
 

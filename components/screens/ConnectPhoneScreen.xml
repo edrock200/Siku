@@ -42,8 +42,8 @@
       <Label id="keyLabel" width="560" translation="[50, 630]" horizAlign="center" color="0xEDEDED66" text="PAIRING CODE">
         <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="20" />
       </Label>
-      <Label id="keyText" width="560" translation="[50, 664]" horizAlign="center" color="0xEDEDEDFF">
-        <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="34" />
+      <Label id="keyText" width="580" translation="[40, 664]" horizAlign="center" color="0xEDEDEDFF">
+        <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="29" />
       </Label>
       <Label id="addressText" width="560" translation="[50, 730]" horizAlign="center" color="0xEDEDED66">
         <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="22" />

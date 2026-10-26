@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  First-run server address entry (Android TvServerSetupScreen, "address" page; Roku has
-  no phone-pairing LAN flow so this page is shown directly). Left: headline, the address
+  First-run server address entry (Android TvServerSetupScreen, "address" page). While it is up,
+  Silo's phone app can set Siku up instead (PhonePairing.brs, state "setup": the phone pushes one
+  server, Siku checks it and signs in with a code the phone approves; PairingPanel shows each step). Left: headline, the address
   field (OK opens the keyboard), shortcut chips, the HTTPS/HTTP note and Connect. Right:
   a glass card with saved servers to pick from, or a short explanation.
   Probes {base}/api/v2/system/info (https first when no scheme is typed), then reads
@@ -10,6 +11,9 @@
 -->
 <component name="ServerConnectScreen" extends="BaseScreen">
   <script type="text/brightscript" uri="pkg:/components/screens/ServerConnectScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/remote/PhonePairing.brs" />
+  <script type="text/brightscript" uri="pkg:/components/remote/RemotePrefs.brs" />
+  <script type="text/brightscript" uri="pkg:/components/lan/LanBytes.brs" />
   <children>
     <AuthMarqueeChrome id="chrome" backdropUri="pkg:/images/marquee_server.jpg" chipIconUri="pkg:/images/icons/tv.png" />
 
@@ -46,7 +50,7 @@
           <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="34" />
         </Label>
         <Label id="infoBody" width="536" horizAlign="center" wrap="true" color="0xEDEDED9E" lineSpacing="6"
-          text="Enter the address you use for Silo in a browser or the Silo app, like media.example.com. Siku checks the server and remembers it on this TV.">
+          text="Enter the address you use for Silo in a browser or the Silo app, like media.example.com. Or open Silo on a phone or tablet on this network: it offers to set up this Roku.">
           <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
         </Label>
       </Group>
