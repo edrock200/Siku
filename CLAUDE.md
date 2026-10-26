@@ -70,6 +70,11 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   never in the same shell command that started it.
 
 ## Releases
+- **Every release is announced on Discord** with its plain-language notes and download links
+  (the user's standing request). `release.yml` runs `tools/announce_discord.py` when the
+  repository secret `DISCORD_WEBHOOK_URL` exists. If the secret is not set yet, run the script by
+  hand after the release with the URL the user gave (ask for it if you don't have it). Never
+  commit, print or log the webhook URL: it is a secret, and Discord revokes webhooks found on GitHub.
 - Pushes to `main` or a session branch listed in `.github/workflows/release.yml` publish a
   release when `build_version` changes. The notes are that version's `CHANGELOG.md` section, the
   full `CHANGELOG.md` is attached, and the README's feature table must say what is new and what

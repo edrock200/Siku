@@ -202,11 +202,13 @@ demuxed CMAF.
    trusting stored state. With several simulators running, a page can take 40-70 s to load: keys
    pressed while it loads are lost, so start with a long `wait` and run long scripts in the
    background. `tools/mock_server.py --help` lists switches that emulate older servers.
-5. Build: `npm run package` → `out/siku.zip`. Side-load on a Roku in developer mode
+5. Release announcement: after a release is published, make sure it reached Discord
+   (`tools/announce_discord.py <tag>`; automatic when the `DISCORD_WEBHOOK_URL` secret is set).
+6. Build: `npm run package` → `out/siku.zip`. Side-load on a Roku in developer mode
    (`http://<roku-ip>`, user `rokudev`) and watch `telnet <roku-ip> 8085` for errors. A compile
    error prints `Syntax Error ... in pkg:/...(line)`; a runtime crash prints a full backtrace with
    local variables, which is the single most useful thing to paste into a bug report.
-6. Playback changes: on the device, play one direct-play title and one that needs a server route,
+7. Playback changes: on the device, play one direct-play title and one that needs a server route,
    and read the two `[siku-playback]` lines (declared caps | request | decision). Open the debug
    screens with `curl -d '' "http://<roku-ip>:8060/launch/dev?debugScreen=StreamTestScreen"`
    (ECP needs POST; `&debugUrl=<url-encoded>` adds a stream) to test a packaging claim against

@@ -20,6 +20,9 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      # Optional repository secret; when set, each new release is announced on Discord.
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
     steps:
       - uses: actions/checkout@v4
       - name: Read the version from the manifest
@@ -93,3 +96,6 @@ jobs:
             out/siku-${{ steps.version.outputs.tag }}.zip
             CHANGELOG.md
           body_path: out/release-notes.md
+      - name: Announce on Discord
+        if: steps.exists.outputs.released == 'false' && env.DISCORD_WEBHOOK_URL != ''
+        run: python3 tools/announce_discord.py "${{ steps.version.outputs.tag }}" "$GITHUB_REPOSITORY"
