@@ -3,6 +3,11 @@
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
 sub init()
+    ' The viewer's subtitle pick in this session, handed to the next episode of the same series
+    ' (TvPlayerViewModel's manual selection): { key, off } or { key, signature }. A pick also goes
+    ' to the server for the whole series (SeriesChoice.brs); this covers one that has not landed.
+    m.carriedSubtitle = invalid
+    m.seriesKey = ""
     m.video = m.top.findNode("video")
     m.videoFrame = m.top.findNode("videoFrame")
     m.focusSink = m.top.findNode("focusSink")
@@ -232,6 +237,8 @@ end sub
 ' ---------- Pipeline ----------
 
 sub startPipeline()
+    ' Series audio/subtitle picks that have not reached the server yet go out first.
+    SeriesChoice_flush()
     m.remuxRecoveryTried = false
     m.forcedDolbyWarned = false
     m.pendingAudioIndex = -1
@@ -285,7 +292,14 @@ sub onWatch(event as object)
         showError(Api_errorText(resp))
         return
     end if
+    ' A series pick this device made that has not landed yet is laid over the server's answer.
+    w = SeriesChoice_overlay(w)
     m.watch = w
+    m.seriesKey = ""
+    wt = LCase(Str_orEmpty(w.type))
+    if not m.isExtra and (wt = "movie" or wt = "episode") then m.seriesKey = SeriesChoice_key(w.series_id, w.content_id)
+    ' A carried pick only applies within the series (or movie) it was made in.
+    if m.carriedSubtitle <> invalid and m.carriedSubtitle.key <> m.seriesKey then m.carriedSubtitle = invalid
     if Str_isEmpty(m.titleLabel.text) then m.titleLabel.text = Str_orEmpty(w.title)
     m.isEpisode = LCase(Str_orEmpty(w.type)) = "episode" and not m.isExtra
     m.seriesTitle = Str_orEmpty(w.series_title)
@@ -749,13 +763,35 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
     if plan.subtitle <> invalid and Str_orEmpty(plan.subtitle.mode) <> "off" and plan.selected_tracks <> invalid and plan.selected_tracks.subtitle <> invalid then
         planSubId = Str_orEmpty(plan.selected_tracks.subtitle.id)
     end if
-    if opts.subtitleTrackId <> invalid then
+    if opts.subtitleFrom <> invalid then
+        ' A replan moved to another version of the title (Silo Android #684): keep the subtitle
+        ' when this file has it (the server's selection, else the same track by identity). When it
+        ' has none, the plan plays with subtitles Off, and that Off is not the viewer's choice: the
+        ' carried pick is dropped, so the next episode starts from Auto (the series choice).
+        keep = ""
+        if planSubId <> "" then
+            for each st in m.subtitleTracks
+                if st.trackId = planSubId then keep = planSubId
+            end for
+        end if
+        if keep = "" then
+            eq = Subs_equivalentIndex(opts.subtitleFrom)
+            if eq >= 0 then keep = m.subtitleTracks[eq].trackId
+        end if
+        m.pendingSubtitleTrackId = keep
+        if keep = "" then
+            m.carriedSubtitle = invalid
+            print "[siku-playback] subtitle off: file " + planFileId(plan) + " has no " + Str_orEmpty(opts.subtitleFrom.language) + " track like the one playing"
+        end if
+    else if opts.subtitleTrackId <> invalid then
         m.pendingSubtitleTrackId = Str_orEmpty(opts.subtitleTrackId)
     else if m.forceSubtitlesOff then
         ' The detail page chose "Off · Start without subtitles".
     else if Str_orEmpty(m.explicitSubtitleId) <> "" then
         m.pendingSubtitleTrackId = planSubId
         if m.pendingSubtitleTrackId = "" then m.pendingSubtitleTrackId = m.explicitSubtitleId
+    else if m.carriedSubtitle <> invalid and m.carriedSubtitle.off = true then
+        ' The viewer turned subtitles off earlier in this series.
     else
         autoPick = Subs_autoChoice(planAudioLanguage(plan))
         if autoPick >= 0 then
@@ -2474,13 +2510,19 @@ sub onPickerChosen()
         else
             idx = Int(Val(id))
             tracks = Arr_or(m.video.availableAudioTracks)
-            if idx >= 0 and idx < tracks.Count() then m.video.audioTrack = tracks[idx].Track
+            if idx >= 0 and idx < tracks.Count() then
+                m.video.audioTrack = tracks[idx].Track
+                ' A direct-played file lists its tracks in catalog order (applyPlannedAudioTrack).
+                catalog = serverAudioTracks()
+                if catalog.Count() = tracks.Count() then saveSeriesAudio(SeriesChoice_audioFromCatalog(catalog[idx], idx))
+            end if
         end if
     else if kind = "subtitle" then
         if Left(id, 3) = "na:" then
             m.global.toast = "Roku can't display image-based or styled subtitles (PGS, VobSub, ASS). A text version (SRT) would work."
         else
             setSubtitle(Int(Val(id)))
+            rememberSubtitlePick()
         end if
     else if kind = "quality" then
         if id <> PlaybackCaps_videoQuality(m.qualityPref) then requestQualityChange(id)
@@ -2488,6 +2530,26 @@ sub onPickerChosen()
         Subs_timingChosen(id)
     end if
     afterPicker()
+end sub
+
+' The viewer picked a subtitle (or Off) in the player: it applies to the whole series (or the
+' movie) and the profile's other devices, and to the next episode played here. Automatic
+' choices, remounts and forced Offs never come through here.
+sub rememberSubtitlePick()
+    if m.seriesKey = "" then return
+    if m.subtitleIndex < 0 or m.subtitleIndex >= m.subtitleTracks.Count() then
+        m.carriedSubtitle = { key: m.seriesKey, off: true }
+        SeriesChoice_saveSubtitle(m.seriesKey, SeriesChoice_subtitleOff())
+        return
+    end if
+    body = SeriesChoice_subtitleFromPlayer(m.subtitleTracks[m.subtitleIndex])
+    m.carriedSubtitle = { key: m.seriesKey, off: false, signature: body.track_signature }
+    SeriesChoice_saveSubtitle(m.seriesKey, body)
+end sub
+
+sub saveSeriesAudio(body as object)
+    if m.seriesKey = "" then return
+    SeriesChoice_saveAudio(m.seriesKey, body)
 end sub
 
 sub setSubtitle(idx as integer)
@@ -2675,15 +2737,58 @@ sub onReplan(event as object)
     Bufq_noteDecision(resp.data)
     print PlaybackCaps_diagLine(m.lastRequestBody, plan)
     resumeAt = m.position
+    ' The audio pick this replan was for, described on the file it was picked on.
+    audioBody = invalid
+    oldAudio = serverAudioTracks()
+    if m.replanKind = "audio" and m.pendingAudioIndex >= 0 and m.pendingAudioIndex < oldAudio.Count() then audioBody = SeriesChoice_audioFromCatalog(oldAudio[m.pendingAudioIndex], m.pendingAudioIndex)
+    opts = { resumeAt: resumeAt, subtitleTrackId: Subs_selectedTrackId(), mountKind: m.replanKind }
+    newFile = planFileId(plan)
+    movedFile = newFile <> "" and newFile <> m.fileId
+    if movedFile then
+        ' A quality change (or any other replan) can land on another version of the title, which the
+        ' server has already committed (Silo Android #684). Adopt it, and carry the subtitle by identity.
+        opts.subtitleFrom = Subs_selectedTrack()
+        if opts.subtitleFrom = invalid then opts.subtitleFrom = { language: "", forced: false, hearingImpaired: false, source: "", codec: "", rawLabel: "" }
+        adoptVersion(newFile)
+    end if
     m.video.control = "stop"
-    applyPlan(plan, { resumeAt: resumeAt, subtitleTrackId: Subs_selectedTrackId(), mountKind: m.replanKind })
+    applyPlan(plan, opts)
     Trickplay_bind(m.itemId, planFileId(plan))
     if planFileId(plan) <> m.markersFileId then adoptFileMarkers(planFileId(plan))
-    if m.replanKind = "audio" and m.pendingAudioIndex >= 0 then m.chosenAudioIndex = m.pendingAudioIndex
+    if m.replanKind = "audio" and m.pendingAudioIndex >= 0 then
+        m.chosenAudioIndex = m.pendingAudioIndex
+        if audioBody <> invalid and audioCommitted(audioBody, plan, movedFile) then saveSeriesAudio(audioBody)
+    end if
     m.pendingAudioIndex = -1
     ' The overlay was rebuilt when the picker closed, before this answer: refresh it with the new plan.
     if m.hud.visible then buildHudRows()
     maybeRecoverSilentRemux(plan)
+end sub
+
+' The plan plays the audio this pick asked for: the same position on the file it was picked on,
+' or, after a move to another version, the track the pick names there (SeriesAudioChoice.isCommittedAt).
+function audioCommitted(body as object, plan as object, movedFile as boolean) as boolean
+    committed = -1
+    if plan.selected_tracks <> invalid and plan.selected_tracks.audio <> invalid then committed = Int(Num_or(plan.selected_tracks.audio.index, -1))
+    if committed < 0 then return not movedFile
+    if not movedFile then return committed = Int(Num_or(body.audio_track_index, -1))
+    return SeriesChoice_resolveAudio(body, serverAudioTracks()) = committed
+end function
+
+' Makes another version of the title the playing file (its tracks, subtitle tools and sync state).
+sub adoptVersion(fileId as string)
+    print "[siku-playback] replan moved to file " + fileId + " from " + m.fileId
+    m.fileId = fileId
+    m.version = invalid
+    if m.watch <> invalid then
+        for each v in Arr_or(m.watch.versions)
+            if v <> invalid and Str_orEmpty(v.file_id) = fileId then m.version = v
+        end for
+    end if
+    m.chosenAudioIndex = -1
+    m.subs.syncLoaded = false
+    m.subs.sync = { available: false, external: false, entries: {}, polledMs: {}, loadedTiming: {} }
+    if m.subsSyncTimer <> invalid then m.subsSyncTimer.control = "stop"
 end sub
 
 ' On a direct-played file the server names the track to play (client_selected_audio_track_v1) and

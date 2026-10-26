@@ -16,6 +16,7 @@ clears one); GET /mock/switch lists them.
   mixed_library=1                add library 5 "Everything" (type "mixed": movies and series)
   progress_410=1                 POST /playback/{id}/progress answers 410 playback_session_ended
   replan_410=1                   POST /playback/{id}/replan answers 410 playback_session_ended
+  replan_version=<file id>       a quality_change replan moves to that version, subtitles Off (Silo Android #684)
   user_code=<code>               the device sign-in code to show (default 4821-7730)
   stale_profile=<profile id>     every request on that profile answers 403
                                  profile_verification_required until GET /api/v2/profiles runs
@@ -1732,6 +1733,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if settings_route(self, method, p, q, b):
             return
+        if series_prefs_route(self, method, p, b):
+            return
 
         if p == "/api/v2/account/me":
             return self.send(200, tokens()["user"])
@@ -1838,7 +1841,7 @@ class Handler(BaseHTTPRequestHandler):
         m = re.match(r"^/api/v2/catalog/items/(.+)$", p)
         if m:
             d = detail(m.group(1))
-            return self.send(200, d) if d else self.problem(404, "not_found", "Not found")
+            return self.send(200, series_effective(self, d, q)) if d else self.problem(404, "not_found", "Not found")
         m = re.match(r"^/api/v2/catalog/series/([^/]+)/seasons$", p)
         if m:
             for i, s in enumerate(all_series()):
@@ -1920,14 +1923,11 @@ class Handler(BaseHTTPRequestHandler):
                 # "refused" still reports previews, so the client's refusal path is exercised.
                 v["trickplay_available"] = fid in TRICKPLAY_FILES and OPTS["trickplay"] != "off"
                 vs.append(v)
-            return self.send(200, {"content_id": d["content_id"], "type": d["type"], "title": d["title"], "versions": vs,
+            # The profile's subtitle preferences (and series choices) as the server resolves them for this title.
+            return self.send(200, series_effective(self, {"content_id": d["content_id"], "type": d["type"], "title": d["title"], "versions": vs,
                                    "series_title": d.get("series_title"),
                                    "user_data": d["user_data"], "series_id": d.get("series_id"), "season_number": d.get("season_number"),
-                                   "episode_number": d.get("episode_number"), "intro": {"start_seconds": 30, "end_seconds": 90},
-                                   # The profile's subtitle preferences as the server resolves them for this title.
-                                   "effective_subtitle_language": settings_effective(self, "playback.subtitle_language", q)["value"],
-                                   "effective_subtitle_mode": settings_effective(self, "playback.subtitle_mode", q)["value"],
-                                   "effective_show_forced_subtitles": settings_effective(self, "playback.show_forced_subtitles", q)["value"]})
+                                   "episode_number": d.get("episode_number"), "intro": {"start_seconds": 30, "end_seconds": 90}}, q))
         if p == "/api/v2/playback/capabilities":
             caps = {"revision": "1", "state": "available", "allowed": True, "installation_id": "11111111-1111-4111-8111-111111111111",
                     "protocol_versions": [3], "features": ["playback_plan_v3", "sequenced_progress_v1", "trickplay_v1"], "deliveries": ["original_http", "server_transcode_hls"]}
@@ -1998,6 +1998,22 @@ class Handler(BaseHTTPRequestHandler):
                 plan["degradation_warnings"] = [{"code": "client_failure_recovery", "message": "Re-planned after a client failure."}]
             if b.get("operation") == "track_change" and (b.get("selected_tracks") or {}).get("audio"):
                 plan.setdefault("selected_tracks", {})["audio"] = b["selected_tracks"]["audio"]
+            other = STATE["switches"].get("replan_version")
+            if other and b.get("operation") == "quality_change" and str(other) != str(start.get("file_id") or "42"):
+                # replan_version=<file id> (Silo Android #684): the quality change moves to another
+                # version of the title, which carries only a Spanish forced subtitle, so the server
+                # plays it with subtitles Off. The plan is committed on its side.
+                other = str(other)
+                start["file_id"] = other
+                plan["requested_media_file_id"] = other
+                plan["effective_media_file_id"] = other
+                plan["selected_tracks"] = {"audio": {"id": "file:%s:audio:0" % other, "index": 0}}
+                plan["subtitle"] = {"mode": "off", "inventory": [
+                    {"track_id": "file:%s:subtitle:0" % other, "combined_index": 0, "source": "embedded", "codec": "subrip", "language": "spa",
+                     "label": "Espanol (Forced)", "forced": True, "default": False, "hearing_impaired": False, "delivery": "sidecar",
+                     "url": "/api/v2/stream/%s/subtitles/0.vtt?file_id=%s&embedded_stream_index=2" % (m.group(1), other)}]}
+                print("REPLAN moved to file %s with subtitles off" % other, flush=True)
+                LOG.append("REPLAN moved to file %s" % other)
             return self.send(200, decision)
         m = re.match(r"^/api/v2/playback/([^/]+)/progress$", p)
         if m:
@@ -2257,6 +2273,8 @@ SETTINGS_DEFS = {
                                          "backgroundStyle": "box", "backgroundOpacity": 75, "textOpacity": 100, "textOutline": False,
                                          "textOutlineColor": "#000000", "position": "bottom"},
                                      ["profile", "profile_device"], ["profile_device", "profile"]),
+    # Profile scope from manifest revision 19 (settings_route refuses it below; Silo Android #680).
+    "player.subtitle_sync_ms": (1, 0, ["profile", "profile_device"], ["profile_device", "profile"]),
     "player.hdr_enabled": (1, True, ["profile_device"], ["profile_device"]),
     "player.dolby_vision_enabled": (1, True, ["profile_device"], ["profile_device"]),
     "player.dv_profile7_hdr10_fallback": (1, False, ["profile_device"], ["profile_device"]),
@@ -2360,6 +2378,87 @@ def settings_validation(handler, location, detail):
                               "errors": [{"location": location, "code": "invalid", "detail": detail}]}, "application/problem+json")
 
 
+# ---------------------------------------------------------------------------
+# Series track choices (Silo Android #680): PUT/DELETE /api/v2/subtitle-prefs/{series_id} and
+# /api/v2/audio-prefs/{series_id}, keyed by profile. The watch and item details answer with the
+# effective subtitle fields (and track signature) and each version's effective_audio_track_index.
+# ---------------------------------------------------------------------------
+SERIES_LANG = re.compile(r"^[A-Za-z]{2,3}(?:[-_][0-9A-Za-z]{1,8})*$")
+
+
+def series_prefs_route(handler, method, p, b):
+    m = re.match(r"^/api/v2/(subtitle|audio)-prefs/(.+)$", p)
+    if not m or method not in ("PUT", "DELETE", "GET"):
+        return False
+    kind, sid = m.group(1), unquote(m.group(2))
+    prof = handler.headers.get("X-Profile-Id") or ""
+    store = STATE.setdefault("series_prefs", {})
+    k = (prof, kind, sid)
+    if method == "GET":
+        return handler.send(200, store.get(k) or {}) or True
+    if method == "DELETE":
+        store.pop(k, None)
+        LOG.append("SERIES PREF delete %s %s" % (kind, sid))
+        print("SERIES PREF delete %s %s" % (kind, sid), flush=True)
+        return handler.send(204) or True
+    b = b or {}
+    if kind == "subtitle":
+        lang, mode = b.get("subtitle_language"), b.get("subtitle_mode")
+        if not isinstance(b.get("subtitle_track_index"), int) or mode not in ("off", "auto", "always") or \
+                not isinstance(lang, str) or (lang and not SERIES_LANG.match(lang)) or "show_forced_subtitles" in b:
+            return settings_validation(handler, "body", "invalid subtitle preference") or True
+    else:
+        lang = b.get("audio_language")
+        if not isinstance(b.get("audio_track_index"), int) or (lang is not None and not SERIES_LANG.match(str(lang))):
+            return settings_validation(handler, "body", "invalid audio preference") or True
+    store[k] = b
+    LOG.append("SERIES PREF put %s %s %s" % (kind, sid, json.dumps(b, sort_keys=True)))
+    print("SERIES PREF put %s %s %s" % (kind, sid, json.dumps(b, sort_keys=True)), flush=True)
+    return handler.send(204) or True
+
+
+def lang_key(v):
+    v = (v or "").strip().lower().replace("_", "-").split("-")[0]
+    return {"eng": "en", "spa": "es", "fra": "fr", "fre": "fr", "deu": "de", "ger": "de", "ita": "it", "jpn": "ja"}.get(v, v) if v not in ("", "und") else ""
+
+
+def series_effective(handler, d, q):
+    """d with the profile's series choices applied (effective subtitle fields, audio indexes)."""
+    prof = handler.headers.get("X-Profile-Id") or ""
+    store = STATE.get("series_prefs", {})
+    key = d.get("series_id") or d.get("content_id")
+    out = dict(d)
+    out["effective_subtitle_language"] = settings_effective(handler, "playback.subtitle_language", q)["value"]
+    out["effective_subtitle_mode"] = settings_effective(handler, "playback.subtitle_mode", q)["value"]
+    out["effective_show_forced_subtitles"] = settings_effective(handler, "playback.show_forced_subtitles", q)["value"]
+    sp = store.get((prof, "subtitle", key))
+    if sp:
+        out["effective_subtitle_mode"] = sp["subtitle_mode"]
+        if sp.get("subtitle_language"):
+            out["effective_subtitle_language"] = sp["subtitle_language"]
+        if sp.get("track_signature") and sp["subtitle_mode"] != "off":
+            out["effective_subtitle_track_signature"] = sp["track_signature"]
+    ap = store.get((prof, "audio", key))
+    if ap:
+        vs = []
+        for v in out.get("versions") or []:
+            v = dict(v)
+            tracks = v.get("audio_tracks") or []
+            sig, idx = ap.get("track_signature") or {}, None
+            for i, t in enumerate(tracks):
+                if sig and lang_key(t.get("language")) == lang_key(sig.get("language")) and (t.get("title") or "") == (sig.get("title") or "") \
+                        and (t.get("codec") or "").lower() == (sig.get("codec") or "").lower():
+                    idx = i
+                    break
+            if idx is None and ap.get("audio_language"):
+                idx = next((i for i, t in enumerate(tracks) if lang_key(t.get("language")) == lang_key(ap["audio_language"])), None)
+            if idx is not None:
+                v["effective_audio_track_index"] = idx
+            vs.append(v)
+        out["versions"] = vs
+    return out
+
+
 def settings_route(handler, method, p, q, b):
     if p == "/api/v2/settings/contract/capabilities" and method == "GET":
         return handler.send(200, {"revision": "mock-settings", "state": "available", "allowed": True, "api_version": 1,
@@ -2385,6 +2484,8 @@ def settings_route(handler, method, p, q, b):
             return settings_validation(handler, "query.scope", "scope is required") or True
         if scope not in SETTINGS_DEFS[key][2]:
             return settings_validation(handler, "query.scope", "%s does not allow scope %s" % (key, scope)) or True
+        if key == "player.subtitle_sync_ms" and scope == "profile" and SETTINGS_REVISION < 19:
+            return settings_validation(handler, "query.scope", "player.subtitle_sync_ms takes scope profile from manifest revision 19") or True
         if scope != "account" and not handler.headers.get("X-Profile-Id"):
             return handler.problem(400, "profile_required", "X-Profile-Id is required") or True
         ident = settings_identity(handler, scope, q)

@@ -9,9 +9,11 @@
 '
 ' Scopes, as the TV app uses them (TvSettingsViewModel + PlayerSettingsStore):
 '   profile         subtitle language/mode, forced subtitles, metadata language, skip intervals,
-'                   title art when "Apply to all devices" is on
+'                   title art when "Apply to all devices" is on, subtitle appearance and (manifest
+'                   revision 19+) subtitle timing unless "Only on This Device" is on (Silo Android #680)
 '   profile_device  quality, bitrate cap, audio language, intro skip, auto-skip credits,
-'                   auto-play next, Up Next prompt seconds, subtitle appearance, Dolby Vision
+'                   auto-play next, Up Next prompt seconds, Dolby Vision, subtitle appearance and
+'                   timing while "Only on This Device" is on (timing always below revision 19)
 '   profile_client  cards & posters (roams between TVs), profile_device with "Only This Device"
 ' The device half of profile_device rides the X-Silo-Device-Id header ApiTask always sends.
 ' SPDX-License-Identifier: AGPL-3.0-or-later
@@ -36,6 +38,7 @@ function Settings_keyDefs() as object
         { key: "playback.auto_play_next", rev: 1, def: true }
         { key: "playback.next_up_prompt_seconds", rev: 1, def: 30 }
         { key: "playback.subtitle_appearance", rev: 1, def: Settings_defaultAppearance() }
+        { key: "player.subtitle_sync_ms", rev: 1, def: 0 }
         { key: "player.hdr_enabled", rev: 1, def: true }
         { key: "player.dolby_vision_enabled", rev: 1, def: true }
         { key: "player.dv_profile7_hdr10_fallback", rev: 1, def: false }
@@ -58,7 +61,7 @@ end function
 
 ' The keys written at profile_device scope; "Reset Playback Overrides" deletes each of them.
 function Settings_deviceKeys() as object
-    return ["playback.preferred_quality", "playback.max_bitrate_kbps", "playback.audio_language", "playback.intro_skip_mode", "playback.buffering_quality_mode", "playback.auto_skip_credits", "playback.auto_play_next", "playback.next_up_prompt_seconds", "playback.subtitle_appearance", "player.hdr_enabled", "player.dolby_vision_enabled", "player.dv_profile7_hdr10_fallback"]
+    return ["playback.preferred_quality", "playback.max_bitrate_kbps", "playback.audio_language", "playback.intro_skip_mode", "playback.buffering_quality_mode", "playback.auto_skip_credits", "playback.auto_play_next", "playback.next_up_prompt_seconds", "playback.subtitle_appearance", "player.subtitle_sync_ms", "player.hdr_enabled", "player.dolby_vision_enabled", "player.dv_profile7_hdr10_fallback"]
 end function
 
 function Settings_defaultAppearance() as object
@@ -438,6 +441,35 @@ function Settings_appearance() as object
         end for
     end if
     return out
+end function
+
+' "Only on This Device" for subtitles (Silo Android #680): this Roku keeps its own subtitle
+' appearance and timing. On while the appearance resolves from this device's own row; turning it
+' on pins the appearance on screen there, turning it off deletes this device's rows.
+function Settings_subtitleDeviceOnly() as boolean
+    return Settings_source("playback.subtitle_appearance") = "profile_device"
+end function
+
+' The manifest revision from which player.subtitle_sync_ms is accepted at profile scope; older
+' servers store it per device only and refuse scope=profile with a 422
+' (PlaybackSettingsKeys.SubtitleSyncProfileMinRevision).
+function Settings_subtitleSyncProfileMinRevision() as integer
+    return 19
+end function
+
+' The scope a subtitle delay saved now goes to: the profile's (every device) unless "Only on This
+' Device" is on or the server stores timing per device only.
+function Settings_subtitleSyncScope() as string
+    if Settings_subtitleDeviceOnly() then return "profile_device"
+    if Settings_manifestRevision() < Settings_subtitleSyncProfileMinRevision() then return "profile_device"
+    return "profile"
+end function
+
+' player.subtitle_sync_ms (ms, -10000..10000): the server's value, else this Roku's last one.
+function Settings_subtitleSyncMs() as integer
+    v = Settings_value("player.subtitle_sync_ms", invalid)
+    if v = invalid then v = Settings_prefs().subtitleDelayMs
+    return Int(Content_numOr(v, 0))
 end function
 
 ' Device-local (contract "client_local") playback feel: seconds to skip back when resuming.

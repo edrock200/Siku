@@ -350,13 +350,15 @@ Example card (fixture `list_home_sections_ok.json`):
   - Markers in **`{start,end}`** form (seconds): `intro`, `credits`, `recap`, `preview`.
   - `subtitles:[{language,codec,forced,hearing_impaired,source,title}]`.
   - `versions:[...]` and `playback_variants:[...]` (see below).
-  - `effective_subtitle_language`, `effective_subtitle_mode`.
+  - `effective_subtitle_language`, `effective_subtitle_mode`, `effective_show_forced_subtitles`,
+    `effective_subtitle_track_signature` (`{source,language,codec,label,forced,hearing_impaired}`: the
+    track this profile last chose for the series or movie; also on the watch detail).
   - Book-specific `audiobook` and `ebook` objects.
 - Fixture: `get_catalog_item_ok.json`.
 
 **Version entry** (the file to play):
 - File facts: `file_id`*, `resolution`*, `codec_video`*, `codec_audio`*, `container`*, `hdr`*, `duration`* (seconds), `bitrate`*, `file_size`*, `added_at`*, `edition_key`, `edition_raw`.
-- Tracks: `video_tracks[]`, `audio_tracks[{index?,language,codec,channels,layout,default,title}]`, `subtitle_tracks[{index,language,codec,forced,default,external,hearing_impaired,title}]`.
+- Tracks: `video_tracks[]`, `audio_tracks[{index?,language,codec,channels,layout,default,title,embedded_title}]`, `subtitle_tracks[{index,language,codec,forced,default,external,hearing_impaired,title}]`.
 - `chapters[{index,title,start_seconds,end_seconds,source,thumbnail_url}]`.
 - Markers `intro`/`credits`/`recap`/`preview` in `{start,end}` form.
 - `effective_audio_track_index`.
@@ -840,6 +842,20 @@ Android TV's Settings screen is mostly server-synced per profile (`shared/.../ne
 - **Read:** `GET /api/v2/settings/values/effective?keys=a&keys=b` (one `keys` parameter per key; `X-Profile-Id` required) → `{"items":[{"key","value","source":"default|profile|profile_device|profile_client|...","scope"?,"profile_id"?,"device_id"?,"client_family"?,"stored_value"?,"constrained"?,"suggested_values"?[]}],"revision":16}`. The `X-Silo-Device-Id` header selects the `profile_device` rows and `X-Silo-Client-Family` the `profile_client` rows; `ApiTask` sends both on every call.
 - **Write:** `PUT /api/v2/settings/values/{key}?scope=profile|profile_device|profile_client` with `{"value": ...}` → 200, the stored row `{key, scope, profile_id, device_id?, client_family?, value, revision, updated_at}`. `DELETE` with the same query → 204 (404 when nothing was stored there, which callers treat as done). A language tag is cleared with DELETE, never written as `""`.
 - **Scopes the TV app uses** (and Siku copies): `profile` for `playback.subtitle_language`, `playback.subtitle_mode`, `playback.show_forced_subtitles`, `catalog.metadata_language`, `player.video_skip_back/forward_seconds` (revision 9) and `ui.title_art` while "Apply to all devices" is on; `profile_device` for `playback.preferred_quality` + `playback.max_bitrate_kbps` (one Quality preset = both axes), `playback.audio_language`, `playback.intro_skip_mode`, `playback.auto_skip_credits`, `playback.auto_play_next`, `playback.next_up_prompt_seconds`, `playback.subtitle_appearance` (the whole object; `textOpacity` only when `manifest_revision >= 14`) and `player.dolby_vision_enabled`; `profile_client` for `ui.card_presentation` (`{poster_size, caption}`), `profile_device` while "Only This Device" is on. "Reset Playback Overrides" deletes every `profile_device` row above.
+- **Subtitle appearance and timing (Silo Android #680):** `playback.subtitle_appearance` saves at
+  `profile` (every device), or at `profile_device` while "Only on This Device" is on; turning that
+  on pins the appearance on screen to `profile_device`, turning it off deletes this device's rows.
+  `player.subtitle_sync_ms` (-10000..10000 ms) follows the same rule from manifest revision 19,
+  which adds its `profile` scope (a revision-18 server refuses `scope=profile` with 422); below 19
+  it is always `profile_device`. A profile save also deletes a stale device row for the key.
+- **Series track choices (Silo Android #680):** `PUT /api/v2/subtitle-prefs/{series_id}` with
+  `{subtitle_language, subtitle_track_index, subtitle_mode: "always"|"off", track_signature?}`
+  (Off: `{"subtitle_language":"","subtitle_track_index":-1,"subtitle_mode":"off"}`; never send
+  `show_forced_subtitles`) and `PUT /api/v2/audio-prefs/{series_id}` with `{audio_track_index,
+  audio_language?, track_signature?: {language,title,embedded_title,codec,layout,channels}}` → 204;
+  `DELETE` either → 204 (back to automatic). The id is the series for an episode, the content id
+  for a movie. Languages must be a BCP 47 tag or ISO 639 code (else 422). The server answers with
+  the effective subtitle fields and `effective_audio_track_index` on the watch and item details.
 - **Spoiler protection (revision 17, `profile` scope only):** `catalog.hide_unwatched_episode_images` and
   `catalog.hide_unwatched_episode_overviews` (both default `false`). Clients apply them; the server never changes
   catalog responses. An episode is unwatched while it is neither played nor in progress (no saved position). A

@@ -42,6 +42,8 @@ components/common/
   Nav.brs       Nav_push / Nav_replace / Nav_reset / Nav_close / Nav_play
   Shuffle.brs   Shuffle_* (capability cache, start, scope label) for /api/v2/shuffles
   Tracks.brs    Tracks_* labels and ids for file versions, audio and subtitle tracks
+  SeriesChoice.brs SeriesChoice_* audio/subtitle picks remembered for a whole series (or movie): the
+                /api/v2/subtitle-prefs and audio-prefs write queue and the unsent-pick overlay
   Settings.brs  Settings_* server-synced settings (effective cascade read/write, typed getters, Home row layout)
   Trailers.brs  Trailer_* "Trailers & More" entries (local extras, then YouTube videos; TrailerRail.kt)
   ThemeMusic.brs ThemeMusic_* opt-in detail-page theme music (capability, playback grant, Audio node)
@@ -213,23 +215,28 @@ The pipeline (`components/player/PlayerScreen.brs`, `startPipeline`):
 4. A `server_remux_hls` plan is started and then `maybeRecoverSilentRemux` asks for another route
    once (`failure_recovery`, classification `unsupported_container`); the server answers with an
    H.264 MPEG-TS transcode, which has sound.
-5. Replans (`sendReplan(operation, kind)`): `quality_change` from the Quality picker,
+5. A viewer's audio or subtitle pick (player menus, detail-page selectors) is saved for the whole
+   series or movie (`SeriesChoice.brs`); the next start follows the server's effective fields
+   (`Subs_autoChoice` selects the track `effective_subtitle_track_signature` names). A replan that
+   lands on another version is adopted as the playing file; its subtitle is carried by identity,
+   and a version without it plays with subtitles Off, which is not saved or carried as a choice.
+6. Replans (`sendReplan(operation, kind)`): `quality_change` from the Quality picker,
    `track_change` from the Audio picker (server-side track list when the stream exposes one or
    none), `output_change` from the HDR / Dolby Vision HUD toggles, `failure_recovery` as above.
    `onReplan` swaps the plan at the current position and rebuilds the HUD.
-6. Progress (`/progress`, sequenced), markers (Skip Intro / credits), Up Next and the final
+7. Progress (`/progress`, sequenced), markers (Skip Intro / credits), Up Next and the final
    `DELETE /playback/{session}` follow the Android TV player's behaviour. Markers are the playing
    file's own (`/watch/{id}?file_id=`), read again after every start and when a replan lands on
    another file. A 410 `playback_session_ended` answer to progress or a replan means an
    administrator ended the session: the player says so in a toast and closes without a DELETE.
-7. Buffering quality (`BufferingQuality.brs` + `PlayerBuffering.brs`, Silo Android #636): two
+8. Buffering quality (`BufferingQuality.brs` + `PlayerBuffering.brs`, Silo Android #636): two
    counted stalls in two minutes, or one of 6 s, after a 10 s start-up grace, lower Auto with a
    `quality_change` replan carrying `bandwidth_estimate_kbps` = delivered × 7 / 10 (and, when the
    server lists `buffering_quality_v1`, `bandwidth_estimate_source: observed_rebuffer`,
    `observed_throughput_kbps`), then offer "Restore quality" (`learned_limit: clear`) for 15 s;
    Ask first and picked qualities prompt instead. Settings → Playback shows the mode, the server's
    learned limit (Reset) and the Connection speed test.
-8. A transcode may carry the selected embedded text subtitle as a WebVTT rendition of its own HLS
+9. A transcode may carry the selected embedded text subtitle as a WebVTT rendition of its own HLS
    stream (`hls_subtitle_renditions_v1`); the player selects it on the Video node or asks for the
    sidecar plan (`failure_recovery`, `subtitle_hls_rendition_failed`).
 

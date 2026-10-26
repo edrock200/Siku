@@ -25,7 +25,7 @@ ICONS = {
     "info": "info", "error": "error_outline", "visibility": "visibility", "visibility_off": "visibility_off",
     "backspace": "backspace", "shuffle": "shuffle", "lock": "lock", "edit": "edit", "phone": "smartphone",
     "qr": "qr_code_2", "star": "star", "video": "videocam", "speed": "speed", "list": "list",
-    "trailer": "smart_display", "collections": "collections_bookmark", "watched": "done_all",
+    "trailer": "theaters", "collections": "collections_bookmark", "watched": "done_all",
     "play_circle": "play_circle", "fast_forward": "fast_forward", "fast_rewind": "fast_rewind",
     "volume": "volume_up", "sort": "sort", "filter": "filter_list", "refresh": "refresh",
     "language": "language", "key": "key",

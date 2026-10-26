@@ -153,6 +153,7 @@ function Subs_buildTrack(t as object) as dynamic
     su = Subs_appendQuery(su, "token=" + s.accessToken)
     return {
         label: Subs_trackLabel(t)
+        rawLabel: Str_orEmpty(t.label)
         url: su
         language: Str_orEmpty(t.language)
         trackId: Str_orEmpty(t.track_id)
@@ -173,6 +174,7 @@ end function
 function Subs_renditionTrack(t as object, rendition as object) as object
     return {
         label: Subs_trackLabel(t)
+        rawLabel: Str_orEmpty(t.label)
         url: ""
         language: Str_orEmpty(t.language)
         trackId: Str_orEmpty(t.track_id)
@@ -233,37 +235,57 @@ end function
 ' WebVTT/SRT sidecars the Video node can show (an embedded text track is served as one), while
 ' embedded PGS/VobSub/ASS tracks need a burn-in Siku never asks for, so they are not candidates.
 ' "Prefer embedded" therefore applies only between tracks this Roku can actually display.
+'
+' Silo Android #680 adds the series choice (the watch detail's effective_subtitle_track_signature,
+' written by a pick in the player or on the detail page; SeriesChoice.brs): the track it describes
+' exactly is selected outright, even a forced one, unless subtitles are off; otherwise its traits
+' break ties within the wanted language. And mode "off" still shows the forced track in the
+' language of the audio that plays when forced subtitles are on (web parity), else nothing.
 function Subs_autoChoice(audioLanguage as string) as integer
     tracks = m.subtitleTracks
     if tracks.Count() = 0 then return -2
     prefs = Subs_autoPrefs()
-    if prefs.mode = "off" then return -1
+    if prefs.mode = "off" then
+        audioKey = Subs_autoLangKey(audioLanguage)
+        if not prefs.showForced or audioKey = "" then return -1
+        forcedOff = Subs_autoBest(tracks, audioKey, true, invalid)
+        if forcedOff >= 0 then return forcedOff
+        return -1
+    end if
+    sig = prefs.signature
+    if sig <> invalid then
+        for i = 0 to tracks.Count() - 1
+            if Subs_matchesSignature(tracks[i], sig) then return i
+        end for
+    end if
     target = Subs_autoLangKey(prefs.language)
     if target = "" then
         if prefs.mode <> "always" then return -2
-        return Subs_autoBest(tracks, "", false)
+        return Subs_autoBest(tracks, "", false, sig)
     end if
     if prefs.mode = "auto" and Subs_autoLangKey(audioLanguage) = target then
         if prefs.showForced then
-            forced = Subs_autoBest(tracks, target, true)
+            forced = Subs_autoBest(tracks, target, true, invalid)
             if forced >= 0 then return forced
         end if
         return -1
     end if
-    best = Subs_autoBest(tracks, target, false)
+    best = Subs_autoBest(tracks, target, false, sig)
     if best >= 0 then return best
-    if prefs.showForced then return Subs_autoBest(tracks, "", true)
+    if prefs.showForced then return Subs_autoBest(tracks, "", true, invalid)
     return -2
 end function
 
 ' The best-ranked track in a language ("" = any), forced ones only when forcedOnly; -2 for none.
-function Subs_autoBest(tracks as object, target as string, forcedOnly as boolean) as integer
+' With a series signature, the tracks closest to it rank first (scoreSignatureFallback).
+function Subs_autoBest(tracks as object, target as string, forcedOnly as boolean, sig as dynamic) as integer
     best = -2
     bestRank = 0
     for i = 0 to tracks.Count() - 1
         t = tracks[i]
         if (target = "" or Subs_autoLangKey(t.language) = target) and (not forcedOnly or t.forced) then
             r = Subs_autoRank(t)
+            if sig <> invalid then r = r - 1000 * Subs_signatureScore(t, sig)
             if best < 0 or r < bestRank then
                 best = i
                 bestRank = r
@@ -303,7 +325,60 @@ function Subs_autoPrefs() as object
     if mode = "" then mode = "auto"
     forced = w.effective_show_forced_subtitles
     if Type(forced) <> "roBoolean" and Type(forced) <> "Boolean" then forced = Settings_value("playback.show_forced_subtitles", true)
-    return { language: lang, mode: mode, showForced: forced = true }
+    sig = w.effective_subtitle_track_signature
+    if sig = invalid or Type(sig) <> "roAssociativeArray" then sig = invalid
+    if m.carriedSubtitle <> invalid and m.carriedSubtitle.signature <> invalid then sig = m.carriedSubtitle.signature
+    return { language: lang, mode: mode, showForced: forced = true, signature: sig }
+end function
+
+' The signature's source as a renderable track reports it ("downloaded" for a stored track).
+function Subs_signatureSource(t as object) as string
+    if Str_orEmpty(t.storedId) <> "" then return "downloaded"
+    return LCase(Str_orEmpty(t.source))
+end function
+
+function Subs_norm(v as dynamic) as string
+    return LCase(Str_orEmpty(v).Trim())
+end function
+
+' Whether the track is the very one a series signature describes (subtitleTrackMatchesSignature):
+' same source, language (ISO 639 forms folded) and codec, the same label when the signature has
+' one, and the same forced and SDH flags.
+function Subs_matchesSignature(t as object, sig as object) as boolean
+    if Subs_norm(sig.source) <> Subs_signatureSource(t) then return false
+    if Subs_norm(sig.language) <> Subs_norm(t.language) and Subs_autoLangKey(sig.language) <> Subs_autoLangKey(t.language) then return false
+    if Subs_norm(sig.codec) <> Subs_norm(t.codec) then return false
+    if Subs_norm(sig.label) <> "" and Subs_norm(sig.label) <> Subs_norm(t.rawLabel) then return false
+    if (sig.forced = true) <> (t.forced = true) then return false
+    return (sig.hearing_impaired = true) = (t.hearingImpaired = true)
+end function
+
+' Tie-break between tracks of the wanted language (scoreSignatureFallback); higher is closer.
+function Subs_signatureScore(t as object, sig as object) as integer
+    score = 0
+    if Subs_norm(sig.source) = Subs_signatureSource(t) then score = score + 4
+    if (sig.forced = true) = (t.forced = true) then score = score + 2
+    if (sig.hearing_impaired = true) = (t.hearingImpaired = true) then score = score + 2
+    if Subs_norm(sig.codec) = Subs_norm(t.codec) then score = score + 1
+    if Subs_norm(sig.label) = Subs_norm(t.rawLabel) then score = score + 1
+    return score
+end function
+
+' The track in this file's renderable list that stands for a choice made on another file of the
+' title (a replan that moved to another version): the exact signature, else the same language,
+' forced and SDH flags; -1 when the file has none.
+function Subs_equivalentIndex(t as object) as integer
+    sig = { source: Subs_signatureSource(t), language: t.language, codec: t.codec, label: t.rawLabel, forced: t.forced = true, hearing_impaired: t.hearingImpaired = true }
+    for i = 0 to m.subtitleTracks.Count() - 1
+        if Subs_matchesSignature(m.subtitleTracks[i], sig) then return i
+    end for
+    key = Subs_autoLangKey(t.language)
+    if key = "" then return -1
+    for i = 0 to m.subtitleTracks.Count() - 1
+        c = m.subtitleTracks[i]
+        if Subs_autoLangKey(c.language) = key and (c.forced = true) = (t.forced = true) and (c.hearingImpaired = true) = (t.hearingImpaired = true) then return i
+    end for
+    return -1
 end function
 
 ' ISO-639 folding for "is this the language asked for" (Android's autoSubtitleLanguageKey).
@@ -516,10 +591,11 @@ end sub
 
 ' ---------- Delay ----------
 
+' The subtitle delay is player.subtitle_sync_ms (Silo Android #680): the profile's on every
+' device from settings manifest revision 19, this Roku's own while "Only on This Device" is on or
+' on an older server. The device pref keeps the last value for when the server has not answered.
 function Subs_delayMs() as integer
-    p = m.global.prefs
-    if p = invalid or p.subtitleDelayMs = invalid then return 0
-    return Int(p.subtitleDelayMs)
+    return Settings_subtitleSyncMs()
 end function
 
 ' Signed label with a true minus sign, like the TV's delayLabel.
@@ -565,8 +641,30 @@ sub Subs_setDelay(ms as integer)
     p = AA_copy(m.global.prefs)
     p.subtitleDelayMs = ms
     Prefs_save(p)
+    if Settings_available() then
+        key = "player.subtitle_sync_ms"
+        scope = Settings_subtitleSyncScope()
+        ' A profile save also clears a device row this Roku still holds, so the value just saved
+        ' is the one that shows here rather than a stale device value that outranks it.
+        ctx = { clearDevice: scope = "profile" and Settings_source(key) = "profile_device" }
+        Settings_setLocal(key, scope, ms)
+        Settings_put(key, scope, ms, "Subs_onDelaySaved", ctx)
+    end if
     ' Already-fetched cues keep their times, so the mounted sidecar is fetched again.
     if m.subtitleIndex >= 0 then remountSubtitles()
+end sub
+
+sub Subs_onDelaySaved(event as object)
+    resp = Api_result(event)
+    ctx = resp.context
+    if ctx = invalid then ctx = {}
+    if not resp.ok then
+        if ctx.isDelete = true and resp.status = 404 then return
+        print "[siku-playback] subtitle delay not saved: status=" + Str_orEmpty(resp.status)
+        if ctx.isDelete <> true then m.global.toast = "Couldn't save the subtitle delay: " + Api_errorText(resp)
+        return
+    end if
+    if ctx.clearDevice = true then Settings_delete("player.subtitle_sync_ms", "profile_device", "Subs_onDelaySaved", { isDelete: true })
 end sub
 
 ' ---------- Sync to audio (SubtitleSyncController) ----------

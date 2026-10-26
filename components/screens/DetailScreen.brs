@@ -179,7 +179,9 @@ sub onItem(event as object)
         return
     end if
     m.spinner.visible = false
-    m.item = resp.data
+    ' Series audio/subtitle picks that have not landed: resend them, and show them meanwhile.
+    SeriesChoice_flush()
+    m.item = SeriesChoice_overlay(resp.data)
     m.itemType = LCase(Str_orEmpty(m.item.type))
     renderHero()
     renderCast()
@@ -224,7 +226,7 @@ end sub
 sub onItemRefreshed(event as object)
     resp = Api_result(event)
     if not resp.ok or resp.data = invalid then return
-    m.item = resp.data
+    m.item = SeriesChoice_overlay(resp.data)
     updatePrimary()
     updateToggles()
     if m.selectedSeason <> invalid then loadEpisodes(m.selectedSeason)
@@ -542,7 +544,7 @@ sub onPlayDetail(event as object)
     resp = Api_result(event)
     if not resp.ok or resp.data = invalid or Type(resp.data) <> "roAssociativeArray" then return
     if resp.context = invalid or resp.context.target <> selectorTargetId() then return
-    m.playDetail = resp.data
+    m.playDetail = SeriesChoice_overlay(resp.data)
     updateSelectors()
 end sub
 
@@ -642,6 +644,7 @@ sub onSelectorChosen(kind as string, id as string)
         end if
     else if kind = "audio" then
         if id = "auto" then m.selAudio = invalid else if Left(id, 2) = "a:" then m.selAudio = Int(Val(Mid(id, 3)))
+        rememberSeriesAudio()
     else if kind = "subtitle" then
         if id = "auto" then
             m.selSubtitle = invalid
@@ -650,8 +653,52 @@ sub onSelectorChosen(kind as string, id as string)
         else if Left(id, 2) = "s:" then
             m.selSubtitle = Int(Val(Mid(id, 3)))
         end if
+        rememberSeriesSubtitle()
     end if
     updateSelectors()
+end sub
+
+' The series (or movie) a selector pick is remembered for (Silo Android #680): the episode the
+' selectors describe on a series or season page, else this movie or episode; "" for anything else.
+function selectorSeriesKey() as string
+    d = m.item
+    if m.itemType = "series" or m.itemType = "season" then d = m.playDetail
+    if d = invalid then return ""
+    if Str_orEmpty(d.content_id) <> selectorTargetId() then return ""
+    t = LCase(Str_orEmpty(d["type"]))
+    if t = "" then t = m.itemType
+    if t <> "movie" and t <> "episode" then return ""
+    return SeriesChoice_key(d.series_id, d.content_id)
+end function
+
+' A selector pick applies to the whole series and the profile's other devices, like a pick in
+' the player: a track or Off is saved on the server, Auto deletes the saved choice.
+sub rememberSeriesSubtitle()
+    key = selectorSeriesKey()
+    v = displayVersion()
+    if key = "" or v = invalid then return
+    if m.selSubtitle = invalid then
+        SeriesChoice_saveSubtitle(key, invalid)
+    else if m.selSubtitle = -1 then
+        SeriesChoice_saveSubtitle(key, SeriesChoice_subtitleOff())
+    else
+        tracks = Arr_or(v.subtitle_tracks)
+        o = Tracks_subtitleOrdinal(tracks, m.selSubtitle)
+        if o >= 0 then SeriesChoice_saveSubtitle(key, SeriesChoice_subtitleFromCatalog(tracks[o], m.selSubtitle))
+    end if
+end sub
+
+sub rememberSeriesAudio()
+    key = selectorSeriesKey()
+    v = displayVersion()
+    if key = "" or v = invalid then return
+    if m.selAudio = invalid then
+        SeriesChoice_saveAudio(key, invalid)
+        return
+    end if
+    tracks = Arr_or(v.audio_tracks)
+    o = Int(m.selAudio)
+    if o >= 0 and o < tracks.Count() then SeriesChoice_saveAudio(key, SeriesChoice_audioFromCatalog(tracks[o], o))
 end sub
 
 ' Adds the selectors' choices to player params when `targetId` is the title they describe.

@@ -283,8 +283,9 @@ function buildPane(catId as string) as object
         out.Push({ kind: "header", text: "Appearance" })
         out.Push({ kind: "preview" })
         out.Push({ kind: "row", row: rowDef("useDeviceSettings", "info", "Use Device Settings") })
-        out.Push({ kind: "row", row: rowDef("customAppearance", "toggle", "Custom Subtitle Appearance") })
-        disabled = not customAppearanceOn()
+        ' Appearance is a profile preference (Silo Android #680); this keeps a separate one (and
+        ' subtitle timing) for this Roku only.
+        out.Push({ kind: "row", row: rowDef("customAppearance", "toggle", "Only on This Device") })
         for each f in [["fontSize", "Font Size"], ["fontFamily", "Font Family"], ["fontColor", "Font Color"], ["textOpacity", "Text Opacity"], ["textOutline", "Text Outline"], ["textOutlineColor", "Outline Color"], ["backgroundStyle", "Background Style"], ["backgroundOpacity", "Background Opacity"], ["backgroundColor", "Background Color"], ["position", "Position"]]
             fid = f[0]
             if fid <> "textOpacity" or textOpacitySupported() then
@@ -292,15 +293,14 @@ function buildPane(catId as string) as object
                 if fid = "textOutline" then kind = "toggle"
                 r = rowDef(fid, kind, f[1])
                 r.appearance = true
-                r.disabled = disabled
                 out.Push({ kind: "row", row: r })
             end if
         end for
-        out.Push({ kind: "row", row: { id: "resetAppearance", kind: "action", label: "Reset Custom Appearance", destructive: true, disabled: disabled } })
+        out.Push({ kind: "row", row: { id: "resetAppearance", kind: "action", label: "Reset Appearance", destructive: true } })
         if customAppearanceOn() then
-            out.Push({ kind: "footer", text: "Appearance is saved on the server for this profile on this device." })
+            out.Push({ kind: "footer", text: "Only on this device." })
         else
-            out.Push({ kind: "footer", text: "Appearance is using the server fallback for this profile on this device." })
+            out.Push({ kind: "footer", text: "Saved for this profile on all devices." })
         end if
         out.Push({ kind: "footer", text: "Roku draws captions with your Roku's own caption style (Settings › Accessibility › Captions style), so these choices are saved for your other Silo devices and do not change captions here." })
     else if catId = "server" then
@@ -331,9 +331,10 @@ function textOpacitySupported() as boolean
     return (not Settings_available()) or Settings_manifestRevision() >= 14
 end function
 
-' "Custom Subtitle Appearance" is on while the appearance resolves from this device's own row.
+' "Only on This Device" (Silo Android #680) is on while the appearance resolves from this
+' device's own row.
 function customAppearanceOn() as boolean
-    return Settings_source("playback.subtitle_appearance") = "profile_device"
+    return Settings_subtitleDeviceOnly()
 end function
 
 function rowValue(row as object) as string
@@ -1062,16 +1063,20 @@ sub writeCardPresentation(posterSize as string, caption as string, deviceOnly as
     putValue("ui.card_presentation", scope, { poster_size: posterSize, caption: caption })
 end sub
 
-' playback.subtitle_appearance at profile_device (the full object; textOpacity only when the
-' server's manifest knows it).
-sub writeAppearance(a as object)
+' playback.subtitle_appearance, the full object (textOpacity only when the server's manifest knows
+' it), at profile scope so it reaches the profile's other devices, or at profile_device while
+' "Only on This Device" is on (deviceOnly overrides that, for the toggle itself).
+sub writeAppearance(a as object, deviceOnly = invalid as dynamic)
     body = {}
     for each k in Settings_defaultAppearance()
         if a[k] <> invalid then body[k] = a[k]
     end for
     if not textOpacitySupported() then body.Delete("textOpacity")
+    if deviceOnly = invalid then deviceOnly = customAppearanceOn()
+    scope = "profile"
+    if deviceOnly = true then scope = "profile_device"
     beginWrites(1)
-    putValue("playback.subtitle_appearance", "profile_device", body)
+    putValue("playback.subtitle_appearance", scope, body)
 end sub
 
 sub savePref(key as string, value as dynamic)
@@ -1210,10 +1215,18 @@ sub applyChoice(row as object, value as dynamic)
         putValue("playback.show_forced_subtitles", "profile", value = true)
     else if id = "customAppearance" then
         if value = true then
-            writeAppearance(Settings_appearance())
+            ' On pins the appearance on screen to this Roku; later subtitle edits stay here.
+            writeAppearance(Settings_appearance(), true)
         else
-            beginWrites(1)
+            ' Off deletes this Roku's rows so the profile's values apply again: the appearance, and
+            ' the subtitle timing where the server keeps timing per profile (revision 19+; below
+            ' that this device's row is the only timing there is).
+            clearSync = Settings_manifestRevision() >= Settings_subtitleSyncProfileMinRevision() and Settings_source("player.subtitle_sync_ms") = "profile_device"
+            n = 1
+            if clearSync then n = 2
+            beginWrites(n)
             deleteValue("playback.subtitle_appearance", "profile_device")
+            if clearSync then deleteValue("player.subtitle_sync_ms", "profile_device")
         end if
     else if row.appearance = true then
         a = Settings_appearance()
@@ -1283,7 +1296,7 @@ sub activateRow(row as object)
     else if id = "resetOverrides" then
         openConfirm("resetOverrides", "Reset Playback Overrides?", "Playback choices for this Roku and profile go back to the server fallback.", "Reset")
     else if id = "resetAppearance" then
-        openConfirm("resetAppearance", "Reset Custom Appearance?", "This restores all custom subtitle appearance options to their defaults.", "Reset")
+        openConfirm("resetAppearance", "Reset Subtitle Appearance?", "This restores every subtitle appearance option to its default.", "Reset")
     else if id = "manageServers" then
         Session_clearServer()
         Nav_reset("ServerConnectScreen")
