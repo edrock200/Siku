@@ -26,6 +26,7 @@
   <script type="text/brightscript" uri="pkg:/components/player/PlayerBuffering.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Shuffle.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/SeriesChoice.brs" />
   <children>
     <Rectangle id="bg" width="1920" height="1080" color="0x000000FF" />
     <!-- Up Next artwork. Drawn before the Video node so the video pane shows through it. -->
