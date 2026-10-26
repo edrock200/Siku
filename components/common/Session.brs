@@ -39,10 +39,16 @@ function Session_load() as object
     return s
 end function
 
-' Saves a session and publishes it on m.global.
+' Saves a session and publishes it on m.global. A temporary session (a phone's profile borrowed
+' for remote playback, components/remote/RemoteControl.brs) is published only: it is never written
+' to the registry, so the Roku's own sign-in is what the next launch finds.
 sub Session_save(s as object)
-    Registry_write("session", s)
-    Session_rememberServer(s)
+    temporary = s.temporary <> invalid and (Type(s.temporary) = "Boolean" or Type(s.temporary) = "roBoolean")
+    if temporary then temporary = s.temporary
+    if not temporary then
+        Registry_write("session", s)
+        Session_rememberServer(s)
+    end if
     m.global.session = s
     m.global.sessionChanged = m.global.sessionChanged + 1
     ' The server-synced settings snapshot (components/common/Settings.brs) belongs to one server

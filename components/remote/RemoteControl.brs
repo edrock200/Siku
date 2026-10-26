@@ -1,0 +1,551 @@
+' RemoteControl: the SiloCast receiver's decisions (see RemoteControl.xml).
+' SPDX-License-Identifier: AGPL-3.0-or-later
+
+sub init()
+    m.prefs = RemotePrefs_load()
+    m.ready = {}           ' conn -> "own" | borrowed generation: may launch next
+    m.controllers = {}     ' conn -> controller info from the hello
+    m.greeted = {}         ' device ids already announced on screen this run
+    m.handoff = invalid    ' the one in-flight full handoff
+    m.borrowed = invalid   ' the phone identity Siku plays on, if any
+    m.ownSession = invalid ' the Roku's own session while one is borrowed
+    m.activation = invalid ' an approved handoff waiting for the old player to close
+    m.lastOwnServer = ""
+    m.pollTimer = m.top.findNode("pollTimer")
+    m.pollTimer.observeField("fire", "onPollTimer")
+    m.endTimer = m.top.findNode("endTimer")
+    m.endTimer.observeField("fire", "onEndTimer")
+    m.activateTimer = m.top.findNode("activateTimer")
+    m.activateTimer.observeField("fire", "onActivateTimer")
+
+    m.task = CreateObject("roSGNode", "LanTask")
+    if not m.global.hasField("castPlayer") then m.global.addField("castPlayer", "node", false)
+    m.global.addFields({ lanTask: m.task, remoteControl: m.top })
+    m.task.observeField("castEvent", "onCastEvent")
+    m.global.observeField("sessionChanged", "onSessionChanged")
+    m.global.observeField("castPlayer", "onCastPlayer")
+    m.lastOwnServer = Str_orEmpty(m.global.session.serverUrl)
+    pushConfig()
+    m.task.castState = RemoteState_idle()
+    m.task.control = "RUN"
+end sub
+
+' ---------- Config for the LanTask ----------
+
+function deviceName() as string
+    di = CreateObject("roDeviceInfo")
+    name = di.GetFriendlyName()
+    if name = invalid or name = "" then name = "Roku " + di.GetModelDisplayName()
+    return name
+end function
+
+sub pushConfig()
+    s = m.global.session
+    pairing = m.top.pairing
+    if pairing = invalid then pairing = { mode: "" }
+    serverUrl = Str_orEmpty(s.serverUrl)
+    serverId = ""
+    if serverUrl <> "" then serverId = Lan_serverIdFor(serverUrl)
+    serverName = Str_orEmpty(s.serverName)
+    if m.borrowed <> invalid then
+        ' The phone's own registry key: the URL it sent, exactly.
+        serverId = m.borrowed.serverId
+        if not Str_isEmpty(m.borrowed.serverName) then serverName = m.borrowed.serverName
+    end if
+    m.task.config = {
+        castEnabled: m.prefs.enabled
+        sealed: m.prefs.sealed
+        deviceId: Str_orEmpty(s.deviceId)
+        deviceName: deviceName()
+        serverId: serverId
+        serverName: serverName
+        serverIdentity: Str_orEmpty(s.serverId)
+        signedIn: not Str_isEmpty(s.accessToken) and not Str_isEmpty(s.profileId)
+        playing: m.global.castPlayer <> invalid
+        pairing: pairing
+    }
+end sub
+
+sub onReloadPrefs()
+    m.prefs = RemotePrefs_load()
+    pushConfig()
+end sub
+
+sub onSessionChanged()
+    s = m.global.session
+    if not Lan_isTrue(s.temporary) then
+        own = Str_orEmpty(s.serverUrl)
+        if own <> m.lastOwnServer then
+            ' Hellos were judged against the previous server.
+            m.lastOwnServer = own
+            m.task.command = { kind: "castCloseAll", reason: "unauthorized" }
+            m.ready = {}
+        end if
+    end if
+    pushConfig()
+end sub
+
+sub onDisconnectAll()
+    print "[siku-cast] disconnect on the TV"
+    m.task.command = { kind: "castCloseActive" }
+end sub
+
+' ---------- Sending ----------
+
+sub castSend(conn as string, message as object)
+    m.task.command = { kind: "castSend", conn: conn, message: message }
+end sub
+
+sub castError(conn as string, code as string, text as string)
+    castSend(conn, { "type": "error", "v": 2, "error": { "code": code, "message": text } })
+end sub
+
+sub handoffCancel(conn as string, requestId as string, reason as string, text as string)
+    print "[siku-cast] handoff refused: " + reason
+    castSend(conn, { "type": "handoff_cancel", "v": 2, "handoffCancel": { "requestId": requestId, "reason": reason, "message": text } })
+end sub
+
+function isoIn(seconds as integer) as string
+    d = CreateObject("roDateTime")
+    d.FromSeconds(d.AsSeconds() + seconds)
+    return d.ToISOString()
+end function
+
+' ---------- Events from the LanTask ----------
+
+sub onCastEvent(event as object)
+    e = event.getData()
+    if e = invalid then return
+    kind = Str_orEmpty(e["type"])
+    conn = Str_orEmpty(e.conn)
+    if kind = "hello" then
+        onHello(conn, e.controller)
+    else if kind = "offer" then
+        onOffer(conn, e.offer, e.controller)
+    else if kind = "handoffCancel" then
+        onHandoffCancel(conn, e.cancel)
+    else if kind = "launch" then
+        onLaunch(conn, e.launch, e.controller)
+    else if kind = "control" then
+        onControl(conn, e.control)
+    else if kind = "closed" then
+        onClosed(conn)
+    end if
+end sub
+
+sub onHello(conn as string, c as object)
+    m.controllers[conn] = c
+    if not Lan_isTrue(c.authorized) or Lan_isTrue(c.passive) then return
+    id = Str_orEmpty(c.deviceId)
+    if m.greeted.DoesExist(id) or m.global.castPlayer <> invalid then return
+    m.greeted[id] = true
+    name = Str_orEmpty(c.deviceName)
+    if name = "" then name = "A phone"
+    m.global.toast = name + " can now control Siku"
+end sub
+
+sub onClosed(conn as string)
+    m.ready.Delete(conn)
+    m.controllers.Delete(conn)
+    if m.handoff <> invalid and m.handoff.conn = conn then abandonHandoff("controller left")
+    b = m.borrowed
+    if b <> invalid and b.connId = conn then
+        b.connId = ""
+        ' Playback outlives a lost socket; with nothing playing the profile goes back shortly.
+        if m.global.castPlayer = invalid then scheduleEnd(5)
+    end if
+end sub
+
+' ---------- Handoff (TvSiloCastReceiver.handleOffer) ----------
+
+sub onOffer(conn as string, offer as object, c as object)
+    requestId = Str_orEmpty(offer.requestId)
+    s = m.global.session
+    serverUrl = Lan_trimUrl(offer.serverURL)
+    profileId = Str_orEmpty(offer.profileId)
+    if serverUrl = "" or profileId = "" or Lan_serverIdFor(serverUrl) <> Str_orEmpty(offer.serverId) then
+        handoffCancel(conn, requestId, "handoff_failed", "The phone sent an invalid server or profile.")
+        return
+    end if
+    if m.activation <> invalid then
+        handoffCancel(conn, requestId, "launch_pending", "The TV is still starting the last title. Try again in a moment.")
+        return
+    end if
+    m.ready.Delete(conn)
+    ' A newer offer replaces one in flight from another controller.
+    if m.handoff <> invalid then
+        old = m.handoff
+        abandonHandoff("superseded")
+        if old.conn <> conn then
+            who = Str_orEmpty(c.deviceName)
+            if who = "" then who = "Another device"
+            handoffCancel(old.conn, old.requestId, "superseded", who + " started playing on this TV.")
+        end if
+    end if
+    ' Own identity: the phone's hello matched this Roku's server and it offers the profile Siku
+    ' plays as (RemotePlaybackOwnIdentityPolicy).
+    signedIn = not Str_isEmpty(s.accessToken) and not Str_isEmpty(s.profileId)
+    if m.borrowed = invalid and signedIn and Lan_isTrue(c.authorizedAtHello) and Str_orEmpty(s.profileId) = profileId and Lan_serversMatch(offer.serverId, offer.serverIdentity, Lan_serverIdFor(s.serverUrl), s.serverId) then
+        m.ready[conn] = "own"
+        print "[siku-cast] handoff skipped: phone offers this Roku's own profile"
+        castSend(conn, { "type": "handoff_ready", "v": 2, "handoffReady": { "requestId": requestId, "serverId": Str_orEmpty(offer.serverId), "profileId": profileId, "sessionExpiresAt": isoIn(86400), "reused": true } })
+        return
+    end if
+    ' Reuse of the borrowed identity: the connection that installed it, or its resume token.
+    b = m.borrowed
+    if b <> invalid and b.serverId = Str_orEmpty(offer.serverId) and b.profileId = profileId and b.controllerDeviceId = Str_orEmpty(c.deviceId) then
+        tokenOk = b.resumeToken <> "" and Str_orEmpty(offer.resumeToken) = b.resumeToken
+        if b.connId = conn or tokenOk then
+            m.endTimer.control = "stop"
+            b.connId = conn
+            m.ready[conn] = b.generation
+            m.task.command = { kind: "castAuthorize", conn: conn, authorized: true }
+            print "[siku-cast] handoff reused the borrowed profile"
+            castSend(conn, readyMessage(requestId, b, true, c))
+            return
+        end if
+    end if
+    startFullHandoff(conn, offer, c)
+end sub
+
+function readyMessage(requestId as string, b as object, reused as boolean, c as object) as object
+    r = { "requestId": requestId, "serverId": b.serverId, "profileId": b.profileId, "sessionExpiresAt": b.expiresAt, "reused": reused }
+    if c <> invalid and c.features <> invalid and c.features.DoesExist("resume_token") and b.resumeToken <> "" then r["resumeToken"] = b.resumeToken
+    return { "type": "handoff_ready", "v": 2, "handoffReady": r }
+end function
+
+sub startFullHandoff(conn as string, offer as object, c as object)
+    base = Lan_trimUrl(offer.serverURL)
+    m.handoffGen = Int(Num_or(m.handoffGen, 0)) + 1
+    m.handoff = { conn: conn, requestId: Str_orEmpty(offer.requestId), offer: offer, controller: c, base: base, gen: m.handoffGen, deviceCode: "", interval: 3, deadline: 0 }
+    who = Str_orEmpty(c.deviceName)
+    if who = "" then who = "your phone"
+    title = Str_orEmpty(offer.title)
+    if title <> "" then
+        m.global.toast = "Starting " + title + " from " + who
+    else
+        m.global.toast = "Getting ready for " + who
+    end if
+    print "[siku-cast] full handoff: checking the phone's server"
+    Api_call({ method: "GET", path: "/api/v2/auth/device/capability", baseUrl: base, auth: false, profile: false, timeout: 8, context: { gen: m.handoffGen } }, "onHandoffCapability")
+end sub
+
+function handoffCurrent(resp as object) as boolean
+    return m.handoff <> invalid and resp.context <> invalid and resp.context.gen = m.handoff.gen
+end function
+
+sub failHandoff(text as string)
+    h = m.handoff
+    if h = invalid then return
+    m.handoff = invalid
+    m.pollTimer.control = "stop"
+    handoffCancel(h.conn, h.requestId, "handoff_failed", text)
+end sub
+
+sub onHandoffCapability(event as object)
+    resp = Api_result(event)
+    if not handoffCurrent(resp) then return
+    d = resp.data
+    supported = false
+    if resp.ok and Type(d) = "roAssociativeArray" and Lan_isTrue(d.remote_playback_handoff) then
+        for each v in Arr_or(d.protocol_versions)
+            if Num_or(v, 0) = 2 then supported = true
+        end for
+    end if
+    if not supported then
+        failHandoff("The phone's Silo server does not support remote playback handoff.")
+        return
+    end if
+    body = { device_name: deviceName(), device_platform: "roku", client_purpose: "remote_playback", temporary: true }
+    Api_call({ method: "POST", path: "/api/v2/auth/device/start", baseUrl: m.handoff.base, body: body, auth: false, profile: false, timeout: 15, context: { gen: m.handoff.gen } }, "onHandoffStart")
+end sub
+
+sub onHandoffStart(event as object)
+    resp = Api_result(event)
+    if not handoffCurrent(resp) then return
+    d = resp.data
+    if not resp.ok or Type(d) <> "roAssociativeArray" or Str_isEmpty(d.device_code) then
+        failHandoff("The TV could not start the remote playback handoff.")
+        return
+    end if
+    if Str_orEmpty(d.client_purpose) <> "remote_playback" or not Lan_isTrue(d.temporary) then
+        failHandoff("The server did not create a temporary remote playback session.")
+        return
+    end if
+    h = m.handoff
+    h.deviceCode = Str_orEmpty(d.device_code)
+    interval = Int(Num_or(d.interval, 3))
+    if interval < 1 then interval = 3
+    h.interval = interval
+    expiresIn = Int(Num_or(d.expires_in, 600))
+    if expiresIn < 1 then expiresIn = 600
+    h.deadline = Time_nowSeconds() + expiresIn
+    print "[siku-cast] full handoff: challenge sent; waiting for the phone to approve"
+    castSend(h.conn, { "type": "handoff_challenge", "v": 2, "handoffChallenge": { "requestId": h.requestId, "userCode": Str_orEmpty(d.user_code), "matchCode": Str_orEmpty(d.match_code), "expiresAt": Str_orEmpty(d.expires_at) } })
+    pollHandoff()
+end sub
+
+sub pollHandoff()
+    h = m.handoff
+    if h = invalid then return
+    if Time_nowSeconds() >= h.deadline then
+        failHandoff("Remote playback handoff expired.")
+        return
+    end if
+    Api_call({ method: "POST", path: "/api/v2/auth/device/poll", baseUrl: h.base, body: { device_code: h.deviceCode }, auth: false, profile: false, timeout: 15, context: { gen: h.gen } }, "onHandoffPoll")
+end sub
+
+sub onPollTimer()
+    pollHandoff()
+end sub
+
+sub onHandoffPoll(event as object)
+    resp = Api_result(event)
+    if not handoffCurrent(resp) then return
+    h = m.handoff
+    d = resp.data
+    if not resp.ok or Type(d) <> "roAssociativeArray" then
+        if resp.status = 404 then
+            failHandoff("Remote playback handoff expired.")
+        else
+            failHandoff("Pairing status could not be confirmed. Start pairing again.")
+        end if
+        return
+    end if
+    st = LCase(Str_orEmpty(d.status))
+    if st = "pending" then
+        wait = Int(Num_or(d.poll_after, h.interval))
+        if wait < 1 then wait = 1
+        m.pollTimer.duration = wait
+        m.pollTimer.control = "start"
+    else if st = "approved" then
+        tokens = d.tokens
+        if Type(tokens) <> "roAssociativeArray" then tokens = d
+        access = Str_orEmpty(tokens.access_token)
+        refresh = Str_orEmpty(tokens.refresh_token)
+        profileId = Str_orEmpty(d.profile_id)
+        profileToken = Str_orEmpty(d.profile_token)
+        if access = "" or refresh = "" or profileId = "" then
+            failHandoff("The approved remote session omitted its credentials.")
+            return
+        end if
+        if not Lan_isTrue(d.temporary) or profileId <> Str_orEmpty(h.offer.profileId) then
+            failHandoff("The server approved a different or non-temporary profile.")
+            return
+        end if
+        expiresAt = Str_orEmpty(d.session_expires_at)
+        if expiresAt = "" then expiresAt = isoIn(86400)
+        m.handoff = invalid
+        approved = { handoff: h, access: access, refresh: refresh, expiresIn: Int(Num_or(tokens.expires_in, 3600)), profileId: profileId, profileToken: profileToken, expiresAt: expiresAt }
+        print "[siku-cast] full handoff approved"
+        beginActivation(approved)
+    else if st = "denied" then
+        failHandoff("Remote playback handoff was denied.")
+    else if st = "expired" or st = "consumed" then
+        failHandoff("Remote playback handoff expired.")
+    else
+        failHandoff("The server returned an unknown remote playback status.")
+    end if
+end sub
+
+sub onHandoffCancel(conn as string, cancel as object)
+    h = m.handoff
+    if h <> invalid and h.conn = conn and h.requestId = Str_orEmpty(cancel.requestId) then abandonHandoff("controller cancelled")
+    m.ready.Delete(conn)
+end sub
+
+' Stops polling and withdraws the code on the server (best effort).
+sub abandonHandoff(why as string)
+    h = m.handoff
+    if h = invalid then return
+    m.handoff = invalid
+    m.pollTimer.control = "stop"
+    print "[siku-cast] handoff abandoned (" + why + ")"
+    if h.deviceCode <> "" then Api_call({ method: "POST", path: "/api/v2/auth/device/cancel", baseUrl: h.base, body: { device_code: h.deviceCode }, auth: false, profile: false, timeout: 5 }, "Api_onFired")
+end sub
+
+' An approved handoff stops what plays first, so that player's session closes under the identity
+' it started with; the new identity goes in once the player is gone (or after 8 s).
+sub beginActivation(approved as object)
+    m.activation = approved
+    player = m.global.castPlayer
+    if player <> invalid then
+        player.remoteCommand = { name: "stop" }
+        m.activateTimer.control = "start"
+    else
+        activateBorrowed()
+    end if
+end sub
+
+sub onActivateTimer()
+    if m.activation <> invalid then activateBorrowed()
+end sub
+
+sub activateBorrowed()
+    a = m.activation
+    if a = invalid then return
+    m.activation = invalid
+    m.activateTimer.control = "stop"
+    h = a.handoff
+    if m.borrowed <> invalid then restoreOwn(true)
+    own = AA_copy(m.global.session)
+    m.ownSession = own
+    offer = h.offer
+    t = AA_copy(own)
+    t.serverUrl = Url_normalize(h.base)
+    t.serverOrigin = Url_origin(t.serverUrl)
+    t.serverId = Str_orEmpty(offer.serverIdentity).Trim()
+    t.serverName = Str_orEmpty(offer.serverName)
+    if t.serverName = "" then t.serverName = Url_host(t.serverUrl)
+    t.accessToken = a.access
+    t.refreshToken = a.refresh
+    if a.expiresIn < 60 then a.expiresIn = 3600
+    t.expiresAt = Time_nowSeconds() + a.expiresIn
+    t.user = {}
+    t.profileId = a.profileId
+    t.profileToken = a.profileToken
+    t.profileName = Str_orEmpty(offer.profileName)
+    t.profileAvatar = ""
+    t.temporary = true
+    c = h.controller
+    resume = ""
+    if c <> invalid and c.features <> invalid and c.features.DoesExist("resume_token") then resume = Lan_base64url(Lan_bytes(CreateObject("roDeviceInfo").GetRandomUUID() + CreateObject("roDeviceInfo").GetRandomUUID()))
+    m.borrowed = { generation: CreateObject("roDeviceInfo").GetRandomUUID(), serverId: Str_orEmpty(offer.serverId), serverName: Str_orEmpty(offer.serverName), profileId: a.profileId, connId: h.conn, controllerDeviceId: Str_orEmpty(c.deviceId), resumeToken: resume, expiresAt: a.expiresAt }
+    Session_forgetPlaybackCaps()
+    Session_save(t) ' temporary: published, never written to the registry
+    m.ready[h.conn] = m.borrowed.generation
+    m.task.command = { kind: "castAuthorize", conn: h.conn, authorized: true }
+    print "[siku-cast] playing as the phone's profile (borrowed, not saved)"
+    castSend(h.conn, readyMessage(h.requestId, m.borrowed, false, c))
+    if m.global.castPlayer = invalid then scheduleEnd(600)
+end sub
+
+' Hands the borrowed identity back: best-effort logout of the temporary session, then the
+' Roku's own session again.
+sub restoreOwn(logout as boolean)
+    b = m.borrowed
+    if b = invalid then return
+    m.borrowed = invalid
+    m.endTimer.control = "stop"
+    s = m.global.session
+    if logout and not Str_isEmpty(s.accessToken) then
+        Api_call({ method: "POST", path: "/api/v2/auth/logout", baseUrl: Str_orEmpty(s.serverUrl), auth: false, profile: false, headers: { Authorization: "Bearer " + Str_orEmpty(s.accessToken) }, timeout: 5 }, "Api_onFired")
+    end if
+    for each conn in m.ready.Keys()
+        if Str_orEmpty(m.ready[conn]) = b.generation then m.ready.Delete(conn)
+    end for
+    if b.connId <> "" then m.task.command = { kind: "castAuthorize", conn: b.connId, authorized: false }
+    Session_forgetPlaybackCaps()
+    if m.ownSession <> invalid then Session_save(m.ownSession)
+    m.ownSession = invalid
+    m.global.homeDirty = true
+    print "[siku-cast] borrowed profile handed back"
+end sub
+
+sub scheduleEnd(seconds as integer)
+    if m.borrowed = invalid then return
+    m.endTimer.control = "stop"
+    m.endTimer.duration = seconds
+    m.endTimer.control = "start"
+end sub
+
+sub onEndTimer()
+    if m.borrowed = invalid or m.global.castPlayer <> invalid then return
+    restoreOwn(true)
+end sub
+
+sub onEndBorrowed()
+    if m.borrowed = invalid then return
+    print "[siku-cast] borrowed session ended: " + m.top.endBorrowed
+    for each conn in m.ready.Keys()
+        castError(conn, "temporary_session_expired", "The phone profile session expired.")
+    end for
+    player = m.global.castPlayer
+    if player <> invalid then player.remoteCommand = { name: "stop" }
+    restoreOwn(false)
+end sub
+
+sub onCastPlayer()
+    player = m.global.castPlayer
+    if player = invalid then
+        m.task.castState = RemoteState_idle()
+        if m.activation <> invalid then
+            ' Give the closed player's DELETE a moment under the identity it started with.
+            m.activateTimer.control = "stop"
+            m.activateTimer.duration = 1.5
+            m.activateTimer.control = "start"
+        else if m.borrowed <> invalid then
+            if m.borrowed.connId = "" then scheduleEnd(5) else scheduleEnd(600)
+        end if
+    else
+        m.endTimer.control = "stop"
+    end if
+    pushConfig()
+end sub
+
+' ---------- Launch and control ----------
+
+sub onLaunch(conn as string, launch as object, c as object)
+    readyFor = Str_orEmpty(m.ready[conn])
+    ok = false
+    if readyFor = "own" then
+        ok = m.borrowed = invalid
+    else if readyFor <> "" then
+        ok = m.borrowed <> invalid and m.borrowed.generation = readyFor
+    end if
+    if not ok then
+        m.ready.Delete(conn)
+        castError(conn, "handoff_required", "Prepare the phone profile before playing.")
+        return
+    end if
+    s = m.global.session
+    effId = Lan_serverIdFor(s.serverUrl)
+    if m.borrowed <> invalid then effId = m.borrowed.serverId
+    launchId = Str_orEmpty(launch.serverId)
+    identity = ""
+    if launchId = Str_orEmpty(c.serverId) then identity = Str_orEmpty(c.serverIdentity)
+    if not Lan_serversMatch(launchId, identity, effId, s.serverId) then
+        castError(conn, "server_mismatch", "This TV is connected to a different Silo server.")
+        return
+    end if
+    pb = launch.playback
+    if Type(pb) <> "roAssociativeArray" or Str_isEmpty(pb.contentId) then
+        castError(conn, "launch_failed", "The TV could not open remote playback.")
+        return
+    end if
+    params = { itemId: Str_orEmpty(pb.contentId), remote: true }
+    if pb.fileId <> invalid then params.fileId = Int(Num_or(pb.fileId, 0)).ToStr()
+    if pb.audioTrackIndex <> invalid and Num_or(pb.audioTrackIndex, -1) >= 0 then params.audioTrackIndex = Int(Num_or(pb.audioTrackIndex, 0))
+    ' A Roku launch carries the server's combined subtitle ordinal (externals first), which is
+    ' what Siku's subtitle index means; -1 is Off.
+    if pb.subtitleTrackIndex <> invalid then params.subtitleTrackIndex = Int(Num_or(pb.subtitleTrackIndex, -1))
+    if Lan_isTrue(pb.startFromBeginning) then
+        params.startPosition = 0
+    else if pb.resumePosition <> invalid and Num_or(pb.resumePosition, -1) >= 0 then
+        params.startPosition = Num_or(pb.resumePosition, 0)
+    end if
+    m.ready.Delete(conn)
+    m.endTimer.control = "stop"
+    print "[siku-cast] launch from " + Str_orEmpty(c.deviceName) + " file=" + Str_orEmpty(params.fileId) + " audio=" + Str_orEmpty(params.audioTrackIndex) + " sub=" + Str_orEmpty(params.subtitleTrackIndex)
+    m.top.launchRequest = params
+end sub
+
+function unsupportedControls() as object
+    return { set_playback_speed: "Siku can't change the playback speed on a Roku.", set_video_gravity: "Siku can't change the picture size on a Roku.", set_subtitle_position: "Siku can't move subtitles on a Roku.", set_subtitle_sync_ms: "Adjust subtitle timing on the Roku." }
+end function
+
+sub onControl(conn as string, control as object)
+    name = Str_orEmpty(control.name)
+    unsupported = unsupportedControls()
+    reason = unsupported[name]
+    if reason <> invalid then
+        castError(conn, "command_failed", reason)
+        return
+    end if
+    player = m.global.castPlayer
+    if player = invalid then
+        if name <> "stop" then castError(conn, "player_not_ready", "The TV player is not ready yet.")
+        return
+    end if
+    player.remoteCommand = control
+end sub

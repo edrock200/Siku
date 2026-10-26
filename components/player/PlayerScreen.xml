@@ -19,6 +19,10 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="PlayerScreen" extends="BaseScreen">
+  <interface>
+    <!-- A SiloCast control from Silo's phone app (RemoteControl.onControl; PlayerRemote.brs). -->
+    <field id="remoteCommand" type="assocarray" alwaysNotify="true" />
+  </interface>
   <script type="text/brightscript" uri="pkg:/components/player/PlayerScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/PlaybackCaps.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/SubtitleSuite.brs" />
@@ -26,6 +30,8 @@
   <script type="text/brightscript" uri="pkg:/components/player/PlayerBuffering.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Shuffle.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/PlayerRemote.brs" />
+  <script type="text/brightscript" uri="pkg:/components/remote/RemotePrefs.brs" />
   <children>
     <Rectangle id="bg" width="1920" height="1080" color="0x000000FF" />
     <!-- Up Next artwork. Drawn before the Video node so the video pane shows through it. -->

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Connect a Phone (profile menu): remote control from Silo's phone app. The phone's own copy
+  sends Roku users here ("open the profile menu, choose Connect a Phone, and scan its code").
+  Left: what it does, the three settings as buttons (Remote Control on/off, Require pairing
+  on/off, Reset pairing code), "Disconnect phones" while any is connected, and a status line
+  (listening address, whether automatic discovery works on this Roku).
+  Right: a glass card with the QR code of the pairing link
+  (silo://cast?v=2&host&port&id&name&server&security[&key]) and the pairing code in groups of
+  four. The link alone lets a phone reach Siku when discovery (mDNS) cannot.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="ConnectPhoneScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/screens/ConnectPhoneScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/remote/RemotePrefs.brs" />
+  <children>
+    <Rectangle width="1920" height="1080" color="0x0B0B0BFF" />
+    <Group id="copy" translation="[110, 120]">
+      <Label id="headline" width="900" color="0xEDEDEDFF" text="Connect a Phone">
+        <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="68" />
+      </Label>
+      <Label id="body" width="880" wrap="true" lineSpacing="6" color="0xEDEDED9E" translation="[0, 104]">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="26" />
+      </Label>
+      <Group id="buttons">
+        <PillButton id="enabledButton" variant="glass" iconUri="pkg:/images/icons/phone.png" />
+        <PillButton id="sealedButton" variant="glass" iconUri="pkg:/images/icons/lock.png" />
+        <PillButton id="resetButton" variant="glass" iconUri="pkg:/images/icons/refresh.png" text="New pairing code" />
+        <PillButton id="disconnectButton" variant="glass" iconUri="pkg:/images/icons/close.png" />
+      </Group>
+      <Label id="statusLabel" width="880" wrap="true" lineSpacing="6" color="0xEDEDED66">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="22" />
+      </Label>
+    </Group>
+    <Group id="card" translation="[1150, 120]">
+      <Poster id="cardBg" uri="pkg:/images/ui/r40.9.png" width="660" height="840" blendColor="0x1F1F1FB8" />
+      <Poster id="cardRing" uri="pkg:/images/ui/r40_ring2.9.png" width="660" height="840" blendColor="0xFFFFFF24" />
+      <AuthQrCode id="qr" qrSize="420" padding="20" translation="[110, 52]" />
+      <Label id="qrHint" width="560" translation="[50, 536]" horizAlign="center" wrap="true" color="0xEDEDED9E">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+      </Label>
+      <Label id="keyLabel" width="560" translation="[50, 630]" horizAlign="center" color="0xEDEDED66" text="PAIRING CODE">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="20" />
+      </Label>
+      <Label id="keyText" width="560" translation="[50, 664]" horizAlign="center" color="0xEDEDEDFF">
+        <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="34" />
+      </Label>
+      <Label id="addressText" width="560" translation="[50, 730]" horizAlign="center" color="0xEDEDED66">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="22" />
+      </Label>
+    </Group>
+  </children>
+</component>

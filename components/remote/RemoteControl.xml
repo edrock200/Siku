@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Remote control from Silo's phone app (SiloCast, the Roku receiver), on the render thread.
+  MainScene creates one; it runs the LanTask and is reachable as m.global.remoteControl.
+  Port of Android TV's TvSiloCastReceiver decisions for what a Roku can do:
+    - who may control: a phone whose hello names this Roku's server (sealed level: and that
+      holds the pairing key from Connect a Phone);
+    - handoff_offer: the profile Siku plays as answers handoff_ready at once; another profile or
+      server takes the remote-playback device-code handoff (handoff_challenge, the phone
+      approves, handoff_ready) and Siku plays on that borrowed, never-saved identity until the
+      phone leaves or nothing has played for 10 minutes;
+    - launch: opens PlayerScreen with the phone's file, audio ordinal, combined subtitle ordinal
+      and start position; control: forwarded to the player (remoteCommand);
+    - state: PlayerScreen publishes it (RemoteState_publish); idle "Ready" otherwise.
+  Fields
+    pairing        in   {mode: ""|"setup"|"login", srv}: set by the server and sign-in screens
+    reloadPrefs    in   set after Connect a Phone changed a Remote Control setting
+    disconnectAll  in   the TV's own "Disconnect phones"
+    endBorrowed    in   a reason; ends a borrowed phone identity now (its session expired)
+    launchRequest  out  PlayerScreen params for MainScene to open
+  Console lines: [siku-cast] (decisions; never tokens).
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="RemoteControl" extends="Group">
+  <interface>
+    <field id="pairing" type="assocarray" onChange="pushConfig" />
+    <field id="reloadPrefs" type="boolean" alwaysNotify="true" onChange="onReloadPrefs" />
+    <field id="disconnectAll" type="boolean" alwaysNotify="true" onChange="onDisconnectAll" />
+    <field id="endBorrowed" type="string" alwaysNotify="true" onChange="onEndBorrowed" />
+    <field id="launchRequest" type="assocarray" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/remote/RemoteControl.brs" />
+  <script type="text/brightscript" uri="pkg:/components/remote/RemotePrefs.brs" />
+  <script type="text/brightscript" uri="pkg:/components/lan/LanBytes.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Api.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
+  <children>
+    <Timer id="pollTimer" repeat="false" />
+    <Timer id="endTimer" repeat="false" />
+    <Timer id="activateTimer" repeat="false" duration="8" />
+  </children>
+</component>

@@ -454,6 +454,7 @@ sub openProfilePanel()
         { id: "notifications", label: "Notifications", icon: "notifications" },
         { id: "-" },
         { id: "settings", label: "Settings", icon: "settings" },
+        { id: "connect_phone", label: "Connect a Phone", icon: "phone" },
         { id: "switch_server", label: "Switch Server", icon: "dns" },
         { id: "sign_out", label: "Sign Out", icon: "logout" }
     ]
@@ -553,6 +554,12 @@ sub onProfileAction(id as string)
         closePanel()
         focusBar(avatarIndex)
         Nav_push("SettingsScreen", {})
+    else if id = "connect_phone" then
+        ' Siku addition: remote control from Silo's phone app (Android TV has no such screen;
+        ' the phone's copy sends Roku users to "Connect a Phone" in the profile menu).
+        closePanel()
+        focusBar(avatarIndex)
+        Nav_push("ConnectPhoneScreen", {})
     else if id = "switch_server" then
         closePanel()
         Session_clearServer()
