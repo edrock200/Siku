@@ -12,11 +12,29 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - run: npm install --no-audit --no-fund
+      - run: pip install cryptography
       - name: Lint BrightScript and SceneGraph XML
         run: npm run lint
       - name: Package side-loadable zip
         run: npm run package
+      - name: Check the package (manifest images, secrets, LAN URLs, v1 API, SPDX headers)
+        run: python3 tools/package_check.py out/siku.zip
+      - name: Host tests (production BrightScript in brs-cli)
+        run: python3 -m unittest discover -s tests -v
+      - name: Seek-preview cases
+        run: python3 tools/trickplay_test.py
+      - name: LAN vectors (sealed frames, framing, mDNS)
+        run: python3 tools/lan_vectors.py
+      - name: Buffering-quality conformance vectors
+        run: |
+          # The server's contract file; it is not copied into this repository.
+          curl -fsSL -o "$RUNNER_TEMP/bq-vectors.json" \
+            https://raw.githubusercontent.com/Silo-Server/silo-server/main/docs/design/schemas/buffering-quality/v1/vectors.json
+          python3 tools/bq_vectors.py --vectors "$RUNNER_TEMP/bq-vectors.json"
       - uses: actions/upload-artifact@v4
         with:
           name: siku
