@@ -30,6 +30,8 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Playback | Up Next with artwork and an On Deck row; Resolution / Maximum Bitrate settings; lower quality when buffering (automatically, ask first or never) and a connection speed test | 🟡 needs device testing |
 | Detail | Trailers & More row and a Trailer button next to Play: the server's trailers and extras play in Siku; YouTube trailers open the YouTube channel, or show a link and QR code | 🟡 needs device testing (YouTube hand-off) |
 | Detail | Optional theme music, "Translated by AI" marks | 🟡 needs device testing |
+| Phone | Control Siku from Silo's phone app (cast button or Profile › Connect a Phone QR code), and sign Siku in from the phone | 🟡 needs device testing |
+| Playback | Seek-bar preview pictures, hold Left/Right to fast-scan, audio and subtitle choices remembered for the whole series | 🟡 needs device testing |
 | Profiles | "Who's watching?" at launch (Profile Selection setting), recovery when an administrator changes access | ✅ simulator, device pending |
 | Settings | Spoilers (hide unwatched episodes' pictures and descriptions), hidden libraries, remembered sort and filters | ✅ simulator, device pending |
 | Settings | Android TV's General, Playback, Subtitles and Server pages (quality and bandwidth, Dolby Vision, skip intro/credits, auto-play, home sections, cards), synced with your Silo profile | ✅ |

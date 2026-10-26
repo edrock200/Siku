@@ -1731,8 +1731,8 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/v2/auth/device" and method == "GET":
             # The phone's lookup of a code before it approves (match code, purpose).
             uc = q.get("user_code", [""])[0] if isinstance(q.get("user_code"), list) else q.get("user_code", "")
-            for code, h in STATE.get("handoffs", {}).items():
-                if h["user_code"] == uc:
+            for code, ho in STATE.get("handoffs", {}).items():
+                if ho["user_code"] == uc:
                     return self.send(200, {"user_code": uc, "match_code": "warm pony", "client_purpose": "remote_playback", "temporary": True})
             return self.send(200, {"user_code": uc, "match_code": "warm pony", "client_purpose": "device_login", "temporary": False})
         if p == "/api/v2/auth/device/approve" and method == "POST":
@@ -1741,12 +1741,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"status": "approved"})
         if p in ("/api/v2/auth/device/approve-handoff", "/api/v2/auth/device/deny") and method == "POST":
             uc = b.get("user_code", "")
-            for code, h in STATE.get("handoffs", {}).items():
-                if h["user_code"] == uc:
+            for code, ho in STATE.get("handoffs", {}).items():
+                if ho["user_code"] == uc:
                     if p.endswith("deny"):
-                        h["denied"] = True
+                        ho["denied"] = True
                     else:
-                        h["profile_id"] = self.headers.get("X-Profile-Id") or "p-owner"
+                        ho["profile_id"] = self.headers.get("X-Profile-Id") or "p-owner"
                     return self.send(200, {"status": "approved" if not p.endswith("deny") else "denied"})
             return self.problem(404, "not_found", "Unknown user code")
         if p == "/api/v2/auth/device/cancel":

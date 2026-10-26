@@ -3,6 +3,27 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.23
+
+Brings Siku up to date with Silo's Android app as of October 26, 2026.
+
+**New**
+- **Control Siku from your phone.** In Silo's app on your phone, tap the cast button and pick this Roku, or scan the code in Siku under **Profile › Connect a Phone**. You can start a title, pause, seek, change audio and subtitles, or mute, and the phone shows what's playing. If the phone uses another profile, Siku plays as that profile and switches back afterwards. Remote Control can be turned off in Connect a Phone; by default only a phone that scanned the code can connect.
+- **Sign Siku in from your phone.** While Siku shows its server or sign-in screen, Silo's phone app offers to set up this Roku. Allow it on the TV and confirm the code on the phone.
+- **Seek previews.** While you move along the seek bar, a picture of that moment appears above it (when your server has made previews for the video).
+- **Fast-scan with a preview.** Hold Left or Right while watching to scan faster and faster with a preview; tap Left/Right to change speed, OK to jump there, Back to cancel. A quick tap still skips as before.
+
+**Changed**
+- Audio and subtitle choices you make in the player or on a title's page now apply to the whole series (or the movie) and to your profile's other devices. Choosing Auto on the title page goes back to your profile's defaults.
+- Subtitle appearance and the subtitle delay now follow your profile to every device. Turn on **Only on This Device** to keep a separate style and delay on this Roku.
+- With subtitles Off and "Show Forced Subtitles" on, forced subtitles for foreign-language dialogue still appear.
+- The **Trailer** button has a film-strip icon, so it no longer looks like the Version button.
+
+**Fixed**
+- Changing quality no longer leaves you on the old file when the server switches to another version of the title. If that version doesn't have your subtitles, they turn off for now and the next episode picks them again.
+
+**Needs testing on a real Roku:** phone discovery and remote control (the debug log `telnet <roku-ip> 8085` prints `[siku-lan]`, `[siku-cast]` and `[siku-pair]` lines), seek previews (`[siku-trickplay]`), and holding Left/Right to scan.
+
 ## v0.1.22
 
 - **New:** a **Trailer** button next to Play on movies and shows that have a trailer. It plays the server's own trailer, or opens the YouTube trailer when there isn't one. Other extras (featurettes, deleted scenes) stay in the Trailers & More row further down the page.

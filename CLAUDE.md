@@ -101,6 +101,11 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
 - `[siku-trailer]` lines trace a "Trailers & More" pick: a local extra's start, or the YouTube
   hand-off (installed check, `LaunchApp`, ECP status, outcome). `[siku-theme]` lines show the
   theme-music capability, grant (delivery, type, loop) and Audio errors; grant URLs are never printed.
+- Phone features (`components/lan/`, `components/remote/`): `[siku-lan]` (sockets, sealed frames,
+  mDNS bind/answers), `[siku-cast]` (remote control: handoff, launch, commands, borrowed profile),
+  `[siku-pair]` (phone sign-in). Keys, nonces and tokens are never printed. `tools/silo_phone.py`
+  acts as Silo's phone app against the simulator; `tools/lan_vectors.py` checks the crypto and
+  framing against the phone's own test vectors.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 
