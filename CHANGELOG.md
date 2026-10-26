@@ -3,6 +3,31 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.24
+
+Improvements inspired by another Roku client for Silo, [ManavA/silo-roku](https://github.com/ManavA/silo-roku), adapted to Siku.
+
+**New**
+- **Find servers on your network.** The server screen now lists servers found on your home network. Pick one and confirm it; Siku checks the server is the one it claims to be before connecting. You can still type an address while it searches, and it tells you when none were found.
+- **Original picture with sound on newer servers.** On servers updated after October 26, 2026, titles the server repackages can keep their original video (including 4K, HEVC and HDR10) instead of being converted to H.264. Jumping far ahead or back in such a title asks the server to restart the stream there. Dolby Vision profile 7 files play as their HDR10 picture. If these titles play without sound or fail on your Roku, turn off **Settings › Playback › Experimental: MPEG-TS Copy**.
+- **Screen reader.** With Roku's screen reader on, Siku reads out buttons, tabs, settings, the PIN pad and the profile picker as you move between them. It never reads passwords or PINs.
+
+**Changed**
+- **Playback recovers by itself.** When a video fails or keeps stalling, Siku asks your server for another way to play it, and on Auto quality steps down 1080p → 720p → 480p. A quality you picked yourself is kept.
+- **Numbered errors.** Playback errors show a number, such as "#3001 … (Roku -5)", so a report can say exactly what failed, and Siku tells your server what went wrong.
+- A title that shows no playable file is checked once more before Siku gives up.
+- Siku copes better when your Roku runs low on memory: screens you are not looking at let go of their pictures and reload them when you come back. Pictures also load at the size they are shown.
+- Phone remote control and phone sign-in are steadier on busy networks: a slow phone can no longer hold up the TV.
+- Roku now measures Siku's start-up correctly: it ends when Home is on screen, and time spent signing in or choosing a profile doesn't count.
+
+**Fixed**
+- Home's background picture could go black after a picture reloaded.
+- Numbers a server sends as text are read correctly.
+- Siku ignores oversized or malformed answers from devices on the network, double-checks secure (https) connections, and refuses server addresses crafted to reach anything but the server's current API.
+- The device console no longer shows audio stream links.
+
+**Needs testing on a real Roku:** Find servers (the debug log `telnet <roku-ip> 8085` prints `[siku-lan] mdns step` and `discovery complete` lines), whether repackaged titles play with sound (`[siku-playback]` shows `tscopy=true` and `seg=mpegts`), playback recovery (`recovery <n>` lines), the screen reader, and low-memory behaviour.
+
 ## v0.1.23
 
 Brings Siku up to date with Silo's Android app as of October 26, 2026.

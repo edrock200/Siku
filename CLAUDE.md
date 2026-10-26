@@ -18,6 +18,8 @@ API spec. `docs/upstream/` holds requests we have written for the Silo server te
 ## Build, lint, test
 - `npm install` once, then `npm run lint` (BrighterScript, must report 0 errors) and
   `npm run package` (writes `out/siku.zip`, the side-loadable channel).
+- Host tests: `python3 -m unittest discover -s tests`, and `python3 tools/package_check.py` after
+  packaging (both run in CI with `trickplay_test.py`, `lan_vectors.py`, `bq_vectors.py`).
 - Before finishing any change: lint clean, then run the affected screen in the simulator against
   the mock server. See the `roku-brightscript` skill for the exact commands. The simulator cannot
   play video, does not clip list items, searches `findNode` differently and reports a 720p stereo
@@ -122,6 +124,10 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   `[siku-pair]` (phone sign-in). Keys, nonces and tokens are never printed. `tools/silo_phone.py`
   acts as Silo's phone app against the simulator; `tools/lan_vectors.py` checks the crypto and
   framing against the phone's own test vectors.
+- `[siku-launch]` lines show the launch beacons (`beacon AppLaunchComplete`, `ready: home`);
+  `[siku-memory]` lines show a memory warning (`pressure`) and screens that `released` /
+  `restored` pictures; `[siku-a11y] say:` appears with `debugA11y=1` (forces speech in the
+  simulator). `debugMemory=<pct>` replays a memory warning once a second screen opens.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

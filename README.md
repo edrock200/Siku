@@ -17,6 +17,7 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Area | Feature | Status |
 |---|---|:---:|
 | Connect | Enter a server address, verify it, remember several servers | ✅ |
+| Connect | Find servers on this network (mDNS), with an identity check before connecting (new in 0.1.24) | 🟡 simulator-tested, needs device testing |
 | Sign in | Username and password | ✅ |
 | Sign in | Sign in with a code or QR from your phone (device sign-in) | ✅ |
 | Profiles | Profile picker, PIN-protected profiles, switch profile | ✅ |
@@ -25,12 +26,14 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Browse | Library grids with sort and filters, collections, A‑Z rail; audiobook Authors / Series groups; music Genres | ✅ |
 | Detail | Movies, series (seasons and episodes), episodes, cast, person pages | ✅ |
 | Discover | Search, For You (Watchlist and Favorites), release Calendar | ✅ |
-| Playback | Direct Play or Transcode chosen by the server from the Roku's real capabilities (4K, Dolby Vision, HDR10/HDR10+/HLG, surround passthrough) | ✅ (Silo's lighter remux route awaits a server-side packaging change, [details](docs/upstream/silo-server-roku-hls-audio.md)) |
+| Playback | Direct Play or Transcode chosen by the server from the Roku's real capabilities (4K, Dolby Vision, HDR10/HDR10+/HLG, surround passthrough) | ✅ (the lighter MPEG-TS copy route on servers from Oct 26, 2026 is new in 0.1.24 and needs device testing; Settings › Playback › Experimental: MPEG-TS Copy turns it off; [details](docs/upstream/silo-server-roku-hls-audio.md)) |
 | Playback | Resume, progress sync, mark watched, Skip Intro, Up Next, audio and version selection, automatic subtitles from your Off / Auto / Always setting | ✅ |
 | Playback | Up Next with artwork and an On Deck row; Resolution / Maximum Bitrate settings; lower quality when buffering (automatically, ask first or never) and a connection speed test | 🟡 needs device testing |
 | Detail | Trailers & More row and a Trailer button next to Play: the server's trailers and extras play in Siku; YouTube trailers open the YouTube channel, or show a link and QR code | 🟡 needs device testing (YouTube hand-off) |
 | Detail | Optional theme music, "Translated by AI" marks | 🟡 needs device testing |
 | Phone | Control Siku from Silo's phone app (cast button or Profile › Connect a Phone QR code), and sign Siku in from the phone | 🟡 needs device testing |
+| Playback | Automatic recovery (another route, lower quality on Auto), numbered errors reported to the server (new in 0.1.24, [codes](docs/playback-errors.md)) | 🟡 simulator-tested, needs device testing |
+| Accessibility | Roku screen reader reads buttons, tabs, settings, PIN pad and profiles; low-memory handling; launch timing beacons (new in 0.1.24) | 🟡 simulator-tested, needs device testing |
 | Playback | Seek-bar preview pictures, hold Left/Right to fast-scan, audio and subtitle choices remembered for the whole series | 🟡 needs device testing |
 | Profiles | "Who's watching?" at launch (Profile Selection setting), recovery when an administrator changes access | ✅ simulator, device pending |
 | Settings | Spoilers (hide unwatched episodes' pictures and descriptions), hidden libraries, remembered sort and filters | ✅ simulator, device pending |

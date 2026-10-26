@@ -207,7 +207,16 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
   datagram byte counts. Device checks still open: `[siku-lan] mdns step` lines on a Roku with
   AirPlay (shared 5353?), Find servers against a real Silo server (`discovery complete: N`,
   `found server identity ... matched=true`), and the `send queue full` / `send stalled` paths.
-- Silo's phone keys a server by base64url of its URL (`Lan_serverIdFor`) and matches by that or
+- `roAudioGuide` lives in a Task (A11yTask), never on the render thread; spoken text is label,
+  role and position only, never a value, PIN, address or URL.
+- brs-cli `ParseJson` objects are case-sensitive, unlike Roku event objects: read a device event
+  field under both spellings. brs-cli also returns false for `invalid = true` instead of throwing,
+  so pitfall 16 cannot be caught by host tests.
+- Releasing a hidden screen's Posters (memory warnings) fires their `loadStatus` observers; a
+  crossfade must ignore its own front layer reloading (Home's backdrop went black).
+- Host tests (`tools/brs_test.py`, `tests/`) give `m.global` a `hasField`; anything else a node
+  does (observers, `getField` on children) still needs the simulator.
+ of its URL (`Lan_serverIdFor`) and matches by that or
   by the deployment identity (`/api/v2/system/identity` `server_id`, Siku's `session.serverId`).
 - A Roku channel has no background state: it runs or it is closed, and Home closes it without
   notice. "Time away" rules (Profile Selection) measure from a periodically written last-active
@@ -277,11 +286,14 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
    `debugScreen=ServerConnectScreen,debugLanSelf=1` (the deep link lets the strict reader accept
    this machine's non-private address); `--scenario conflict|wrongport|badtxt|many|second` covers
    the refusals. On a real network run it without `--raw-to` from a machine on the Roku's LAN.
-7. Build: `npm run package` → `out/siku.zip`. Side-load on a Roku in developer mode
+7. Host tests: `python3 -m unittest discover -s tests` (pure BrightScript functions run in brs-cli)
+   and, after `npm run package`, `python3 tools/package_check.py` (manifest images, no secrets,
+   LAN/loopback URLs, v1 paths, webhooks, SPDX headers). CI runs both.
+8. Build: `npm run package` → `out/siku.zip`. Side-load on a Roku in developer mode
    (`http://<roku-ip>`, user `rokudev`) and watch `telnet <roku-ip> 8085` for errors. A compile
    error prints `Syntax Error ... in pkg:/...(line)`; a runtime crash prints a full backtrace with
    local variables, which is the single most useful thing to paste into a bug report.
-8. Playback changes: on the device, play one direct-play title and one that needs a server route,
+9. Playback changes: on the device, play one direct-play title and one that needs a server route,
    and read the two `[siku-playback]` lines (declared caps | request | decision). Open the debug
    screens with `curl -d '' "http://<roku-ip>:8060/launch/dev?debugScreen=StreamTestScreen"`
    (ECP needs POST; `&debugUrl=<url-encoded>` adds a stream) to test a packaging claim against
@@ -343,3 +355,4 @@ released version is missing here.
 - **v0.1.21** Catch-up with Silo Android TV (Oct 6–24): built by four agents in parallel worktrees and merged. Lessons: parallel simulator runs need their own mock port (`debugPort=`) and share one brs-cli registry; two features adding the same `onSettingsLoaded`/`settingsLoaded` hook collide at merge; a channel hand-off can only be verified on a device. Device checks pending: YouTube hand-off (`mediaType`), theme music, buffering lowering (`observed=` must be non-zero on HLS), speed test `method=`, HLS subtitle rendition selection. The release from a session branch tagged the default branch's commit (the action's default); `release.yml` now passes `target_commitish: ${{ github.sha }}`.
 - **v0.1.22** Trailer button next to Play (a Siku addition; Android TV has only the Trailers & More row). Nothing new about the device; first release tagged on the built commit (`target_commitish`).
 - **v0.1.23** Catch-up with Silo Android (Oct 24–26): phone remote control and phone sign-in (LAN sockets, sealed frames, mDNS), seek previews, series audio/subtitle memory. Lessons: `FormatJson` lower-cases dotted keys (quote wire keys); a socket stored directly in `m.` of a Task is disposed in brs-engine; a loop variable can shadow a module helper in `tools/mock_server.py` (it broke "similar titles"). Device checks pending: mDNS bind on 5353, listening sockets, Roku crypto vs vectors, Video `mute`.
+- **v0.1.24** Ideas from ManavA/silo-roku adapted in four parallel branches: MPEG-TS copy remux (`hls_copy_mpegts_v1`, delivery-scoped feature) with `seek_reanchor`, failure recovery with `attempted_plan_keys`, numbered errors and route reports, Find servers (strict mDNS reader), non-blocking LAN sends, screen reader, memory release, launch beacons, host tests and a package check. Lessons: a merged branch's tests can encode the pre-merge behaviour (DV 5/7/8), so run the whole suite after each merge; never nest `for each` over one array in brs-engine; a Task misses field changes made before it observes them. Device checks pending: TS copies with sound, mDNS bind beside AirPlay, recovery ladder, roAudioGuide, roAppMemoryMonitor.
