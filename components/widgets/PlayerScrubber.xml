@@ -4,7 +4,7 @@
   fill, intro/credits/recap ranges and chapter ticks, a puck, and the remaining time ("-1:23:45").
   Fields: duration, position (source seconds), scrubPosition, scrubbing, markers [{kind,start,end}],
           chapters [{start_seconds}], buffered (source seconds downloaded ahead; < 0 hides the lighter
-          buffered segment), width (default 1600). Make it focusable; the screen handles keys.
+          buffered segment), width (default 1600); puckX (output, the puck's centre). Make it focusable; the screen handles keys.
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="PlayerScrubber" extends="Group">
@@ -18,6 +18,8 @@
     <field id="chapters" type="array" onChange="redraw" />
     <field id="width" type="integer" value="1600" onChange="redraw" />
     <field id="rateLabel" type="string" onChange="redraw" />
+    <!-- Output: the puck's centre x in the scrubber's coordinates (the seek preview card follows it). -->
+    <field id="puckX" type="float" value="0" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/PlayerScrubber.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />

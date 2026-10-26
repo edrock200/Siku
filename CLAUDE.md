@@ -83,12 +83,16 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   and `ll` for buffering quality). Player errors print `[siku-playback] video error …`. Other
   lines: `subtitle auto:` (the track chosen automatically), `markers file=` (the playing file's
   markers), `hls subtitle rendition …` (selected or not found), `buffering replan …` / `buffering
-  plan=…` (a lowering and each plan's stall summary), `speed test outcome=…`.
+  plan=…` (a lowering and each plan's stall summary), `speed test outcome=…`. `[siku-trickplay]`
+  lines: the seek-preview manifest (geometry, sheet count, `expires_in`, renewals), a refused or
+  unusable manifest, and sheets that failed to load (never the signed URLs).
 - Debug screens open with `curl -d '' "http://<roku-ip>:8060/launch/dev?debugScreen=<Name>"`
   (ECP needs POST): `StreamTestScreen` (plays reference HLS streams, the last Silo stream or
   `&debugUrl=`, logs `[siku-streamtest]` state and track counts), `FontTestScreen` (label and
   9-patch rendering). Simulator deep links: `debugSession=mock`, `debugScreen`, `debugItem`,
-  `debugFile` (mock 4K files 52 and 56; 56 always remuxes), `debugUrl`.
+  `debugFile` (mock 4K files 52 and 56; 56 always remuxes), `debugUrl`, `debugHoldSeek=1`
+  (PlayerScreen starts hold-to-seek as a held Right would; the simulator cannot hold keys). The
+  mock serves seek previews for file 42 (`--trickplay ok|off|refused|invalid|expiring`).
 - `[siku-trailer]` lines trace a "Trailers & More" pick: a local extra's start, or the YouTube
   hand-off (installed check, `LaunchApp`, ECP status, outcome). `[siku-theme]` lines show the
   theme-music capability, grant (delivery, type, loop) and Audio errors; grant URLs are never printed.

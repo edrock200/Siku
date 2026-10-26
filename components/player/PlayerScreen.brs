@@ -66,6 +66,7 @@ sub init()
 
     m.di = CreateObject("roDeviceInfo")
     m.started = false
+    m.hsDebugDone = false
     m.autoAdvances = 0   ' consecutive Up Next countdowns that played by themselves (Still Watching Prompt)
     ' The running shuffle this player plays picks from ({id, latest, exhausted}); invalid outside a
     ' shuffle. It outlives resetPlaybackState() because it spans every chained pick.
@@ -114,6 +115,9 @@ sub init()
     m.picker.observeField("dismissed", "onPickerDismissed")
     Subs_init()
     Bufq_init()
+    Trickplay_init()
+    HoldSeek_init()
+    m.scrubber.observeField("puckX", "placeScrubPreview")
 end sub
 
 ' State for one playback attempt (reset again when Up Next chains to another episode).
@@ -187,6 +191,8 @@ sub resetPlaybackState()
     m.waitingForToken = false
     if m.subs <> invalid then Subs_resetPlayback()
     if m.bq <> invalid then Bufq_resetPlayback()
+    if m.hs <> invalid then HoldSeek_stop()
+    if m.tp <> invalid then Trickplay_reset()
 end sub
 
 ' ---------- Lifecycle ----------
@@ -598,6 +604,15 @@ sub onStart(event as object)
     ' One line per start for the debug console (telnet 8085): declared caps, request, decision.
     print PlaybackCaps_diagLine(m.lastRequestBody, d.playback_plan)
     applyPlan(d.playback_plan, { mountKind: "start" })
+    ' Seek-bar previews follow the streamed file.
+    Trickplay_bind(m.itemId, planFileId(d.playback_plan))
+    ' Simulator aid (deep link debugHoldSeek=1): the simulator cannot hold a key, so a Right press
+    ' that is never released starts a hold-seek session as a held key would.
+    if m.top.params <> invalid and PlaybackCaps_truthy(m.top.params.debugHoldSeek) and not m.hsDebugDone then
+        m.hsDebugDone = true
+        print "[siku-trickplay] debugHoldSeek: holding Right"
+        HoldSeek_press(1)
+    end if
     ' Every new session reads the playing file's markers again (the start may also have landed on
     ' another version than the one asked for).
     if planFileId(d.playback_plan) <> m.markersFileId then
@@ -1008,6 +1023,8 @@ sub exitPlayer()
     m.hideTimer.control = "stop"
     m.subsSyncTimer.control = "stop"
     m.subsAiTimer.control = "stop"
+    HoldSeek_stop()
+    Trickplay_reset()   ' empties the sheet Posters (texture memory)
     hadSession = m.sessionId <> ""
     Bufq_onStopped()
     m.bufqTimer.control = "stop"
@@ -1035,6 +1052,8 @@ sub onScreenHidden()
     m.hideTimer.control = "stop"
     m.subsSyncTimer.control = "stop"
     m.subsAiTimer.control = "stop"
+    HoldSeek_stop()
+    Trickplay_reset()
     Bufq_onStopped()
     m.bufqTimer.control = "stop"
     m.video.control = "stop"
@@ -1056,6 +1075,7 @@ sub setBuffering(on as boolean)
 end sub
 
 sub showError(msg as string)
+    HoldSeek_stop()
     setBuffering(false)
     m.controls.visible = false
     m.hud.visible = false
@@ -1248,11 +1268,21 @@ sub applyScrubDelta(delta as integer)
     if m.duration > 0 and p > m.duration then p = m.duration
     m.scrubPos = p
     m.scrubber.scrubPosition = p
+    Trickplay_show(p, "card")
+    placeScrubPreview()
 end sub
 
 sub endHold()
     m.holdTimer.control = "stop"
     m.scrubber.rateLabel = ""
+    placeScrubPreview()
+end sub
+
+' Keeps the seek preview card over the scrubber's puck (and above the rate chip while it shows).
+sub placeScrubPreview()
+    if not m.scrubbing then return
+    t = m.scrubber.translation
+    Trickplay_placeCard(Int(t[0]), Int(t[1]), m.scrubber.width, m.scrubber.puckX, m.scrubber.rateLabel <> "")
 end sub
 
 sub commitScrub()
@@ -1260,6 +1290,7 @@ sub commitScrub()
     if m.scrubbing then
         m.scrubbing = false
         m.scrubber.scrubbing = false
+        Trickplay_show(invalid, "")
         seekToSource(m.scrubPos)
     end if
     rearmHide()
@@ -1270,6 +1301,7 @@ sub cancelScrub()
     m.scrubbing = false
     m.scrubber.scrubbing = false
     m.scrubber.position = m.position
+    Trickplay_show(invalid, "")
 end sub
 
 ' ---------- Skip intro / credits ----------
@@ -2645,6 +2677,7 @@ sub onReplan(event as object)
     resumeAt = m.position
     m.video.control = "stop"
     applyPlan(plan, { resumeAt: resumeAt, subtitleTrackId: Subs_selectedTrackId(), mountKind: m.replanKind })
+    Trickplay_bind(m.itemId, planFileId(plan))
     if planFileId(plan) <> m.markersFileId then adoptFileMarkers(planFileId(plan))
     if m.replanKind = "audio" and m.pendingAudioIndex >= 0 then m.chosenAudioIndex = m.pendingAudioIndex
     m.pendingAudioIndex = -1
@@ -2710,9 +2743,12 @@ end sub
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then
         if (key = "left" or key = "right") and m.scrubbing then endHold()
+        if key = "left" then HoldSeek_release(-1)
+        if key = "right" then HoldSeek_release(1)
         return false
     end if
     if m.closing then return true
+    if HoldSeek_active() then return HoldSeek_handleKey(key)
     if m.errorGroup.visible then
         if key = "back" then
             exitPlayer()
@@ -2884,10 +2920,14 @@ function handleCleanKey(key as string) as boolean
         end if
         exitPlayer()
         return true
-    else if key = "left" or key = "rewind" or key = "replay" then
+    else if key = "left" or key = "right" then
+        ' A tap skips on release; a hold starts hold-to-seek (PlayerHoldSeek.brs).
+        if key = "left" then HoldSeek_press(-1) else HoldSeek_press(1)
+        return true
+    else if key = "rewind" or key = "replay" then
         onSkipBack()
         return true
-    else if key = "right" or key = "fastforward" then
+    else if key = "fastforward" then
         onSkipForward()
         return true
     else if key = "down" then
