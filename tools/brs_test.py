@@ -20,7 +20,7 @@ Python use (tests/ does this):
 Each spec runs inside a try/catch in one brs-cli process, so a crash is reported for that call
 (`ok: False, error: ...`) and the next call still runs. `m` keys a spec sets are removed before
 the next spec, and `global` becomes `m.global` (a plain associative array: code that calls
-`m.global.hasField` or observes fields cannot run here). Values come back through FormatJson, so
+observes fields cannot run here; `hasField` is provided). Values come back through FormatJson, so
 `invalid` reads as None; `type` is BrightScript's `Type()` of the result.
 
 Command line:
@@ -116,6 +116,8 @@ def _driver(specs):
         "    end if",
         "    g = spec.global",
         "    if g = invalid then g = {}",
+        "    ' A node's hasField, so code that guards m.global fields runs on the plain array.",
+        "    g.hasField = function(name as string) as boolean : return m.DoesExist(name) : end function",
         "    m.global = g",
         "end sub",
         "",

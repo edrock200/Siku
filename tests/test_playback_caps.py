@@ -27,6 +27,16 @@ def ctx(probe=PROBE_4K_DV, items=None, prefs=None):
     return {"m": {"playbackProbe": probe}, "global": glob(items, prefs)}
 
 
+TS_SERVER = {"features": ["hls_copy_mpegts_v1"], "deliveries": ["server_remux_hls"]}
+PROBE_TS = dict(PROBE_4K_DV, ts={"hevc": True, "audio": ["aac", "ac3", "eac3"], "passthrough": ["ac3", "eac3"]})
+
+
+def ts_ctx(prefs=None):
+    c = ctx(PROBE_TS, prefs=prefs)
+    c["global"]["playbackCaps"] = TS_SERVER
+    return c
+
+
 def has(key, *values):
     return lambda v: all(x in v[key] for x in values)
 
@@ -43,6 +53,12 @@ class Declarations(unittest.TestCase):
              lambda v: v["video_codecs"] == ["h264"] and v["audio_decode_codecs"] == ["aac", "mp3"]
              and v["audio_passthrough_codecs"] == [] and v["hdr_details"]["dolby_vision_profiles"] == []
              and v["hdr_details"]["hdr10"] is False and v["validated_claims"] == [], ctx()),
+            ("hls on a TS-copy server: H.264 + HEVC, TS audio, HDR10 but no DV", d, [["m3u8", "hls"], ["hls"], "hls"],
+             lambda v: v["video_codecs"] == ["h264", "hevc"] and "eac3" in v["audio_decode_codecs"]
+             and v["hdr_details"]["hdr10"] is True and v["hdr_details"]["dolby_vision_profiles"] == [], ts_ctx()),
+            ("MPEG-TS Copy setting off: hls back to H.264 only", d, [["m3u8", "hls"], ["hls"], "hls"],
+             lambda v: v["video_codecs"] == ["h264"] and v["hdr_details"]["hdr10"] is False,
+             ts_ctx(prefs={"tsCopyDisabled": True})),
             ("progressive makes no claims", d, [["mp4"], [], "progressive"], has("validated_claims") and
              (lambda v: v["validated_claims"] == []), ctx()),
             ("never a header refresh", d, [["mkv"], []], lambda v: v["auth_header_refresh"] is False, ctx()),
@@ -54,8 +70,8 @@ class Declarations(unittest.TestCase):
     def test_hdr(self):
         h = "PlaybackCaps_hdrDetails"
         check_cases(self, FILES, [
-            ("4K DV TV: HDR10, HLG, DV 5/7/8 and 4K ceilings", h, [],
-             lambda v: v["hdr10"] and v["hlg"] and not v["hdr10_plus"] and v["dolby_vision_profiles"] == [5, 7, 8]
+            ("4K DV TV: HDR10, HLG, DV 5/8 (never 7) and 4K ceilings", h, [],
+             lambda v: v["hdr10"] and v["hlg"] and not v["hdr10_plus"] and v["dolby_vision_profiles"] == [5, 8]
              and v["hdr10_max_width"] == 3840 and v["hdr10_max_height"] == 2160, ctx()),
             ("profile 7 fallback drops 7", h, [], lambda v: v["dolby_vision_profiles"] == [5, 8],
              ctx(items={"player.dv_profile7_hdr10_fallback": True})),
