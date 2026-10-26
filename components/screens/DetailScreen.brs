@@ -169,6 +169,7 @@ sub showError(msg as string)
     m.errorGroup.visible = true
     m.errorLabel.text = msg
     m.retryBtn.setFocus(true)
+    Launch_ready("detail")
 end sub
 
 sub onItem(event as object)
@@ -192,6 +193,7 @@ sub onItem(event as object)
     m.zoneIndex = 0
     m.actionIndex = 0
     focusZone(0)
+    Launch_ready("detail")
     ensureSettings()
     ThemeMusic_show(m.item)
 
@@ -990,6 +992,7 @@ sub onEpisodes(event as object)
         ' Spoiler protection drops an unwatched episode's still (Content_cardNode) and description.
         node = Content_cardNode(ep, "landscape")
         node.title = Content_episodeCaptionTitle(ep)
+        node.description = Content_episodeCaptionMeta(airDateText(ep.air_date), toInt(ep.runtime)) ' read by the screen reader
         node.addFields({
             eyebrow: ""
             meta: Content_episodeCaptionMeta(airDateText(ep.air_date), toInt(ep.runtime))
@@ -1058,6 +1061,7 @@ sub appendPerson(row as object, p as object, role as string)
     Content_ensureFields(node)
     node.title = Str_orEmpty(p.name)
     node.subtitle = role
+    node.description = role ' read by the screen reader
     node.cardStyle = "circle"
     node.cardInsetY = 32
     node.HDPosterUrl = Url_resolve(p.photo_url)
@@ -1117,6 +1121,7 @@ sub renderTrailers()
         node.addFields({ playGlyph: true })
         node.title = e.title
         node.subtitle = e.subtitle
+        node.description = e.subtitle ' read by the screen reader
         node.cardStyle = "landscape"
         node.cardInsetY = 32
         node.HDPosterUrl = e.thumbUrl

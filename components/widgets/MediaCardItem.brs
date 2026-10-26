@@ -44,6 +44,11 @@ sub onContent()
     m.insetY = 0
     if c.cardInsetX <> invalid then m.insetX = c.cardInsetX
     if c.cardInsetY <> invalid then m.insetY = c.cardInsetY
+    ' Decode the artwork at the card's drawn size (with room for the 1.10 focus zoom) instead of the
+    ' server's full image; the load size must be set before the uri.
+    sz = imageSize()
+    m.image.loadWidth = Int(sz[0] * 1.1)
+    m.image.loadHeight = Int(sz[1] * 1.1)
     m.image.uri = c.HDPosterUrl
     initials = ""
     if c.initials <> invalid then initials = c.initials

@@ -172,6 +172,29 @@ sub applyState()
         m.avatarRing.height = 60
         m.avatarRing.translation = [-2, -2]
     end if
+    announce(focused, fi, tabs)
+end sub
+
+' Screen reader: "Search, button", "Movies, tab, 2 of 6" (", selected" for the committed tab),
+' "Profile menu, button".
+sub announce(focused as boolean, fi as integer, tabs as object)
+    id = "topbar:" + fi.ToStr()
+    if m.a11yLastId <> invalid and m.a11yLastId <> id then A11y_blur(m.a11yLastId)
+    if not focused then
+        if m.a11yLastId <> invalid then A11y_blur(m.a11yLastId)
+        m.a11yLastId = invalid
+        return
+    end if
+    m.a11yLastId = id
+    if fi = -1 then
+        A11y_say(id, "Search", "button", -1, 0)
+    else if fi >= 0 and fi < tabs.Count() then
+        role = "tab"
+        if fi = m.top.selectedIndex then role = "tab, selected"
+        A11y_say(id, Str_orEmpty(tabs[fi].label), role, fi, tabs.Count())
+    else if fi = tabs.Count() then
+        A11y_say(id, "Profile menu", "button", -1, 0)
+    end if
 end sub
 
 sub updateAvatar()

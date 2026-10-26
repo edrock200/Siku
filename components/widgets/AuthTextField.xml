@@ -14,6 +14,8 @@
     disabled      dims and ignores OK
     fieldWidth    width in px (default 760)
     submitted     (out, alwaysNotify) the keyboard closed with OK
+    a11yLabel     the field's name for the screen reader (default: the placeholder). The reader
+                  says the name only, never the value
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="AuthTextField" extends="Group">
@@ -27,8 +29,10 @@
     <field id="disabled" type="boolean" value="false" onChange="render" />
     <field id="fieldWidth" type="integer" value="760" onChange="layout" />
     <field id="submitted" type="boolean" alwaysNotify="true" />
+    <field id="a11yLabel" type="string" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/AuthTextField.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/A11y.brs" />
   <children>
     <Group id="body">
       <Poster id="bg" uri="pkg:/images/ui/r16.9.png" height="84" />

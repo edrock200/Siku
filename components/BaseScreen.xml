@@ -7,6 +7,10 @@
     navigateTo  (out) {screen: "Name", params: {...}, replace: bool, reset: bool} — ask MainScene to open a screen
     close       (out) set true to pop this screen
     result      (out) optional data handed back to the screen below when this one closes
+    memoryRelease  (in) set by MainScene on a memory warning while covered: drop artwork and list
+                   content (Memory.brs); it comes back when the screen is shown again
+    memoryPressure (in) memory warning level (percent) while on top; screens override
+                   onMemoryPressure(level) to drop caches (the player drops seek-preview sheets)
   Back: a screen returns false from onKeyEvent("back") to let MainScene pop it.
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
@@ -18,6 +22,8 @@
     <field id="close" type="boolean" alwaysNotify="true" />
     <field id="result" type="assocarray" />
     <field id="screenResult" type="assocarray" alwaysNotify="true" onChange="onScreenResult" />
+    <field id="memoryRelease" type="boolean" alwaysNotify="true" onChange="onMemoryRelease" />
+    <field id="memoryPressure" type="integer" alwaysNotify="true" onChange="onMemoryPressureChanged" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/BaseScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Theme.brs" />
@@ -29,4 +35,6 @@
   <script type="text/brightscript" uri="pkg:/components/common/Settings.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Spoilers.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Artwork.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/A11y.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Memory.brs" />
 </component>

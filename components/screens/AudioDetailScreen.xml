@@ -16,7 +16,7 @@
   <script type="text/brightscript" uri="pkg:/components/player/AudioTimeline.brs" />
   <children>
     <Rectangle id="bg" width="1920" height="1080" color="0x040D0FFF" />
-    <Poster id="backdrop" width="1920" height="1080" loadDisplayMode="scaleToZoom" opacity="0.16" />
+    <Poster id="backdrop" loadWidth="960" loadHeight="540" width="1920" height="1080" loadDisplayMode="scaleToZoom" opacity="0.16" />
     <Poster id="scrimLeft" uri="pkg:/images/ui/scrim_left.png" width="1300" height="1080" opacity="0.9" />
     <Poster id="scrimBottom" uri="pkg:/images/ui/scrim_bottom.png" width="1920" height="700" translation="[0, 380]" />
     <Group id="page">

@@ -54,6 +54,9 @@ sub Content_fillCard(node as object, card as object, style as string)
     end if
     node.title = title
     node.subtitle = subtitle
+    ' Roku's screen reader reads a focused list item's title and description (the card draws
+    ' its own captions from title/subtitle, so description is for speech only).
+    node.description = subtitle
 
     ' Spoiler protection (Spoilers.brs) drops an unwatched episode's still; the card then shows
     ' series art the server marks as such, else the default artwork.
@@ -67,7 +70,10 @@ sub Content_fillCard(node as object, card as object, style as string)
     end if
     if t = "audiobook_group" then
         node.initials = Content_initials(title)
-        if card.group <> invalid then node.subtitle = Content_groupSubtitle(card.group)
+        if card.group <> invalid then
+            node.subtitle = Content_groupSubtitle(card.group)
+            node.description = node.subtitle
+        end if
     end if
     node.HDPosterUrl = Url_resolve(img)
     node.backdropUrl = Url_resolve(backdrop)
@@ -233,10 +239,13 @@ function Content_metaLine(card as object) as string
 end function
 
 ' A JSON number as a float; 0 for anything else (a string, a bool, invalid).
+' A server number as a float (0 when absent). Numbers sent as strings ("3600") are parsed like
+' Num_or does: the real server and TMDB data sometimes send them that way (skill pitfall 6).
 function Content_num(v as dynamic) as float
     if v = invalid then return 0.0
     t = Type(v)
     if t = "roInt" or t = "roInteger" or t = "Integer" or t = "roFloat" or t = "Float" or t = "roDouble" or t = "Double" or t = "roLongInteger" or t = "LongInteger" then return v * 1.0
+    if t = "roString" or t = "String" then return Val(v.Trim())
     return 0.0
 end function
 

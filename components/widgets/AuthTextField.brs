@@ -64,6 +64,27 @@ sub render()
         m.body.scale = [1.0, 1.0]
     end if
     if m.top.disabled then m.body.opacity = 0.5 else m.body.opacity = 1.0
+    announce(focused)
+end sub
+
+' Screen reader: the field's name and kind only ("Password, secure text field"). The value, typed
+' or masked, is never read; a placeholder that is an example address is said as "Address".
+sub announce(focused as boolean)
+    if not focused then
+        A11y_blur(A11y_id())
+        return
+    end if
+    name = A11y_clean(m.top.a11yLabel)
+    if name = "" then
+        name = A11y_clean(m.top.placeholder)
+        ' "media.example.com" is an example value, not the field's name.
+        if Instr(1, name, " ") = 0 and (Instr(1, name, ".") > 0 or Instr(1, name, ":") > 0) then name = "Address"
+    end if
+    if name = "" then name = "Text field"
+    role = "text field"
+    if m.top.secure then role = "secure text field"
+    if m.top.disabled then role = role + ", unavailable"
+    A11y_say(A11y_id(), name, role, -1, 0)
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean

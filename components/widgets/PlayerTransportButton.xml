@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   88 px transport circle (design-spec §4.10): black 35% with a white glyph at rest, white with a black
-  glyph when focused, no scale. Fields: iconUri, size, buttonSelected (out).
+  glyph when focused, no scale. Fields: iconUri, size, buttonSelected (out), a11yLabel (what the
+  screen reader says; by default a name for the icon, e.g. "Pause").
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="PlayerTransportButton" extends="Group">
@@ -9,8 +10,10 @@
     <field id="iconUri" type="string" onChange="applyState" />
     <field id="size" type="integer" value="88" onChange="applyState" />
     <field id="buttonSelected" type="boolean" alwaysNotify="true" />
+    <field id="a11yLabel" type="string" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/PlayerTransportButton.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/A11y.brs" />
   <children>
     <Poster id="bg" uri="pkg:/images/ui/circle.png" blendColor="0x00000059" />
     <Poster id="icon" blendColor="0xEDEDEDFF" />

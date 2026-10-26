@@ -27,9 +27,9 @@
     <Group id="page">
       <Group id="hero">
         <MaskGroup id="backdropMask" maskUri="pkg:/images/ui/mask_backdrop.png" maskSize="[1229, 756]" translation="[691, 0]">
-          <Poster id="backdrop" width="1229" height="756" loadDisplayMode="scaleToZoom" />
+          <Poster id="backdrop" loadWidth="1229" loadHeight="756" width="1229" height="756" loadDisplayMode="scaleToZoom" />
         </MaskGroup>
-        <Poster id="logo" width="650" height="160" loadDisplayMode="limitSize" visible="false" />
+        <Poster id="logo" loadWidth="650" loadHeight="160" width="650" height="160" loadDisplayMode="limitSize" visible="false" />
         <Label id="titleLabel" width="1080" wrap="true" maxLines="2" color="0xEDEDEDFF" visible="false">
           <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="72" />
         </Label>

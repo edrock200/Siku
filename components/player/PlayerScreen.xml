@@ -40,7 +40,7 @@
     <Rectangle id="bg" width="1920" height="1080" color="0x000000FF" />
     <!-- Up Next artwork. Drawn before the Video node so the video pane shows through it. -->
     <Group id="unBackdropGroup" visible="false">
-      <Poster id="unBackdrop" width="1920" height="1080" loadDisplayMode="scaleToZoom" />
+      <Poster id="unBackdrop" loadWidth="960" loadHeight="540" width="1920" height="1080" loadDisplayMode="scaleToZoom" />
       <Rectangle width="1920" height="1080" color="0x00000099" />
       <Poster uri="pkg:/images/ui/scrim_bottom.png" width="1920" height="500" translation="[0, 580]" opacity="0.9" />
     </Group>

@@ -22,6 +22,7 @@
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/AuthPinDialog.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Theme.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/A11y.brs" />
   <children>
     <Poster uri="pkg:/images/marquee_profiles.jpg" width="1920" height="1080" />
     <Rectangle width="1920" height="1080" color="0x00000059" />

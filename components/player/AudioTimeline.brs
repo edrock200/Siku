@@ -224,6 +224,7 @@ function AudioList_rowNode(parent as object, fields as object) as object
     node.title = Str_orEmpty(fields.title)
     node.number = Str_orEmpty(fields.number)
     node.subtitle = Str_orEmpty(fields.subtitle)
+    node.description = node.subtitle ' read by the screen reader
     node.trailing = Str_orEmpty(fields.trailing)
     node.isCurrent = fields.isCurrent = true
     node.rowId = Str_orEmpty(fields.id)

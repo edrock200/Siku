@@ -262,6 +262,31 @@ sub Hs_updateFocus()
         if rowTop + 84 > 700 then offset = rowTop + 84 - 700
     end if
     m.hsRows.translation = [0, -offset]
+    Hs_announce()
+end sub
+
+' Screen reader for the editor's hand-drawn buttons: "Done, button, 2 of 2", "Move Continue
+' Watching up, button", "Recently Added, shown on Home, button, 3 of 7".
+sub Hs_announce()
+    if not m.hsVisible then return
+    if m.hsRow = -1 then
+        names = ["Edit", "Done"]
+        if m.hsEditing then names[0] = "Done Editing"
+        if m.hsCol >= 0 and m.hsCol < 2 then A11y_say("hs:header:" + m.hsCol.ToStr(), names[m.hsCol], "button", m.hsCol, 2, m.hsEditor)
+        return
+    end if
+    if m.hsRow < 0 or m.hsRow >= m.hsSections.Count() or m.hsRow >= m.hsRowNodes.Count() then return
+    sec = m.hsSections[m.hsRow]
+    cols = m.hsRowNodes[m.hsRow].buttons.Count()
+    if m.hsCol = cols - 1 then
+        state = "shown on Home"
+        if Settings_sectionHidden(sec.id) then state = "hidden from Home"
+        A11y_say("hs:eye:" + sec.id, sec.title + ", " + state, "button", m.hsRow, m.hsSections.Count(), m.hsEditor)
+    else if m.hsCol = 0 then
+        A11y_say("hs:up:" + sec.id, "Move " + sec.title + " up", "button", -1, 0, m.hsEditor)
+    else
+        A11y_say("hs:down:" + sec.id, "Move " + sec.title + " down", "button", -1, 0, m.hsEditor)
+    end if
 end sub
 
 ' ---------- Keys ----------

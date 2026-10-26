@@ -163,6 +163,18 @@ function Num_or(v as dynamic, fallback = 0.0 as float) as float
     return fallback
 end function
 
+' ---------- Launch ----------
+
+' Tells MainScene the first screen is up (Home drawn, a deep-linked title's details shown, video
+' playing), so it signals Roku's AppLaunchComplete beacon once. Later calls do nothing.
+sub Launch_ready(what as string)
+    g = m.global
+    if g = invalid then return
+    if not g.hasField("launchReady") then return
+    if g.launchReady <> "" then return
+    g.launchReady = what
+end sub
+
 ' ---------- Collections ----------
 
 function Arr_or(v as dynamic) as object

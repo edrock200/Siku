@@ -203,6 +203,14 @@ sub renderTiles()
             t.name.translation = [0, 246]
             t.name.color = "0xEDEDED9E"
         end if
+        if focused and m.pinDialog = invalid then
+            ' Screen reader: "Kids, PIN protected, button, 3 of 3".
+            label = t.name.text
+            if i < m.profiles.Count() then
+                if isTrue(m.profiles[i].has_pin) then label = label + ", PIN protected"
+            end if
+            A11y_say("profile:" + i.ToStr(), label, "button", i, m.tiles.Count())
+        end if
     end for
 end sub
 
