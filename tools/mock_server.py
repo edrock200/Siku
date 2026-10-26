@@ -20,6 +20,19 @@ clears one); GET /mock/switch lists them.
   replan_410=1                   POST /playback/{id}/replan answers 410 playback_session_ended
   replan_version=<file id>       a quality_change replan moves to that version, subtitles Off (Silo Android #684)
   user_code=<code>               the device sign-in code to show (default 4821-7730)
+  native_recovery=1              every plan gets its own plan_attempt_key (v3:<file>:<delivery>:<height>);
+                                 a failure_recovery replan skips the keys in attempted_plan_keys (the
+                                 requested quality first, then lower rungs under Auto) and answers a
+                                 terminal (adaptation_exhausted) when none is left; 400 when attempt_count
+                                 is outside 1..8 or more than 16 keys arrive; the quality menus also
+                                 list a 480p rung (docs/playback-errors.md)
+  recovery_terminal=1            with native_recovery: every failure_recovery answers that terminal
+  route_events=accept|reject|bad_receipt
+                                 /playback/capabilities lists playback_route_diagnostics; POST
+                                 /playback/route-events logs the body and answers 202 with the receipt,
+                                 429 (reject) or 202 with another event_id (bad_receipt)
+  empty_inventory=once|always    GET /watch/{id} lists no versions (once: only the first read of each item)
+  start_terminal=<reason>        POST /playback/start answers a terminal decision with that reason
   device_manual=1                device sign-in codes stay pending until POST /api/v2/auth/device/approve
   stale_profile=<profile id>     every request on that profile answers 403
                                  profile_verification_required until GET /api/v2/profiles runs
@@ -1329,6 +1342,9 @@ def playback_decision(sid, position, fid, body=None):
         (body or {}).get("bandwidth_estimate_kbps"), (body or {}).get("bandwidth_estimate_source"), (body or {}).get("observed_throughput_kbps"),
         (body or {}).get("learned_limit"), ",".join((body or {}).get("client_features") or [])), flush=True)
     delivery, reason, recipe, claims, source, qualities, warnings = playback_route(fid, planned_body)
+    if STATE["switches"].get("native_recovery") and not any(q.get("label") == "480p" for q in qualities):
+        # The full ladder reaches 480p (playback-protocol-v3 §10), so the client's descent can be walked.
+        qualities = qualities + [{"label": "480p", "display_name": "480p", "height": 480, "bitrate_kbps": 1500, "preserves_source": False}]
     quality = str((body or {}).get("quality_preference") or "auto").lower()
     features = ["playback_plan_v3", "neutral_playback_v3_contract_v1", "sequenced_progress_v1"]
     active = active_quality_for(delivery, recipe, qualities, quality)
@@ -1413,9 +1429,12 @@ def playback_decision(sid, position, fid, body=None):
     selected = {"audio": {"id": "file:%s:audio:0" % fid, "index": 0}}
     if selected_sub:
         selected["subtitle"] = selected_sub
+    plan_key = "v3:%d" % (len(SUBS["stored"]) + 1)
+    if STATE["switches"].get("native_recovery"):
+        plan_key = "v3:%s:%s:%s" % (fid, delivery, recipe.get("height"))
     return {"protocol_version": 3, "server_features": features,
             "outcome": "playable", "session_id": sid,
-            "playback_plan": {"protocol_version": 3, "plan_id": "plan:%d" % (len(SUBS["stored"]) + 1), "plan_attempt_key": "v3:%d" % (len(SUBS["stored"]) + 1), "session_id": sid,
+            "playback_plan": {"protocol_version": 3, "plan_id": "plan:" + plan_key, "plan_attempt_key": plan_key, "session_id": sid,
                               "delivery": delivery, "decision_reason": reason,
                               "stream": stream,
                               "timeline": timeline,
@@ -1998,6 +2017,13 @@ class Handler(BaseHTTPRequestHandler):
             # read names it with file_id.
             asked = (q.get("file_id") or [""])[0]
             print("WATCH %s file_id=%s" % (m.group(1), asked or "-"), flush=True)
+            empty = STATE["switches"].get("empty_inventory")
+            if empty and (empty == "always" or m.group(1) not in STATE.setdefault("empty_served", set())):
+                STATE.setdefault("empty_served", set()).add(m.group(1))
+                print("WATCH %s empty inventory (%s)" % (m.group(1), empty), flush=True)
+                LOG.append("WATCH empty inventory " + m.group(1))
+                return self.send(200, {"content_id": d["content_id"], "type": d["type"], "title": d["title"], "versions": [],
+                                       "playback_variants": [], "user_data": {}, "series_id": d.get("series_id")})
             vs = []
             for v in d["versions"]:
                 v = dict(v)
@@ -2019,6 +2045,8 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/v2/playback/capabilities":
             caps = {"revision": "1", "state": "available", "allowed": True, "installation_id": "11111111-1111-4111-8111-111111111111",
                     "protocol_versions": [3], "features": ["playback_plan_v3", "sequenced_progress_v1", "trickplay_v1"], "deliveries": ["original_http", "server_transcode_hls"]}
+            if STATE["switches"].get("route_events"):
+                caps["features"].append("playback_route_diagnostics")
             if OPTS["buffering_quality"]:
                 # Buffering quality and the connection speed test (Silo Android #636).
                 caps["features"] += ["buffering_quality_v1", "connection_speed_v1"]
@@ -2056,6 +2084,20 @@ class Handler(BaseHTTPRequestHandler):
             if b.get("manual") and STATE["bq"]["learned_limit"] and (b.get("kbps") or 0) > STATE["bq"]["learned_limit"]["kbps"]:
                 STATE["bq"]["learned_limit"] = None
             return self.send(204)
+        if p == "/api/v2/playback/route-events" and method == "POST":
+            mode = STATE["switches"].get("route_events") or "off"
+            print("ROUTE EVENT " + json.dumps(b, sort_keys=True), flush=True)
+            LOG.append("ROUTE EVENT " + json.dumps(b, sort_keys=True))
+            if mode == "reject":
+                return self.problem(429, "event_rate_limited", "Too many route events")
+            receipt_id = b.get("event_id") if mode != "bad_receipt" else "not-" + str(b.get("event_id"))
+            return self.send(202, {"event_id": receipt_id, "outcome": "accepted"})
+        if p == "/api/v2/playback/start" and method == "POST" and STATE["switches"].get("start_terminal"):
+            reason = STATE["switches"]["start_terminal"]
+            print("START terminal reason=%s" % reason, flush=True)
+            return self.send(201, {"protocol_version": 3, "server_features": ["playback_plan_v3", "neutral_playback_v3_contract_v1", "sequenced_progress_v1"],
+                                   "outcome": "terminal", "playback_attempt_id": b.get("playback_attempt_id"),
+                                   "terminal": {"reason": reason, "message": "The server can't prepare this title (mock %s)." % reason, "retryable": False}})
         if p == "/api/v2/playback/start" and method == "POST":
             sid = uuid.uuid4().hex
             STATE["sessions"][sid] = b
@@ -2077,6 +2119,37 @@ class Handler(BaseHTTPRequestHandler):
             if m.group(1) not in STATE["sessions"]:
                 return self.problem(410, "playback_session_ended", "Session ended")
             start = STATE["sessions"][m.group(1)]
+            if STATE["switches"].get("native_recovery"):
+                keys = b.get("attempted_plan_keys") or []
+                count = b.get("attempt_count")
+                print("RECOVERY op=%s attempt_count=%s attempted_plan_keys=%s failure=%s quality=%s" % (
+                    b.get("operation"), count, json.dumps(keys), json.dumps(b.get("failure")), b.get("quality_preference")), flush=True)
+                LOG.append("RECOVERY " + json.dumps({k: b.get(k) for k in ("operation", "attempt_count", "attempted_plan_keys", "failure", "quality_preference")}))
+                if not isinstance(count, int) or count < 1 or count > 8 or len(keys) > 16:
+                    return self.problem(400, "bad_request", "attempt_count must be 1..8 and attempted_plan_keys at most 16")
+                if b.get("operation") == "failure_recovery" and STATE["switches"].get("recovery_terminal"):
+                    keys = keys + ["*"]  # every failure recovery answers the terminal below
+                if b.get("operation") == "failure_recovery":
+                    fid = start.get("file_id") or "42"
+                    quality = str(b.get("quality_preference") or "auto").lower()
+                    candidates = [quality] + (["1080p-medium", "720p-high", "480p"] if quality == "auto" else [])
+                    for cand in candidates:
+                        tried = dict(b, quality_preference=cand)
+                        decision = playback_decision(m.group(1), b.get("position_seconds") or 0, fid, tried)
+                        dp = decision["playback_plan"]
+                        if dp["delivery"] == "server_remux_hls":
+                            # As below: the planner skips the remux for an H.264 MPEG-TS transcode.
+                            dp.update({"delivery": "server_transcode_hls", "decision_reason": "client_failure_recovery",
+                                       "plan_attempt_key": "v3:%s:server_transcode_hls:1080" % fid, "plan_id": "plan:v3:%s:server_transcode_hls:1080" % fid,
+                                       "effective_recipe": {"video_codec": "h264", "audio_codec": "aac", "width": 1920, "height": 1080, "dynamic_range": "sdr",
+                                                            "audio_channels": 2, "audio_layout": "stereo", "bitrate_kbps": 8000}})
+                        if decision["playback_plan"]["plan_attempt_key"] not in keys and "*" not in keys:
+                            print("RECOVERY answer key=%s delivery=%s" % (decision["playback_plan"]["plan_attempt_key"], decision["playback_plan"]["delivery"]), flush=True)
+                            return self.send(200, decision)
+                    print("RECOVERY answer terminal adaptation_exhausted", flush=True)
+                    return self.send(200, {"protocol_version": 3, "server_features": ["playback_plan_v3", "neutral_playback_v3_contract_v1", "sequenced_progress_v1"],
+                                           "outcome": "terminal", "session_id": m.group(1),
+                                           "terminal": {"reason": "adaptation_exhausted", "message": "Every route was tried.", "retryable": False}})
             decision = playback_decision(m.group(1), b.get("position_seconds") or 0, start.get("file_id") or "42", b)
             plan = decision.get("playback_plan") or {}
             if b.get("operation") == "seek_reanchor":

@@ -56,6 +56,7 @@ sub init()
     m.onDeckRow = m.top.findNode("onDeckRow")
     m.errorGroup = m.top.findNode("errorGroup")
     m.errorLabel = m.top.findNode("errorLabel")
+    m.errorReport = m.top.findNode("errorReport")
     m.retryBtn = m.top.findNode("retryBtn")
     m.errorCloseBtn = m.top.findNode("errorCloseBtn")
     m.picker = m.top.findNode("picker")
@@ -124,6 +125,7 @@ sub init()
     HoldSeek_init()
     m.scrubber.observeField("puckX", "placeScrubPreview")
     Remote_init()
+    Recovery_init()
 end sub
 
 ' State for one playback attempt (reset again when Up Next chains to another episode).
@@ -200,6 +202,7 @@ sub resetPlaybackState()
     if m.bq <> invalid then Bufq_resetPlayback()
     if m.hs <> invalid then HoldSeek_stop()
     if m.tp <> invalid then Trickplay_reset()
+    Recovery_reset()
 end sub
 
 ' ---------- Lifecycle ----------
@@ -262,7 +265,7 @@ sub startPipeline()
     m.focusSink.setFocus(true)
     m.titleLabel.text = Str_orEmpty(p.title)
     if m.itemId = "" then
-        showError("Nothing to play.")
+        PlaybackError_show("1004", { detail: "Nothing to play." })
         return
     end if
     ' Naming the file makes the server fill that version's on-demand markers (Silo Android #527).
@@ -291,7 +294,7 @@ sub onWatch(event as object)
         w = { content_id: m.itemId, "type": "extra", title: Str_orEmpty(p.title), versions: [] }
     end if
     if w = invalid then
-        showError(Api_errorText(resp))
+        PlaybackError_show("1004", { detail: Api_errorText(resp) })
         return
     end if
     ' A series pick this device made that has not landed yet is laid over the server's answer.
@@ -338,7 +341,9 @@ sub onWatch(event as object)
     end if
     if fileId = "" and versions.Count() > 0 then fileId = Str_orEmpty(versions[0].file_id)
     if fileId = "" then
-        showError("This title has no playable file.")
+        ' One fresh read of the item first (docs/playback-errors.md, 1001).
+        if Recovery_rereadInventory() then return
+        PlaybackError_show("1001")
         return
     end if
     m.fileId = fileId
@@ -514,7 +519,7 @@ sub onCapabilities(event as object)
     resp = Api_result(event)
     if m.closing then return
     if not resp.ok or resp.data = invalid then
-        showError(Api_errorText(resp))
+        PlaybackError_show("2001", { detail: Api_errorText(resp) })
         return
     end if
     caps = resp.data
@@ -527,7 +532,9 @@ sub onCapabilities(event as object)
         if f = "sequenced_progress_v1" then hasSeq = true
     end for
     if caps.state <> "available" or caps.allowed <> true or not hasV3 or not hasSeq or Str_isEmpty(caps.installation_id) then
-        showError("Playback isn't available on this server.")
+        number = "2001"
+        if not hasV3 or not hasSeq then number = "2007"
+        PlaybackError_show(number, { detail: "Playback isn't available on this server." })
         return
     end if
     ' deliveries: PlaybackCaps offers the MPEG-TS copy only to a server listing server_remux_hls.
@@ -592,24 +599,30 @@ sub onStart(event as object)
         return
     end if
     if resp.status = 426 then
-        showError("This server needs an update before it can stream to Roku.")
+        PlaybackError_show("2007", { detail: "This server needs an update before it can stream to Roku." })
         return
     end if
     if not resp.ok or resp.data = invalid then
-        showError(Api_errorText(resp))
+        code = ""
+        if resp.error <> invalid then code = Str_orEmpty(resp.error.code)
+        PlaybackError_show(PlaybackError_serverNumber("", code), { detail: Api_errorText(resp) })
         return
     end if
     d = resp.data
     if d.outcome <> "playable" then
         msg = ""
-        if d.terminal <> invalid then msg = Str_orEmpty(d.terminal.message)
+        reason = ""
+        if d.terminal <> invalid then
+            msg = Str_orEmpty(d.terminal.message)
+            reason = Str_orEmpty(d.terminal.reason)
+        end if
         if msg = "" then msg = "This title can't be played right now."
-        showError(msg)
+        PlaybackError_show(PlaybackError_serverNumber(reason, ""), { detail: msg, reason: reason, decision: d })
         return
     end if
     problem = PlaybackCaps_planProblem(d)
     if problem <> "" then
-        showError(problem)
+        PlaybackError_show(PlaybackError_planProblemNumber(d), { detail: problem, decision: d })
         return
     end if
     m.sessionId = Str_orEmpty(d.session_id)
@@ -675,6 +688,7 @@ end sub
 ' opts: { resumeAt: source seconds to continue from, subtitleTrackId: the track to select ("" = off) }.
 sub applyPlan(plan as object, opts = invalid as dynamic)
     if opts = invalid then opts = {}
+    Recovery_notePlan(plan)
     m.plan = plan
     m.plannedAudioApplied = false
     resetBuffered()
@@ -885,15 +899,8 @@ sub onVideoState()
     else if st = "finished" then
         onFinished()
     else if st = "error" then
-        msg = Str_orEmpty(m.video.errorMsg)
-        if msg = "" then msg = Str_orEmpty(m.video.errorStr)
-        ' To the debug console too: the on-screen text is short and the code matters for a bug report.
-        delivery = ""
-        if m.plan <> invalid then delivery = Str_orEmpty(m.plan.delivery)
-        print "[siku-playback] video error delivery=" + delivery + " code=" + Str_orEmpty(m.video.errorCode) + " msg=" + Str_orEmpty(m.video.errorMsg) + " str=" + Str_orEmpty(m.video.errorStr)
-        if msg = "" then msg = "The video could not be played."
-        if m.video.errorCode <> invalid and m.video.errorCode <> 0 then msg = msg + " (" + Str_orEmpty(m.video.errorCode) + ")"
-        showError(msg)
+        ' A failure_recovery replan first, the numbered error when nothing is left (PlaybackRecovery.brs).
+        Recovery_onVideoError(m.video.errorCode, Str_orEmpty(m.video.errorMsg), Str_orEmpty(m.video.errorStr))
     end if
 end sub
 
@@ -2650,7 +2657,12 @@ sub failHlsRendition()
     m.renditionTimer.control = "stop"
     listed = []
     for each a in Arr_or(m.video.availableSubtitleTracks)
-        if a <> invalid and Type(a) = "roAssociativeArray" then listed.Push(Str_orEmpty(a.TrackName) + "|" + Str_orEmpty(a.Description))
+        if a <> invalid and Type(a) = "roAssociativeArray" then
+            ' A sidecar's TrackName is its URL (with a token= fallback): never printed.
+            tn = Str_orEmpty(a.TrackName)
+            if Instr(1, tn, "://") > 0 or Instr(1, LCase(tn), "token") > 0 then tn = "(sidecar url)"
+            listed.Push(tn + "|" + Str_orEmpty(a.Description))
+        end if
     end for
     print "[siku-playback] hls subtitle rendition not found; listed=" + PlaybackCaps_join(listed, ";")
     if m.renditionRecoveryTried or m.plan = invalid or m.sessionId = "" then
@@ -2705,6 +2717,7 @@ sub sendReplan(operation as string, kind as string, failure = invalid as dynamic
     body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, operation, m.qualityPref, m.position, selected, failure)
     if extra <> invalid then body.Append(extra)
     Bufq_decorateBody(body, lowering)
+    Recovery_decorateReplan(body, operation)
     m.lastRequestBody = body
     m.replanKind = kind
     setBuffering(true)
@@ -2714,6 +2727,7 @@ end sub
 sub onReplan(event as object)
     resp = Api_result(event)
     if m.closing then return
+    Recovery_onReplanAnswered()
     if isSessionEndedByServer(resp) then
         setBuffering(false)
         leaveServerEndedSession()
@@ -2726,6 +2740,7 @@ sub onReplan(event as object)
     if m.replanKind = "recovery" then failText = "No sound expected: the server has no other way to stream this file to a Roku"
     if m.replanKind = "bq" then failText = "" ' the buffering controller's own lowering: it re-arms by itself
     if not resp.ok or resp.data = invalid or resp.data.outcome <> "playable" or resp.data.playback_plan = invalid then
+        if Recovery_takeFailedReplan(resp) then return
         setBuffering(false)
         if failText <> "" then m.global.toast = failText
         if m.plan <> invalid and (m.replanKind = "quality" or m.replanKind = "bq") and m.prevQualityPref <> invalid then m.qualityPref = m.prevQualityPref
@@ -2736,6 +2751,7 @@ sub onReplan(event as object)
     end if
     plan = resp.data.playback_plan
     if PlaybackCaps_planProblem(resp.data) <> "" then
+        if Recovery_takeFailedReplan(resp) then return
         setBuffering(false)
         if failText <> "" then m.global.toast = failText
         if (m.replanKind = "quality" or m.replanKind = "bq") and m.prevQualityPref <> invalid then m.qualityPref = m.prevQualityPref

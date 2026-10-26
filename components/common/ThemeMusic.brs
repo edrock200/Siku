@@ -188,7 +188,8 @@ sub ThemeMusic_onState()
             m.themePlaying = false
         end if
     else if st = "error" then
-        print "[siku-theme] audio error " + Str_orEmpty(m.themeAudio.errorCode) + " " + Str_orEmpty(m.themeAudio.errorMsg)
+        ' The grant URL is signed: masked if the Audio node's text quotes it.
+        print "[siku-theme] audio error " + Str_orEmpty(m.themeAudio.errorCode) + " " + CreateObject("roRegex", "[a-z][a-z0-9+.-]*://[^\s]*", "i").ReplaceAll(Str_orEmpty(m.themeAudio.errorMsg), "<url>")
         if m.themeRetry = 0 then
             m.themeRetry = 1
             ThemeMusic_requestGrant()

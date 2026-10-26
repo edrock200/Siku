@@ -79,6 +79,8 @@ function SeekReanchor_send(target as float, reason as string) as boolean
     ' (a seek replan neither records nor clears a learned limit, and never replaces the features).
     body.Delete("quality_preference")
     body.Delete("failure")
+    ' The attempt's tried routes and count go along, as on every replan.
+    Recovery_decorateReplan(body, "seek_reanchor")
     m.reanchorBusy = true
     m.reanchorTarget = target
     m.reanchorFromPlan = Str_orEmpty(m.plan.plan_id)
@@ -95,6 +97,7 @@ end function
 
 sub onSeekReanchor(event as object)
     resp = Api_result(event)
+    Recovery_onReplanAnswered()
     if m.closing then return
     target = m.reanchorTarget
     m.reanchorBusy = false

@@ -10,7 +10,8 @@ sub execute()
     resp = perform(req)
     ' A 401 means the access token was rejected: refresh once (single-flight via AuthTask) and retry.
     ' With no token at all (signed out meanwhile, e.g. the logout call itself) there is nothing to refresh.
-    if resp.status = 401 and req.auth <> false and not Str_isEmpty(m.global.session.accessToken) then
+    ' noRefresh (a playback route event): one attempt with the token at hand, nothing more.
+    if resp.status = 401 and req.auth <> false and not noRefresh(req) and not Str_isEmpty(m.global.session.accessToken) then
         if Auth_refresh(m.global.session.accessToken) then
             resp = perform(req)
         else if Str_isEmpty(m.global.session.refreshToken) then
@@ -47,13 +48,20 @@ sub reportStaleProfile(req as object, resp as object)
     m.global.staleProfile = { profileId: sent.profileId, profileToken: sent.profileToken, serverUrl: sent.serverUrl, at: CreateObject("roDateTime").AsSeconds(), path: path }
 end sub
 
+' True when the caller asked for no token refresh (read loosely: a missing flag is false).
+function noRefresh(req as object) as boolean
+    v = req.noRefresh
+    if Type(v) = "roBoolean" or Type(v) = "Boolean" then return v
+    return false
+end function
+
 function perform(req as object) as object
     session = m.global.session
     method = UCase(Str_orEmpty(req.method))
     if method = "" then method = "GET"
 
     ' Proactive refresh when the token is about to expire.
-    if req.auth <> false and not Str_isEmpty(session.refreshToken) and session.expiresAt > 0 then
+    if req.auth <> false and not noRefresh(req) and not Str_isEmpty(session.refreshToken) and session.expiresAt > 0 then
         if Time_nowSeconds() > session.expiresAt - 60 then
             Auth_refresh(session.accessToken)
             session = m.global.session
