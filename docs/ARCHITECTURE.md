@@ -65,7 +65,12 @@ components/player/
                    tools/bq_vectors.py replays the server's conformance vectors against it
   PlayerBuffering.brs the player's side of it: Video events in, quality_change replans and the
                    "Playback keeps buffering" / "Quality lowered" pill out, request fields
-  PlayerScrubber.* seek bar with the buffered-ahead segment
+  Trickplay.brs    seek-preview manifest validation and the time-to-tile mapping (pure BrightScript;
+                   tools/trickplay_test.py runs its cases in brs-cli)
+  PlayerTrickplay.brs the player's seek previews: manifest reads and renewal, the clipped sheet
+                   Posters (bounded pool), the card over the scrubber and the hold-seek frame
+  PlayerHoldSeek.brs hold Left/Right with the controls hidden: rate ladder, indicator, OK seeks
+  PlayerScrubber.* seek bar with the buffered-ahead segment (reports the puck's x as `puckX`)
 docs/upstream/                  requests written for the Silo server team (Roku HLS audio packaging)
 ```
 
@@ -227,6 +232,20 @@ The pipeline (`components/player/PlayerScreen.brs`, `startPipeline`):
 8. A transcode may carry the selected embedded text subtitle as a WebVTT rendition of its own HLS
    stream (`hls_subtitle_renditions_v1`); the player selects it on the Video node or asks for the
    sidecar plan (`failure_recovery`, `subtitle_hls_rendition_failed`).
+
+9. Seek previews (`PlayerTrickplay.brs`, Silo Android #695): after every start and replan the
+   player binds to the streamed file; if its version says `trickplay_available`, it reads
+   `GET /api/v2/watch/{id}/trickplay?file_id=` and validates it (`Trickplay_fromManifest`). While
+   the focused scrubber scrubs, a 340 px card over the puck shows the thumbnail (320x180) and the
+   time; during a hidden-controls hold seek (`PlayerHoldSeek.brs`) a 480x270 frame sits above the
+   rate chip. Roku cannot crop an image, so the whole sheet is drawn in a Poster inside a Group
+   with `clippingRect` (the window) and offset to the tile; a MaskGroup rounds the corners. Up to
+   three sheets are held (decoded at most 2048 px on a side), the next sheet is prefetched, and the
+   Posters are emptied when the file changes or the player closes. URLs are renewed a minute
+   before `expires_at`, and once per sheet after a failed load; a refused or invalid manifest
+   keeps the time-only preview. Roku's own trick-play thumbnails (BIF on the content node, or HLS
+   image playlists) do not apply: the Video node's trick-play UI is off (`enableUI=false`, our own
+   HUD) and Silo publishes JPEG sprite sheets, not BIF.
 
 Every start and replan prints one `[siku-playback]` line to the device console; see `CLAUDE.md`
 "Diagnostics" for the fields. The device facts behind these choices are in the skill's pitfalls

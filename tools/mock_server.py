@@ -23,6 +23,7 @@ Options that emulate other servers:
   --settings-revision N   settings manifest revision (default 17: spoiler keys; 16 hides them)
   --no-slot-widths        images capability without slot_width_params (older server)
   --empty-library ID      that library holds nothing (empty library vs filters that match nothing)
+  --trickplay MODE        seek-bar previews of file 42: ok | off | refused | invalid | expiring
 Missing artwork: "Velvet Static" has none, "Copper Sky"'s poster 404s, and "Wild Coast" episodes
 have no stills (the default artwork). Home dismissals are kept (PUT/DELETE
 /api/v2/home/dismissals/{surface}/{id}); an episode or series dismissal drops the whole show.
@@ -52,7 +53,7 @@ LOCK = threading.Lock()
 LOG = []
 # Feature switches (main() sets them from the command line).
 OPTS = {"active_quality": True, "ai_fail": False, "ai_transcribe_only": False, "buffering_quality": True, "probe_kbps": 40000,
-        "slot_widths": True, "empty_libraries": set()}
+        "slot_widths": True, "empty_libraries": set(), "trickplay": "ok"}
 
 GENRES = ["Science Fiction", "Drama", "Crime", "Comedy", "Thriller", "Adventure", "Animation", "Documentary"]
 MOVIE_TITLES = [
@@ -348,6 +349,66 @@ def mixed_sections(full=False):
         sct["total_count"] = len(sct["items"])
         out.append(sct)
     return out
+
+
+# Seek-bar previews (trickplay_v1, Silo Android #695). File 42 (every title's 1080p version)
+# publishes them; file 43 and the others do not, so the time-only preview is exercised too. The mock
+# sources play 3000 s, so the default recipe (10 s interval, 300 px tiles of 16:9 video, a 10x8 grid)
+# makes 300 thumbnails on 4 sheets of 3000x1344, the last one partly black. --trickplay picks how
+# the manifest behaves: ok, off (no version reports previews), refused (404), invalid (a sheet
+# missing), expiring (URLs valid for 75 s, so the client renews them a minute early).
+TRICKPLAY_FILES = {"42"}
+TRICKPLAY_GEOMETRY = {"interval_ms": 10000, "thumbnail_width": 300, "thumbnail_height": 168, "tile_columns": 10, "tile_rows": 8}
+TRICKPLAY_DURATION = 3000
+TRICKPLAY_REVISION = "9913"
+TRICKPLAY_SHEETS = {}
+
+
+def trickplay_sig(fid, idx, exp):
+    return hashlib.sha256(("mock-trickplay|%s|%s|%s" % (fid, idx, exp)).encode()).hexdigest()[:16]
+
+
+def trickplay_manifest(fid):
+    g = TRICKPLAY_GEOMETRY
+    count = TRICKPLAY_DURATION * 1000 // g["interval_ms"]
+    per = g["tile_columns"] * g["tile_rows"]
+    n = (count + per - 1) // per
+    life = 75 if OPTS["trickplay"] == "expiring" else 86400
+    exp = int(time.time()) + life
+    sheets = [{"index": i, "url": "/api/v2/artwork/trickplay/%s/%s/%d.%s.jpg?exp=%d&sig=%s"
+               % (fid, TRICKPLAY_REVISION, i, TRICKPLAY_REVISION, exp, trickplay_sig(fid, i, exp))} for i in range(n)]
+    if OPTS["trickplay"] == "invalid":
+        sheets = sheets[:-1]
+    return dict(g, file_id=fid, thumbnail_count=count, sheets=sheets,
+                expires_at=time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(exp)))
+
+
+def trickplay_sheet(fid, idx):
+    """A JPEG sheet of numbered tiles: thumbnail number, its time and a colour that shifts along the file."""
+    key = (fid, idx)
+    if key in TRICKPLAY_SHEETS:
+        return TRICKPLAY_SHEETS[key]
+    g = TRICKPLAY_GEOMETRY
+    tw, th, cols, rows = g["thumbnail_width"], g["thumbnail_height"], g["tile_columns"], g["tile_rows"]
+    count = TRICKPLAY_DURATION * 1000 // g["interval_ms"]
+    im = Image.new("RGB", (tw * cols, th * rows), (0, 0, 0))
+    d = ImageDraw.Draw(im)
+    big = ImageFont.truetype(FONT, 64)
+    small = ImageFont.truetype(FONT, 26)
+    for cell in range(cols * rows):
+        i = idx * cols * rows + cell
+        if i >= count:
+            break  # every sheet has the full grid, black after the last thumbnail
+        x, y = (cell % cols) * tw, (cell // cols) * th
+        c = COLORS[(i // 10) % len(COLORS)]
+        d.rectangle([x, y, x + tw - 1, y + th - 1], fill=tuple(int(v * 0.55) for v in c), outline=(255, 255, 255), width=2)
+        secs = i * g["interval_ms"] // 1000
+        d.text((x + tw // 2, y + th // 2 - 14), "#%d" % i, fill=(255, 255, 255), font=big, anchor="mm")
+        d.text((x + tw // 2, y + th - 28), "%d:%02d:%02d  s%d" % (secs // 3600, secs // 60 % 60, secs % 60, idx), fill=(235, 235, 235), font=small, anchor="mm")
+    buf = io.BytesIO()
+    im.save(buf, "JPEG", quality=80)
+    TRICKPLAY_SHEETS[key] = buf.getvalue()
+    return TRICKPLAY_SHEETS[key]
 
 
 def make_image(kind, key):
@@ -1559,6 +1620,21 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, make_image(kind, name.rsplit(".", 1)[0]), "image/png" if kind == "logo" else "image/jpeg")
         if p.startswith("/mock-media/"):
             return self.send(404)
+        # Signed seek-preview sheets: authorised by the URL alone, like presigned storage, which
+        # refuses a second credential (a client must not send its Silo token here).
+        m = re.match(r"^/api/v2/artwork/trickplay/(\d+)/(\d+)/(\d+)\.(\d+)\.jpg$", p)
+        if m:
+            fid, idx = m.group(1), int(m.group(3))
+            exp = (q.get("exp") or ["0"])[0]
+            auth = "bearer" if self.headers.get("Authorization") else "none"
+            print("TRICKPLAY SHEET file=%s sheet=%d auth=%s" % (fid, idx, auth), flush=True)
+            if auth != "none":
+                return self.problem(400, "validation_failed", "Signed URLs take no other credential")
+            if (q.get("sig") or [""])[0] != trickplay_sig(fid, idx, exp) or int(exp or 0) < time.time():
+                return self.problem(403, "forbidden", "Signature expired or invalid")
+            if Image is None:
+                return self.send(404)
+            return self.send(200, trickplay_sheet(fid, idx), "image/jpeg", {"Cache-Control": "public, max-age=86400, immutable"})
         # Test control (not part of the API): empty or reseed the notifications inbox.
         if p == "/mock/notifications/clear" and method == "POST":
             STATE["notifs"] = []
@@ -1811,6 +1887,16 @@ class Handler(BaseHTTPRequestHandler):
                 events.append({"date": day, "items": [dict(e, title=e["series_title"], episode_title=e["title"], air_date=day,
                                                             local_air_date=day, watched=False, badges=["season_premiere"] if k == 0 else [])]})
             return self.send(200, {"events": events})
+        m = re.match(r"^/api/v2/watch/(.+)/trickplay$", p)
+        if m:
+            fid = (q.get("file_id") or [""])[0]
+            print("TRICKPLAY MANIFEST %s file_id=%s mode=%s profile=%s" % (m.group(1), fid or "-", OPTS["trickplay"], self.headers.get("X-Profile-Id") or "-"), flush=True)
+            d = detail(m.group(1))
+            if not d or fid not in [str(v.get("file_id")) for v in d["versions"]]:
+                return self.problem(404, "not_found", "The item has no such file.")
+            if fid not in TRICKPLAY_FILES or OPTS["trickplay"] in ("off", "refused"):
+                return self.problem(404, "not_found", "No seek previews for this file.")
+            return self.send(200, trickplay_manifest(fid))
         m = re.match(r"^/api/v2/watch/(.+)$", p)
         if m:
             d = detail(m.group(1))
@@ -1831,6 +1917,8 @@ class Handler(BaseHTTPRequestHandler):
                 for kind in ("intro", "recap", "credits", "preview"):
                     v[kind] = ranges.get(kind)
                 v["marker_segments"] = [{"kind": k, "start_seconds": r["start_seconds"], "end_seconds": r["end_seconds"]} for k, r in ranges.items()]
+                # "refused" still reports previews, so the client's refusal path is exercised.
+                v["trickplay_available"] = fid in TRICKPLAY_FILES and OPTS["trickplay"] != "off"
                 vs.append(v)
             return self.send(200, {"content_id": d["content_id"], "type": d["type"], "title": d["title"], "versions": vs,
                                    "series_title": d.get("series_title"),
@@ -1842,7 +1930,7 @@ class Handler(BaseHTTPRequestHandler):
                                    "effective_show_forced_subtitles": settings_effective(self, "playback.show_forced_subtitles", q)["value"]})
         if p == "/api/v2/playback/capabilities":
             caps = {"revision": "1", "state": "available", "allowed": True, "installation_id": "11111111-1111-4111-8111-111111111111",
-                    "protocol_versions": [3], "features": ["playback_plan_v3", "sequenced_progress_v1"], "deliveries": ["original_http", "server_transcode_hls"]}
+                    "protocol_versions": [3], "features": ["playback_plan_v3", "sequenced_progress_v1", "trickplay_v1"], "deliveries": ["original_http", "server_transcode_hls"]}
             if OPTS["buffering_quality"]:
                 # Buffering quality and the connection speed test (Silo Android #636).
                 caps["features"] += ["buffering_quality_v1", "connection_speed_v1"]
@@ -2354,6 +2442,8 @@ def main():
     ap.add_argument("--settings-revision", type=int, default=SETTINGS_REVISION)
     ap.add_argument("--no-slot-widths", action="store_true")
     ap.add_argument("--empty-library", action="append", default=[])
+    ap.add_argument("--trickplay", choices=["ok", "off", "refused", "invalid", "expiring"], default="ok",
+                    help="seek-bar previews for file 42: served, not offered, 404, a sheet missing, or URLs expiring in 75 s")
     args = ap.parse_args()
     SETTINGS_REVISION = args.settings_revision
     OPTS["slot_widths"] = not args.no_slot_widths
@@ -2369,6 +2459,7 @@ def main():
     OPTS["ai_transcribe_only"] = args.ai_transcribe_only
     OPTS["buffering_quality"] = not args.no_buffering_quality
     OPTS["probe_kbps"] = args.probe_kbps
+    OPTS["trickplay"] = args.trickplay
     srv = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
     print("Mock Silo on http://127.0.0.1:%d" % args.port, flush=True)
     srv.serve_forever()

@@ -24,6 +24,9 @@
   <script type="text/brightscript" uri="pkg:/components/player/SubtitleSuite.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/BufferingQuality.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/PlayerBuffering.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/Trickplay.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/PlayerTrickplay.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/PlayerHoldSeek.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Shuffle.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />
   <children>
@@ -70,6 +73,39 @@
         <PlayerTransportButton id="tuneBtn" iconUri="pkg:/images/icons/tune.png" />
         <PlayerTransportButton id="closeBtn" iconUri="pkg:/images/icons/close.png" />
       </Group>
+    </Group>
+
+    <!-- Hold-to-seek with the controls hidden (PlayerHoldSeek.brs): rate chip, bar and hint at
+         the top centre; the preview frame (tpView in "frame" mode) sits above the chip. -->
+    <Group id="holdSeek" visible="false">
+      <Group id="hsChip">
+        <Poster id="hsChipBg" uri="pkg:/images/ui/r32.9.png" blendColor="0x0000006B" height="70" />
+        <Label id="hsRate" height="70" vertAlign="center" color="0xFFFFFFFF">
+          <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="38" />
+        </Label>
+        <Label id="hsTime" height="70" vertAlign="center" color="0xFFFFFFBF">
+          <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="24" />
+        </Label>
+      </Group>
+      <Rectangle id="hsTrack" width="520" height="4" color="0xFFFFFF38" />
+      <Rectangle id="hsFill" width="0" height="4" color="0xFFFFFFFF" />
+      <Label id="hsHint" width="1920" horizAlign="center" color="0xFFFFFF8C" text="&#8592; &#8594; speed  &#183;  OK play  &#183;  Back cancel">
+        <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />
+      </Label>
+    </Group>
+
+    <!-- Seek-bar preview (PlayerTrickplay.brs): the server's thumbnail cut from its sprite sheet by
+         clipping (tpClip) a sheet Poster; a card over the scrubber's puck, or the hold-seek frame. -->
+    <Group id="tpView" visible="false">
+      <Poster id="tpBg" uri="pkg:/images/ui/r20.9.png" blendColor="0x131417F4" />
+      <Poster id="tpSlot" uri="pkg:/images/ui/r20.9.png" blendColor="0x0000006B" visible="false" />
+      <MaskGroup id="tpMask" maskUri="pkg:/images/ui/mask_landscape.png" maskSize="[320, 180]" visible="false">
+        <Group id="tpClip" clippingRect="[0, 0, 320, 180]" />
+      </MaskGroup>
+      <Poster id="tpRing" uri="pkg:/images/ui/r20_ring2.9.png" blendColor="0xFFFFFF1A" />
+      <Label id="tpTime" horizAlign="center" vertAlign="center" color="0xEDEDEDFF">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="24" />
+      </Label>
     </Group>
 
     <Group id="skipGroup" visible="false">
@@ -175,5 +211,12 @@
     <Timer id="renditionTimer" duration="8" />
     <!-- Drives the buffering-quality controller's timers and the pill countdown. -->
     <Timer id="bufqTimer" duration="0.25" repeat="true" />
+    <!-- Seek previews: how long the previous thumbnail may stand in for the next one. -->
+    <Timer id="tpStaleTimer" duration="1" />
+    <!-- Hold-to-seek: a press held this long starts a session; the preview moves every 0.1 s and
+         the rate climbs every 1.2 s. -->
+    <Timer id="hsPressTimer" duration="0.3" />
+    <Timer id="hsTickTimer" duration="0.1" repeat="true" />
+    <Timer id="hsRampTimer" duration="1.2" repeat="true" />
   </children>
 </component>

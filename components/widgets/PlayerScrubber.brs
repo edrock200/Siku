@@ -78,6 +78,8 @@ sub redraw()
     m.puck.width = puckS
     m.puck.height = puckS
     m.puck.translation = [Int(trackW * frac) - puckS / 2, (h - puckS) / 2]
+    px = (trackX + Int(trackW * frac)) * 1.0
+    if m.top.puckX <> px then m.top.puckX = px
 
     ' Marker ranges (intro / credits / recap) and chapter ticks. redraw() runs on every position
     ' tick, so the Rectangles are reused and only re-laid out; they are created or removed only

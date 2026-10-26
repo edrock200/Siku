@@ -311,6 +311,7 @@ sub handleDeepLink(args as dynamic)
         if not Str_isEmpty(args.debugItem) then params.itemId = args.debugItem
         if not Str_isEmpty(args.debugFile) then params.fileId = args.debugFile ' PlayerScreen: play this version (mock 4K files: 52, 56)
         if not Str_isEmpty(args.debugBufq) then params.debugBufq = true ' PlayerScreen: fake a play-then-stall for the buffering-quality controller (the simulator never plays)
+        if not Str_isEmpty(args.debugHoldSeek) then params.debugHoldSeek = true ' PlayerScreen: start hold-to-seek as a held Right would (the simulator cannot hold a key)
         if not Str_isEmpty(args.debugSubtitle) then params.subtitleTrackIndex = Int(Val(Str_orEmpty(args.debugSubtitle))) ' PlayerScreen: start with this subtitle (combined index), as a details-page pick
         if not Str_isEmpty(args.debugUrl) then params.url = args.debugUrl ' StreamTestScreen: an extra stream to try
         resetTo(args.debugScreen, params)

@@ -126,6 +126,16 @@ with a separate audio rendition play with sound on the same Roku, and Silo's pro
 demuxed CMAF.
 
 ## Porting notes worth keeping
+- Showing part of an image (Silo's seek-preview sprite sheets): Roku has no crop API. Draw the
+  whole image in a Poster inside a Group with `clippingRect` = the window and offset the Poster;
+  put the clip *inside* any MaskGroup used for rounded corners, so the clip never depends on the
+  MaskGroup. Bound texture memory with `loadWidth`/`loadHeight` (+ `loadDisplayMode`), keep a
+  small pool of Posters, and set `uri = ""` to release them. A Poster cannot send headers, which
+  suits signed URLs; a load that fails says nothing about why (`loadStatus = "failed"`), so a
+  failure is treated as a possibly expired signature and the URLs are read again once.
+  `PlayerTrickplay.brs` is the reference; device unverified as of this note: decoding a 3000 px
+  sheet with `loadWidth`, MaskGroup over a moving card, invisible-Poster preloading.
+- `box` is a reserved builtin (bsc says so; it is also in pitfall 4): name windows `win`.
 - Channel hand-off (YouTube trailers, channel 837): brs-engine's `roAppManager.IsAppInstalled`
   always answers false, so a hand-off can only be tested on a device. Run it in a Task, log every
   step (`[siku-trailer]`), and treat "this channel is still running a few seconds after LaunchApp

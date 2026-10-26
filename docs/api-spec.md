@@ -508,7 +508,8 @@ Files: `S/network/ArtworkUrls.kt`, `S/network/api/ImageCapabilitiesApi.kt`, `SV/
   is treated as a still.
 - **Placeholders:** an empty URL means no image; show a placeholder. `*_thumbhash` is a ThumbHash for placeholders and is optional.
 - **Season lists:** `include_artwork=false` skips posters.
-- **Trickplay:** `GET /api/v2/watch/{id}/trickplay?file_id=` returns signed sheet URLs and is optional.
+- **Trickplay:** `GET /api/v2/watch/{id}/trickplay?file_id=` returns signed sheet URLs and is optional
+  (§8.2b "Seek previews").
 
 ---
 
@@ -746,6 +747,20 @@ The contract snapshot behind this spec predates these; they are taken from the A
   (authenticated; 429 with `Retry-After` when too frequent), then
   `POST /api/v2/playback/bandwidth-probe/results` with `{kbps, bytes, duration_ms, transport:
   wifi|ethernet|cellular|other, lower_bound?, manual?}`.
+- Seek previews (`trickplay_v1`, Silo Android #695; server `docs/architecture/trickplay.md`):
+  watch detail marks each version `trickplay_available`. Only for such a version, while streaming
+  it, `GET /api/v2/watch/{id}/trickplay?file_id=<file>` (same access rules as the watch detail;
+  404 when there are none) → `{file_id: "42", interval_ms: 10000, thumbnail_width: 300,
+  thumbnail_height: 126, tile_columns: 10, tile_rows: 8, thumbnail_count: 1020, sheets: [{index,
+  url}], expires_at}`. Sheets are JPEG grids (full grid, black after the last thumbnail).
+  Thumbnail i covers `[i*interval_ms, (i+1)*interval_ms)`, on sheet `i / (cols*rows)`, column
+  `i % cols`, row `(i % (cols*rows)) / cols`; a time past the end shows the last one. A client
+  refuses the manifest when the file id differs, any size is outside 1..8192, a sheet side
+  exceeds 8192, or the sheets are not exactly indexes `0..ceil(count/(cols*rows))-1` with
+  http(s) URLs. Sheet URLs are relative `/api/v2/artwork/...?exp=&sig=` (resolve against the
+  server) or absolute presigned storage URLs; they carry their own authorization and take no
+  Silo credentials. Read the manifest again for fresh URLs before `expires_at` (a stale URL
+  answers 403/404). Siku: `Trickplay.brs`, `PlayerTrickplay.brs`.
 
 ### 8.3 Progress reporting
 - **Interval: every 10 s** while a session is active (`PlaybackSessionLifecycle.kt:931`, `PROGRESS_REPORT_INTERVAL_MS = 10_000`). Also send a final sample on pause, exit, or episode change.
