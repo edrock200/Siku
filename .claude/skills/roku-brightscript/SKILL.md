@@ -125,6 +125,17 @@ with a separate audio rendition play with sound on the same Roku, and Silo's pro
 (fragmented MP4 over HTTP) fails at once, so copied video reaches a Roku only as MPEG-TS or
 demuxed CMAF.
 
+**15. Dot assignment lower-cases a key; JSON for another app needs literal or bracket keys.**
+`msg.requestId = id` stores `requestid`, and `FormatJson` writes it that way (reading is
+case-insensitive, so Siku's own code never notices). Silo's phone app decodes camelCase exactly
+(`requestId`, `serverURL`, `handoffReady`), so every frame Siku sends is built from AA literals
+with quoted keys (`{ "requestId": id }`) or `aa["requestId"] = id`. Found with brs-cli, which
+behaves the same (the registry shows `accesstoken`); check any new wire message with a test.
+
+**16. Comparing `invalid` with a boolean throws.** `h.passive = true` when the JSON had no
+`passive` is a Type Mismatch on device. Read wire and config flags with `Lan_isTrue` (or
+`PlaybackCaps_truthy`), never `= true` / `<> true` on a value that may be missing.
+
 ## Porting notes worth keeping
 - Channel hand-off (YouTube trailers, channel 837): brs-engine's `roAppManager.IsAppInstalled`
   always answers false, so a hand-off can only be tested on a device. Run it in a Task, log every
@@ -145,6 +156,18 @@ demuxed CMAF.
 - Roku cannot blur a Poster. Where Android blurs (spoiler protection of an unwatched episode's
   still), Siku does not load the image at all and shows series art the server marks as such
   (`*_is_episode_still = false`) or the default artwork (`Spoilers.brs`).
+- LAN features (phone sign-in, SiloCast remote control; `components/lan/`, `docs/ARCHITECTURE.md`
+  "Phone features"): sockets, `roMessagePort` and the crypto objects (`roEVPCipher`, `roHMAC`,
+  `roEVPDigest`) live only in `LanTask`; the render thread gets events through fields. brs-cli
+  supports listening TCP and multicast UDP, so `tools/silo_phone.py` can drive the simulator end
+  to end, but a socket assigned straight to `m.<name>` in a Task is disposed by brs-engine at once
+  (its listener closed right after `Listen` returned true): keep sockets nested (`m.io.cast`,
+  `m.conns[id].sock`). Device checks still open: whether a channel may bind UDP 5353 and join
+  224.0.0.251 (`[siku-lan] mdns bind ... bound= joined=`; without it phones need the QR link),
+  `roEVPCipher`/`roHMAC` output on a Roku (`[siku-lan] sealed: cN paired` then commands work),
+  and Video `mute`.
+- Silo's phone keys a server by base64url of its URL (`Lan_serverIdFor`) and matches by that or
+  by the deployment identity (`/api/v2/system/identity` `server_id`, Siku's `session.serverId`).
 - A Roku channel has no background state: it runs or it is closed, and Home closes it without
   notice. "Time away" rules (Profile Selection) measure from a periodically written last-active
   time (`ProfileLaunch.brs`), never from an exit hook alone.
@@ -202,11 +225,15 @@ demuxed CMAF.
    trusting stored state. With several simulators running, a page can take 40-70 s to load: keys
    pressed while it loads are lost, so start with a long `wait` and run long scripts in the
    background. `tools/mock_server.py --help` lists switches that emulate older servers.
-5. Build: `npm run package` → `out/siku.zip`. Side-load on a Roku in developer mode
+5. LAN code (`components/lan/`): `python3 tools/lan_vectors.py` must print `0 failure(s)` (the
+   phone's sealed vectors, framing, mDNS); then run the simulator with `debugSession=mock` and
+   `python3 tools/silo_phone.py cast --key <lanPairingKey from the brs-cli registry> ...` /
+   `pair ...` against it (see the tool's docstring).
+6. Build: `npm run package` → `out/siku.zip`. Side-load on a Roku in developer mode
    (`http://<roku-ip>`, user `rokudev`) and watch `telnet <roku-ip> 8085` for errors. A compile
    error prints `Syntax Error ... in pkg:/...(line)`; a runtime crash prints a full backtrace with
    local variables, which is the single most useful thing to paste into a bug report.
-6. Playback changes: on the device, play one direct-play title and one that needs a server route,
+7. Playback changes: on the device, play one direct-play title and one that needs a server route,
    and read the two `[siku-playback]` lines (declared caps | request | decision). Open the debug
    screens with `curl -d '' "http://<roku-ip>:8060/launch/dev?debugScreen=StreamTestScreen"`
    (ECP needs POST; `&debugUrl=<url-encoded>` adds a stream) to test a packaging claim against

@@ -38,6 +38,8 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Subtitles | Display and selection of SRT/WebVTT tracks, automatic choice from the profile's preference | ✅ |
 | Subtitles | Search and download from providers, AI translate/transcribe, sync to audio, subtitle delay (server-gated) | 🟡 needs device testing |
 | Notifications | Inbox from the profile menu, mark read, mark all read | ✅ |
+| Phone | Sign Siku in from Silo's phone app (on the server or sign-in screen) | 🟡 simulator-tested, needs device testing (network discovery) |
+| Phone | Remote control from Silo's phone app: find Siku or scan Connect a Phone's code, start a title, play/pause, seek, audio and subtitle tracks, mute, now playing with poster; plays as the phone's profile when it differs | 🟡 simulator-tested, needs device testing (discovery, sockets, encryption) |
 
 Not planned for v1: Watch Party (experimental and off in Android TV release builds), ebooks (also absent from Android TV), and downloads or any offline/local-storage features (Android TV is streaming-only too).
 
