@@ -35,6 +35,8 @@
   <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/SeriesChoice.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/PlayerRemote.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/PlaybackErrors.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/PlaybackRecovery.brs" />
   <script type="text/brightscript" uri="pkg:/components/remote/RemotePrefs.brs" />
   <children>
     <Rectangle id="bg" width="1920" height="1080" color="0x000000FF" />
@@ -198,6 +200,10 @@
       </Label>
       <PillButton id="retryBtn" text="Try again" variant="solid" translation="[770, 680]" />
       <PillButton id="errorCloseBtn" text="Close" translation="[990, 680]" />
+      <!-- "Report sent to your server." after an accepted route event (PlaybackErrors.brs). -->
+      <Label id="errorReport" width="1920" translation="[0, 800]" horizAlign="center" color="0xEDEDED9E">
+        <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />
+      </Label>
     </Group>
 
     <DetailMoreMenu id="picker" visible="false" />

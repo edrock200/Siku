@@ -85,7 +85,8 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   `[siku-playback]` line: declared capabilities, the request (`quality`, `cap`, `audio_req`,
   `sub_req`, `op`), and the server's decision (`delivery`, `reason`, `sel_audio`, `sub_mode`,
   recipe, source, warnings, `active_q`, `learned_limit`, `sub_hls`; the request also shows `est`
-  and `ll` for buffering quality). Player errors print `[siku-playback] video error …`. Other
+  and `ll` for buffering quality). Player errors print `[siku-playback] video error …`, each
+  recovery `recovery <n> …`, and the shown error `error #<n> …` (numbers: `docs/playback-errors.md`). Other
   lines: `subtitle auto:` (the track chosen automatically), `markers file=` (the playing file's
   markers), `hls subtitle rendition …` (selected or not found), `buffering replan …` / `buffering
   plan=…` (a lowering and each plan's stall summary), `speed test outcome=…`. `[siku-trickplay]`
@@ -96,7 +97,9 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   `&debugUrl=`, logs `[siku-streamtest]` state and track counts), `FontTestScreen` (label and
   9-patch rendering). Simulator deep links: `debugSession=mock`, `debugScreen`, `debugItem`,
   `debugFile` (mock 4K files 52 and 56; 56 always remuxes), `debugUrl`, `debugHoldSeek=1`
-  (PlayerScreen starts hold-to-seek as a held Right would; the simulator cannot hold keys). The
+  (PlayerScreen starts hold-to-seek as a held Right would; the simulator cannot hold keys),
+  `debugVideoError=<code>` (fakes a Roku Video error on every plan) and `debugStallSeconds=<n|off>`
+  (the no-progress watchdog; `off` for long player runs in the simulator). The
   mock serves seek previews for file 42 (`--trickplay ok|off|refused|invalid|expiring`).
 - `[siku-trailer]` lines trace a "Trailers & More" pick: a local extra's start, or the YouTube
   hand-off (installed check, `LaunchApp`, ECP status, outcome). `[siku-theme]` lines show the

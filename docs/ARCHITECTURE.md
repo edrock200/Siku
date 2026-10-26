@@ -83,6 +83,11 @@ components/player/
   PlayerHoldSeek.brs hold Left/Right with the controls hidden: rate ladder, indicator, OK seeks
   PlayerScrubber.* seek bar with the buffered-ahead segment (reports the puck's x as `puckX`)
   PlayerRemote.brs the player's side of remote control (state every second, remoteCommand)
+  PlaybackRecovery.brs Recovery_* the native-error ladder (failure_recovery on a Video error or
+                   no progress, Auto 1080p/720p/480p descent), attempted_plan_keys/attempt_count,
+                   the empty-inventory re-read
+  PlaybackErrors.brs PlaybackError_* numbered errors (docs/playback-errors.md) and the optional
+                   route-event report
 docs/upstream/                  requests written for the Silo server team (Roku HLS audio packaging)
 ```
 
@@ -266,6 +271,15 @@ The pipeline (`components/player/PlayerScreen.brs`, `startPipeline`):
    keeps the time-only preview. Roku's own trick-play thumbnails (BIF on the content node, or HLS
    image playlists) do not apply: the Video node's trick-play UI is off (`enableUI=false`, our own
    HUD) and Silo publishes JPEG sprite sheets, not BIF.
+
+10. Native failures (`PlaybackRecovery.brs`): a Video node error, or no position movement for
+   60 s (120 s before the plan first played), sends `failure_recovery` (`decoder_failure`,
+   `network_error`, `drm_failure` or `buffering_timeout`) with the same request, then, under
+   Auto only, with an advertised 1080p, 720p, 480p rung below what failed; then a numbered error.
+   Every replan carries the attempt's `attempted_plan_keys` (≤ 16) and `attempt_count` (failure
+   recoveries so far, 1..8). Every failure the player shows has a number (`#3001 … (Roku -5)`,
+   `docs/playback-errors.md`); a server listing `playback_route_diagnostics` gets one route event
+   per terminal failure (3 s, no retry, allowlisted diagnostics only).
 
 Every start and replan prints one `[siku-playback]` line to the device console; see `CLAUDE.md`
 "Diagnostics" for the fields. The device facts behind these choices are in the skill's pitfalls

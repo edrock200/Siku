@@ -349,6 +349,8 @@ sub handleDeepLink(args as dynamic)
         if not Str_isEmpty(args.debugFile) then params.fileId = args.debugFile ' PlayerScreen: play this version (mock 4K files: 52, 56)
         if not Str_isEmpty(args.debugBufq) then params.debugBufq = true ' PlayerScreen: fake a play-then-stall for the buffering-quality controller (the simulator never plays)
         if not Str_isEmpty(args.debugHoldSeek) then params.debugHoldSeek = true ' PlayerScreen: start hold-to-seek as a held Right would (the simulator cannot hold a key)
+        if not Str_isEmpty(args.debugVideoError) then params.debugVideoError = Str_orEmpty(args.debugVideoError) ' PlayerScreen: fake this Roku Video error code 4 s after every plan (native recovery; PlaybackRecovery.brs)
+        if not Str_isEmpty(args.debugStallSeconds) then params.debugStallSeconds = Str_orEmpty(args.debugStallSeconds) ' PlayerScreen: no-progress limit for the buffering_timeout recovery (default 60 s / 120 s)
         if not Str_isEmpty(args.debugSubtitle) then params.subtitleTrackIndex = Int(Val(Str_orEmpty(args.debugSubtitle))) ' PlayerScreen: start with this subtitle (combined index), as a details-page pick
         if not Str_isEmpty(args.debugUrl) then params.url = args.debugUrl ' StreamTestScreen: an extra stream to try
         resetTo(args.debugScreen, params)
