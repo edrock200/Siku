@@ -39,11 +39,20 @@ API spec. `docs/upstream/` holds requests we have written for the Silo server te
 These decide what `components/player/PlaybackCaps.brs` declares to the server. Do not undo them
 without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/silo-server-roku-hls-audio.md`).
 - Roku plays HEVC, 4K and Dolby Vision over HLS in fMP4 **only when the audio is its own
-  rendition**. Silo's HLS remux muxes the audio into the video segments, so every
+  rendition**. Silo's fMP4 HLS remux muxes the audio into the video segments, so every such
   `server_remux_hls` plan is silent on Roku, whatever the codec. Fragmented MP4 over plain HTTP
-  (Silo's `server_remux_progressive`) does not play at all. MPEG-TS plays, but Silo produces it
-  only for H.264 transcodes. Hence the HLS delivery is declared H.264/SDR/AAC-only and the player
-  asks for another route once if a remux plan still arrives.
+  (Silo's `server_remux_progressive`) does not play at all. MPEG-TS plays (H.264 transcodes,
+  device-confirmed). On a server without `hls_copy_mpegts_v1` the HLS delivery is declared
+  H.264/SDR/AAC-only and the player asks for another route once if a remux plan still arrives.
+- Silo added `hls_copy_mpegts_v1` (2026-10-26): with it Siku declares H.264 + HEVC (Main 10 level
+  5.1 from TS), AAC/AC3/E-AC3 probed with `"container": "ts"`, HDR10/HLG and no Dolby Vision on
+  HLS, and keeps remux plans whose `segment_container` is `mpegts`. **Implemented, not verified on
+  a Roku**: whether TS copies play with sound (and HEVC/HDR10 from TS) is still to be tested.
+  Copy remuxes have open-ended timelines, so far seeks are `seek_reanchor` replans
+  (`PlayerSeekReanchor.brs`) when the server lists `seek_reanchor_v1`.
+- Dolby Vision is declared as profiles 5 and 8 only (never 7, whatever the Profile 7 fallback
+  setting says) and without `dolby_vision_profile_levels` (any bound makes the server refuse DV
+  on files scanned without a level and with unknown bitrate).
 - A Roku app cannot switch HDMI audio passthrough on. The OS decides from *Settings › Audio*
   and the TV/receiver's EDID; Siku only reports what `CanDecodeAudio` says (re-probed at every
   start, lower-case quoted keys). The *Force Dolby Audio Passthrough* setting overrides the
@@ -84,9 +93,12 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
 - `telnet <roku-ip> 8085` is the device console. Every playback start and replan prints one
   `[siku-playback]` line: declared capabilities, the request (`quality`, `cap`, `audio_req`,
   `sub_req`, `op`), and the server's decision (`delivery`, `reason`, `sel_audio`, `sub_mode`,
-  recipe, source, warnings, `active_q`, `learned_limit`, `sub_hls`; the request also shows `est`
-  and `ll` for buffering quality). Player errors print `[siku-playback] video error …`. Other
-  lines: `subtitle auto:` (the track chosen automatically), `markers file=` (the playing file's
+  recipe, `seg` / `vse` (segment container, fMP4 sample entry), `tl_offset`, `seek_any`,
+  `reanchor`, source, warnings, `active_q`, `learned_limit`, `sub_hls`; the caps show `tscopy`,
+  `tsvideo`, `tsaudio`; the request also shows `est` and `ll` for buffering quality).
+  `seek reanchor target= reason=` / `seek reanchored target= origin= same_route=` /
+  `seek reanchor failed` trace a seek the server re-anchored. Player errors print
+  `[siku-playback] video error …`. Other lines: `subtitle auto:` (the track chosen automatically), `markers file=` (the playing file's
   markers), `hls subtitle rendition …` (selected or not found), `buffering replan …` / `buffering
   plan=…` (a lowering and each plan's stall summary), `speed test outcome=…`. `[siku-trickplay]`
   lines: the seek-preview manifest (geometry, sheet count, `expires_in`, renewals), a refused or

@@ -1,8 +1,11 @@
 # Silo server: Roku needs a different HLS packaging for remuxed streams
 
-Status: open. Siku works around it on the client (see "Siku's workaround" below), but the
-fix belongs in silo-server. This note is written so it can be pasted into an issue or PR
-against https://github.com/Silo-Server/silo-server.
+Status: **upstream added `hls_copy_mpegts_v1` (silo-server 8b84639, 2026-10-26); pending device
+test.** A client that lists it in `client_playback_context.deliveries.hls.features` gets
+`server_remux_hls` copies of H.264/HEVC as MPEG-TS segments (`effective_recipe.segment_container:
+"mpegts"`, no `video_sample_entry`, no `#EXT-X-MAP`), which is request 1 below. Siku negotiates
+it (see "Siku's client side" at the end); whether a Roku plays those streams with sound, and HEVC/
+HDR10 from TS, has not been checked on a device yet. The original request follows.
 
 ## Symptom
 
@@ -84,7 +87,7 @@ the codec: Roku takes HEVC fMP4 HLS when the audio is its own rendition.
 In both cases the `deliveries.hls` capability already carries `features`, so no schema change
 is needed; `deliverySupportsFeatureV3` can read the new flag.
 
-## Siku's workaround until then
+## Siku's workaround (servers without `hls_copy_mpegts_v1`)
 
 Siku declares the HLS delivery as "H.264, SDR, AAC/MP3" only (`components/player/PlaybackCaps.brs`,
 `PlaybackCaps_delivery`), so the planner never copies HEVC over HLS and any server-side route
@@ -93,3 +96,23 @@ accepts the container and audio. If a `server_remux_hls` plan still arrives (an 
 the player issues one `failure_recovery` replan with classification `unsupported_container` so
 the planner skips it. Once the server gains either feature above, Siku will list it under
 `deliveries.hls.features` and drop the restriction.
+
+## Siku's client side of `hls_copy_mpegts_v1` (implemented 2026-10-26, not device-verified)
+
+- Negotiated when `GET /api/v2/playback/capabilities` lists `hls_copy_mpegts_v1` in `features`
+  and `server_remux_hls` in `deliveries` (`PlaybackCaps_tsCopyNegotiable`). The flag goes in
+  `deliveries.hls.features`, never in `client_features`.
+- The HLS delivery then declares H.264, HEVC when `CanDecodeVideo({"codec": "hevc", "profile":
+  "main 10", "level": "5.1", "container": "ts"})` passes, AAC plus AC3/E-AC3 when
+  `CanDecodeAudio` passes with `"container": "ts"` (decode or `"passthru": 1`), HDR10/HLG as for
+  direct play, no HDR10+ and `dolby_vision_profiles: []` (the server strips Dolby Vision to its
+  HDR10 base layer on this lane until a device shows DV surviving TS).
+- A `server_remux_hls` plan with `segment_container: "mpegts"` and no `video_sample_entry` is
+  played; any other remux still gets the one-shot `failure_recovery` above.
+- Copy remuxes are open-ended (`can_seek_anywhere: false`), so seeks beyond the produced window
+  are `seek_reanchor` replans when the server lists `seek_reanchor_v1`.
+- Device test to run: play a remux title (mock file 56 equivalent: an HEVC MKV whose audio needs
+  converting) and read the `[siku-playback]` line: `tscopy=true`, `tsvideo=`/`tsaudio=` in the
+  caps, `delivery=server_remux_hls ... seg=mpegts vse=-` in the plan, then confirm sound and the
+  Audio menu listing a track; seek far ahead and expect `seek reanchor ... reason=unknown_window`
+  then `seek reanchored ... same_route=true` and playback at the target.

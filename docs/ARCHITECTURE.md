@@ -213,9 +213,15 @@ The pipeline (`components/player/PlayerScreen.brs`, `startPipeline`):
    decode/passthrough/channel probes) and `client_playback_context` (device, output, and the
    `deliveries` the Roku can execute). The deliveries are declared per kind in
    `PlaybackCaps_delivery`: `original_http` (the file itself; claims
-   `client_dv8_base_layer_fallback_v1` and `client_selected_audio_track_v1`), `hls` (declared
-   H.264 / SDR / AAC+MP3 only, because Silo's HLS remux is fMP4 with muxed audio, which Roku plays
-   silent) and, behind an experimental setting, `progressive` (fails on device; kept for other models).
+   `client_dv8_base_layer_fallback_v1` and `client_selected_audio_track_v1`), `hls` and, behind an
+   experimental setting, `progressive` (fails on device; kept for other models). `hls` has two
+   lanes. When the server's capabilities list `hls_copy_mpegts_v1` and `server_remux_hls`, Siku
+   puts `hls_copy_mpegts_v1` in `deliveries.hls.features` and declares H.264, HEVC (only if
+   Main 10 level 5.1 decodes from `"container": "ts"`), AAC/AC3/E-AC3 probed from TS, HDR10/HLG
+   and no Dolby Vision profiles: remuxes then come as MPEG-TS (`effective_recipe.segment_container:
+   "mpegts"`, no `video_sample_entry`), which Roku reads audio from (implemented, not yet
+   device-verified). Otherwise `hls` is declared H.264 / SDR / AAC+MP3 only, because Silo's
+   fMP4 HLS remux muxes the audio into the video segments, which Roku plays silent.
    `quality_preference` and `bandwidth_cap_kbps` come from the Resolution and Maximum Bitrate
    settings (a saved "original" is Auto; "original" is never sent for video; No limit sends no
    cap). The player's Quality menu is Auto plus the plan's `available_qualities` without the
@@ -225,9 +231,15 @@ The pipeline (`components/player/PlayerScreen.brs`, `startPipeline`):
    the default subtitle (`Subs_autoChoice`: the profile's language and Off/Auto/Always as Android TV
    resolves them, after an explicit pick from the details page). On `original_http` the server's
    `selected_tracks.audio.index` is applied to `availableAudioTracks` when playback starts.
-4. A `server_remux_hls` plan is started and then `maybeRecoverSilentRemux` asks for another route
-   once (`failure_recovery`, classification `unsupported_container`); the server answers with an
-   H.264 MPEG-TS transcode, which has sound.
+4. An fMP4 `server_remux_hls` plan is started and then `maybeRecoverSilentRemux` asks for another
+   route once (`failure_recovery`, classification `unsupported_container`); the server answers with
+   an H.264 MPEG-TS transcode, which has sound. An MPEG-TS remux is kept. A copy remux's timeline
+   is open-ended (`can_seek_anywhere: false`, no `seek_window_end_seconds`): when the server lists
+   `seek_reanchor_v1`, a seek outside what the mounted stream provably holds (origin to the furthest
+   downloaded segment) is a `seek_reanchor` replan and the returned plan is mounted at the target
+   (`PlayerSeekReanchor.brs`, used by `seekToSource`, so skips, the scrubber, hold-seek, markers,
+   chapters and phone remote seeks all go through it). A remux can carry the selected embedded
+   text subtitle as an HLS rendition (`hls_remux_subtitle_renditions_v1`), like a transcode.
 5. A viewer's audio or subtitle pick (player menus, detail-page selectors) is saved for the whole
    series or movie (`SeriesChoice.brs`); the next start follows the server's effective fields
    (`Subs_autoChoice` selects the track `effective_subtitle_track_signature` names). A replan that

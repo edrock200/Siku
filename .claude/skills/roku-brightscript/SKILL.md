@@ -124,6 +124,16 @@ answers. Device-confirmed 2026-10-07 with `StreamTestScreen`: Apple's HEVC and H
 with a separate audio rendition play with sound on the same Roku, and Silo's progressive remux
 (fragmented MP4 over HTTP) fails at once, so copied video reaches a Roku only as MPEG-TS or
 demuxed CMAF.
+Silo answered with `hls_copy_mpegts_v1` (2026-10-26; listed by the client in
+`deliveries.hls.features`, not `client_features`). Siku negotiates it when the server's
+capabilities list it and `server_remux_hls`, declares H.264 + HEVC (Main 10 level 5.1 probed with
+`"container": "ts"`), AAC/AC3/E-AC3 probed from TS, HDR10/HLG and `dolby_vision_profiles: []` on
+HLS, and keeps remux plans with `effective_recipe.segment_container: "mpegts"` and no
+`video_sample_entry`; the old declaration and the one-shot recovery remain for servers without it.
+**Implemented but not device-verified**: read `seg=` (and `tscopy=`, `tsvideo=`, `tsaudio=`) in
+the `[siku-playback]` line and check the sound before calling it working. Copy remuxes have an
+open-ended timeline (`can_seek_anywhere: false`): `seekToSource` hands far seeks to
+`PlayerSeekReanchor.brs` (`seek_reanchor` replans, gated on `seek_reanchor_v1`).
 
 **15. Dot assignment lower-cases a key; JSON for another app needs literal or bracket keys.**
 `msg.requestId = id` stores `requestid`, and `FormatJson` writes it that way (reading is
@@ -261,7 +271,9 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
   invisible because its labels measured as zero (pitfall 3).
 - **Hangs on the splash screen:** a crash during `MainScene.init` or the first screen's `init`.
   The telnet log has the backtrace.
-- **Video plays, no sound, Audio menu empty:** the plan is `server_remux_hls` (pitfall 14), or a
+- **Video plays, no sound, Audio menu empty:** the plan is an fMP4 `server_remux_hls` (`seg=-
+  vse=hvc1`, pitfall 14); with `seg=mpegts` it is the new TS copy lane, which is the first thing to
+  report upstream and to declare off (no `hls_copy_mpegts_v1`) if TS copies are silent too; or a
   forced Dolby declaration on a stereo sink (`forcedolby=true`, `out=Stereo`); never a codec bug
   in Siku. Check `plan: delivery=` and `audio=`/`decodeinfo=` in the `[siku-playback]` line.
 - **Direct play refused although codecs match:** read `request:` fields. A non-default
@@ -270,6 +282,9 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
 - **Playback fails within a second on a server route:** `delivery=server_remux_progressive`
   (fragmented MP4 over HTTP) is not playable on Roku; the `[siku-playback] video error` line has
   the Video node's code.
+- **A seek on a remux snaps back or stalls:** the timeline is open-ended (`seek_any=false`). With
+  `reanchor=true` look for `seek reanchor` / `seek reanchored` / `seek reanchor failed` lines; with
+  `reanchor=false` the server does not list `seek_reanchor_v1` and the Video node seeks alone.
 - **Everything transcodes to 720p "at 6 Mbps":** a bandwidth cap reached the request; see
   pitfall 13 (nullable `playback.max_bitrate_kbps`).
 
