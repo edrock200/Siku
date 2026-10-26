@@ -123,6 +123,9 @@ end sub
 
 sub onScreenShown()
     m.active = true
+    ' Phone sign-in: only with the server's identity, which phones match their saved server by.
+    srv = Str_orEmpty(m.global.session.serverId)
+    if srv <> "" then Pair_start("login", srv)
     if m.mode = "code" and not m.routed then
         if m.code = invalid and (m.dStatus = "getting" or m.dStatus = "newcode") then
             startDevice(false)
@@ -135,10 +138,17 @@ sub onScreenShown()
 end sub
 
 sub onScreenHidden()
+    Pair_stop()
     m.active = false
     if not m.routed then abandonCode()
     m.pollTimer.control = "stop"
 end sub
+
+' Phone sign-in (PhonePairing.brs): the code this screen shows, while it shows one.
+function Pair_screenCode() as dynamic
+    if m.mode <> "code" or m.code = invalid then return invalid
+    return m.code
+end function
 
 ' ---------- Server card ----------
 
@@ -499,6 +509,7 @@ end function
 
 sub setStatus(st as string)
     m.dStatus = st
+    Pair_codeStatus(st)
     renderCode()
     if m.mode = "code" then
         ' A state that waits for the person takes focus on its action.
@@ -798,6 +809,8 @@ sub onApproved(d as object)
     user = tokens.user
     if user <> invalid and Type(user) = "roAssociativeArray" then m.accountName = Str_orEmpty(user.username)
     setStatus("signedin")
+    ' A phone that approved this code still has to hear the result (PhonePairing.brs).
+    if Pair_holdsRoute() then m.routeTimer.duration = 2.5
     if profileId <> "" then
         ' The session is already bound to a profile: fetch its name for the shell.
         m.boundProfileId = profileId

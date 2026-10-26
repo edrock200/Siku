@@ -123,6 +123,7 @@ sub init()
     Trickplay_init()
     HoldSeek_init()
     m.scrubber.observeField("puckX", "placeScrubPreview")
+    Remote_init()
 end sub
 
 ' State for one playback attempt (reset again when Up Next chains to another episode).
@@ -1053,6 +1054,7 @@ end sub
 sub exitPlayer()
     if m.closing then return
     m.closing = true
+    Remote_release()
     m.global.homeDirty = true
     m.countdownTimer.control = "stop"
     m.holdTimer.control = "stop"
@@ -1081,6 +1083,7 @@ end sub
 sub onScreenHidden()
     if m.closing then return
     m.closing = true
+    Remote_release()
     m.closed = true
     m.global.homeDirty = true
     m.countdownTimer.control = "stop"

@@ -56,7 +56,16 @@ components/tasks/
   AuthTask      long-lived single-flight token refresher (rotating refresh tokens)
   YouTubeLaunchTask  hands a YouTube trailer to the YouTube channel (837): roAppManager.LaunchApp, then ECP
   Http.brs      roUrlTransfer wrapper and Silo device headers
-components/widgets/             reusable UI: MediaCardItem, PillButton, Toast, LoadingSpinner, …
+components/lan/                 the LAN side of Silo's phone app (see "Phone features" below)
+  LanTask       one long-lived Task: TCP listeners, frames, sealed level, heartbeats, mDNS responder
+  LanBytes.brs  byte helpers (hex slices, base32/base64url, frames, server ids, Lan_isTrue)
+  SiloSealed.brs level `sealed` (HKDF, AES-128-CBC, HMAC-SHA256); Task-only (crypto objects)
+  Mdns.brs      DNS message parsing/building for the responder (pure)
+components/remote/
+  RemoteControl the SiloCast receiver's decisions on the render thread (MainScene child)
+  RemotePrefs.brs Remote Control settings and helpers (RemoteControl_*, RemoteState_*)
+  PhonePairing.brs phone sign-in for the server and sign-in screens (Pair_*)
+components/widgets/             reusable UI: MediaCardItem, PillButton, Toast, LoadingSpinner, PairingPanel, …
 components/screens/             one folder or file pair per screen
 components/screens/debug/       developer diagnostics opened by deep link: StreamTestScreen, FontTestScreen
 components/player/
@@ -73,6 +82,7 @@ components/player/
                    Posters (bounded pool), the card over the scrubber and the hold-seek frame
   PlayerHoldSeek.brs hold Left/Right with the controls hidden: rate ladder, indicator, OK seeks
   PlayerScrubber.* seek bar with the buffered-ahead segment (reports the puck's x as `puckX`)
+  PlayerRemote.brs the player's side of remote control (state every second, remoteCommand)
 docs/upstream/                  requests written for the Silo server team (Roku HLS audio packaging)
 ```
 
@@ -118,6 +128,7 @@ A screen is `<component name="XScreen" extends="BaseScreen">` (`components/BaseS
 | `SearchScreen` | `{ query? }` |
 | `RequestDetailScreen` | `{ mediaType: "movie"\|"series", tmdbId, title? }`. A TMDB title to request (or its request's status), with Cancel Request for the user's own pending request. Request administration (approve, decline, retry) stays in web admin, as on Android TV |
 | `SettingsScreen` | none. Android TV `TvSettingsScreen`: rail (account, General / Playback / Subtitles / Server, Sign Out) and a pane of grouped rows. Values are the server's effective settings (`Settings.brs`) with the device prefs as fallback; the Home Sections editor (`SettingsHomeSections.brs`) is a full-screen overlay |
+| `ConnectPhoneScreen` | none. Profile menu › Connect a Phone (a Siku addition; Silo's phone app sends Roku users there): the pairing link's QR code, the pairing code, Remote Control on/off, Require pairing on/off, New pairing code, Disconnect phones |
 | `NotificationsScreen` | none. Notifications inbox (Android TV `TvInboxScreen`): Mark all read card, newest-first delivery cards, OK marks read and opens the series/episode, pages of 25. Android TV has no route to it, so Siku has no entry point either (deep link `debugScreen=NotificationsScreen`) |
 | `PlayerScreen` | `{ itemId, fileId?, startPosition?, title?, audioTrackId?/audioTrackIndex?, subtitleTrackId?/subtitleTrackIndex? (-1 = off), shuffleId?, shuffle?, itemType?/source? ("extra"), durationSeconds? }`. With `shuffleId` the player runs a shuffle session: picks start at 0, Up Next shows the server's random pick with Pick Another / Stop shuffling. An extra plays alone (no next episode, Up Next or On Deck) and starts by its file id when it has no watch detail. Up Next shows the next episode's still under a scrim and an On Deck row (home continue-watching items) |
 | `AudioDetailScreen` | `{ itemId, itemType }` for `album`, `artist`, `audiobook`, `track`. Use `Nav_openItem(id, type)`, which picks this or `DetailScreen` |
@@ -131,6 +142,8 @@ Music: the Silo v2 contract has no album/artist/track types yet, and Android TV 
 |---|---|
 | `session` | `{serverUrl, serverOrigin, serverId, serverName, accessToken, refreshToken, expiresAt, user, profileId, profileToken, profileName, profileAvatar, deviceId}`. Never mutate it in place: edit a copy, then call `Session_save(copy)`. |
 | `prefs` | Device-local settings (`Prefs_load`, `Prefs_save`), including `profileLaunch` / `profileLaunchOffer` (Profile Selection). Library Browse sort and filters are saved separately in the registry under `browsePrefs.<server>.<profile>.<library>[.type-<mediaType>]`. |
+| `lanTask` / `remoteControl` | The LanTask and RemoteControl nodes (phone features). Screens reach them through `RemotePrefs.brs` helpers. |
+| `castPlayer` | The PlayerScreen that remote control drives (it registers itself), or invalid. |
 | `imageCaps` | `{serverUrl, slots}`: the image capability probe for the active server (`Artwork_storeCaps`); `slots` maps an artwork slot to its width parameter. |
 | `toast` | Set a string to show a toast, e.g. `m.global.toast = "Added to Watchlist"`. |
 | `authExpired` | Set by the network layer. MainScene then signs out and routes to the login screen. |
@@ -257,3 +270,88 @@ The pipeline (`components/player/PlayerScreen.brs`, `startPipeline`):
 Every start and replan prints one `[siku-playback]` line to the device console; see `CLAUDE.md`
 "Diagnostics" for the fields. The device facts behind these choices are in the skill's pitfalls
 13 and 14 and in `docs/upstream/silo-server-roku-hls-audio.md`.
+
+## Phone features: sign-in from the phone and remote control (SiloCast)
+
+Silo's Android phone app (silo-android 115263c / aea6120 / 7c4db67) treats a Roku as its own kind
+of TV: plain TCP instead of TLS (a Roku listening socket has no TLS), its own DNS-SD types, and a
+pairing link in a QR code for networks where discovery fails. Siku implements the Roku's side.
+The wire is the phone's: 4-byte big-endian length + UTF-8 JSON per frame, at most 1 MiB.
+
+**Threads.** `LanTask` (a Task, so `roStreamSocket`, `roDatagramSocket`, `roMessagePort`/`Wait`,
+`roEVPCipher`, `roHMAC`, `roEVPDigest` stay off the render thread) owns every socket and all
+crypto. It talks to the render thread through fields: `config` and `command` in, `castEvent`,
+`pairEvent`, `status`, `pairingInfo` out, `castState` in (the player's state, fanned out).
+`RemoteControl` (a MainScene child) makes the decisions that need the app: handoff, launch,
+control, the borrowed identity. Screens use `PhonePairing.brs`.
+
+**Phone sign-in (`_silopair-roku._tcp`, port 52819, protocol v1).** Advertised only while
+`ServerConnectScreen` (TXT `st=setup`) or `LoginScreen` (TXT `st=login`, `srv=<server identity>`)
+is up; TXT also carries `v=1`, `name`, `id`, `sid`. One phone at a time. Siku sends
+`hello {tvName, tvDeviceId, state, supportedVersions:[1]}`; the phone sends `pushServer
+{serverURL, serverName, serverIdentity?, endpoints?}` (one server: a Roku keeps one), Siku asks
+"Allow this setup?" (also for every plain-HTTP address), then
+- setup: `GET {pushed}/api/v2/system/identity` must answer the pushed identity (another identity
+  is `identity_mismatch`; unreachable offers a verified alternate endpoint, never takes it),
+  `POST /api/v2/auth/device/start` there, `deviceStarted {serverURL, userCode, matchCode}`,
+  poll, save server + tokens, `serverResult {status: signedIn}`, then the phone's `done` routes on;
+- login: the pushed identity must equal `srv`; Siku sends the code the sign-in screen already
+  shows and relays that screen's outcome.
+Failures answer `serverResult {status: failed, error: denied|expired|unreachable|identity_mismatch|update_required|auth_failed}`.
+Tokens never cross the LAN; the server gives them to the Roku over HTTPS after the phone approves.
+
+**Remote control (`_silocast-roku._tcp`, port 52817..52821, protocol v2).** TXT: `v=2`, `id`,
+`deviceId`, `name`, `server` (base64url of the server URL, the phone's registry key), `serverName`,
+`serverIdentity`, `playing=0|1`, `sec=plain|sealed`, `kid` (sealed). Up to six controllers.
+- Level `sealed` (Remote Control › Require pairing, default on): the phone's first frame is a
+  plain `sealed_hello {keyId, nonce}`; a wrong key gets a plain `close {reason: unauthorized}`.
+  Siku answers its own `sealed_hello`, both derive enc/mac/iv keys (HKDF-SHA256 over phone nonce
+  || TV nonce), and every later frame is `seq(8) || iv(16) || AES-128-CBC || HMAC-SHA256 tag`.
+  Siku's IV is AES-ECB(ivKey, direction || seq || 0…), so no RNG is needed per frame. A frame that
+  does not open closes the connection. The 16-byte pairing key is generated in the Task (hashed
+  GetRandomUUID output; Roku documents no CSPRNG for channels), kept in the registry
+  (`lanPairingKey`), shown on Connect a Phone in base32 groups of four and in the QR link
+  `silo://cast?v=2&host&port&id&name&server&security=sealed&key=<base32>`.
+- Siku's `hello` lists features `multi_controller, close_reason, resume_token, presence,
+  volume_mute_only, no_playback_speed`. A controller is authorized when its hello's server
+  matches (same URL-derived id, or same deployment identity) and Siku is signed in; ping every
+  3 s, more than three misses drops it; 5 s to say hello.
+- `handoff_offer`: the profile Siku plays as gets `handoff_ready {reused: true}` at once; another
+  profile (or server) takes the remote-playback handoff: `device/start {client_purpose:
+  remote_playback, temporary: true}` at the phone's server, `handoff_challenge`, the phone
+  approves, poll, `handoff_ready` (+ `resumeToken`). The approved session is published on
+  `m.global.session` with `temporary: true`, which `Session_save` never writes to the registry;
+  it is handed back (logout, own session restored) 5 s after the phone leaves with nothing
+  playing, or after 10 minutes idle, or when its refresh fails.
+- `launch`: needs a ready handoff on that connection; opens PlayerScreen with the file id, the
+  audio ordinal and the **combined subtitle ordinal** (a Roku launch carries the server's
+  combined index, externals first; -1 is Off), start from the beginning or `resumePosition`.
+- `control`: play, pause, play_pause, seek, stop, select_audio_track / select_subtitle_track
+  (track ids are the ordinals in Siku's state), set_muted (Video `mute`), set_volume (0 mutes),
+  set_quality, play_next. Speed, picture size, subtitle position and sync answer `command_failed`.
+- `state` once a second and on change, to every authorized controller: title, episode line,
+  times, tracks, quality options, `isMuted`, next episode, and `posterUrl` (the series poster for
+  an episode) and `overview` from the item detail.
+
+**What a Roku may or may not allow** (researched; to be confirmed on a device):
+- Listening TCP sockets: `roStreamSocket` `SetAddress`/`Listen`/`Accept` are public API in a
+  Task. Expected to work on a sideloaded channel.
+- mDNS: a channel can only be found by phones if it may bind UDP 5353 and join 224.0.0.251.
+  Roku OS runs its own responder on models with AirPlay, so the bind may be refused or shared.
+  Siku sets SO_REUSEADDR, tries, and logs `[siku-lan] mdns bind 5353 reuse= bound= joined=`.
+  If it fails, `status.mdns` is `unavailable`, Connect a Phone says to scan the code, and the
+  pairing link (host, port, key) still works because the phone dials it directly. Phone sign-in
+  has no link fallback (the phone finds it only by discovery).
+- Crypto: `roEVPCipher` (aes-128-cbc), `roHMAC` (sha256), `roEVPDigest` exist on every current
+  Roku OS; their output is checked against the phone's vectors only in brs-engine.
+
+**Testing.** `tools/lan_vectors.py` runs the BrightScript crypto, framing and mDNS code in brs-cli
+against the phone's `SiloCastSealedTest` vectors and a Python reference (`tools/silo_lan.py`).
+`tools/silo_phone.py` plays the phone: `browse` (mDNS), `pair` (sign-in; `--approve` with the
+mock's `device_manual=1`), `cast` (plain or sealed via `--link`/`--key`; `--check-refusals`,
+`--stop`). brs-cli supports listening and multicast sockets, so the whole flow runs against the
+simulator, with one simulator bug: a socket assigned straight to `m.<name>` is disposed at once
+(the listener closes), so LanTask keeps sockets one level down (`m.io.*`, `m.conns[id].sock`).
+Console tags: `[siku-lan]` (listeners, connections, sealed handshake, hello, mDNS),
+`[siku-cast]` (handoff, launch, commands, borrowed profile), `[siku-pair]` (phone sign-in).
+

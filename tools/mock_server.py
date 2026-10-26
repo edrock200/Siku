@@ -6,7 +6,9 @@ library (movies, series with seasons and episodes, people) and generated artwork
 Run:  python3 tools/mock_server.py [--port 8097]
 Then connect Siku to http://127.0.0.1:8097
 
-Device sign-in auto-approves on the second poll. Password login accepts any
+Device sign-in auto-approves on the second poll. A remote-playback handoff
+(client_purpose remote_playback) stays pending until POST /api/v2/auth/device/approve-handoff
+{"user_code"} (the approving profile from X-Profile-Id), as tools/silo_phone.py sends. Password login accepts any
 username with password "silo". The "Kids" profile has PIN 1234.
 
 Test switches (not part of the API) change behaviour for one scenario. Set them at start with
@@ -18,6 +20,7 @@ clears one); GET /mock/switch lists them.
   replan_410=1                   POST /playback/{id}/replan answers 410 playback_session_ended
   replan_version=<file id>       a quality_change replan moves to that version, subtitles Off (Silo Android #684)
   user_code=<code>               the device sign-in code to show (default 4821-7730)
+  device_manual=1                device sign-in codes stay pending until POST /api/v2/auth/device/approve
   stale_profile=<profile id>     every request on that profile answers 403
                                  profile_verification_required until GET /api/v2/profiles runs
 Options that emulate other servers:
@@ -1683,24 +1686,69 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/v2/auth/providers":
             return self.send(200, {"password_login": True, "providers": []})
         if p == "/api/v2/auth/device/capability":
-            return self.send(200, {"revision": "1", "state": "available", "cancel": True, "opened_signal": True, "protocol_versions": [2]})
+            return self.send(200, {"revision": "1", "state": "available", "cancel": True, "opened_signal": True, "protocol_versions": [2],
+                                   "remote_playback_handoff": True})
         if p == "/api/v2/auth/device/start" and method == "POST":
             code = "dev-" + uuid.uuid4().hex[:8]
             STATE["devices"][code] = 0
             host = self.headers.get("Host", "127.0.0.1")
-            return self.send(201, {"device_code": code, "user_code": STATE["switches"].get("user_code", "4821-7730"), "match_code": "warm pony",
+            # A remote-playback handoff (SiloCast to a TV) asks for a temporary session of the
+            # approving phone's profile: it stays pending until POST /auth/device/approve-handoff.
+            remote = b.get("client_purpose") == "remote_playback"
+            user_code = STATE["switches"].get("user_code", "4821-7730")
+            if remote:
+                user_code = "%04d-%04d" % (random.randint(0, 9999), random.randint(0, 9999))
+                STATE.setdefault("handoffs", {})[code] = {"user_code": user_code, "profile_id": None, "denied": False}
+            return self.send(201, {"device_code": code, "user_code": user_code, "match_code": "warm pony",
                                    "verification_uri": "http://%s/activate" % host,
                                    "verification_uri_complete": "http://%s/activate?code=48217730" % host,
-                                   "expires_at": "2030-01-01T00:00:00Z", "expires_in": 900, "interval": 3})
+                                   "expires_at": "2030-01-01T00:00:00Z", "expires_in": 900, "interval": 3,
+                                   "client_purpose": "remote_playback" if remote else "device_login", "temporary": remote})
         if p == "/api/v2/auth/device/poll" and method == "POST":
             code = b.get("device_code")
             if code not in STATE["devices"]:
                 return self.problem(404, "not_found", "Unknown device code")
             STATE["devices"][code] += 1
+            handoff = STATE.get("handoffs", {}).get(code)
+            if handoff is not None:
+                if handoff["denied"]:
+                    del STATE["devices"][code]
+                    return self.send(200, {"status": "denied"})
+                if not handoff["profile_id"]:
+                    return self.send(200, {"status": "pending", "poll_after": 1, "opened": False})
+                del STATE["devices"][code]
+                t = tokens()
+                t.pop("user", None)
+                return self.send(200, {"status": "approved", "tokens": t, "profile_id": handoff["profile_id"],
+                                       "profile_token": "ptok-" + uuid.uuid4().hex[:8], "temporary": True,
+                                       "session_expires_at": "2030-01-01T00:00:00Z"})
+            if STATE["switches"].get("device_manual") and code not in STATE.setdefault("approved_devices", set()):
+                return self.send(200, {"status": "pending", "poll_after": 2, "opened": False})
             if STATE["devices"][code] < 3:
                 return self.send(200, {"status": "pending", "poll_after": 3, "opened": STATE["devices"][code] > 1})
             del STATE["devices"][code]
             return self.send(200, {"status": "approved", "tokens": tokens(), "profile_id": "", "profile_token": ""})
+        if p == "/api/v2/auth/device" and method == "GET":
+            # The phone's lookup of a code before it approves (match code, purpose).
+            uc = q.get("user_code", [""])[0] if isinstance(q.get("user_code"), list) else q.get("user_code", "")
+            for code, h in STATE.get("handoffs", {}).items():
+                if h["user_code"] == uc:
+                    return self.send(200, {"user_code": uc, "match_code": "warm pony", "client_purpose": "remote_playback", "temporary": True})
+            return self.send(200, {"user_code": uc, "match_code": "warm pony", "client_purpose": "device_login", "temporary": False})
+        if p == "/api/v2/auth/device/approve" and method == "POST":
+            # With device_manual=1: approve every pending sign-in code (the phone's approval).
+            STATE.setdefault("approved_devices", set()).update(STATE["devices"].keys())
+            return self.send(200, {"status": "approved"})
+        if p in ("/api/v2/auth/device/approve-handoff", "/api/v2/auth/device/deny") and method == "POST":
+            uc = b.get("user_code", "")
+            for code, h in STATE.get("handoffs", {}).items():
+                if h["user_code"] == uc:
+                    if p.endswith("deny"):
+                        h["denied"] = True
+                    else:
+                        h["profile_id"] = self.headers.get("X-Profile-Id") or "p-owner"
+                    return self.send(200, {"status": "approved" if not p.endswith("deny") else "denied"})
+            return self.problem(404, "not_found", "Unknown user code")
         if p == "/api/v2/auth/device/cancel":
             return self.send(200, {"status": "canceled"})
         if p == "/api/v2/auth/login" and method == "POST":

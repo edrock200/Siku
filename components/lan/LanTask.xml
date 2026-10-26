@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Siku's LAN side for Silo's phone app (one long-lived Task; sockets and crypto live only here):
+    - SiloCast remote control: TCP listener (default port 52817, next free up to +4) for up to six
+      controllers at once, length-prefixed JSON frames, level `plain` or `sealed`
+      (SiloSealed.brs) as the Remote Control setting says, TV hello, ping/pong heartbeat, state
+      fan-out, `close` with a reason. Protocol decisions that need the app (handoff, launch,
+      control) go to RemoteControl through `castEvent`.
+    - Phone sign-in (companion pairing): TCP listener (port 52819) while the server or sign-in
+      screen asks for it, one phone at a time, the pairing hello; messages go to the screen
+      through `pairEvent`.
+    - mDNS / DNS-SD responder (Mdns.brs) on UDP 5353 for _silocast-roku._tcp and
+      _silopair-roku._tcp. Whether a channel may bind 5353 is decided by the device; the result
+      is in `status.mdns` and on the console ([siku-lan] mdns ...). The pairing link in the QR
+      code works without it.
+    - The pairing key: 16 bytes generated here, kept in the registry (section "SikuLan"), shown
+      by Connect a Phone through `pairingInfo`. Keys, nonces and tokens are never printed.
+  Fields
+    config      in:  {castEnabled, sealed, deviceId, deviceName, serverId, serverName,
+                      serverIdentity, signedIn, playing, pairing: {mode: ""|"setup"|"login", srv}}
+    command     in:  {kind: castSend|castClose|castCloseAll|castAuthorize|pairSend|pairClose|resetKey, ...}
+    castState   in:  the latest SiloCast playback state, sent to every authorized controller
+    castEvent   out: {type: hello|offer|handoffCancel|launch|control|presence|closed, conn, ...}
+    pairEvent   out: {type: connected|message|closed, conn, message}
+    status      out: {castPort, castListening, pairPort, pairListening, mdns, ip, controllers: [...]}
+    pairingInfo out: {keyId, keyText (groups of four), keyBase32, ip, port, sealed}
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="LanTask" extends="Task">
+  <interface>
+    <field id="config" type="assocarray" />
+    <field id="command" type="assocarray" alwaysNotify="true" />
+    <field id="castState" type="assocarray" />
+    <field id="castEvent" type="assocarray" alwaysNotify="true" />
+    <field id="pairEvent" type="assocarray" alwaysNotify="true" />
+    <field id="status" type="assocarray" />
+    <field id="pairingInfo" type="assocarray" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/lan/LanTask.brs" />
+  <script type="text/brightscript" uri="pkg:/components/lan/LanBytes.brs" />
+  <script type="text/brightscript" uri="pkg:/components/lan/SiloSealed.brs" />
+  <script type="text/brightscript" uri="pkg:/components/lan/Mdns.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+</component>

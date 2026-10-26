@@ -24,6 +24,11 @@ sub init()
     m.global.addFields({ authTask: authTask })
     authTask.control = "RUN"
 
+    ' Remote control and phone sign-in for Silo's phone app (LanTask, RemoteControl).
+    m.remote = CreateObject("roSGNode", "RemoteControl")
+    m.top.appendChild(m.remote)
+    m.remote.observeField("launchRequest", "onRemoteLaunch")
+
     m.global.observeField("toast", "onToast")
     m.global.observeField("authExpired", "onAuthExpired")
     m.global.observeField("staleProfile", "onStaleProfile")
@@ -206,6 +211,12 @@ sub onAuthExpired()
     if m.global.authExpired <> true then return
     m.global.authExpired = false
     s = m.global.session
+    if isTemporarySession(s) then
+        ' A phone's borrowed profile expired: hand it back, keep the Roku's own sign-in.
+        m.remote.endBorrowed = "refresh refused"
+        m.global.toast = "The phone profile session expired."
+        return
+    end if
     Session_signOutLocal(s)
     m.global.toast = "Your session expired. Please sign in again."
     routeToStart()
@@ -223,6 +234,7 @@ sub onStaleProfile()
     if r = invalid or Type(r) <> "roAssociativeArray" or Str_isEmpty(r.profileId) then return
     s = m.global.session
     if Str_isEmpty(s.accessToken) or Str_isEmpty(s.profileId) then return
+    if isTemporarySession(s) then return
     if Str_orEmpty(r.profileId) <> Str_orEmpty(s.profileId) then return
     if Str_orEmpty(r.profileToken) <> Str_orEmpty(s.profileToken) then return
     if Url_origin(Str_orEmpty(r.serverUrl)) <> Url_origin(Str_orEmpty(s.serverUrl)) then return
@@ -257,6 +269,31 @@ sub checkProfilePrompt()
     m.profilePrompt = invalid
     if name = "ProfileScreen" then return
     resetTo("ProfileScreen", { switching: true })
+end sub
+
+function isTemporarySession(s as object) as boolean
+    t = s.temporary
+    if Type(t) = "Boolean" or Type(t) = "roBoolean" then return t
+    return false
+end function
+
+' ---------- Remote control launches ----------
+
+' A phone launched a title (RemoteControl.onLaunch): it replaces a player on top, or opens over
+' whatever screen is up. A signed-out Roku has no shell under it; the player then closes back to
+' the sign-in screen.
+sub onRemoteLaunch()
+    params = m.remote.launchRequest
+    if params = invalid then return
+    top = topScreen()
+    if top <> invalid then
+        name = top.subtype()
+        if name = "PlayerScreen" or name = "AudioPlayerScreen" then
+            replaceTop("PlayerScreen", params)
+            return
+        end if
+    end if
+    pushScreen("PlayerScreen", params)
 end sub
 
 ' ---------- Deep links ----------
