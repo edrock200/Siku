@@ -21,6 +21,20 @@ function lanMaxControllers() as integer
     return 6
 end function
 
+' Outbound queue limits per connection: more than this waiting means the peer stopped reading.
+function lanMaxQueuedFrames() as integer
+    return 128
+end function
+
+function lanMaxQueuedBytes() as integer
+    return 524288
+end function
+
+' A queue that makes no progress for this long closes the connection.
+function lanSendStallMs() as integer
+    return 10000
+end function
+
 ' Receiver features this build implements (SiloCastFeature). replace_confirmation is not offered:
 ' Siku replaces what plays when a phone launches, as a Roku remote would.
 function lanCastFeatures() as object
@@ -57,16 +71,24 @@ sub runLan()
     m.mdnsAnnounceAt = []
     m.mdnsAdvertised = []
     m.mdnsAnswered = 0
+    m.mdnsSentAt = {}     ' record hex -> when it was last multicast (one per second, RFC 6762 s6)
+    m.mdnsSendFailures = 0
+    m.mdnsIgnored = 0
+    m.disc = invalid      ' the running "Find servers" scan, if any
     m.ip = deviceIp()
     loadKey()
 
     m.top.observeField("config", m.port)
     m.top.observeField("command", m.port)
     m.top.observeField("castState", m.port)
+    m.top.observeField("discover", m.port)
     if m.top.config <> invalid then applyConfig(m.top.config)
+    ' A screen can ask for a scan before this thread observes anything (ServerConnectScreen shows
+    ' as the app starts), so the last request is read once here too.
+    if m.top.discover <> invalid then onDiscover(m.top.discover)
 
     while true
-        msg = Wait(250, m.port)
+        msg = Wait(loopWaitMs(), m.port)
         t = Type(msg)
         if t = "roSocketEvent" then
             onSocketEvent(msg.GetSocketID())
@@ -78,11 +100,24 @@ sub runLan()
                 onCommand(msg.GetData())
             else if field = "castState" then
                 onCastState(msg.GetData())
+            else if field = "discover" then
+                onDiscover(msg.GetData())
             end if
         end if
+        flushAll()
         onTick()
     end while
 end sub
+
+' 250 ms when idle; at most 25 ms while a scan runs or a send queue waits (no busy loop: the
+' sockets only notify on readable).
+function loopWaitMs() as integer
+    if m.disc <> invalid then return 25
+    for each id in m.conns
+        if m.conns[id].outQ.Count() > 0 then return 25
+    end for
+    return 250
+end function
 
 function nowMs() as integer
     return m.clock.TotalMilliseconds()
@@ -250,9 +285,23 @@ sub onSocketEvent(sockId as integer)
     end if
 end sub
 
+' Accepts what is pending (a few at most per event); a listener that is not readable has nothing.
 sub acceptOn(listener as object, kind as string)
-    s = listener.Accept()
-    if s = invalid then return
+    for i = 1 to 4
+        if not listener.IsReadable() then
+            if not listener.eOK() then print "[siku-lan] " + kind + " listener error status=" + listener.Status().ToStr()
+            return
+        end if
+        s = listener.Accept()
+        if s = invalid then
+            if not listener.eOK() then print "[siku-lan] " + kind + " accept failed status=" + listener.Status().ToStr()
+            return
+        end if
+        acceptOne(s, kind)
+    end for
+end sub
+
+sub acceptOne(s as object, kind as string)
     s.SetMessagePort(m.port)
     s.NotifyReadable(true)
     peer = ""
@@ -262,7 +311,8 @@ sub acceptOn(listener as object, kind as string)
     cn = { id: "c" + m.connSeq.ToStr(), kind: kind, sock: s, frames: LanFrames_new(), openedAt: nowMs(), peer: peer
         sealedState: "none", keys: invalid, sendSeq: 0, recvSeq: 0
         didHello: false, authorized: false, authorizedAtHello: false, granted: false, features: {}, deviceId: "", deviceName: "", serverId: "", serverIdentity: ""
-        passive: false, missed: 0, lastState: "", lastStateAt: 0, budgetAt: 0, budget: 0, rateNoticeAt: -100000 }
+        passive: false, missed: 0, lastState: "", lastStateAt: 0, budgetAt: 0, budget: 0, rateNoticeAt: -100000
+        outQ: [], outOff: 0, outBytes: 0, outSince: 0 }
     if kind = "pair" then
         if countConns("pair") > 0 then
             print "[siku-lan] phone sign-in busy; refused " + peer
@@ -318,18 +368,30 @@ function countConns(kind as string) as integer
     return n
 end function
 
+' Reads what is waiting (a few reads per event). Receive runs only on a readable socket; a socket
+' that is not readable and not eOK has failed. 0 bytes from a readable socket is the peer's FIN.
 sub onReadable(cn as object)
-    n = cn.sock.Receive(m.rxBuf, 0, 16384)
-    if n <= 0 then
-        if n < 0 and cn.sock.eWouldBlock() then return
-        closeConn(cn, "peer closed")
-        return
-    end if
-    for each payload in LanFrames_append(cn.frames, Lan_slice(m.rxBuf, 0, n))
+    for i = 1 to 8
         if not m.conns.DoesExist(cn.id) then return
-        onFrame(cn, payload)
+        if not cn.sock.IsReadable() then
+            if not cn.sock.eOK() then closeConn(cn, "socket error " + cn.sock.Status().ToStr())
+            return
+        end if
+        n = cn.sock.Receive(m.rxBuf, 0, 16384)
+        if n <= 0 then
+            if n < 0 and (cn.sock.eWouldBlock() or cn.sock.eOK()) then return
+            closeConn(cn, "peer closed")
+            return
+        end if
+        for each payload in LanFrames_append(cn.frames, Lan_slice(m.rxBuf, 0, n))
+            if not m.conns.DoesExist(cn.id) then return
+            onFrame(cn, payload)
+        end for
+        if cn.frames.failed then
+            closeConn(cn, "frame too large")
+            return
+        end if
     end for
-    if cn.frames.failed then closeConn(cn, "frame too large")
 end sub
 
 sub onFrame(cn as object, payload as object)
@@ -608,24 +670,64 @@ sub sendText(cn as object, text as string)
     sendRaw(cn, payload)
 end sub
 
+' Frames go into the connection's queue and out as fast as the socket takes them: now, and on
+' every loop pass after (the loop waits at most 25 ms while anything is queued). Nothing blocks
+' the Task. A peer that stops reading fills the queue and is closed.
 sub sendRaw(cn as object, payload as object)
+    if not m.conns.DoesExist(cn.id) then return
     data = Lan_frame(payload)
-    total = data.Count()
-    sent = 0
-    waits = 0
-    while sent < total
-        k = cn.sock.Send(data, sent, total - sent)
+    if cn.outQ.Count() >= lanMaxQueuedFrames() or cn.outBytes + data.Count() > lanMaxQueuedBytes() then
+        print "[siku-lan] send queue full on " + cn.id + " (" + cn.outQ.Count().ToStr() + " frames, " + cn.outBytes.ToStr() + " bytes); closing"
+        cn.outQ = []
+        cn.outBytes = 0
+        closeConn(cn, "send queue full")
+        return
+    end if
+    if cn.outQ.Count() = 0 then cn.outSince = nowMs()
+    cn.outQ.Push(data)
+    cn.outBytes = cn.outBytes + data.Count()
+    flushConn(cn, true)
+end sub
+
+' Sends what the socket accepts without waiting. With mayClose false (the last try before a
+' close) a failure only stops it. Returns false when the connection was closed.
+function flushConn(cn as object, mayClose as boolean) as boolean
+    while cn.outQ.Count() > 0
+        data = cn.outQ[0]
+        k = cn.sock.Send(data, cn.outOff, data.Count() - cn.outOff)
         if k > 0 then
-            sent = sent + k
-        else if cn.sock.eWouldBlock() and waits < 200 then
-            waits = waits + 1
-            Sleep(10)
+            cn.outOff = cn.outOff + k
+            cn.outSince = nowMs()
+            if cn.outOff >= data.Count() then
+                cn.outQ.Shift()
+                cn.outBytes = cn.outBytes - data.Count()
+                cn.outOff = 0
+            end if
+        else if cn.sock.eWouldBlock() or cn.sock.eOK() then
+            ' Not writable yet.
+            if mayClose and nowMs() - cn.outSince > lanSendStallMs() then
+                print "[siku-lan] send stalled on " + cn.id + "; closing"
+                closeConn(cn, "send stalled")
+                return false
+            end if
+            return true
         else
-            print "[siku-lan] send failed on " + cn.id + "; closing"
+            if not mayClose then return true
+            print "[siku-lan] send failed on " + cn.id + " status=" + cn.sock.Status().ToStr() + "; closing"
+            cn.outQ = []
+            cn.outBytes = 0
             closeConn(cn, "send failed")
-            return
+            return false
         end if
     end while
+    return true
+end function
+
+sub flushAll()
+    for each id in connIds()
+        cn = m.conns[id]
+        if cn <> invalid and cn.outQ.Count() > 0 then flushConn(cn, true)
+    end for
 end sub
 
 ' A deliberate close: `close` first (with the reason for peers that read one), then the FIN.
@@ -657,6 +759,8 @@ sub closeConn(cn as object, why as string)
     if not m.conns.DoesExist(cn.id) then return
     m.conns.Delete(cn.id)
     m.sockToConn.Delete(cn.sock.GetID().ToStr())
+    ' One last try for what is queued (the `close` frame of a goodbye), then the FIN.
+    if cn.outQ.Count() > 0 then flushConn(cn, false)
     cn.sock.Close()
     print "[siku-lan] " + cn.kind + " connection " + cn.id + " closed (" + why + ")"
     if cn.kind = "pair" then
@@ -678,9 +782,13 @@ end sub
 
 ' ---------- mDNS ----------
 
+' Opens the 5353 socket the way a Roku is known to accept (ManavA/silo-roku, device evidence on a
+' C208X, Roku OS 16.0.4): SO_REUSEADDR set and read back, bound to 0.0.0.0:5353 and the bound port
+' read back, the group joined, multicast TTL 255 set and read back. Each step prints one
+' [siku-lan] mdns step line; any failure closes the socket and marks mDNS unavailable.
 sub ensureMdns()
     if m.io.mdns <> invalid or m.mdnsStatus = "unavailable" then return
-    wanted = m.io.castListener <> invalid or m.io.pairListener <> invalid
+    wanted = m.io.castListener <> invalid or m.io.pairListener <> invalid or m.disc <> invalid
     if not wanted then return
     d = CreateObject("roDatagramSocket")
     if d = invalid then
@@ -690,22 +798,38 @@ sub ensureMdns()
     end if
     d.SetMessagePort(m.port)
     reuse = d.SetReuseAddr(true)
+    try
+        reuse = d.GetReuseAddr()
+    catch e
+        ' brs-engine registers GetReuseAddr under another name; the setter's answer stands there.
+        print "[siku-lan] mdns step reuse: GetReuseAddr unavailable (" + Str_orEmpty(e.message) + ")"
+    end try
+    print "[siku-lan] mdns step reuse=" + Lan_boolText(reuse)
     bindAddr = CreateObject("roSocketAddress")
-    bindAddr.SetPort(5353)
-    bound = d.SetAddress(bindAddr)
+    bound = false
+    boundPort = 0
+    if reuse and bindAddr.SetAddress("0.0.0.0:5353") then bound = d.SetAddress(bindAddr)
+    if bound then
+        actual = d.GetAddress()
+        if actual <> invalid then boundPort = actual.GetPort()
+        bound = boundPort = 5353
+    end if
+    print "[siku-lan] mdns step bind 0.0.0.0:5353 ok=" + Lan_boolText(bound) + " port=" + boundPort.ToStr() + " status=" + d.Status().ToStr()
     m.mdnsGroup = CreateObject("roSocketAddress")
-    m.mdnsGroup.SetAddress("224.0.0.251:5353")
     joined = false
-    if bound then joined = d.JoinGroup(m.mdnsGroup)
-    print "[siku-lan] mdns bind 5353 reuse=" + reuse.ToStr() + " bound=" + bound.ToStr() + " joined=" + joined.ToStr() + " status=" + d.Status().ToStr()
-    if not bound or not joined then
+    if bound and m.mdnsGroup.SetAddress("224.0.0.251:5353") then joined = d.JoinGroup(m.mdnsGroup)
+    if bound then print "[siku-lan] mdns step join 224.0.0.251 ok=" + Lan_boolText(joined)
+    ttlOk = false
+    if joined and d.SetMulticastTTL(255) then ttlOk = d.GetMulticastTTL() = 255
+    if joined then print "[siku-lan] mdns step ttl 255 ok=" + Lan_boolText(ttlOk)
+    print "[siku-lan] mdns bind 5353 reuse=" + Lan_boolText(reuse) + " bound=" + Lan_boolText(bound) + " joined=" + Lan_boolText(joined) + " ttl=" + Lan_boolText(ttlOk) + " status=" + d.Status().ToStr()
+    if not ttlOk then
         ' Another responder owns the port without sharing it, or multicast is refused. Phones
-        ' then find Siku through the QR code's pairing link only.
+        ' then find Siku through the QR code's pairing link only, and Find servers says so.
         d.Close()
         m.mdnsStatus = "unavailable"
         return
     end if
-    d.SetMulticastTTL(255)
     d.SetMulticastLoop(false)
     d.NotifyReadable(true)
     m.io.mdns = d
@@ -770,39 +894,201 @@ sub mdnsTick(now as integer)
     if m.io.mdns = invalid then
         ensureMdns()
         if m.io.mdns <> invalid then refreshAdvertisement()
+        if m.disc <> invalid then discoverTick(now)
         return
     end if
+    ' Receive notifications can coalesce (the simulator reports several datagrams as one event).
+    if m.io.mdns.IsReadable() then onMdnsReadable()
     if m.mdnsAnnounceAt.Count() > 0 and now >= m.mdnsAnnounceAt[0] then
         m.mdnsAnnounceAt.Shift()
         if m.mdnsAdvertised.Count() > 0 then
-            mdnsSend(Mdns_announcement(m.mdnsAdvertised, mdnsHost(), m.ip, 4500), invalid)
-            print "[siku-lan] mdns announced " + m.mdnsAdvertised.Count().ToStr() + " service(s) as " + mdnsHost() + " " + m.ip
+            ann = Mdns_announcement(m.mdnsAdvertised, mdnsHost(), m.ip, 4500)
+            if mdnsSend(ann, invalid) then print "[siku-lan] mdns announced " + m.mdnsAdvertised.Count().ToStr() + " service(s) as " + mdnsHost() + " " + m.ip
         end if
     end if
-end sub
-
-sub onMdnsReadable()
-    buf = CreateObject("roByteArray")
-    buf[8999] = 0
-    n = m.io.mdns.Receive(buf, 0, 9000)
-    if n <= 0 then return
-    from = m.io.mdns.GetReceivedFromAddress()
-    query = Mdns_parse(Lan_slice(buf, 0, n))
-    resp = Mdns_respond(query, m.mdnsAdvertised, mdnsHost(), m.ip)
-    if resp = invalid then return
-    mdnsSend(resp.bytes, invalid)
-    if resp.unicast and from <> invalid then mdnsSend(resp.bytes, from)
-    m.mdnsAnswered = m.mdnsAnswered + 1
-    if m.mdnsAnswered <= 5 or m.mdnsAnswered mod 50 = 0 then
-        peer = ""
-        if from <> invalid then peer = from.GetAddress()
-        print "[siku-lan] mdns answered query #" + m.mdnsAnswered.ToStr() + " from " + peer
+    if m.disc <> invalid then discoverTick(now)
+    ' Forget multicast times older than the one-second window.
+    if m.mdnsSentAt.Count() > 64 then
+        keep = {}
+        for each k in m.mdnsSentAt
+            if now - m.mdnsSentAt[k] < 1000 then keep[k] = m.mdnsSentAt[k]
+        end for
+        m.mdnsSentAt = keep
     end if
 end sub
 
-sub mdnsSend(bytes as object, target as dynamic)
-    if m.io.mdns = invalid then return
+' Reads every waiting datagram (at most 16 per call). Only a readable socket is read.
+sub onMdnsReadable()
+    for i = 1 to 16
+        if m.io.mdns = invalid then return
+        if not m.io.mdns.IsReadable() then
+            if not m.io.mdns.eOK() then print "[siku-lan] mdns socket status=" + m.io.mdns.Status().ToStr()
+            return
+        end if
+        buf = CreateObject("roByteArray")
+        buf[9000] = 0
+        n = m.io.mdns.Receive(buf, 0, 9001)
+        if n <= 0 then return
+        from = m.io.mdns.GetReceivedFromAddress()
+        host = ""
+        port = 0
+        if from <> invalid then
+            parts = Str_orEmpty(from.GetAddress()).Split(":")
+            if parts.Count() = 2 then host = parts[0]
+            port = from.GetPort()
+        end if
+        if n > 9000 then
+            if m.disc <> invalid then m.disc.oversized = m.disc.oversized + 1
+        else
+            onMdnsPacket(Lan_slice(buf, 0, n), host, port, from)
+        end if
+    end for
+end sub
+
+sub onMdnsPacket(packet as object, host as string, port as integer, from as dynamic)
+    if packet.Count() < 12 then return
+    isResponse = (packet[2] and &h80) <> 0
+    if isResponse then
+        if m.disc <> invalid then
+            m.disc.received = m.disc.received + 1
+            selfIp = ""
+            if m.disc.allowSelf then selfIp = m.ip
+            m.disc.state = LanDisc_reduce(m.disc.state, packet, host, port, nowMs() - m.disc.startedAt, selfIp)
+            discoverPublish("scanning", false)
+        end if
+        return
+    end if
+    query = Mdns_parse(packet)
+    if query = invalid then return
+    asksUnicast = false
+    for each q in query.questions
+        if q.unicast then asksUnicast = true
+    end for
+    ' A query from another port is a one-shot (legacy) resolver; it is answered only when it asks
+    ' for a unicast reply, and then only to it.
+    if port <> 5353 and not asksUnicast then
+        m.mdnsIgnored = m.mdnsIgnored + 1
+        if m.mdnsIgnored <= 3 then print "[siku-lan] mdns ignored a query from port " + port.ToStr()
+        return
+    end if
+    resp = Mdns_respond(query, m.mdnsAdvertised, mdnsHost(), m.ip)
+    if resp = invalid then return
+    if asksUnicast then
+        if from <> invalid then mdnsSend(resp.bytes, from)
+    else
+        ' Each record goes out by multicast at most once a second (RFC 6762 section 6).
+        now = nowMs()
+        answers = []
+        for each r in resp.answers
+            if not m.mdnsSentAt.DoesExist(r) or now - m.mdnsSentAt[r] >= 1000 then answers.Push(r)
+        end for
+        if answers.Count() = 0 then return
+        additionals = []
+        for each r in resp.additionals
+            if not m.mdnsSentAt.DoesExist(r) or now - m.mdnsSentAt[r] >= 1000 then additionals.Push(r)
+        end for
+        mdnsSend(Mdns_message(answers, additionals), invalid)
+        for each r in answers
+            m.mdnsSentAt[r] = now
+        end for
+        for each r in additionals
+            m.mdnsSentAt[r] = now
+        end for
+    end if
+    m.mdnsAnswered = m.mdnsAnswered + 1
+    if m.mdnsAnswered <= 5 or m.mdnsAnswered mod 50 = 0 then
+        print "[siku-lan] mdns answered query #" + m.mdnsAnswered.ToStr() + " from " + host + ":" + port.ToStr() + " unicast=" + Lan_boolText(asksUnicast)
+    end if
+end sub
+
+' Sends one datagram; true when the socket took every byte. target invalid = the mDNS group.
+function mdnsSend(bytes as object, target as dynamic) as boolean
+    if m.io.mdns = invalid then return false
     if target = invalid then target = m.mdnsGroup
     m.io.mdns.SetSendToAddress(target)
-    m.io.mdns.Send(bytes, 0, bytes.Count())
+    sent = m.io.mdns.Send(bytes, 0, bytes.Count())
+    if sent = bytes.Count() then return true
+    m.mdnsSendFailures = m.mdnsSendFailures + 1
+    if m.mdnsSendFailures <= 5 or m.mdnsSendFailures mod 50 = 0 then
+        print "[siku-lan] mdns send #" + m.mdnsSendFailures.ToStr() + " incomplete: " + sent.ToStr() + "/" + bytes.Count().ToStr() + " status=" + m.io.mdns.Status().ToStr()
+    end if
+    return false
+end function
+
+' ---------- Find servers on this network (_silo._tcp) ----------
+
+' The `discover` field: {kind: "start", token, allowSelf} or {kind: "stop"}.
+sub onDiscover(c as dynamic)
+    if Type(c) <> "roAssociativeArray" then return
+    k = Str_orEmpty(c.kind)
+    if k = "start" then
+        discoverStart(c)
+    else if k = "stop" then
+        discoverStop()
+    end if
+end sub
+
+' {token, allowSelf}: a five-second scan from the 5353 socket; the query goes out at 0, 1 and 3 s,
+' answers are read strictly (LanDiscovery.brs) and published on `discovery` as they arrive.
+sub discoverStart(c as object)
+    if m.disc <> invalid then discoverPublish("cancelled", true)
+    ' A scan is a reason to try the socket again even if an earlier bind failed.
+    if m.mdnsStatus = "unavailable" and m.io.mdns = invalid then m.mdnsStatus = "off"
+    m.disc = { token: Str_orEmpty(c.token), startedAt: nowMs(), sent: 0, received: 0, oversized: 0, state: LanDisc_new(0), allowSelf: Lan_isTrue(c.allowSelf), lastJson: "", query: Lan_hexBytes(LanDisc_queryHex()) }
+    ensureMdns()
+    print "[siku-lan] discovery started (mdns " + m.mdnsStatus + ")"
+    if m.io.mdns = invalid then
+        discoverPublish("unavailable", true)
+        return
+    end if
+    if m.mdnsAdvertised.Count() = 0 then refreshAdvertisement()
+    discoverPublish("scanning", true)
+    discoverTick(nowMs())
+end sub
+
+sub discoverStop()
+    if m.disc = invalid then return
+    print "[siku-lan] discovery stopped"
+    m.disc = invalid
+end sub
+
+sub discoverTick(now as integer)
+    d = m.disc
+    if d = invalid then return
+    if m.io.mdns = invalid then
+        discoverPublish("unavailable", true)
+        return
+    end if
+    elapsed = now - d.startedAt
+    schedule = LanDisc_schedule()
+    if d.sent < schedule.Count() and elapsed >= schedule[d.sent] then
+        if not mdnsSend(d.query, invalid) then
+            discoverPublish("unavailable", true)
+            return
+        end if
+        d.sent = d.sent + 1
+    end if
+    if elapsed >= LanDisc_scanMs() or d.state.closed then
+        d.state = LanDisc_advance(d.state, elapsed)
+        discoverPublish("complete", true)
+    end if
+end sub
+
+' Publishes the scan to the screen when its list changed (or with force). Any status but
+' "scanning" is the scan's last word and ends it.
+sub discoverPublish(status as string, force as boolean)
+    d = m.disc
+    if d = invalid then return
+    final = status <> "scanning"
+    servers = []
+    if status <> "unavailable" then servers = LanDisc_servers(d.state.candidates)
+    out = { token: d.token, status: status, servers: servers, sent: d.sent, received: d.received }
+    j = FormatJson(servers)
+    if not force and not final and j = d.lastJson then return
+    d.lastJson = j
+    if final then
+        print "[siku-lan] discovery " + status + ": " + servers.Count().ToStr() + " server(s), queries=" + d.sent.ToStr() + " packets=" + d.received.ToStr() + " oversized=" + d.oversized.ToStr() + " conflicts=" + d.state.conflicts.Count().ToStr()
+        m.disc = invalid
+    end if
+    m.top.discovery = out
 end sub

@@ -292,3 +292,17 @@ function Lan_boolText(v as dynamic) as string
     if Lan_isTrue(v) then return "true"
     return "false"
 end function
+
+' A deployment identity (`server_id`) in the shape Siku stores and compares: 1..128 characters of
+' [A-Za-z0-9_-] (Silo's are UUIDs). Anything else is treated as no identity.
+function Lan_isServerId(id as dynamic) as boolean
+    t = Type(id)
+    if t <> "String" and t <> "roString" then return false
+    n = Len(id)
+    if n < 1 or n > 128 then return false
+    allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+    for i = 1 to n
+        if Instr(1, allowed, Mid(id, i, 1)) = 0 then return false
+    end for
+    return true
+end function

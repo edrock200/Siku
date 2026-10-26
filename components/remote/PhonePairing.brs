@@ -297,6 +297,11 @@ sub Pair_begin()
     m.pair.gen = m.pair.gen + 1
     Pair_view("starting")
     identity = Str_orEmpty(push.serverIdentity).Trim()
+    ' An identity Siku would not store (too long, odd characters) matches nothing.
+    if identity <> "" and not Lan_isServerId(identity) then
+        Pair_failed("identity_mismatch")
+        return
+    end if
     if Pair_isLogin() then
         ' Only the advertised server, by the identity the phone verified.
         if m.pair.srv = "" or identity <> m.pair.srv then

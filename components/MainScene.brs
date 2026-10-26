@@ -449,6 +449,7 @@ sub handleDeepLink(args as dynamic)
         if not Str_isEmpty(args.debugStallSeconds) then params.debugStallSeconds = Str_orEmpty(args.debugStallSeconds) ' PlayerScreen: no-progress limit for the buffering_timeout recovery (default 60 s / 120 s)
         if not Str_isEmpty(args.debugSubtitle) then params.subtitleTrackIndex = Int(Val(Str_orEmpty(args.debugSubtitle))) ' PlayerScreen: start with this subtitle (combined index), as a details-page pick
         if not Str_isEmpty(args.debugUrl) then params.url = args.debugUrl ' StreamTestScreen: an extra stream to try
+        if not Str_isEmpty(args.debugLanSelf) then params.debugLanSelf = true ' ServerConnectScreen: Find servers also accepts this machine's own address (tools/silo_responder.py)
         resetTo(args.debugScreen, params)
         return
     end if

@@ -7,6 +7,13 @@
   a glass card with saved servers to pick from, or a short explanation.
   Probes {base}/api/v2/system/info (https first when no scheme is typed), then reads
   /api/v2/system/identity and /api/v2/theme/branding, saves the server and opens LoginScreen.
+  Find servers on this network (Silo Android #597): LanTask scans `_silo._tcp` for five seconds
+  (once when the screen first shows, again on the button); the card lists what answered, by name
+  and literal http://address:port, below the saved servers. Picking one asks to confirm, checks
+  that GET /api/v2/system/identity there (anonymous: no token, no device headers) answers exactly
+  the advertised id, then runs the same probes and plain-HTTP consent as a typed address.
+  The address field stays usable during the scan. Deep link debugLanSelf=1 (simulator tests with
+  tools/silo_responder.py) also accepts answers from this device's own address.
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="ServerConnectScreen" extends="BaseScreen">
@@ -37,6 +44,7 @@
         <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
       </Label>
       <PillButton id="connect" text="Connect" variant="glass" />
+      <PillButton id="find" text="Find servers on this network" variant="glass" />
     </Group>
 
     <Group id="card" translation="[1190, 0]">
@@ -62,6 +70,15 @@
           <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
         </Label>
         <Group id="savedRows" translation="[52, 158]" />
+      </Group>
+      <Group id="foundCard" visible="false">
+        <Label id="foundTitle" width="536" color="0xEDEDEDFF" text="On this network">
+          <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="34" />
+        </Label>
+        <Label id="foundStatus" width="536" wrap="true" maxLines="2" color="0xEDEDED9E" translation="[0, 48]">
+          <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+        </Label>
+        <Group id="foundRows" />
       </Group>
     </Group>
   </children>

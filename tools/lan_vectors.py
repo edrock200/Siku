@@ -10,7 +10,13 @@ What it checks, by running tools/lan_vectors/run_vectors.brs in brs-cli:
     frames are refused; sealed_hello is written and read the way the phone does.
   - pairing keys in base32 / hex, server ids (base64url of the URL), server matching.
   - length-prefixed framing across split reads, and the 1 MiB limit.
-  - mDNS: answers to PTR / SRV / TXT / A / meta queries and the announcement, parsed back here.
+  - mDNS: answers to PTR / SRV / TXT / A / meta queries and the announcement, parsed back here;
+    every packet Siku sends also passes Siku's own strict reader (LanDiscovery.brs).
+  - Find servers (LanDiscovery.brs, rules ported from ManavA/silo-roku): crafted `_silo._tcp`
+    answers, plain and compressed, and the ones it must refuse: compression loops and long pointer
+    chains, wrong source port, public or malformed senders, A record not the sender, bad TXT (no
+    v=1, duplicate or malformed id), truncated or non-response packets, trailing bytes, SRV port 0;
+    goodbyes, conflicting values, expiry, the 16-server cap; display-name cleaning; id shape.
 brs-engine implements roEVPCipher and roHMAC with Node's crypto, so this verifies the frame format
 and the BrightScript logic; whether a Roku's own roEVPCipher/roHMAC agree is a device check
 (Connect a Phone, then any sealed command; `[siku-lan] sealed` lines).
@@ -98,6 +104,99 @@ def dns_parse(b):
     return flags, recs
 
 
+DISPLAY_ALLOWED = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ._-()'&")
+
+
+def display_name(label):
+    """Python twin of LanDisc_displayName."""
+    out, last_space = "", True
+    for ch in label:
+        if ch not in DISPLAY_ALLOWED:
+            ch = " "
+        if ch == " ":
+            if not last_space:
+                out += " "
+            last_space = True
+        else:
+            out += ch
+            last_space = False
+        if len(out) >= 48:
+            break
+    return out.strip()
+
+
+def disc_cases():
+    """(name, case for run_vectors.brs, expected servers [(name, url, id)], expected valid flags or None)."""
+    S = "192.168.1.30"
+
+    def pk(msg, sender=S, port=5353, at=100):
+        return {"hex": msg.hex(), "sender": sender, "port": port, "at": at}
+
+    def good(name="Den Silo", sid="3f2a9d5e-aaaa", address=S, port=8096, **kw):
+        return L.dns_message(L.silo_records(name, sid, address, port, **kw.pop("rec", {})), **kw)
+
+    one = [("Den Silo", "http://%s:8096" % S, "3f2a9d5e-aaaa")]
+    cases = []
+
+    def add(name, packets, servers, valid=None, **extra):
+        c = {"packets": packets}
+        c.update(extra)
+        cases.append((name, c, servers, valid))
+
+    add("plain answer", [pk(good(compress=False))], one, [True])
+    add("compressed answer", [pk(good())], one, [True])
+    loop = bytearray(struct.pack(">HHHHHH", 0, 0x8400, 0, 1, 0, 0)) + b"\xc0\x0c" + struct.pack(">HHIH", 12, 1, 120, 2) + b"\xc0\x0c"
+    add("compression loop refused", [pk(bytes(loop))], [], [False])
+    chain = bytearray(struct.pack(">HHHHHH", 0, 0x8400, 1, 0, 0, 0))
+    for i in range(18):
+        chain += struct.pack(">H", 0xC000 | (12 + 2 * (i + 1)))
+    chain += b"\x01a\x00" + struct.pack(">HH", 12, 1)
+    add("18 compression jumps refused", [pk(bytes(chain))], [], [False])
+    low = bytearray(struct.pack(">HHHHHH", 0, 0x8400, 1, 0, 0, 0)) + b"\xc0\x05" + struct.pack(">HH", 12, 1)
+    add("pointer into the header refused", [pk(bytes(low))], [], [False])
+    add("source port 5354 refused", [pk(good(), port=5354)], [], [False])
+    add("public sender refused", [pk(good(address="8.8.8.8"), sender="8.8.8.8")], [], [False])
+    add("sender with a leading zero refused", [pk(good(), sender="192.168.01.30")], [], [False])
+    add("own address refused without the debug switch", [pk(good(address="192.0.2.2"), sender="192.0.2.2")], [], [False])
+    add("own address with debugLanSelf", [pk(good(address="192.0.2.2"), sender="192.0.2.2")],
+        [("Den Silo", "http://192.0.2.2:8096", "3f2a9d5e-aaaa")], [True], selfIp="192.0.2.2")
+    add("A record not the sender", [pk(good(address="192.168.1.31"))], [], [True])
+    add("TXT without v", [pk(good(rec={"txt": ["id=3f2a9d5e-aaaa"]}))], [], [True])
+    add("TXT v=2", [pk(good(rec={"txt": ["v=2", "id=3f2a9d5e-aaaa"]}))], [], [True])
+    add("TXT duplicate id", [pk(good(rec={"txt": ["v=1", "id=a", "id=b"]}))], [], [True])
+    add("TXT id with a slash", [pk(good(rec={"txt": ["v=1", "id=a/b"]}))], [], [True])
+    add("TXT id of 129", [pk(good(rec={"txt": ["v=1", "id=" + "a" * 129]}))], [], [True])
+    add("TXT id of 128 and other keys", [pk(good(rec={"txt": ["v=1", "id=" + "a" * 128, "x=y"]}))],
+        [("Den Silo", "http://%s:8096" % S, "a" * 128)], [True])
+    add("TXT control byte", [pk(good(rec={"txt": ["v=1", "id=3f2a9d5e-aaaa", b"n=\x07"]}))], [], [True])
+    add("goodbye removes it", [pk(good(), at=100), pk(good(rec={"ttl": 0}), at=200)], [], [True, True])
+    add("two ids for one instance: conflict", [pk(good(), at=100), pk(good(sid="other-id"), at=200)], [], [True, True])
+    add("one instance at two addresses: conflict",
+        [pk(good(), at=100), pk(good(address="192.168.1.31", port=8097), sender="192.168.1.31", at=200)], [], [True, True])
+    add("two servers", [pk(good(), at=100), pk(good(name="Attic", sid="attic-1", address="10.0.0.9", port=80), sender="10.0.0.9", at=200)],
+        [("Attic", "http://10.0.0.9:80", "attic-1"), ("Den Silo", "http://%s:8096" % S, "3f2a9d5e-aaaa")], [True, True])
+    many = [pk(good(name="Silo %d" % i, sid="id-%d" % i, address="10.0.1.%d" % (i + 1)), sender="10.0.1.%d" % (i + 1), at=100 + i)
+            for i in range(20)]
+    add("at most 16 servers", many, [("Silo %d" % i, "http://10.0.1.%d:8096" % (i + 1), "id-%d" % i) for i in range(16)], [True] * 20)
+    trunc = bytearray(good())
+    trunc[2:4] = struct.pack(">H", 0x8600)
+    add("truncated answer refused", [pk(bytes(trunc))], [], [False])
+    query = bytearray(good())
+    query[2:4] = b"\x00\x00"
+    add("a query is not an answer", [pk(bytes(query))], [], [False])
+    add("trailing byte refused", [pk(good() + b"\x00")], [], [False])
+    over = bytearray(good())
+    over[-6:-4] = struct.pack(">H", 5)
+    add("record longer than the packet refused", [pk(bytes(over))], [], [False])
+    add("SRV port 0", [pk(good(port=0))], [], [True])
+    add("SRV and A expire", [pk(good(rec={"ttl": 2}), at=100)], [], [True], advance=3000)
+    big = bytearray(struct.pack(">HHHHHH", 0, 0x8400, 0, 65, 0, 0))
+    add("65 records refused", [pk(bytes(big))], [], [False])
+    long_label = bytearray(struct.pack(">HHHHHH", 0, 0x8400, 1, 0, 0, 0)) + bytes([64]) + b"a" * 64 + b"\x00" + struct.pack(">HH", 12, 1)
+    add("label of 64 refused", [pk(bytes(long_label))], [], [False])
+    return cases
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--brs-cli", default=os.path.join(ROOT, "node_modules", ".bin", "brs-cli"))
@@ -126,7 +225,11 @@ def main():
                dns_query("siku-0123abcd.local", 1),
                dns_query("_services._dns-sd._udp.local", 12),
                dns_query("_silocast._tcp.local", 12)]
-    cases = {"sealed": sealed_cases, "keys": key_cases, "servers": servers, "mdns": [q.hex() for q in queries]}
+    dcases = disc_cases()
+    names = ["Den Silo", "Silo (2)", "\x07Bad<script>name", "A" * 80, "  spaced   out  ", "L.A. Media_Box-1 & Co's"]
+    ids = ["3f2a9d5e-0000-4000-8000-000000000000", "", "a" * 128, "a" * 129, "bad/id", "mock-server-1", "ok_ID-9", "has space"]
+    cases = {"sealed": sealed_cases, "keys": key_cases, "servers": servers, "mdns": [q.hex() for q in queries],
+             "disc": [c for _, c, _, _ in dcases], "names": names, "ids": ids}
 
     work = tempfile.mkdtemp(prefix="lan-vectors-")
     fails = []
@@ -134,7 +237,7 @@ def main():
         with open(os.path.join(work, "cases.json"), "w") as f:
             json.dump(cases, f)
         srcs = [os.path.join(ROOT, "tools", "lan_vectors", "run_vectors.brs")] + [
-            os.path.join(ROOT, "components", "lan", n) for n in ("LanBytes.brs", "SiloSealed.brs", "Mdns.brs")] + [
+            os.path.join(ROOT, "components", "lan", n) for n in ("LanBytes.brs", "SiloSealed.brs", "Mdns.brs", "LanDiscovery.brs")] + [
             os.path.join(ROOT, "components", "common", "Utils.brs")]
         for s in srcs:
             shutil.copy(s, work)
@@ -209,6 +312,20 @@ def main():
     check("mdns ignores other types", m[4] is None)
     _, recs = dns_parse(bytes.fromhex(got["announce"]))
     check("mdns announcement", any(t == 33 and v == (52819, "siku-0123abcd.local") for _, t, _, _, v in recs), str(recs))
+
+    check("strict reader accepts Siku's own announcements, goodbyes and answers (%d packets)" % len(got["ownStrict"]),
+          len(got["ownStrict"]) >= 5 and all(got["ownStrict"]), str(got["ownStrict"]))
+    own = [(x["name"], x["url"], x["serverId"]) for x in got["ownSilo"]]
+    check("a _silo._tcp service built by Mdns.brs is one offer", own == [("Den Silo", "http://192.168.1.30:8096", "3f2a9d5e-aaaa-bbbb")], str(own))
+    for (name, _, want, valid), r in zip(dcases, got["disc"]):
+        servers = sorted((x["name"], x["url"], x["serverId"]) for x in r["servers"])
+        ok = servers == sorted(want) and (valid is None or r["valid"] == valid)
+        check("discovery: " + name, ok, "servers=%s valid=%s conflicts=%s" % (servers, r["valid"], r["conflicts"]))
+    for n, g in zip(names, got["names"]):
+        check("display name %r" % n, g == display_name(n), repr(g))
+    for i, g in zip(ids, got["ids"]):
+        want = 1 <= len(i) <= 128 and all(c.isascii() and (c.isalnum() or c in "-_") for c in i)
+        check("server id shape %r" % i[:20], g == want, str(g))
 
     print("%d failure(s)" % len(fails))
     sys.exit(1 if fails else 0)
