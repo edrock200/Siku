@@ -237,6 +237,21 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
   `A11y_reset()` when shown or hidden and prefix the first row spoken with their title; the
   player's panel speaks its tab or row from `applyHudRowFocus`. Read optional row flags with
   `A11y_isTrue` (pitfall 16), and combine label and value with `A11y_join`.
+- Caching between launches (Home cache, `HomeCache.brs` / `HomeCacheTask`): `cachefs:` is Roku's
+  evictable cache volume; `roFileSystem` and `roEVPDigest` stay in a Task, every storage failure is a
+  miss, the file name is a SHA-256 of server|account|profile, the write goes to a temp file with a
+  unique name (two Home pages once raced on one shared `.part`) and is renamed over the old file. Silo
+  artwork URLs are signed (`exp`/`sig` or presigned S3) and expire, so a cache stores no image URLs:
+  the cached Home draws default artwork and the server answer brings the pictures. Purges hang off
+  `Session_save` (the one place sign-out, server, account and profile changes pass through), compared
+  against the *registry* session so a phone's temporary profile never triggers one. In brs-cli,
+  `cachefs:` (and `tmp:`) are in-memory volumes that start empty every run, `GetDirectoryListing`
+  returns an `roList` (FormatJson refuses it; copy into an array), and two Tasks writing the same
+  file at once fail at random. Device checks pending: that cachefs survives a channel restart
+  (`[siku-home] cache hit` on the second launch) and the cost of the read on a low-end Roku.
+- A refreshed `RowList` keeps the viewer's place only if you restore it: `HomeSkylineFeed.onRows`
+  finds the focused row id and card `contentId` in the new content and sets `jumpToRowItem` after the
+  row sizes are set.
 - A Roku channel has no background state: it runs or it is closed, and Home closes it without
   notice. "Time away" rules (Profile Selection) measure from a periodically written last-active
   time (`ProfileLaunch.brs`), never from an exit hook alone.
@@ -305,14 +320,19 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
    `debugScreen=ServerConnectScreen,debugLanSelf=1` (the deep link lets the strict reader accept
    this machine's non-private address); `--scenario conflict|wrongport|badtxt|many|second` covers
    the refusals. On a real network run it without `--raw-to` from a machine on the Roku's LAN.
-7. Host tests: `python3 -m unittest discover -s tests` (pure BrightScript functions run in brs-cli)
+7. Home cache: start the mock with `--home-delay 20` and the simulator with
+   `debugSession=mock,debugPort=<port>,debugProfileLaunch=automatic,debugRelaunch=<s>` (the first Home
+   must have loaded before the relaunch; with several simulators running that takes 60-110 s); the
+   console must show `cache write` then, after `debug relaunch`, `cache hit` and `cache drawn` while the
+   mock is still sleeping, and a snapshot then shows titles over default artwork.
+8. Host tests: `python3 -m unittest discover -s tests` (pure BrightScript functions run in brs-cli)
    and, after `npm run package`, `python3 tools/package_check.py` (manifest images, no secrets,
    LAN/loopback URLs, v1 paths, webhooks, SPDX headers). CI runs both.
-8. Build: `npm run package` → `out/siku.zip`. Side-load on a Roku in developer mode
+9. Build: `npm run package` → `out/siku.zip`. Side-load on a Roku in developer mode
    (`http://<roku-ip>`, user `rokudev`) and watch `telnet <roku-ip> 8085` for errors. A compile
    error prints `Syntax Error ... in pkg:/...(line)`; a runtime crash prints a full backtrace with
    local variables, which is the single most useful thing to paste into a bug report.
-9. Playback changes: on the device, play one direct-play title and one that needs a server route,
+10. Playback changes: on the device, play one direct-play title and one that needs a server route,
    and read the two `[siku-playback]` lines (declared caps | request | decision). Open the debug
    screens with `curl -d '' "http://<roku-ip>:8060/launch/dev?debugScreen=StreamTestScreen"`
    (ECP needs POST; `&debugUrl=<url-encoded>` adds a stream) to test a packaging claim against

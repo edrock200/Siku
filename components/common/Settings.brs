@@ -46,7 +46,7 @@ function Settings_keyDefs() as object
         { key: "player.video_skip_forward_seconds", rev: 9, def: 30 }
         { key: "catalog.metadata_language", rev: 1, def: "" }
         { key: "home.hide_watched_items", rev: 12, def: false }
-        { key: "ui.card_presentation", rev: 5, def: { poster_size: "standard", caption: "title_metadata" } }
+        { key: "ui.card_presentation", rev: 5, def: { poster_size: "standard", caption: Settings_retiredCardCaption() } }
         { key: "ui.title_art", rev: 16, def: true }
         { key: "ui.disabled_library_ids", rev: 1, def: invalid }
         { key: "ui.theme_music_enabled", rev: 11, def: false }
@@ -424,18 +424,30 @@ function Settings_themeMusicLoop() as boolean
     return Settings_value("ui.theme_music_loop", false) = true
 end function
 
-' {posterSize, caption}: ui.card_presentation, else the legacy posterSize pref.
+' {posterSize}: ui.card_presentation, else the legacy posterSize pref. The stored caption is
+' ignored: the caption choice is retired (Silo Android #700, settings revision 24) and every card
+' shows its title and details.
 function Settings_cardPresentation() as object
-    out = { posterSize: "standard", caption: "title_metadata" }
+    out = { posterSize: "standard" }
     v = Settings_value("ui.card_presentation", invalid)
     if Type(v) = "roAssociativeArray" then
         if not Str_isEmpty(v.poster_size) then out.posterSize = LCase(v.poster_size)
-        if not Str_isEmpty(v.caption) then out.caption = LCase(v.caption)
     else
         ps = Settings_prefs().posterSize
         if not Str_isEmpty(ps) then out.posterSize = LCase(ps)
     end if
     return out
+end function
+
+' The schema still requires ui.card_presentation's caption (additionalProperties false, both
+' fields required), so Siku always writes this member and never offers the choice.
+function Settings_retiredCardCaption() as string
+    return "title_metadata"
+end function
+
+' The whole ui.card_presentation object Siku writes for a poster size.
+function Settings_cardPresentationBody(posterSize as string) as object
+    return { poster_size: posterSize, caption: Settings_retiredCardCaption() }
 end function
 
 ' The subtitle appearance the profile stores (the full object with defaults filled in).
@@ -496,7 +508,7 @@ end function
 ' A signature of the settings that change how browse screens draw (tabs, cards, Home rows).
 function Settings_uiSignature() as string
     cp = Settings_cardPresentation()
-    sig = cp.posterSize + "|" + cp.caption + "|" + Str_orEmpty(Settings_hideWatched()) + "|" + Str_orEmpty(Settings_showTitleArt())
+    sig = cp.posterSize + "|" + Str_orEmpty(Settings_hideWatched()) + "|" + Str_orEmpty(Settings_showTitleArt())
     ' Spoiler protection changes what episode cards draw (Spoilers.brs).
     spoilers = Spoilers_prefs()
     sig = sig + "|" + Str_orEmpty(spoilers.hideImages) + "|" + Str_orEmpty(spoilers.hideOverviews)

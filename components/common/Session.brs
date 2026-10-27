@@ -46,6 +46,7 @@ sub Session_save(s as object)
     temporary = s.temporary <> invalid and (Type(s.temporary) = "Boolean" or Type(s.temporary) = "roBoolean")
     if temporary then temporary = s.temporary
     if not temporary then
+        Session_homeCacheCheck(Registry_read("session"), s)
         Registry_write("session", s)
         Session_rememberServer(s)
     end if
@@ -60,6 +61,34 @@ sub Session_save(s as object)
             m.global.settings = { ready: false, available: false, identity: "", revision: 0, manifestRevision: 0, items: {}, error: "" }
         end if
     end if
+end sub
+
+' Why the Home cache (HomeCache.brs) must go when the saved session changes from `prev` to `s`:
+' "sign-out" (tokens dropped: sign-out, an expired or removed account), "server", "account" or
+' "profile" (another profile picked; clearing the profile for Who's Watching keeps it, so picking
+' the same one again still starts instantly). "" when nothing that owns the cache changed.
+function Session_homeCachePurgeReason(prev as dynamic, s as object) as string
+    if prev = invalid or Type(prev) <> "roAssociativeArray" then return ""
+    if Str_isEmpty(prev.accessToken) or Str_isEmpty(prev.serverUrl) then return ""
+    if Str_orEmpty(prev.serverUrl) <> Str_orEmpty(s.serverUrl) or Str_orEmpty(prev.serverId) <> Str_orEmpty(s.serverId) then return "server"
+    if Str_isEmpty(s.accessToken) then return "sign-out"
+    prevUser = ""
+    newUser = ""
+    if prev.user <> invalid and Type(prev.user) = "roAssociativeArray" then prevUser = Str_orEmpty(prev.user.id)
+    if s.user <> invalid and Type(s.user) = "roAssociativeArray" then newUser = Str_orEmpty(s.user.id)
+    if prevUser <> newUser then return "account"
+    if not Str_isEmpty(prev.profileId) and not Str_isEmpty(s.profileId) and Str_orEmpty(prev.profileId) <> Str_orEmpty(s.profileId) then return "profile"
+    return ""
+end function
+
+' Asks MainScene to purge the Home cache (it runs HomeCacheTask) when the owner changed.
+sub Session_homeCacheCheck(prev as dynamic, s as object)
+    reason = Session_homeCachePurgeReason(prev, s)
+    if reason = "" then return
+    g = m.global
+    if g = invalid or not g.hasField("homeCachePurge") then return
+    g.homeCachePurgeReason = reason
+    g.homeCachePurge = g.homeCachePurge + 1
 end sub
 
 ' Records the server in the saved-servers list (for Switch Server).

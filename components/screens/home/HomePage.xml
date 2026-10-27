@@ -7,6 +7,7 @@
 <component name="HomePage" extends="ShellPage">
   <script type="text/brightscript" uri="pkg:/components/screens/home/HomePage.brs" />
   <script type="text/brightscript" uri="pkg:/components/widgets/HomeCardActions.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/HomeCache.brs" />
   <children>
     <HomeSkylineFeed id="feed" />
     <ShellActionMenu id="menu" />

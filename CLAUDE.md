@@ -137,6 +137,14 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   (`seek:-30` seeks back) injects one through MainScene 8 s after the player's first plan.
   The player panel (Info / Video / Audio / Subtitles tabs and rows) and its pickers speak with
   `debugA11y=1` like the rest of the app (`[siku-a11y] say: Video, tab, 2 of 4`).
+- `[siku-home]` lines trace the Home cache (instant start): `cache hit age=Ns sections= bytes=`,
+  `cache miss reason=none|corrupt|owner|schema|size|unreadable|unsupported|empty`, `cache stale
+  reason=stale|future`, `cache drawn rows=`, `cache dropped reason=session|server-first`, `cache write
+  sections= bytes=` / `cache write failed|skipped reason=`, `cache purge reason=sign-out|server|account|profile
+  files=` and `refresh failed status=…, keeping the drawn rows`. No URLs, ids or tokens. Simulator:
+  brs-cli keeps `cachefs:` in memory only, so `debugRelaunch=<seconds>` rebuilds the start screen once
+  in the same run (a "second launch"); pair it with `tools/mock_server.py --home-delay <seconds>` to see
+  Home drawn from the cache before the server answers.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

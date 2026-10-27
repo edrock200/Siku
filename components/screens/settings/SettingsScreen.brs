@@ -167,14 +167,13 @@ function buildPane(catId as string) as object
         if Settings_available() and Settings_manifestRevision() < 5 then
             out.Push({ kind: "footer", text: "Update your Silo server to customize media cards." })
         else
-            out.Push({ kind: "row", row: rowDef("cardPreset", "choice", "Preset") })
+            ' Poster size is the only card option (the caption choice and presets are retired, Silo Android #700).
             out.Push({ kind: "row", row: rowDef("cardPosterSize", "choice", "Poster Size") })
-            out.Push({ kind: "row", row: rowDef("cardCaptions", "choice", "Captions") })
             out.Push({ kind: "row", row: rowDef("cardDeviceOnly", "toggle", "Only This Device") })
             if Settings_source("ui.card_presentation") = "profile_client" then
                 out.Push({ kind: "row", row: rowDef("cardUseProfileDefault", "action", "Use Profile Default") })
             end if
-            out.Push({ kind: "footer", text: "Start with Balanced, Compact, Cinema, or Artwork Only, then fine-tune size and captions. These choices sync with other TVs on this profile unless Only This Device is on." })
+            out.Push({ kind: "footer", text: "Poster size syncs with other TVs on this profile unless Only This Device is on." })
         end if
 
         ' Title Pages (ui.title_art, revision 16): hidden until the server confirms the key.
@@ -350,16 +349,8 @@ function rowValue(row as object) as string
         return onOff(Settings_value("catalog.hide_unwatched_episode_images", false) = true)
     else if id = "spoilerOverviews" then
         return onOff(Settings_value("catalog.hide_unwatched_episode_overviews", false) = true)
-    else if id = "cardPreset" then
-        cp = Settings_cardPresentation()
-        for each pr in cardPresets()
-            if pr.posterSize = cp.posterSize and pr.caption = cp.caption then return pr.label
-        end for
-        return "Custom"
     else if id = "cardPosterSize" then
         return Settings_optionLabel(rowOptions(row), Settings_cardPresentation().posterSize)
-    else if id = "cardCaptions" then
-        return Settings_optionLabel(rowOptions(row), Settings_cardPresentation().caption)
     else if id = "cardDeviceOnly" then
         return onOff(Settings_source("ui.card_presentation") = "profile_device")
     else if id = "titleArt" then
@@ -449,16 +440,6 @@ function subtitleMode() as string
     return v
 end function
 
-' CardPresentationPreset: friendly recipes over the two contract axes.
-function cardPresets() as object
-    return [
-        { id: "balanced", label: "Balanced", posterSize: "standard", caption: "title_metadata" }
-        { id: "compact", label: "Compact", posterSize: "compact", caption: "title" }
-        { id: "cinema", label: "Cinema", posterSize: "large", caption: "title" }
-        { id: "artwork", label: "Artwork Only", posterSize: "large", caption: "artwork" }
-    ]
-end function
-
 function nextUpPromptLabel(seconds as integer) as string
     if seconds <= 0 then return "At end"
     if seconds < 60 then return seconds.ToStr() + " seconds before end"
@@ -475,17 +456,8 @@ function rowOptions(row as object) as object
             out.Push({ value: b.id, label: b.title, detail: b.detail })
         end for
         return out
-    else if id = "cardPreset" then
-        out = []
-        for each pr in cardPresets()
-            out.Push({ value: pr.id, label: pr.label })
-        end for
-        if rowValue(row) = "Custom" then out.Push({ value: "custom", label: "Custom" })
-        return out
     else if id = "cardPosterSize" then
         return [{ value: "compact", label: "Compact" }, { value: "standard", label: "Standard" }, { value: "large", label: "Large" }]
-    else if id = "cardCaptions" then
-        return [{ value: "title_metadata", label: "Title & Metadata" }, { value: "title", label: "Title Only" }, { value: "artwork", label: "Artwork Only" }]
     else if id = "metadataLanguage" then
         return Settings_languageOptions("catalog.metadata_language")
     else if id = "bufferingQuality" then
@@ -541,16 +513,8 @@ function rowCurrent(row as object) as dynamic
     id = row.id
     if id = "profileSelection" then
         return ProfileLaunch_behavior().id
-    else if id = "cardPreset" then
-        cp = Settings_cardPresentation()
-        for each pr in cardPresets()
-            if pr.posterSize = cp.posterSize and pr.caption = cp.caption then return pr.id
-        end for
-        return "custom"
     else if id = "cardPosterSize" then
         return Settings_cardPresentation().posterSize
-    else if id = "cardCaptions" then
-        return Settings_cardPresentation().caption
     else if id = "metadataLanguage" then
         return Str_orEmpty(Settings_value("catalog.metadata_language", ""))
     else if id = "bufferingQuality" then
@@ -1067,13 +1031,14 @@ sub putLanguage(key as string, scope as string, tag as string)
     if tag.Trim() = "" then deleteValue(key, scope) else putValue(key, scope, tag)
 end sub
 
-' ui.card_presentation: the whole two-field object, at profile_device while "Only This Device"
-' is on, else at profile_client (roams between this profile's TVs).
-sub writeCardPresentation(posterSize as string, caption as string, deviceOnly as boolean)
+' ui.card_presentation: the whole two-field object (caption always "title_metadata"), at
+' profile_device while "Only This Device" is on, else at profile_client (roams between this
+' profile's TVs).
+sub writeCardPresentation(posterSize as string, deviceOnly as boolean)
     scope = "profile_client"
     if deviceOnly then scope = "profile_device"
     beginWrites(1)
-    putValue("ui.card_presentation", scope, { poster_size: posterSize, caption: caption })
+    putValue("ui.card_presentation", scope, Settings_cardPresentationBody(posterSize))
 end sub
 
 ' playback.subtitle_appearance, the full object (textOpacity only when the server's manifest knows
@@ -1116,17 +1081,11 @@ sub applyChoice(row as object, value as dynamic)
         beginWrites(1)
         putValue("catalog.hide_unwatched_episode_overviews", "profile", value = true)
         m.global.homeDirty = true
-    else if id = "cardPreset" then
-        for each pr in cardPresets()
-            if pr.id = value then writeCardPresentation(pr.posterSize, pr.caption, deviceOnly)
-        end for
     else if id = "cardPosterSize" then
-        writeCardPresentation(Str_orEmpty(value), cp.caption, deviceOnly)
-    else if id = "cardCaptions" then
-        writeCardPresentation(cp.posterSize, Str_orEmpty(value), deviceOnly)
+        writeCardPresentation(Str_orEmpty(value), deviceOnly)
     else if id = "cardDeviceOnly" then
         if value = true then
-            writeCardPresentation(cp.posterSize, cp.caption, true)
+            writeCardPresentation(cp.posterSize, true)
         else
             beginWrites(1)
             deleteValue("ui.card_presentation", "profile_device")

@@ -14,6 +14,13 @@ sub init()
     m.pendingSections = 0
     m.loadSeq = 0
     m.optionsTarget = invalid
+    ' Home cache (HomeCache.brs): asked once per page, drawn only until the server answers.
+    m.cacheAsked = false
+    m.cacheTask = invalid
+    m.cacheWriteTask = invalid
+    m.cacheWritePending = invalid
+    m.serverAnswered = false
+    m.serverSections = []
     m.top.focusable = true
 end sub
 
@@ -45,7 +52,13 @@ end sub
 sub load()
     m.loading = true
     m.loadSeq = m.loadSeq + 1
-    m.feed.state = "loading"
+    ' A refresh keeps the rows already drawn (from the cache or the last answer) instead of a
+    ' spinner; buildRows swaps them in place and the feed keeps the focused card.
+    if m.rows.Count() = 0 then m.feed.state = "loading"
+    if libraryId() = "" and not m.cacheAsked then
+        m.cacheAsked = true
+        readHomeCache()
+    end if
     ' Artwork at drawn size (Artwork.brs): ask the server once whether it takes per-slot widths;
     ' Home waits for that answer (at most 3 s) so its first read is already sized.
     if not Artwork_capsSettled() and m.artCapsAsked <> true then
@@ -84,13 +97,22 @@ sub onSections(event as object)
     if resp.context = invalid or resp.context.seq <> m.loadSeq then return
     if not resp.ok then
         m.loading = false
-        m.feed.errorText = Api_errorText(resp)
-        m.feed.state = "error"
+        if m.rows.Count() > 0 then
+            ' Keep what is drawn (the cached Home or the last answer); the next visit tries again.
+            print "[siku-home] refresh failed status="; resp.status; ", keeping the drawn rows"
+            m.loaded = false
+            if m.top.active then m.global.toast = "Couldn't refresh Home. " + Api_errorText(resp)
+        else
+            m.feed.errorText = Api_errorText(resp)
+            m.feed.state = "error"
+        end if
         Launch_ready("home")
         return
     end if
+    m.serverAnswered = true
     sections = []
     if resp.data <> invalid then sections = Arr_or(resp.data.sections)
+    m.serverSections = sections
     ' Settings → General → Home Sections: this Roku's saved order and hidden rows (device-local,
     ' like Android TV's TvHomeSectionPreferences). Library pages keep the server order.
     if libraryId() = "" then sections = Settings_arrangeSections(sections)
@@ -104,7 +126,7 @@ sub onSections(event as object)
         sid = Str_orEmpty(s.id)
         items = hideWatchedItems(s, Arr_or(s.items))
         total = Content_num(s.total_count)
-        entry = { section: s, items: items }
+        entry = { section: s, items: items, rawItems: Arr_or(s.items) }
         m.sections.Push(entry)
         if scope <> "" then
             if scopeSection(entry, m.sections.Count() - 1, scope) then m.pendingSections = m.pendingSections + 1
@@ -264,7 +286,8 @@ sub onSectionItems(event as object)
     if resp.ok and resp.data <> invalid then
         idx = ctx.index
         if idx >= 0 and idx < m.sections.Count() then
-            m.sections[idx].items = hideWatchedItems(m.sections[idx].section, Arr_or(resp.data.items))
+            m.sections[idx].rawItems = Arr_or(resp.data.items)
+            m.sections[idx].items = hideWatchedItems(m.sections[idx].section, m.sections[idx].rawItems)
         end if
     end if
     m.pendingSections = m.pendingSections - 1
@@ -301,7 +324,7 @@ function squareLibrary() as boolean
     return libMode = "audiobooks" or libMode = "music"
 end function
 
-sub buildRows()
+sub buildRows(fromCache = false as boolean)
     rows = []
     defaultStyle = "poster"
     if squareLibrary() then defaultStyle = "square"
@@ -326,8 +349,13 @@ sub buildRows()
         end if
     end for
     m.rows = rows
-    m.loading = false
-    m.loaded = true
+    if fromCache then
+        print "[siku-home] cache drawn rows="; rows.Count()
+    else
+        m.loading = false
+        m.loaded = true
+        if libraryId() = "" then writeHomeCache()
+    end if
     m.feed.rows = rows
     if rows.Count() = 0 then
         m.feed.state = "empty"
@@ -340,6 +368,77 @@ sub buildRows()
         m.scopeIncomplete = false
         m.global.toast = "Some shelves could not be fully loaded for this media type. Retry or open Browse."
     end if
+end sub
+
+' ---------- Home cache (HomeCache.brs, HomeCacheTask) ----------
+
+sub readHomeCache()
+    owner = HomeCache_ownerSource(m.global.session)
+    if owner = "" then return
+    task = CreateObject("roSGNode", "HomeCacheTask")
+    task.job = { action: "read", ownerSource: owner }
+    task.observeField("result", "onHomeCacheRead")
+    m.cacheTask = task
+    task.control = "RUN"
+end sub
+
+' Draws the cached Home only while the server has not answered, for the session that asked.
+sub onHomeCacheRead(event as object)
+    res = event.getData()
+    m.cacheTask = invalid
+    if res = invalid or Type(res) <> "roAssociativeArray" or res.status <> "hit" then return
+    if Str_orEmpty(res.ownerSource) <> HomeCache_ownerSource(m.global.session) then
+        print "[siku-home] cache dropped reason=session"
+        return
+    end if
+    if m.serverAnswered then
+        print "[siku-home] cache dropped reason=server-first"
+        return
+    end if
+    ' This Roku's section order, hidden rows and hide-watched apply as they are now.
+    m.sections = []
+    for each s in Settings_arrangeSections(Arr_or(res.sections))
+        m.sections.Push({ section: s, items: hideWatchedItems(s, Arr_or(s.items)) })
+    end for
+    buildRows(true)
+end sub
+
+' Saves the server's Home as it came (every section, in the server's order, unfiltered).
+sub writeHomeCache()
+    owner = HomeCache_ownerSource(m.global.session)
+    if owner = "" then return
+    fetched = {}
+    for each e in m.sections
+        fetched[Str_orEmpty(e.section.id)] = e.rawItems
+    end for
+    entries = []
+    for each s in m.serverSections
+        items = fetched[Str_orEmpty(s.id)]
+        if items = invalid then items = Arr_or(s.items)
+        entries.Push({ section: s, rawItems: items })
+    end for
+    job = { action: "write", ownerSource: owner, payload: HomeCache_payload(entries) }
+    ' One write at a time (two share the temp file): a newer answer waits for the running write.
+    if m.cacheWriteTask <> invalid then
+        m.cacheWritePending = job
+        return
+    end if
+    startHomeCacheWrite(job)
+end sub
+
+sub startHomeCacheWrite(job as object)
+    task = CreateObject("roSGNode", "HomeCacheTask")
+    task.job = job
+    task.observeField("result", "onHomeCacheWritten")
+    m.cacheWriteTask = task
+    task.control = "RUN"
+end sub
+
+sub onHomeCacheWritten()
+    m.cacheWriteTask = invalid
+    job = m.cacheWritePending
+    m.cacheWritePending = invalid
+    if job <> invalid then startHomeCacheWrite(job)
 end sub
 
 ' ---------- Selection ----------
