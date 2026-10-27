@@ -80,15 +80,15 @@ end function
 '
 ' Cards & Posters (Settings → General): the server-synced ui.card_presentation when loaded, else the
 ' legacy device pref. Read inline (not through Settings.brs) so every component that has Theme.brs
-' can call these without another include.
+' can call these without another include. Poster size is the only card option: the caption choice
+' is retired (Silo Android #700) and every card shows its title and details, whatever is stored.
 function Theme_cardPresentation() as object
-    out = { posterSize: "standard", caption: "title_metadata" }
+    out = { posterSize: "standard" }
     st = m.global.settings
     if st <> invalid and Type(st) = "roAssociativeArray" and st.available = true and st.items <> invalid then
         it = st.items["ui.card_presentation"]
         if it <> invalid and Type(it.value) = "roAssociativeArray" then
             if it.value.poster_size <> invalid then out.posterSize = LCase(it.value.poster_size)
-            if it.value.caption <> invalid then out.caption = LCase(it.value.caption)
             return out
         end if
     end if
@@ -111,11 +111,6 @@ function Theme_gridColumns() as integer
     if size = "compact" then return 7
     if size = "large" then return 5
     return 6
-end function
-
-' Card captions: "title_metadata" | "title" | "artwork" (CardCaption).
-function Theme_cardCaption() as string
-    return Theme_cardPresentation().caption
 end function
 
 ' Show title art (ui.title_art, Settings → General → Title Pages): logos stand in for titles.
