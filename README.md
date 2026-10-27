@@ -32,8 +32,10 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Detail | Trailers & More row and a Trailer button next to Play: the server's trailers and extras play in Siku; YouTube trailers open the YouTube channel, or show a link and QR code | 🟡 needs device testing (YouTube hand-off) |
 | Detail | Optional theme music, "Translated by AI" marks | 🟡 needs device testing |
 | Phone | Control Siku from Silo's phone app (cast button or Profile › Connect a Phone QR code), and sign Siku in from the phone | 🟡 needs device testing |
+| Playback | Roku voice commands while watching or listening: pause, resume, stop, fast forward, rewind, skip by a spoken amount (new in 0.1.25) | 🟡 simulator-tested, needs device testing |
+| Home | Opens instantly from the rows saved last time, then refreshes from the server (new in 0.1.25) | 🟡 simulator-tested, needs device testing (does the saved copy survive a restart) |
 | Playback | Automatic recovery (another route, lower quality on Auto), numbered errors reported to the server (new in 0.1.24, [codes](docs/playback-errors.md)) | 🟡 simulator-tested, needs device testing |
-| Accessibility | Roku screen reader reads buttons, tabs, settings, PIN pad and profiles; low-memory handling; launch timing beacons (new in 0.1.24) | 🟡 simulator-tested, needs device testing |
+| Accessibility | Roku screen reader reads buttons, tabs, settings, PIN pad, profiles and the player panel (0.1.25); low-memory handling; launch timing beacons (new in 0.1.24) | 🟡 simulator-tested, needs device testing |
 | Playback | Seek-bar preview pictures, hold Left/Right to fast-scan, audio and subtitle choices remembered for the whole series | 🟡 needs device testing |
 | Profiles | "Who's watching?" at launch (Profile Selection setting), recovery when an administrator changes access | ✅ simulator, device pending |
 | Settings | Spoilers (hide unwatched episodes' pictures and descriptions), hidden libraries, remembered sort and filters | ✅ simulator, device pending |

@@ -3,6 +3,20 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.25
+
+Brings Siku up to date with Silo's Android TV app as of October 27, 2026, with two more ideas from [ManavA/silo-roku](https://github.com/ManavA/silo-roku).
+
+**New**
+- **Voice control while watching or listening.** Say "pause", "resume", "stop", "fast forward", "rewind", "replay" or "skip ahead 2 minutes" to your Roku voice remote. Skips move by the same amounts as your remote's skip buttons. While a video is loading or changing quality, Siku turns the request down instead of ignoring it. Works for audiobooks and music too.
+- **Home opens instantly.** Siku remembers your Home rows from last time and shows them straight away, then updates them once your server answers, without moving you off the card you were on. Pictures appear with the update. The saved Home is cleared when you sign out or switch server or profile.
+
+**Changed**
+- **Every card shows its title.** As in Silo's Android TV app, the "Captions" and "Preset" choices are gone from Settings › General › Cards & Posters; every card shows its title and details, and Poster Size is still yours to choose.
+- **The screen reader reads the player's panel.** With Roku's screen reader on, the player's Info, Video, Audio and Subtitles panel and the choices it opens are read out: the option, whether it is selected, and its position.
+
+**Needs testing on a real Roku:** voice commands (the debug log `telnet <roku-ip> 8085` should show `[siku-voice] transport events enabled=true`, then one line per command), whether the saved Home survives restarting the channel (`[siku-home] cache hit` on the second launch), and the player panel's speech.
+
 ## v0.1.24
 
 Improvements inspired by another Roku client for Silo, [ManavA/silo-roku](https://github.com/ManavA/silo-roku), adapted to Siku.
