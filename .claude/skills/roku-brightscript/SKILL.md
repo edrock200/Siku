@@ -216,7 +216,7 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
   crossfade must ignore its own front layer reloading (Home's backdrop went black).
 - Host tests (`tools/brs_test.py`, `tests/`) give `m.global` a `hasField`; anything else a node
   does (observers, `getField` on children) still needs the simulator.
- of its URL (`Lan_serverIdFor`) and matches by that or
+- Silo's phone keys a server by base64url of its URL (`Lan_serverIdFor`) and matches by that or
   by the deployment identity (`/api/v2/system/identity` `server_id`, Siku's `session.serverId`).
 - Voice transport commands (`components/common/VoiceTransport.brs`, idea from ManavA/silo-roku):
   `roInput.EnableTransportEvents()` in `main.brs` (in `try`; older firmware lacks it), then each
