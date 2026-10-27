@@ -54,12 +54,16 @@ components/common/
   ProfileLaunch.brs  ProfileLaunch_* the Profile Selection setting (who's watching at launch, the new-Roku remember offer)
   A11y.brs      A11y_* screen reader speech for hand-drawn controls ("label, role, N of M"; never values, URLs or e-mail)
   Memory.brs    Memory_* a covered screen's artwork and list content dropped on a memory warning, restored on show
+  HomeCache.brs HomeCache_* the instant-start Home cache (owner key, freshness, trimmed payload; pure)
 components/tasks/
   ApiTask       one HTTP request (Task); JSON in and out; 401 → refresh → retry
   ProbeTask     the connection speed test (bandwidth probe download, timed; results POSTed)
   AuthTask      long-lived single-flight token refresher (rotating refresh tokens)
   YouTubeLaunchTask  hands a YouTube trailer to the YouTube channel (837): roAppManager.LaunchApp, then ECP
   A11yTask      owns the app's one roAudioGuide and speaks what A11y_say sends it
+  HomeCacheTask reads, writes and purges cachefs:/siku-home-v1-<sha256 owner>.json (one job per Task).
+                Home draws the cached sections (no artwork URLs: they are signed) until the server
+                answers; Session_save asks MainScene to purge on sign-out, server, account or profile change
   Http.brs      roUrlTransfer wrapper and Silo device headers
 components/lan/                 the LAN side of Silo's phone app (see "Phone features" below)
   LanTask       one long-lived Task: TCP listeners, frames, sealed level, heartbeats, mDNS responder

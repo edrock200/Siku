@@ -80,18 +80,63 @@ sub onRows()
         m.rowTitles.visible = false
         return
     end if
+    ' A refresh (the server answer replacing the cached Home, or a re-read) keeps the focused
+    ' card when it is still there, else the same position in the same row, else the first card.
+    keep = focusKey()
     m.rowList.content = Content_rows(specs, m.cellPad)
     m.focusRow = 0
+    target = findFocus(keep)
+    m.focusRow = target[0]
     syncRowMetrics()
+    if target[0] > 0 or target[1] > 0 then m.rowList.jumpToRowItem = target
     m.top.hasRows = true
     m.rowList.visible = m.top.state = "ready"
     m.rowTitles.visible = m.rowList.visible
-    ' Marquee for the first card without waiting for a focus event.
+    ' Marquee for the focused (or first) card without waiting for a focus event.
     if m.top.state = "ready" then
-        first = firstCard()
-        if first <> invalid then showCard(first)
+        card = cardAt(target[0], target[1])
+        if card = invalid then card = firstCard()
+        if card <> invalid then showCard(card)
     end if
 end sub
+
+' {rowId, contentId, row, item} of the focused card, or invalid when nothing is drawn.
+function focusKey() as dynamic
+    c = m.rowList.content
+    if c = invalid or c.getChildCount() = 0 then return invalid
+    rf = m.rowList.rowItemFocused
+    if rf = invalid or rf.Count() < 2 then return invalid
+    r = rf[0]
+    i = rf[1]
+    if r < 0 or r >= c.getChildCount() then return invalid
+    row = c.getChild(r)
+    key = { rowId: Str_orEmpty(row.rowId), contentId: "", row: r, item: i }
+    if i >= 0 and i < row.getChildCount() then key.contentId = Str_orEmpty(row.getChild(i).contentId)
+    return key
+end function
+
+' The [row, item] in the new content for a focusKey; [0, 0] when the row is gone.
+function findFocus(key as dynamic) as object
+    c = m.rowList.content
+    if key = invalid or c = invalid then return [0, 0]
+    for r = 0 to c.getChildCount() - 1
+        row = c.getChild(r)
+        if Str_orEmpty(row.rowId) = key.rowId then
+            n = row.getChildCount()
+            if n = 0 then return [r, 0]
+            if key.contentId <> "" then
+                for i = 0 to n - 1
+                    if Str_orEmpty(row.getChild(i).contentId) = key.contentId then return [r, i]
+                end for
+            end if
+            i = key.item
+            if i >= n then i = n - 1
+            if i < 0 then i = 0
+            return [r, i]
+        end if
+    end for
+    return [0, 0]
+end function
 
 ' Card size per row style (poster 176×264, landscape 360×203, square 200×200; captions add 90).
 function rowCardSize(style as string) as object

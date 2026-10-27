@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Reads, writes and purges the Home cache (components/common/HomeCache.brs) on cachefs:. One job
+  per Task: create it, set `job`, set control="RUN", observe `result`. File and crypto objects
+  (roFileSystem, roEVPDigest) stay off the render thread (skill pitfall 2).
+  job:    { action: "read",  ownerSource }
+          { action: "write", ownerSource, payload: HomeCache_payload(...) }
+          { action: "purge", reason, keepOwnerSource? }   deletes every Home cache file (but keep's)
+  result: { action, ok, status: "hit"|"miss"|"stale"|"written"|"skipped"|"purged", reason,
+            ownerSource, sections?, age?, bytes?, files? }
+  A read or write whose ownerSource is no longer the active session's is dropped (status "skipped").
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="HomeCacheTask" extends="Task">
+  <interface>
+    <field id="job" type="assocarray" />
+    <field id="result" type="assocarray" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/tasks/HomeCacheTask.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/HomeCache.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+</component>

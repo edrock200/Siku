@@ -77,7 +77,8 @@ LOCK = threading.Lock()
 LOG = []
 # Feature switches (main() sets them from the command line).
 OPTS = {"active_quality": True, "ai_fail": False, "ai_transcribe_only": False, "buffering_quality": True, "probe_kbps": 40000,
-        "slot_widths": True, "empty_libraries": set(), "trickplay": "ok", "hls_copy_ts": False}
+        "slot_widths": True, "empty_libraries": set(), "trickplay": "ok", "hls_copy_ts": False,
+        "home_delay": 0.0}
 
 GENRES = ["Science Fiction", "Drama", "Crime", "Comedy", "Thriller", "Adventure", "Animation", "Documentary"]
 MOVIE_TITLES = [
@@ -1868,6 +1869,8 @@ class Handler(BaseHTTPRequestHandler):
                 libs.append({"id": 5, "name": "Everything", "type": "mixed", "sort_order": 4})
             return self.send(200, {"items": libs})
         if p == "/api/v2/home/sections":
+            if OPTS["home_delay"] > 0:
+                time.sleep(OPTS["home_delay"])  # --home-delay: a slow server, to watch the Home cache draw first
             return self.send(200, home_sections())
         m = re.match(r"^/api/v2/library/([^/]+)/sections$", p)
         if m:
@@ -2717,7 +2720,10 @@ def main():
                     help="seek-bar previews for file 42: served, not offered, 404, a sheet missing, or URLs expiring in 75 s")
     ap.add_argument("--hls-copy-ts", action="store_true",
                     help="a server with hls_copy_mpegts_v1 and seek_reanchor_v1: MPEG-TS remuxes on an open-ended timeline")
+    ap.add_argument("--home-delay", type=float, default=0.0, metavar="SECONDS",
+                    help="answer GET /api/v2/home/sections after this many seconds (the Home cache draws first)")
     args = ap.parse_args()
+    OPTS["home_delay"] = args.home_delay
     SETTINGS_REVISION = args.settings_revision
     OPTS["slot_widths"] = not args.no_slot_widths
     OPTS["empty_libraries"] = set(args.empty_library)

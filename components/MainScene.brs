@@ -28,6 +28,10 @@ sub init()
     ' Launch beacons (Launch_ready in Utils.brs; onLaunchReady below) and memory warnings.
     m.global.addFields({ launchReady: "", memoryLow: false })
     m.global.observeField("launchReady", "onLaunchReady")
+    ' Home cache (HomeCache.brs): Session_save bumps homeCachePurge when the account, server or
+    ' profile that owns the cached Home changes; onHomeCachePurge deletes the files in a Task.
+    m.global.addFields({ homeCachePurge: 0, homeCachePurgeReason: "" })
+    m.global.observeField("homeCachePurge", "onHomeCachePurge")
     m.launch = { done: false, dialog: false }
 
     ' Single-flight token refresher used by every ApiTask.
@@ -74,6 +78,20 @@ sub applyLaunchProfileRule()
     c.profileAvatar = ""
     Session_save(c)
     m.askedAtLaunch = true
+end sub
+
+sub onDebugRelaunch()
+    print "[siku-home] debug relaunch"
+    routeToStart()
+end sub
+
+sub onHomeCachePurge()
+    ' Keep the active owner's file (a new profile's Home may already have written it); a sign-out
+    ' has no owner, so everything goes. The reference keeps the Task alive while it runs.
+    task = CreateObject("roSGNode", "HomeCacheTask")
+    task.job = { action: "purge", reason: Str_orEmpty(m.global.homeCachePurgeReason), keepOwnerSource: HomeCache_ownerSource(m.global.session) }
+    task.control = "RUN"
+    m.homeCachePurgeTask = task
 end sub
 
 sub onActiveTick()
@@ -405,6 +423,15 @@ sub handleDeepLink(args as dynamic)
     ' debugMemory=<percent>: replay a memory warning once a second screen is open (the simulator
     ' never sends one), so the covered screen's release and restore can be watched.
     if not Str_isEmpty(args.debugMemory) then m.debugMemoryAt = Int(Val(Str_orEmpty(args.debugMemory)))
+    ' debugRelaunch=<seconds>: rebuild the start screen once after that long, as a second launch
+    ' would. brs-cli keeps cachefs in memory only, so this is how the simulator shows the Home cache
+    ' drawing before the server answers (with tools/mock_server.py --home-delay).
+    if not Str_isEmpty(args.debugRelaunch) then
+        m.relaunchTimer = CreateObject("roSGNode", "Timer")
+        m.relaunchTimer.duration = Val(Str_orEmpty(args.debugRelaunch))
+        m.relaunchTimer.observeField("fire", "onDebugRelaunch")
+        m.relaunchTimer.control = "start"
+    end if
     if args.debugSession = "mock" then
         s = AA_copy(m.global.session)
         ' debugPort lets several simulator runs use separate mock servers.

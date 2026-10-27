@@ -15,6 +15,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/Theme.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/HomeCache.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/ProfileLaunch.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/A11y.brs" />
   <children>

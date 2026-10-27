@@ -128,6 +128,14 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   `[siku-memory]` lines show a memory warning (`pressure`) and screens that `released` /
   `restored` pictures; `[siku-a11y] say:` appears with `debugA11y=1` (forces speech in the
   simulator). `debugMemory=<pct>` replays a memory warning once a second screen opens.
+- `[siku-home]` lines trace the Home cache (instant start): `cache hit age=Ns sections= bytes=`,
+  `cache miss reason=none|corrupt|owner|schema|size|unreadable|unsupported|empty`, `cache stale
+  reason=stale|future`, `cache drawn rows=`, `cache dropped reason=session|server-first`, `cache write
+  sections= bytes=` / `cache write failed|skipped reason=`, `cache purge reason=sign-out|server|account|profile
+  files=` and `refresh failed status=…, keeping the drawn rows`. No URLs, ids or tokens. Simulator:
+  brs-cli keeps `cachefs:` in memory only, so `debugRelaunch=<seconds>` rebuilds the start screen once
+  in the same run (a "second launch"); pair it with `tools/mock_server.py --home-delay <seconds>` to see
+  Home drawn from the cache before the server answers.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 
