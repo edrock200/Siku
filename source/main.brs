@@ -6,9 +6,23 @@ sub Main(args as dynamic)
     port = CreateObject("roMessagePort")
     screen.SetMessagePort(port)
 
-    ' The device input port lets us receive deep links while running.
+    ' The device input port lets us receive deep links while running, and Roku's voice transport
+    ' commands ("pause", "fast forward", "seek back 30 seconds"), which are answered synchronously
+    ' (MainEvents_transportResponse) after MainScene.handleTransport has acted on them. Idea from
+    ' ManavA/silo-roku, AGPL-3.0 (source/main.brs). Firmware without the call just sends none.
     input = CreateObject("roInput")
     input.SetMessagePort(port)
+    transport = "false"
+    try
+        enabled = input.EnableTransportEvents()
+        if Type(enabled) = "Boolean" or Type(enabled) = "roBoolean" then
+            if enabled then transport = "true"
+        end if
+    catch e
+        transport = "unsupported" ' e: firmware without transport events
+        if e = invalid then transport = "unsupported"
+    end try
+    print "[siku-voice] transport events enabled=" + transport
 
     scene = screen.CreateScene("MainScene")
     screen.Show()
@@ -44,7 +58,20 @@ sub Main(args as dynamic)
                 return
             end if
         else if msgType = "roInputEvent"
-            if msg.IsInput() then scene.inputArgs = msg.GetInfo()
+            if msg.IsInput() then
+                info = msg.GetInfo()
+                if MainEvents_isTransport(info) then
+                    result = scene.callFunc("handleTransport", info)
+                    try
+                        input.EventResponse(MainEvents_transportResponse(info, result))
+                    catch err
+                        print "[siku-voice] EventResponse unavailable"
+                        if err = invalid then result = invalid ' err: read once (pitfall 9)
+                    end try
+                else
+                    scene.inputArgs = info
+                end if
+            end if
         else if msgType = "roAppMemoryNotificationEvent" or msgType = "roDeviceInfoEvent"
             info = msg.GetInfo()
             pressure = MainEvents_memoryPressure(msgType, info)

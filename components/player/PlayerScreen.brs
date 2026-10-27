@@ -73,6 +73,7 @@ sub init()
     m.di = CreateObject("roDeviceInfo")
     m.started = false
     m.hsDebugDone = false
+    m.voiceDebugDone = false
     m.autoAdvances = 0   ' consecutive Up Next countdowns that played by themselves (Still Watching Prompt)
     ' The running shuffle this player plays picks from ({id, latest, exhausted}); invalid outside a
     ' shuffle. It outlives resetPlaybackState() because it spans every chained pick.
@@ -155,6 +156,7 @@ sub resetPlaybackState()
     m.prevQualityPref = invalid
     m.lastRequestBody = invalid   ' the start/replan body the current plan answered (diagnostics)
     m.replanKind = ""             ' "quality" | "output": what the pending replan was for
+    m.replanPending = false       ' a replan answer is on its way (voice commands wait for it)
     m.skipShownFor = ""
     m.autoSkipped = {}
     m.activeMarker = invalid
@@ -643,6 +645,8 @@ sub onStart(event as object)
         print "[siku-trickplay] debugHoldSeek: holding Right"
         HoldSeek_press(1)
     end if
+    ' Simulator aid (deep link debugVoice=<command>[:<seconds>]): a voice transport event, once.
+    Voice_debugArm()
     ' Every new session reads the playing file's markers again (the start may also have landed on
     ' another version than the one asked for).
     if planFileId(d.playback_plan) <> m.markersFileId then
@@ -2727,6 +2731,7 @@ sub sendReplan(operation as string, kind as string, failure = invalid as dynamic
     Recovery_decorateReplan(body, operation)
     m.lastRequestBody = body
     m.replanKind = kind
+    m.replanPending = true
     setBuffering(true)
     Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/replan", body, "onReplan")
 end sub
@@ -2734,6 +2739,7 @@ end sub
 sub onReplan(event as object)
     resp = Api_result(event)
     if m.closing then return
+    m.replanPending = false
     Recovery_onReplanAnswered()
     if isSessionEndedByServer(resp) then
         setBuffering(false)
@@ -2876,6 +2882,81 @@ sub requestAudioTrackChange(idx as integer)
 end sub
 
 ' ---------- Keys ----------
+
+' ---------- Voice transport (Roku voice remote; VoiceTransport.brs) ----------
+
+' MainScene.handleTransport hands a transport event here and answers Roku with the status.
+' Refused while nothing is playing yet, while a replan / seek re-anchor / recovery answer is
+' pending, or while the error screen is up; seeks go through seekToSource (re-anchoring,
+' trickplay and the scrubber stay consistent) with the remote's own skip sizes.
+function voiceTransport(info as dynamic) as object
+    reason = voiceRefusal()
+    st = Str_orEmpty(m.video.state)
+    ' debugVoice (simulator): brs-engine's media node stays "none", so it counts as buffering there.
+    if st = "none" and m.voiceDebugDone then st = "buffering"
+    if reason = "" and st <> "playing" and st <> "paused" and st <> "buffering" then reason = "state_" + st
+    cmd = invalid
+    if reason = "" then
+        cmd = Voice_parse(info, skipBackSeconds(), skipForwardSeconds())
+        if cmd = invalid then reason = "unsupported"
+    end if
+    if reason <> "" then return { "status": "error.generic", "reason": reason }
+    if cmd.action = "stop" then
+        exitPlayer()
+    else if cmd.action = "pause" then
+        if st <> "paused" then m.video.control = "pause"
+    else if cmd.action = "play" then
+        if st = "paused" then m.video.control = "resume"
+    else
+        t = Voice_target(m.position, cmd.delta, cmd.toStart, m.duration)
+        if t = invalid then return { "status": "error.generic", "reason": "no_duration" }
+        if HoldSeek_active() then HoldSeek_stop()
+        if m.scrubbing then cancelScrub()
+        fromPos = m.position
+        seekToSource(t.target)
+        fb = Voice_feedback(fromPos, t.target)
+        if fb <> "" then showFeedback(fb)
+        return { "status": t.status, "target": Int(t.target) }
+    end if
+    return { "status": "success" }
+end function
+
+' Why the player cannot take a voice command now ("" when it can), for the [siku-voice] line.
+function voiceRefusal() as string
+    if m.closing or m.finished then return "closing"
+    if m.errorGroup.visible then return "error_shown"
+    if m.plan = invalid or m.sessionId = "" then return "loading"
+    if m.replanPending then return "replanning"
+    if m.reanchorBusy then return "reanchoring"
+    if m.rec <> invalid then
+        if m.rec.inFlight then return "recovering"
+    end if
+    if m.subs <> invalid then
+        if Str_orEmpty(m.subs.adoptId) <> "" then return "replanning"
+    end if
+    return ""
+end function
+
+' debugVoice: 8 s after the first plan (the simulator is busy loading before that) is mounted, MainScene receives the event a voice command
+' would send (so the routing, the checks and the console line run as on a device).
+sub Voice_debugArm()
+    if m.voiceDebugDone or m.top.params = invalid then return
+    spec = Str_orEmpty(m.top.params.debugVoice)
+    if spec = "" then return
+    m.voiceDebugDone = true
+    m.voiceDebugTimer = CreateObject("roSGNode", "Timer")
+    m.voiceDebugTimer.duration = 8
+    m.voiceDebugTimer.observeField("fire", "Voice_debugFire")
+    m.top.appendChild(m.voiceDebugTimer)
+    m.voiceDebugTimer.control = "start"
+end sub
+
+sub Voice_debugFire()
+    scene = m.top.getScene()
+    if scene = invalid or m.closing then return
+    print "[siku-voice] debugVoice: injecting " + Str_orEmpty(m.top.params.debugVoice)
+    scene.callFunc("handleTransport", Voice_debugInfo(Str_orEmpty(m.top.params.debugVoice)))
+end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then

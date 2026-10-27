@@ -30,10 +30,15 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="AudioPlayerScreen" extends="BaseScreen">
+  <interface>
+    <!-- A Roku voice transport command routed by MainScene.handleTransport; returns { status }. -->
+    <function name="voiceTransport" />
+  </interface>
   <script type="text/brightscript" uri="pkg:/components/player/AudioPlayerScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/PlaybackCaps.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioCaps.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioTimeline.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/VoiceTransport.brs" />
   <children>
     <Rectangle width="1920" height="1080" color="0x000000FF" />
     <Poster id="backdrop" loadWidth="960" loadHeight="540" width="1920" height="1080" loadDisplayMode="scaleToZoom" opacity="0.22" />

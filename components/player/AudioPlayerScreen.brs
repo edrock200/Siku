@@ -62,6 +62,7 @@ sub init()
     m.globalPos = 0.0
     m.isPaused = false
     m.ended = false
+    m.voiceDebugDone = false   ' debugVoice injected (simulator aid)
     m.pendingSeek = -1.0
     m.waitingForToken = false
     m.chapterIdx = -1
@@ -621,6 +622,8 @@ sub applyPlan(plan as object)
     m.isPaused = false
     m.playBtn.iconUri = "pkg:/images/icons/pause.png"
     m.progressTimer.control = "start"
+    ' Simulator aid (deep link debugVoice=<command>[:<seconds>]): a voice transport event, once.
+    Voice_debugArm()
 end sub
 
 ' Keeps the timeline in step when the plan reports a real file duration (single-file fallback).
@@ -1136,6 +1139,73 @@ sub restoreFocus()
         tbtns = transportButtons()
         tbtns[m.tIndex].setFocus(true)
     end if
+end sub
+
+' ---------- Voice transport (Roku voice remote; VoiceTransport.brs) ----------
+
+' MainScene.handleTransport hands a transport event here: play / pause / stop and seeks with the
+' screen's own skip sizes (whole-book time for an audiobook, which may start another part's
+' session, as the skip buttons do). Refused while a file is loading or the error screen is up.
+function voiceTransport(info as dynamic) as object
+    reason = ""
+    st = Str_orEmpty(m.audio.state)
+    ' debugVoice (simulator): brs-engine's media node stays "none", so it counts as buffering there.
+    if st = "none" and m.voiceDebugDone then st = "buffering"
+    if m.closing or m.ended then
+        reason = "closing"
+    else if m.errorGroup.visible then
+        reason = "error_shown"
+    else if m.pending <> invalid or m.sessionId = "" then
+        reason = "loading"
+    else if st <> "playing" and st <> "paused" and st <> "buffering" then
+        reason = "state_" + st
+    end if
+    cmd = invalid
+    if reason = "" then
+        cmd = Voice_parse(info, skipBackSeconds(), 30)
+        if cmd = invalid then reason = "unsupported"
+    end if
+    if reason <> "" then return { "status": "error.generic", "reason": reason }
+    if cmd.action = "stop" then
+        exitPlayer()
+    else if cmd.action = "pause" then
+        if st <> "paused" then m.audio.control = "pause"
+    else if cmd.action = "play" then
+        if st = "paused" then m.audio.control = "resume"
+    else
+        if m.mode = "audiobook" then
+            if m.timeline = invalid then return { "status": "error.generic", "reason": "no_duration" }
+            t = Voice_target(m.globalPos, cmd.delta, cmd.toStart, m.timeline.total)
+            if t = invalid then return { "status": "error.generic", "reason": "no_duration" }
+            seekGlobal(t.target, false)
+        else
+            t = Voice_target(m.localPos, cmd.delta, cmd.toStart, m.fileDuration)
+            if t = invalid then return { "status": "error.generic", "reason": "no_duration" }
+            seekLocal(t.target)
+        end if
+        return { "status": t.status, "target": Int(t.target) }
+    end if
+    return { "status": "success" }
+end function
+
+' debugVoice: 8 s after a plan is mounted, MainScene receives the event a voice command would send.
+sub Voice_debugArm()
+    if m.voiceDebugDone or m.top.params = invalid then return
+    spec = Str_orEmpty(m.top.params.debugVoice)
+    if spec = "" then return
+    m.voiceDebugDone = true
+    m.voiceDebugTimer = CreateObject("roSGNode", "Timer")
+    m.voiceDebugTimer.duration = 8
+    m.voiceDebugTimer.observeField("fire", "Voice_debugFire")
+    m.top.appendChild(m.voiceDebugTimer)
+    m.voiceDebugTimer.control = "start"
+end sub
+
+sub Voice_debugFire()
+    scene = m.top.getScene()
+    if scene = invalid or m.closing then return
+    print "[siku-voice] debugVoice: injecting " + Str_orEmpty(m.top.params.debugVoice)
+    scene.callFunc("handleTransport", Voice_debugInfo(Str_orEmpty(m.top.params.debugVoice)))
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean

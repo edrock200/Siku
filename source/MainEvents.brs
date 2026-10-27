@@ -39,3 +39,31 @@ function MainEvents_appFocus(info as dynamic) as dynamic
     end if
     return invalid
 end function
+
+' True for a Roku transport event (voice "pause", "fast forward", "seek forward 30 seconds" ...;
+' roInput after EnableTransportEvents). Such events are answered and never treated as deep links.
+function MainEvents_isTransport(info as dynamic) as boolean
+    if Type(info) <> "roAssociativeArray" then return false
+    t = info.Lookup("type")
+    if Type(t) <> "String" and Type(t) <> "roString" then return false
+    return LCase(t) = "transport"
+end function
+
+' The roInput.EventResponse answer for a transport event: the event's own id and the status the
+' scene returned when it is one Roku defines, else "error.generic" (the player could not act).
+function MainEvents_transportResponse(info as dynamic, result as dynamic) as object
+    response = { "status": "error.generic" }
+    if Type(info) = "roAssociativeArray" then
+        id = info.Lookup("id")
+        if id <> invalid then response["id"] = id
+    end if
+    if Type(result) = "roAssociativeArray" then
+        st = result.Lookup("status")
+        if Type(st) = "String" or Type(st) = "roString" then
+            for each known in ["success", "success.seek-start", "success.seek-end", "error.generic"]
+                if st = known then response["status"] = known
+            end for
+        end if
+    end if
+    return response
+end function

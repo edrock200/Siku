@@ -449,6 +449,7 @@ sub handleDeepLink(args as dynamic)
         if not Str_isEmpty(args.debugStallSeconds) then params.debugStallSeconds = Str_orEmpty(args.debugStallSeconds) ' PlayerScreen: no-progress limit for the buffering_timeout recovery (default 60 s / 120 s)
         if not Str_isEmpty(args.debugSubtitle) then params.subtitleTrackIndex = Int(Val(Str_orEmpty(args.debugSubtitle))) ' PlayerScreen: start with this subtitle (combined index), as a details-page pick
         if not Str_isEmpty(args.debugUrl) then params.url = args.debugUrl ' StreamTestScreen: an extra stream to try
+        if not Str_isEmpty(args.debugVoice) then params.debugVoice = Str_orEmpty(args.debugVoice) ' PlayerScreen / AudioPlayerScreen: inject this voice transport command (<command>[:<seconds>]) once playback has started (the simulator sends none)
         if not Str_isEmpty(args.debugLanSelf) then params.debugLanSelf = true ' ServerConnectScreen: Find servers also accepts this machine's own address (tools/silo_responder.py)
         resetTo(args.debugScreen, params)
         return
@@ -466,6 +467,28 @@ sub handleDeepLink(args as dynamic)
         pushScreen("DetailScreen", { itemId: args.contentId })
     end if
 end sub
+
+' ---------- Voice transport ----------
+
+' A Roku voice transport event from source/main.brs (called synchronously; the answer goes back to
+' Roku). Only a player on top of the stack acts on it; everything else is refused.
+function handleTransport(info as dynamic) as object
+    result = { "status": "error.generic" }
+    top = topScreen()
+    name = "none"
+    if top <> invalid then name = top.subtype()
+    if m.top.dialog <> invalid then
+        name = name + "+dialog"
+    else if name = "PlayerScreen" or name = "AudioPlayerScreen" then
+        r = top.callFunc("voiceTransport", info)
+        if Type(r) = "roAssociativeArray" and r.status <> invalid then result = r
+    end if
+    line = "[siku-voice] " + Voice_describe(info) + " screen=" + name + " result=" + Str_orEmpty(result.status)
+    if result.target <> invalid then line = line + " target=" + Int(Num_or(result.target, 0)).ToStr()
+    if not Str_isEmpty(result.reason) then line = line + " reason=" + Str_orEmpty(result.reason)
+    print line
+    return result
+end function
 
 ' ---------- Keys ----------
 
