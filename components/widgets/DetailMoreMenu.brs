@@ -21,11 +21,15 @@ sub init()
     m.listH = 0
     m.viewH = 0
     m.top.focusable = true
+    m.a11yIntro = false
     m.top.observeField("visible", "onVisible")
     rebuild()
 end sub
 
 sub onVisible()
+    ' Screen reader: forget the control under the menu; the first row says the menu's title.
+    A11y_reset()
+    m.a11yIntro = m.top.visible
     if not m.top.visible then return
     ' Start on the checked row (pickers) or the first row.
     m.index = 0
@@ -177,6 +181,24 @@ sub applyFocus()
         end if
     end for
     scrollToFocus()
+    announce()
+end sub
+
+' Screen reader: "Audio menu, English 5.1, option, selected, 1 of 3" (the title only on the first
+' row spoken after the menu opens). Silent while the menu is hidden.
+sub announce()
+    acts = m.top.actions
+    if acts = invalid or m.index < 0 or m.index >= acts.Count() or not m.top.visible then return
+    a = acts[m.index]
+    label = A11y_join([a.label, a.trailing, a.detail])
+    role = "option"
+    if A11y_isTrue(a.checked) then role = "option, selected"
+    if m.a11yIntro then
+        title = A11y_clean(m.top.title)
+        if title <> "" and label <> "" then label = title + " menu, " + label
+        m.a11yIntro = false
+    end if
+    A11y_say(A11y_id() + ":" + m.index.ToStr(), label, role, m.index, acts.Count())
 end sub
 
 ' Keeps the focused row inside the viewport and shows a chevron on each side that has more rows.

@@ -133,3 +133,23 @@ function A11y_position(node as object, kinds as object) as object
     end for
     return { idx: idx, count: count }
 end function
+
+' True only for a real boolean true (a missing flag compared with "= true" throws on device,
+' pitfall 16).
+function A11y_isTrue(v as dynamic) as boolean
+    if Type(v) <> "Boolean" and Type(v) <> "roBoolean" then return false
+    return v
+end function
+
+' "label, extra, extra": parts made safe with A11y_clean, empty ones skipped.
+function A11y_join(parts as object) as string
+    out = ""
+    for each p in parts
+        c = A11y_clean(p)
+        if c <> "" then
+            if out <> "" then out = out + ", "
+            out = out + c
+        end if
+    end for
+    return out
+end function

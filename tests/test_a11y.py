@@ -23,6 +23,10 @@ class Wording(unittest.TestCase):
             ("an e-mail login is never read", t, ["laura@example.com", "button", 0, 1], ""),
             ("cut to 120 characters", "A11y_clean", ["x" * 300], "x" * 120),
             ("number label", "A11y_clean", [5], ""),
+            ("join label and value", "A11y_join", [["Quality", " Auto "]], "Quality, Auto"),
+            ("join skips empty and unsafe parts", "A11y_join", [["Track", "", None, "http://h/x"]], "Track"),
+            ("only a real true", "A11y_isTrue", [None], False),
+            ("true", "A11y_isTrue", [True], True),
         ])
 
     def test_transport_names(self):

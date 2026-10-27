@@ -24,6 +24,7 @@
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/DetailMoreMenu.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/A11y.brs" />
   <children>
     <Rectangle id="dim" width="1920" height="1080" color="0x000000A6" />
     <Group id="card">

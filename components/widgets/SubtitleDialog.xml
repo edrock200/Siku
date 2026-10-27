@@ -29,6 +29,7 @@
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/SubtitleDialog.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/A11y.brs" />
   <children>
     <Rectangle id="dim" width="1920" height="1080" color="0x00000080" />
     <Group id="card">

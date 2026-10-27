@@ -128,6 +128,15 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   `[siku-memory]` lines show a memory warning (`pressure`) and screens that `released` /
   `restored` pictures; `[siku-a11y] say:` appears with `debugA11y=1` (forces speech in the
   simulator). `debugMemory=<pct>` replays a memory warning once a second screen opens.
+- `[siku-voice]` lines trace Roku voice transport commands ("pause", "fast forward", "seek back 30
+  seconds"): `transport events enabled=true|false|unsupported` once at start, then one
+  `command=<cmd> [direction= duration=] screen=<top screen> result=<status> [target=<s>] [reason=]`
+  per command (`reason`: `loading`, `replanning`, `reanchoring`, `recovering`, `error_shown`,
+  `closing`, `state_<video state>`, `unsupported`, `no_duration`; `screen=<name>+dialog` when a
+  dialog covers it). The simulator receives no voice events: `debugVoice=<command>[:<seconds>]`
+  (`seek:-30` seeks back) injects one through MainScene 8 s after the player's first plan.
+  The player panel (Info / Video / Audio / Subtitles tabs and rows) and its pickers speak with
+  `debugA11y=1` like the rest of the app (`[siku-a11y] say: Video, tab, 2 of 4`).
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

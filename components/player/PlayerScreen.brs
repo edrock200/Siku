@@ -2011,6 +2011,7 @@ function hudTabNames() as object
 end function
 
 sub openHud(tabIndex as integer)
+    A11y_reset()
     hideControlsNow()
     m.skipGroup.visible = false
     names = hudTabNames()
@@ -2041,6 +2042,7 @@ sub openHud(tabIndex as integer)
 end sub
 
 sub closeHud()
+    A11y_reset()
     m.hud.visible = false
     m.picker.visible = false
     if m.skipShownFor <> "" then m.skipGroup.visible = true
@@ -2423,6 +2425,24 @@ sub applyHudRowFocus()
             Node_find(row, "chevron").blendColor = "0xEDEDED9E"
         end if
     end for
+    hudAnnounce()
+end sub
+
+' Screen reader for the panel: the focused tab ("Audio, tab, 3 of 4") or row ("Quality, Auto,
+' button, 1 of 4"; information rows are "text"). Silent while the panel is hidden.
+sub hudAnnounce()
+    if not m.hud.visible then return
+    if m.hudFocus = "rows" then
+        if m.hudSpecs = invalid or m.hudRow < 0 or m.hudRow >= m.hudRows.Count() or m.hudRow >= m.hudSpecs.Count() then return
+        spec = m.hudSpecs[m.hudRow]
+        role = "text"
+        if A11y_isTrue(spec.actionable) then role = "button"
+        A11y_say("hud:row:" + m.hudTab.ToStr() + ":" + Str_orEmpty(spec.id), A11y_join([spec.label, spec.value]), role, m.hudRow, m.hudRows.Count(), m.hud)
+    else
+        names = hudTabNames()
+        if m.hudTab < 0 or m.hudTab >= names.Count() then return
+        A11y_say("hud:tab:" + m.hudTab.ToStr(), names[m.hudTab], "tab", m.hudTab, names.Count(), m.hud)
+    end if
 end sub
 
 sub activateHudRow()
@@ -2458,6 +2478,7 @@ end sub
 ' ---------- Pickers ----------
 
 sub openPicker(kind as string)
+    A11y_reset()   ' the picker speaks for itself (DetailMoreMenu)
     m.pickerKind = kind
     acts = []
     m.hudChoices = []
@@ -2516,6 +2537,7 @@ sub onPickerDismissed()
 end sub
 
 sub afterPicker()
+    A11y_reset()   ' the panel row that opened the picker speaks again
     if m.hud.visible then
         buildHudRows()
         focusHud()

@@ -218,6 +218,25 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
   does (observers, `getField` on children) still needs the simulator.
  of its URL (`Lan_serverIdFor`) and matches by that or
   by the deployment identity (`/api/v2/system/identity` `server_id`, Siku's `session.serverId`).
+- Voice transport commands (`components/common/VoiceTransport.brs`, idea from ManavA/silo-roku):
+  `roInput.EnableTransportEvents()` in `main.brs` (in `try`; older firmware lacks it), then each
+  `roInputEvent` whose info has `type: "transport"` must be answered with
+  `input.EventResponse({ "id": info.id, "status": ... })` from the main thread, never handed to the
+  deep-link path. `main.brs` gets the status synchronously with `scene.callFunc("handleTransport",
+  info)`; MainScene routes it to the player on top (`voiceTransport` interface functions). Statuses:
+  `success`, `success.seek-start`, `success.seek-end`, `error.generic` (refused: loading,
+  replanning, re-anchoring, recovering, error screen, a dialog up). Seeks go through the screen's
+  own seek path (`seekToSource`, which re-anchors copy remuxes) with the remote's skip sizes;
+  `duration` is accepted only as 1-6 ASCII digits. Device checks still open: that the voice remote
+  and the mobile app's voice button deliver the events, and Roku's answer to each status.
+- The simulator is slow right after a plan mounts: a request sent in the first seconds can miss
+  PlayerScreen's 2.5 s stop timeout (a `debugVoice=stop` 3 s in never reached the mock, the same at
+  12 s did). Fire simulator-only injections several seconds after the plan, and read the mock log
+  before blaming the code.
+- Hand-drawn pickers (`DetailMoreMenu`, `SubtitleDialog`) speak for themselves: they call
+  `A11y_reset()` when shown or hidden and prefix the first row spoken with their title; the
+  player's panel speaks its tab or row from `applyHudRowFocus`. Read optional row flags with
+  `A11y_isTrue` (pitfall 16), and combine label and value with `A11y_join`.
 - A Roku channel has no background state: it runs or it is closed, and Home closes it without
   notice. "Time away" rules (Profile Selection) measure from a periodically written last-active
   time (`ProfileLaunch.brs`), never from an exit hook alone.

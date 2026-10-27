@@ -18,11 +18,15 @@ sub init()
     m.index = -1
     m.scrollY = 0
     m.top.focusable = true
+    m.a11yIntro = false
     m.top.observeField("visible", "onVisible")
     rebuild()
 end sub
 
 sub onVisible()
+    ' Screen reader: forget the control under the dialog; the first row says the dialog's title.
+    A11y_reset()
+    m.a11yIntro = m.top.visible
     if not m.top.visible then return
     if m.index < 0 then focusFirst()
     applyFocus()
@@ -411,6 +415,47 @@ sub applyFocus()
         end if
     end for
     scrollToFocus()
+    announce()
+end sub
+
+' Screen reader: "Delay, 0.5 s, adjustable, 1 of 3", "Search, button", "English, option,
+' selected"; the dialog's title is said before the first row spoken after it opens. Rows that
+' never take focus (text, progress) are not counted. Silent while the dialog is hidden.
+sub announce()
+    if not m.top.visible or m.index < 0 or m.index >= m.entries.Count() then return
+    place = -1
+    count = 0
+    for i = 0 to m.entries.Count() - 1
+        if m.entries[i].focusable then
+            if i = m.index then place = count
+            count = count + 1
+        end if
+    end for
+    e = m.entries[m.index]
+    spec = e.spec
+    if e.kind = "cycler" then
+        label = A11y_join([spec.label, spec.value])
+        role = "adjustable"
+    else if e.kind = "option" then
+        label = A11y_join([spec.label, spec.detail])
+        role = "option"
+        if A11y_isTrue(spec.checked) then role = "option, selected"
+    else if e.kind = "result" then
+        busy = ""
+        if A11y_isTrue(spec.busy) then busy = "Downloading"
+        label = A11y_join([spec.releaseName, spec.language, busy])
+        role = "option"
+    else
+        label = A11y_clean(spec.label)
+        role = "button"
+        if A11y_isTrue(spec.disabled) then role = "button, unavailable"
+    end if
+    if m.a11yIntro then
+        title = A11y_clean(m.top.title)
+        if title <> "" and label <> "" then label = title + ", " + label
+        m.a11yIntro = false
+    end if
+    A11y_say(A11y_id() + ":" + Str_orEmpty(spec.id) + ":" + m.index.ToStr(), label, role, place, count)
 end sub
 
 ' Keeps the focused row inside the viewport.
