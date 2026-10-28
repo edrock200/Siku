@@ -244,7 +244,10 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
   artwork URLs are signed (`exp`/`sig` or presigned S3) and expire, so a cache stores no image URLs:
   the cached Home draws default artwork and the server answer brings the pictures. Purges hang off
   `Session_save` (the one place sign-out, server, account and profile changes pass through), compared
-  against the *registry* session so a phone's temporary profile never triggers one. In brs-cli,
+  against the *registry* session so a phone's temporary profile never triggers one, and asked for only
+  after `m.global.session` holds the new session (MainScene keeps that owner's file; asking first kept
+  the old owner's Home). Size limits count UTF-8 bytes on write and read alike: `FromAsciiString`
+  copies a string's UTF-8 bytes, so `Len()` undercounts accented and CJK text. In brs-cli,
   `cachefs:` (and `tmp:`) are in-memory volumes that start empty every run, `GetDirectoryListing`
   returns an `roList` (FormatJson refuses it; copy into an array), and two Tasks writing the same
   file at once fail at random. Device checks pending: that cachefs survives a channel restart
@@ -252,6 +255,14 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
 - A refreshed `RowList` keeps the viewer's place only if you restore it: `HomeSkylineFeed.onRows`
   finds the focused row id and card `contentId` in the new content and sets `jumpToRowItem` after the
   row sizes are set.
+- A failed "load more" must not re-request on the next focus change: a grid fires `itemFocused` on
+  every key, so the Library toasted and re-asked on each move. Library backs off (5 s doubling to
+  60 s, `Library_moreRetryDelay`); Notifications waits for its error card's Retry. Any section whose
+  first load can fail needs something focusable for the retry (DetailScreen's episodes Retry button);
+  an OK handled in the screen's `onKeyEvent` never arrives while a `RowList` has focus (pitfall 7).
+- A quiet refresh (back from the player, Mark Watched) must recompute what was derived from the old
+  answer: DetailScreen re-resolves the series' next-up episode when the refreshed episodes land, as
+  `TvItemDetailViewModel.refreshOnReturn` does, and refetches only after the watched write landed.
 - A Roku channel has no background state: it runs or it is closed, and Home closes it without
   notice. "Time away" rules (Profile Selection) measure from a periodically written last-active
   time (`ProfileLaunch.brs`), never from an exit hook alone.
@@ -325,7 +336,8 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
    must have loaded before the relaunch; with several simulators running that takes 60-110 s); the
    console must show `cache write` then, after `debug relaunch`, `cache hit` and `cache drawn` while the
    mock is still sleeping, and a snapshot then shows titles over default artwork.
-8. Host tests: `python3 -m unittest discover -s tests` (pure BrightScript functions run in brs-cli)
+8. Host tests: `python3 -m unittest discover -s tests` (pure BrightScript functions run in brs-cli;
+   `tests/test_source_pitfalls.py` fails on any `f()[i]`, pitfall 1)
    and, after `npm run package`, `python3 tools/package_check.py` (manifest images, no secrets,
    LAN/loopback URLs, v1 paths, webhooks, SPDX headers). CI runs both.
 9. Build: `npm run package` → `out/siku.zip`. Side-load on a Roku in developer mode

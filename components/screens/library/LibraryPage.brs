@@ -75,6 +75,8 @@ sub init()
     m.hasMore = false
     m.loading = false
     m.loadingMore = false
+    m.moreFailures = 0      ' consecutive failed "load more" pages (Library_moreRetryDelay)
+    m.moreRetryAt = 0
     m.loaded = false
     m.requestSeq = 0
     ' Drill-in from a list grid: {kind: "collection", collectionId, title} from the Collections list, or
@@ -388,6 +390,8 @@ sub reload()
     m.cards = []
     m.nextCursor = ""
     m.hasMore = false
+    m.moreFailures = 0
+    m.moreRetryAt = 0
     m.grid.content = invalid
     m.grid.visible = false
     m.status.visible = false
@@ -545,13 +549,13 @@ sub onPage(event as object)
     m.spinner.visible = false
     if not resp.ok then
         if isMore then
-            m.global.toast = "Couldn't load more. " + Api_errorText(resp)
-            m.hasMore = true
+            moreFailed(resp)
         else
             showError(Api_errorText(resp))
         end if
         return
     end if
+    if isMore then m.moreFailures = 0
     data = resp.data
     items = []
     if data <> invalid then items = Arr_or(data.items)
@@ -595,6 +599,27 @@ sub appendCards(items as object)
     Content_appendCards(m.grid.content, items, m.cardStyle, m.insetX, m.insetY)
 end sub
 
+' A failed "load more": say so once per attempt and wait before the grid asks again, so moving
+' along the last rows does not re-request and toast on every key press.
+sub moreFailed(resp as object)
+    m.global.toast = "Couldn't load more. " + Api_errorText(resp)
+    m.hasMore = true
+    m.moreFailures = m.moreFailures + 1
+    m.moreRetryAt = Time_nowSeconds() + Library_moreRetryDelay(m.moreFailures)
+end sub
+
+' Seconds before the next automatic "load more" after `failures` failed ones in a row: 5, 10,
+' 20, 40, then 60.
+function Library_moreRetryDelay(failures as integer) as integer
+    if failures <= 0 then return 0
+    d = 5
+    for i = 2 to failures
+        d = d * 2
+        if d >= 60 then return 60
+    end for
+    return d
+end function
+
 ' ---------- Audiobook groups (Authors / Series) ----------
 
 ' GET /api/v2/catalog/audiobook-groups?library_id=&group_by=author|series&sort=name&limit=&cursor=
@@ -614,13 +639,13 @@ sub onGroups(event as object)
     m.spinner.visible = false
     if not resp.ok then
         if isMore then
-            m.global.toast = "Couldn't load more. " + Api_errorText(resp)
-            m.hasMore = true
+            moreFailed(resp)
         else
             showError(Api_errorText(resp))
         end if
         return
     end if
+    if isMore then m.moreFailures = 0
     data = resp.data
     cards = []
     if data <> invalid then
@@ -693,6 +718,7 @@ function leaveDrill() as boolean
     m.countLabel.text = Str_orEmpty(parent.countText)
     m.countLabel.visible = parent.countVisible = true
     m.hasMore = parent.hasMore = true
+    m.moreFailures = 0
     m.nextCursor = Str_orEmpty(parent.cursor)
     m.loaded = true
     m.grid.setFocus(true)
@@ -829,6 +855,7 @@ end sub
 
 sub onGridFocused()
     idx = m.grid.itemFocused
+    if m.moreFailures > 0 and Time_nowSeconds() < m.moreRetryAt then return
     if m.hasMore and not m.loadingMore and not m.loading and idx >= m.cards.Count() - 12 then
         m.loadingMore = true
         if isGroupsMode() and m.drill = invalid then

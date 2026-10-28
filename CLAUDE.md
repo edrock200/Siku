@@ -145,6 +145,10 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   brs-cli keeps `cachefs:` in memory only, so `debugRelaunch=<seconds>` rebuilds the start screen once
   in the same run (a "second launch"); pair it with `tools/mock_server.py --home-delay <seconds>` to see
   Home drawn from the cache before the server answers.
+- Mock failure switches for browsing (`--switch` or `POST /mock/switch`): `seasons_fail=1` /
+  `episodes_fail=1` (a series page's seasons or episodes answer 500: the Retry button), `more_fail=1`
+  (a catalog or notifications page after the first answers 500: Library backs off, Notifications
+  waits for Retry). The mock's series `play_content_id` is the first episode not marked watched.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 
