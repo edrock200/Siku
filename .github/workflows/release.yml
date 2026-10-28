@@ -46,12 +46,39 @@ jobs:
         if: steps.exists.outputs.released == 'false'
         with:
           node-version: 22
+      - uses: actions/setup-python@v5
+        if: steps.exists.outputs.released == 'false'
+        with:
+          python-version: "3.12"
       - run: npm install --no-audit --no-fund
         if: steps.exists.outputs.released == 'false'
+      - run: pip install cryptography
+        if: steps.exists.outputs.released == 'false'
+      # The same checks as ci.yml, so a build that fails them is never published (CI runs beside
+      # this workflow and does not gate it). Missing release notes stay warnings below.
       - run: npm run lint
         if: steps.exists.outputs.released == 'false'
+      - name: Pitfall 1 (indexing a function result is a syntax error on a Roku)
+        if: steps.exists.outputs.released == 'false'
+        run: |
+          if grep -rn ')\[' components source; then
+            echo "::error::f()[i] does not compile on a Roku; assign the result first."
+            exit 1
+          fi
       - run: npm run package
         if: steps.exists.outputs.released == 'false'
+      - name: Check the package (manifest images, secrets, LAN URLs, v1 API, SPDX headers)
+        if: steps.exists.outputs.released == 'false'
+        run: python3 tools/package_check.py out/siku.zip
+      - name: Host tests (production BrightScript in brs-cli)
+        if: steps.exists.outputs.released == 'false'
+        run: python3 -m unittest discover -s tests
+      - name: Seek-preview cases
+        if: steps.exists.outputs.released == 'false'
+        run: python3 tools/trickplay_test.py
+      - name: LAN vectors (sealed frames, framing, mDNS)
+        if: steps.exists.outputs.released == 'false'
+        run: python3 tools/lan_vectors.py
       - name: Name the zip after the version
         if: steps.exists.outputs.released == 'false'
         run: cp out/siku.zip "out/siku-${{ steps.version.outputs.tag }}.zip"

@@ -233,7 +233,8 @@ end sub
 function SeriesChoice_pending(kind as string, key as string) as dynamic
     ident = SeriesChoice_identity()
     if ident = "" or key = "" then return invalid
-    e = SeriesChoice_state()[ident + "|" + kind + "|" + key]
+    st = SeriesChoice_state()
+    e = st[ident + "|" + kind + "|" + key]
     if e = invalid then return invalid
     if Time_nowSeconds() - Int(Num_or(e.at, 0)) > 600 then return invalid
     return { body: e.body }
