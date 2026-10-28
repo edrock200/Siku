@@ -33,64 +33,21 @@ sub runProbe()
     url = Str_orEmpty(req.url)
     if Instr(1, url, "?") > 0 then url = url + "&size=" + size.ToStr() else url = url + "?size=" + size.ToStr()
 
-    path = "tmp:/siku-probe.bin"
-    fs = CreateObject("roFileSystem")
-    fs.Delete(path)
-    xfer = CreateObject("roUrlTransfer")
-    port = CreateObject("roMessagePort")
-    xfer.SetMessagePort(port)
-    xfer.SetUrl(url)
-    xfer.RetainBodyOnError(true)
-    if LCase(Left(url, 5)) = "https" then
-        xfer.SetCertificatesFile("common:/certs/ca-bundle.crt")
-        xfer.InitClientCertificates()
+    ' A 401 means the access token expired: refresh it (AuthTask, as ApiTask does) and run again once.
+    d = Probe_download(url, session, c)
+    if d.status = 401 and Auth_refresh(Str_orEmpty(session.accessToken)) then
+        session = m.global.session
+        d = Probe_download(url, session, c)
     end if
-    headers = Http_deviceHeaders(session)
-    headers["Accept"] = "application/octet-stream"
-    headers["Authorization"] = "Bearer " + Str_orEmpty(session.accessToken)
-    if not Str_isEmpty(session.profileId) then headers["X-Profile-Id"] = session.profileId
-    for each k in headers
-        xfer.AddHeader(k, headers[k])
-    end for
-    clock = CreateObject("roTimespan")
-    clock.Mark()
-    if not xfer.AsyncGetToFile(path) then
+    if not d.started then
         m.top.result = { outcome: "failed", status: 0 }
         return
     end if
-
-    firstAt = -1
-    samples = []      ' [ms since the first byte, bytes so far]
-    status = -1
-    respHeaders = {}
-    endAt = -1
-    while true
-        msg = Wait(100, port)
-        now = clock.TotalMilliseconds()
-        sz = Probe_size(fs, path)
-        if Type(msg) = "roUrlEvent" then
-            status = msg.GetResponseCode()
-            respHeaders = msg.GetResponseHeaders()
-            if sz > 0 and firstAt < 0 then firstAt = now
-            if firstAt >= 0 then samples.Push([now - firstAt, sz])
-            endAt = now
-            exit while
-        end if
-        if sz > 0 then
-            if firstAt < 0 then firstAt = now
-            samples.Push([now - firstAt, sz])
-        end if
-        if firstAt < 0 and now >= c.FIRST_BYTE_MS then
-            xfer.AsyncCancel()
-            exit while
-        end if
-        if firstAt >= 0 and now - firstAt >= c.MAX_MS then
-            xfer.AsyncCancel()
-            status = 200
-            exit while
-        end if
-    end while
-    fs.Delete(path)
+    status = d.status
+    respHeaders = d.respHeaders
+    samples = d.samples
+    firstAt = d.firstAt
+    endAt = d.endAt
 
     if status = 429 then
         retry = 30
@@ -124,16 +81,89 @@ sub runProbe()
     measured.transport = Probe_transport()
     body = { kbps: measured.kbps, bytes: measured.bytes, duration_ms: measured.durationMs, transport: measured.transport, manual: true }
     if measured.lowerBound then body.lower_bound = true
-    postHeaders = Http_deviceHeaders(session)
-    postHeaders["Authorization"] = "Bearer " + Str_orEmpty(session.accessToken)
-    if not Str_isEmpty(session.profileId) then postHeaders["X-Profile-Id"] = session.profileId
     ' The result goes to the API server, whichever host served the probe.
-    posted = Http_send("POST", Str_orEmpty(session.serverUrl) + "/api/v2/playback/bandwidth-probe/results", postHeaders, body, 15)
+    resultsUrl = Str_orEmpty(session.serverUrl) + "/api/v2/playback/bandwidth-probe/results"
+    posted = Http_send("POST", resultsUrl, Probe_headers(session), body, 15)
+    if posted.status = 401 and Auth_refresh(Str_orEmpty(session.accessToken)) then
+        session = m.global.session
+        posted = Http_send("POST", resultsUrl, Probe_headers(session), body, 15)
+    end if
     measured.outcome = "measured"
     measured.saved = posted.status >= 200 and posted.status < 300
     measured.status = status
     m.top.result = measured
 end sub
+
+' Downloads the probe to a tmp: file, sampling its size every 100 ms.
+' Returns { started, status, respHeaders, samples: [[ms since the first byte, bytes]], firstAt, endAt }.
+function Probe_download(url as string, session as object, c as object) as object
+    path = "tmp:/siku-probe.bin"
+    fs = CreateObject("roFileSystem")
+    fs.Delete(path)
+    xfer = CreateObject("roUrlTransfer")
+    port = CreateObject("roMessagePort")
+    xfer.SetMessagePort(port)
+    xfer.SetUrl(url)
+    xfer.RetainBodyOnError(true)
+    if LCase(Left(url, 5)) = "https" then
+        xfer.SetCertificatesFile("common:/certs/ca-bundle.crt")
+        xfer.InitClientCertificates()
+    end if
+    headers = Probe_headers(session)
+    headers["Accept"] = "application/octet-stream"
+    for each k in headers
+        xfer.AddHeader(k, headers[k])
+    end for
+    clock = CreateObject("roTimespan")
+    clock.Mark()
+    if not xfer.AsyncGetToFile(path) then return { started: false, status: 0 }
+
+    firstAt = -1
+    samples = []      ' [ms since the first byte, bytes so far]
+    status = -1
+    respHeaders = {}
+    endAt = -1
+    while true
+        msg = Wait(100, port)
+        now = clock.TotalMilliseconds()
+        sz = Probe_size(fs, path)
+        if Type(msg) = "roUrlEvent" then
+            status = msg.GetResponseCode()
+            respHeaders = msg.GetResponseHeaders()
+            if sz > 0 and firstAt < 0 then firstAt = now
+            if firstAt >= 0 then samples.Push([now - firstAt, sz])
+            endAt = now
+            exit while
+        end if
+        if sz > 0 then
+            if firstAt < 0 then firstAt = now
+            samples.Push([now - firstAt, sz])
+        end if
+        if firstAt < 0 and now >= c.FIRST_BYTE_MS then
+            xfer.AsyncCancel()
+            exit while
+        end if
+        if firstAt >= 0 and now - firstAt >= c.MAX_MS then
+            xfer.AsyncCancel()
+            status = 200
+            exit while
+        end if
+    end while
+    fs.Delete(path)
+    return { started: true, status: status, respHeaders: respHeaders, samples: samples, firstAt: firstAt, endAt: endAt }
+end function
+
+' The API credentials, as ApiTask sends them: bearer token, and the profile with its PIN proof
+' (X-Profile-Token), without which a PIN-protected profile is refused with 403.
+function Probe_headers(session as object) as object
+    headers = Http_deviceHeaders(session)
+    headers["Authorization"] = "Bearer " + Str_orEmpty(session.accessToken)
+    if not Str_isEmpty(session.profileId) then
+        headers["X-Profile-Id"] = session.profileId
+        if not Str_isEmpty(session.profileToken) then headers["X-Profile-Token"] = session.profileToken
+    end if
+    return headers
+end function
 
 function Probe_size(fs as object, path as string) as integer
     st = fs.Stat(path)

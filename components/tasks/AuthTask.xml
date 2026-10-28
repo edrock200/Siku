@@ -1,12 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Long-lived task that serializes token refreshes. Refresh tokens rotate, so two
      concurrent refreshes would sign the user out; every ApiTask goes through here.
-     Set refreshRequest = {token: "<access token that failed>"}; `generation` bumps when done.
+     Set refreshRequest = {token: "<access token that failed>", id: "<unique>"}; when done,
+     `answered` is set to that id (Auth_refresh in Http.brs waits for it) and `generation` bumps.
+     Only a 400/401 answer signs the user out (authExpired); other failures keep the session.
      SPDX-License-Identifier: AGPL-3.0-or-later -->
 <component name="AuthTask" extends="Task">
   <interface>
     <field id="refreshRequest" type="assocarray" alwaysNotify="true" />
     <field id="generation" type="integer" value="0" alwaysNotify="true" />
+    <field id="answered" type="string" alwaysNotify="true" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/tasks/AuthTask.brs" />
   <script type="text/brightscript" uri="pkg:/components/tasks/Http.brs" />

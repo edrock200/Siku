@@ -12,7 +12,8 @@ sub execute()
     ' With no token at all (signed out meanwhile, e.g. the logout call itself) there is nothing to refresh.
     ' noRefresh (a playback route event): one attempt with the token at hand, nothing more.
     if resp.status = 401 and req.auth <> false and not noRefresh(req) and not Str_isEmpty(m.global.session.accessToken) then
-        if Auth_refresh(m.global.session.accessToken) then
+        ' Refresh the token this request actually sent: one already replaced meanwhile counts as done.
+        if Auth_refresh(m.sentToken) then
             resp = perform(req)
         else if Str_isEmpty(m.global.session.refreshToken) then
             ' Nothing to refresh with: the user has to sign in again. A refresh token the server
@@ -57,6 +58,7 @@ end function
 
 function perform(req as object) as object
     session = m.global.session
+    m.sentToken = ""
     method = UCase(Str_orEmpty(req.method))
     if method = "" then method = "GET"
 
@@ -97,6 +99,7 @@ function perform(req as object) as object
     headers = Http_deviceHeaders(session)
     if req.auth <> false and not Str_isEmpty(session.accessToken) then
         headers["Authorization"] = "Bearer " + session.accessToken
+        m.sentToken = session.accessToken
     end if
     m.sentProfile = invalid
     if req.profile <> false and not Str_isEmpty(session.profileId) then
@@ -166,21 +169,4 @@ function isAnonymous(req as object) as boolean
     t = Type(v)
     if t = "Boolean" or t = "roBoolean" then return v
     return false
-end function
-
-' Asks the single AuthTask to refresh, then waits for it. Returns true when a usable token exists.
-function Auth_refresh(tokenUsed as string) as boolean
-    auth = m.global.authTask
-    if auth = invalid then return false
-    port = CreateObject("roMessagePort")
-    auth.observeField("generation", port)
-    current = m.global.session.accessToken
-    if current <> tokenUsed and not Str_isEmpty(current) then
-        auth.unobserveField("generation")
-        return true ' someone already refreshed
-    end if
-    auth.refreshRequest = { token: tokenUsed }
-    Wait(30000, port) ' only the wake-up matters; the session itself tells us the outcome
-    auth.unobserveField("generation")
-    return not Str_isEmpty(m.global.session.accessToken) and m.global.session.accessToken <> tokenUsed
 end function

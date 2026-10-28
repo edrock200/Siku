@@ -9,7 +9,8 @@ Then connect Siku to http://127.0.0.1:8097
 Device sign-in auto-approves on the second poll. A remote-playback handoff
 (client_purpose remote_playback) stays pending until POST /api/v2/auth/device/approve-handoff
 {"user_code"} (the approving profile from X-Profile-Id), as tools/silo_phone.py sends. Password login accepts any
-username with password "silo". The "Kids" profile has PIN 1234.
+username with password "silo". The "Kids" profile has PIN 1234
+(the speed-test endpoints refuse it with 403 without its X-Profile-Token).
 
 Test switches (not part of the API) change behaviour for one scenario. Set them at start with
 --switch name=value (repeatable) or at run time with POST /mock/switch {"name": value} (null
@@ -36,6 +37,11 @@ clears one); GET /mock/switch lists them.
   device_manual=1                device sign-in codes stay pending until POST /api/v2/auth/device/approve
   stale_profile=<profile id>     every request on that profile answers 403
                                  profile_verification_required until GET /api/v2/profiles runs
+  reject_access=1                every authenticated request answers 401 invalid_token (an expired
+                                 access token) until a refresh succeeds
+  refresh_status=<code>|html     POST /auth/refresh answers that status (400/401 session_expired, others
+                                 a bad_gateway problem) or, with html, a 200 HTML page (a captive portal).
+                                 Siku must sign out only on 400/401 (look for [siku-auth] lines)
 Options that emulate other servers:
   --settings-revision N   settings manifest revision (default 17: spoiler keys; 16 hides them)
   --no-slot-widths        images capability without slot_width_params (older server)
@@ -1826,7 +1832,23 @@ class Handler(BaseHTTPRequestHandler):
                 return self.problem(401, "invalid_token", "Invalid username or password")
             return self.send(200, tokens(b.get("username", "laura")))
         if p == "/api/v2/auth/refresh":
-            return self.send(200, tokens())
+            fail = str(STATE["switches"].get("refresh_status") or "")
+            if fail:
+                print("REFRESH answered %s (switch refresh_status)" % fail, flush=True)
+                LOG.append("REFRESH " + fail)
+                if fail == "html":
+                    return self.send(200, b"<html><body>Sign in to the Wi-Fi</body></html>", "text/html")
+                code = int(fail)
+                if code in (400, 401):
+                    return self.problem(code, "session_expired", "Session expired")
+                return self.problem(code, "bad_gateway", "Upstream unavailable")
+            STATE["switches"].pop("reject_access", None)
+            print("REFRESH ok", flush=True)
+            LOG.append("REFRESH ok")
+            # A refresh answer carries no user (docs/api-spec.md §2.4); a user means a new sign-in.
+            t = tokens()
+            t.pop("user", None)
+            return self.send(200, t)
         if p == "/api/v2/auth/logout":
             return self.send(204)
 
@@ -1835,6 +1857,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, silent_wav(), "audio/wav")
         if not self.authed():
             return self.problem(401, "invalid_token", "Authentication required")
+        if STATE["switches"].get("reject_access"):
+            print("REJECT_ACCESS 401", method, p, flush=True)
+            return self.problem(401, "invalid_token", "Access token expired")
         stale = STATE["switches"].get("stale_profile")
         if stale and p == "/api/v2/profiles" and method == "GET":
             # The viewer is back on the picker: the next profile pick is a fresh, valid proof.
@@ -2087,6 +2112,12 @@ class Handler(BaseHTTPRequestHandler):
             STATE.setdefault("bq", {"learned_limit": None, "probe": None})["learned_limit"] = None
             print("LEARNED LIMIT reset from Settings", flush=True)
             return self.send(204)
+        if p.startswith("/api/v2/playback/bandwidth-probe") and OPTS["buffering_quality"]:
+            # The speed test runs outside ApiTask: check it sends the PIN proof of a protected profile.
+            pid, ptok = self.headers.get("X-Profile-Id") or "", self.headers.get("X-Profile-Token") or ""
+            print("PROBE %s %s profile=%s token=%s" % (method, p, pid or "-", "yes" if ptok else "no"), flush=True)
+            if pid == "p-kids" and ptok != "ptok-1":
+                return self.problem(403, "profile_verification_required", "Profile verification required")
         if p == "/api/v2/playback/bandwidth-probe" and method == "GET" and OPTS["buffering_quality"]:
             return self.send_probe(q)
         if p == "/api/v2/playback/bandwidth-probe/results" and method == "POST" and OPTS["buffering_quality"]:

@@ -126,3 +126,38 @@ function Http_deviceHeaders(session as object) as object
         "X-Silo-Client-Family": "tv"
     }
 end function
+
+' ---------- Token refresh (Task threads only: roMessagePort + Wait) ----------
+
+' Asks the single AuthTask to refresh the access token a request sent (`tokenUsed`), then waits
+' for AuthTask to answer this request. Returns true when a newer usable token exists.
+function Auth_refresh(tokenUsed as string) as boolean
+    auth = m.global.authTask
+    if auth = invalid or Str_isEmpty(tokenUsed) then return false
+    current = m.global.session.accessToken
+    if current <> tokenUsed and not Str_isEmpty(current) then return true ' someone already refreshed
+    port = CreateObject("roMessagePort")
+    auth.observeField("answered", port)
+    id = CreateObject("roDeviceInfo").GetRandomUUID()
+    auth.refreshRequest = { token: tokenUsed, id: id }
+    ' Only the wake-up matters; the session itself tells us the outcome. Other requests' answers
+    ' arrive on the same field and are skipped.
+    clock = CreateObject("roTimespan")
+    limitMs = Auth_waitSeconds() * 1000
+    while true
+        remainMs = limitMs - clock.TotalMilliseconds()
+        if remainMs <= 0 then exit while
+        ev = Wait(remainMs, port)
+        if ev = invalid then exit while
+        if Type(ev) = "roSGNodeEvent" and Str_orEmpty(ev.getData()) = id then exit while
+    end while
+    auth.unobserveField("answered")
+    return not Str_isEmpty(m.global.session.accessToken) and m.global.session.accessToken <> tokenUsed
+end function
+
+' How long a request waits for AuthTask: longer than one refresh's worst case
+' (AuthTask_worstCaseSeconds, 41 s; tests/test_auth_refresh.py keeps the two in step), plus room
+' for one refresh already running ahead of it.
+function Auth_waitSeconds() as integer
+    return 90
+end function
