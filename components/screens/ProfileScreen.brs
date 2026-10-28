@@ -436,7 +436,6 @@ sub closePin()
     if dlg = invalid then return
     m.pinDialog = invalid
     m.pinProfile = invalid
-    m.pinGen = invalid
     dlg.unobserveField("pinEntered")
     dlg.unobserveField("dismissed")
     m.top.removeChild(dlg)

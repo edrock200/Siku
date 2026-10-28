@@ -523,10 +523,6 @@ end sub
 
 ' ---------- Device flow ----------
 
-function nowSec() as integer
-    return Time_nowSeconds()
-end function
-
 sub schedule(action as string, seconds as float)
     m.timerAction = action
     m.pollTimer.control = "stop"
@@ -558,7 +554,7 @@ sub startDevice(resetBudget as boolean)
     m.rateLimitedSince = 0
     m.startBackoff = 0
     m.pollBackoff = 0
-    if resetBudget or m.budgetStart = 0 then m.budgetStart = nowSec()
+    if resetBudget or m.budgetStart = 0 then m.budgetStart = Time_nowSeconds()
     setStatus("getting")
     if m.capability = invalid then
         Api_call({ method: "GET", path: "/api/v2/auth/device/capability", auth: false, profile: false, timeout: 8, context: { gen: m.gen } }, "onCapability")
@@ -591,7 +587,7 @@ function mayWithdraw() as boolean
 end function
 
 sub requestCode()
-    if nowSec() - m.budgetStart >= 3600 then
+    if Time_nowSeconds() - m.budgetStart >= 3600 then
         setStatus("paused")
         return
     end if
@@ -625,7 +621,7 @@ sub onStart(event as object)
     if resp.ok and resp.data <> invalid and Type(resp.data) = "roAssociativeArray" and not Str_isEmpty(resp.data.device_code) then
         d = resp.data
         recovered()
-        now = nowSec()
+        now = Time_nowSeconds()
         expiresIn = Int(Content_num(d.expires_in))
         if expiresIn < 1 then expiresIn = 900
         m.deadline = now + expiresIn
@@ -664,7 +660,7 @@ sub recovered()
 end sub
 
 sub noteFailure(kind as string, starting as boolean)
-    now = nowSec()
+    now = Time_nowSeconds()
     if kind = "ratelimited" then
         if m.rateLimitedSince = 0 then m.rateLimitedSince = now
         if now - m.rateLimitedSince >= 60 then setStatus("toomany")
@@ -686,7 +682,7 @@ sub doPoll()
 end sub
 
 function clampToDeadline(seconds as float) as float
-    remaining = m.deadline - nowSec()
+    remaining = m.deadline - Time_nowSeconds()
     if remaining < 0 then remaining = 0
     if seconds > remaining then return remaining
     return seconds
@@ -720,7 +716,7 @@ sub onPoll(event as object)
                 newStatus = "waiting"
             end if
             if newStatus <> m.dStatus then setStatus(newStatus)
-            if nowSec() >= m.deadline then
+            if Time_nowSeconds() >= m.deadline then
                 replaceCode(true)
             else
                 schedule("poll", clampToDeadline(m.interval))
@@ -759,7 +755,7 @@ sub onPoll(event as object)
             m.pollBackoff = m.pollBackoff * 2
         end if
         if m.pollBackoff > 30 then m.pollBackoff = 30
-        if nowSec() >= m.deadline then
+        if Time_nowSeconds() >= m.deadline then
             replaceCode(true)
         else
             schedule("poll", clampToDeadline(m.pollBackoff))
@@ -775,9 +771,12 @@ sub replaceCode(stillLive as boolean)
     requestCode()
 end sub
 
+' The server is named now: "Change server" blanks the session's server right after this call, and
+' the Task reads the session only when it runs.
 sub cancelCode(deviceCode as string)
-    if deviceCode = "" then return
-    Api_call({ method: "POST", path: "/api/v2/auth/device/cancel", body: { device_code: deviceCode }, auth: false, profile: false, timeout: 5 }, "onCancelDone")
+    base = Str_orEmpty(m.global.session.serverUrl)
+    if deviceCode = "" or base = "" then return
+    Api_call({ method: "POST", baseUrl: base, path: "/api/v2/auth/device/cancel", body: { device_code: deviceCode }, auth: false, profile: false, timeout: 5 }, "onCancelDone")
 end sub
 
 sub onCancelDone(event as object)
