@@ -9,6 +9,8 @@
   and audiobook groups their initials.
   Focus: scale 1.10, 4 px #EDEDED border, soft white glow; caption brightens (docs/design-spec.md §1.5).
   The containing list must set drawFocusFeedback="false".
+  exploreAll (optional boolean field on the content node): the row's "Explore all" card (no image,
+  no caption; HomeSkylineFeed adds it).
   playGlyph (optional boolean field on the content node): a centered play button over the image,
   for the detail page's "Trailers & More" cards.
   cardInsetX / cardInsetY on the content node pad the card inside its cell (MarkupGrid cells clip to
@@ -55,6 +57,15 @@
         <Group id="watchedBadge" visible="false">
           <Poster id="watchedBg" uri="pkg:/images/ui/circle.png" blendColor="0xEDEDEDFF" />
           <Poster id="watchedIcon" uri="pkg:/images/icons/check.png" blendColor="0x000000FF" />
+        </Group>
+        <!-- "Explore all" (exploreAll on the content node, Silo Android #688 TvExploreAllCard): the
+             last card of a Home or library row, a translucent tile with an arrow and its label. -->
+        <Group id="explore" visible="false">
+          <Poster id="exploreCircle" uri="pkg:/images/ui/circle.png" blendColor="0xFFFFFF24" width="88" height="88" />
+          <Poster id="exploreIcon" uri="pkg:/images/icons/chevron_right.png" blendColor="0xFFFFFFFF" width="56" height="56" translation="[16, 16]" />
+          <Label id="exploreLabel" text="Explore all" horizAlign="center" maxLines="1" color="0xEDEDEDD9">
+            <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="27" />
+          </Label>
         </Group>
         <Poster id="border" uri="pkg:/images/ui/r16_ring4.9.png" blendColor="0xEDEDEDFF" opacity="0" />
       </Group>

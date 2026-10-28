@@ -154,6 +154,16 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   brs-cli keeps `cachefs:` in memory only, so `debugRelaunch=<seconds>` rebuilds the start screen once
   in the same run (a "second launch"); pair it with `tools/mock_server.py --home-delay <seconds>` to see
   Home drawn from the cache before the server answers.
+- Home and library rows (Silo Android #688, `SectionRows.brs`): `[siku-home] section item limit
+  max=<n|none|failed status=N> sending=<n|none>` once per server (GET `/api/v2/home/capabilities`,
+  3 s; `read timed out; sending none` when the 20 s render-thread backstop fires, then `answer
+  arrived late; ignored`), `item_limit rejected by the server; reading the rows again without it` (a 422
+  `unknown_parameter` retry) and `explore all scope=home|library row=<n>` (an "Explore all" card
+  opened the row's page, LibraryScreen section `section`). Mock: `--switch item_limit=present|off|reject|slow|fail`
+  (default present; off = an older server that refuses the parameter, reject = advertised but refused,
+  slow = 30 s capability read, fail = 500) and `item_limit_max=<n>`; the mock log prints `HOME CAPS
+  item_limit=`, `SECTIONS <path> item_limit=<n|->` and `SECTION CATALOG scope= library= <id>` (404 for
+  an unknown row). "Recently Added in Movies" carries 24 cards without `item_limit`.
 - `[siku-auth]` lines trace token refreshes (AuthTask): `refresh ok`, `refresh failed status= code=
   attempt=` (kept session, retried with back-off), `refresh gave up, keeping the session`, `refresh
   skipped` (the same token failed moments ago), `refresh rejected status= code=` (400/401: the only

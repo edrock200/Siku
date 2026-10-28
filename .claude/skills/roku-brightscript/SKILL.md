@@ -316,6 +316,23 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
   would not compile the component). The rollback patch carries `contentId`
   and the feed/grid ignores it when the rows changed meanwhile; only the newest write per card may
   roll back (`m.cardWatchSeq`). `Api_reasonText(resp, fallback)` turns a problem into toast text.
+- Row caps and "Explore all" (Silo Android #688, `SectionRows.brs`): a parameter only newer servers
+  know (`item_limit`) goes only to a server that advertised it (`section_item_limit_max`), read once
+  per server with a 3 s budget; a failed or slow read means "not supported", and a 422
+  `validation_failed` naming `query.item_limit` / `unknown_parameter` is retried once without it and
+  remembered for the session. Rows cap at 20 on the client whatever the server sends. The "Explore
+  all" card is an ordinary last item of the RowList row (`exploreAll` on its ContentNode, drawn by
+  MediaCardItem), not a row-title action: Android TV's is a trailing card, it inherits the cell
+  headroom (`cardInsetY`), Back restores focus to it for free (the RowList keeps `rowItemFocused` while
+  the page is covered), and Roku's screen reader reads its ContentNode title and description ("Explore
+  all", the row title) like any card, so no `A11y_say` is needed. Everything that counts or walks a
+  row's children (`removeEmptyRows`, the progress-row removal, item patches, the options key, the
+  marquee) must skip that node; RowList reuses item components, so MediaCardItem resets every
+  explore-only state for ordinary cards. The page itself is LibraryPage section `section`
+  (`GET /api/v2/catalog?source=section`, no sort or `type` overlay: a mixed library's Movies / Series
+  view filters client-side and reads on past pages the filter empties; 404 = "This row is no longer
+  available."). HomePage's mixed-library refill target is capped at 20 too, and the Home cache keeps
+  up to 24 raw cards a row (headroom for hide-watched), so a cached row still draws 20.
 - Registry writes wear flash: a heartbeat writes only as often as the rule it serves needs
   (Profile Selection's away clock: a twelfth of the away interval, 5-10 minutes).
 

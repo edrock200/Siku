@@ -3,7 +3,8 @@
   The "Skyline" feed (design-spec §4.1): ambient backdrop of the focused card, focus marquee
   (logo/title, badges, meta, synopsis) and the row band at the bottom. Used by HomePage and ForYouPage.
   Fields:
-    rows        array of {id, title, style: "poster"|"landscape", items: [card...]}
+    rows        array of {id, title, style: "poster"|"landscape", items: [card...], exploreSectionId?, exploreTitle?}
+                a row with exploreSectionId ends with an "Explore all" card (MediaCardItem exploreAll)
     state       "loading" | "ready" | "error" | "empty"
     errorText, emptyTitle, emptyBody, emptyAction (button label for empty/error)
     focusRequested   (in, alwaysNotify) take focus (row band when ready, else the action button / itself)
@@ -12,7 +13,8 @@
     itemSelected  {rowIndex, itemIndex, rowId, card}   OK on a card
     itemOptions   {rowIndex, itemIndex, rowId, card}   options (*) key or a long OK press on a card
     actionSelected  the Retry / Refresh button
-    focusedCard   {rowIndex, itemIndex} after the focus rested (150 ms)
+    focusedCard   {rowIndex, itemIndex} after the focus rested (150 ms; not for "Explore all")
+    exploreSelected  {rowIndex, rowId, sectionId, title}   OK on a row's "Explore all" card
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="HomeSkylineFeed" extends="Group">
@@ -30,6 +32,7 @@
     <field id="itemOptions" type="assocarray" alwaysNotify="true" />
     <field id="actionSelected" type="boolean" alwaysNotify="true" />
     <field id="focusedCard" type="assocarray" alwaysNotify="true" />
+    <field id="exploreSelected" type="assocarray" alwaysNotify="true" />
     <field id="hasRows" type="boolean" value="false" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/HomeSkylineFeed.brs" />

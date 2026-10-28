@@ -28,6 +28,15 @@ clears one); GET /mock/switch lists them.
                                  is outside 1..8 or more than 16 keys arrive; the quality menus also
                                  list a 480p rung (docs/playback-errors.md)
   recovery_terminal=1            with native_recovery: every failure_recovery answers that terminal
+  item_limit=present|off|reject|slow|fail
+                                 Home row item_limit (Silo Android #688). present (default): GET
+                                 /api/v2/home/capabilities lists section_item_limit_max and the
+                                 Home / library section lists cap every row at item_limit; off: an
+                                 older server (no field, and item_limit answers 422 validation_failed
+                                 query.item_limit unknown_parameter); reject: advertised but still
+                                 refused with that 422; slow: the capability read takes 30 s; fail:
+                                 it answers 500. Rows carry up to 24 cards without item_limit.
+  item_limit_max=<n>             the advertised section_item_limit_max (default 100)
   route_events=accept|reject|bad_receipt
                                  /playback/capabilities lists playback_route_diagnostics; POST
                                  /playback/route-events logs the body and answers 202 with the receipt,
@@ -378,11 +387,59 @@ def home_sections():
     return {"sections": [
         {"id": "continue_watching", "section_type": "continue_watching", "title": "Continue Watching", "featured": False, "total_count": len(cw), "items": cw},
         {"id": "next_up", "section_type": "next_up", "title": "Next Up", "featured": False, "total_count": len(nu), "items": nu},
-        {"id": "recent_movies", "section_type": "recently_added", "title": "Recently Added in Movies", "featured": False, "total_count": 12, "items": ms[:12]},
+        # All 24 movies: more than a row's 20 cards, so the cap and "Explore all" can be seen.
+        {"id": "recent_movies", "section_type": "recently_added", "title": "Recently Added in Movies", "featured": False, "total_count": len(ms), "items": ms},
         {"id": "recent_series", "section_type": "recently_added", "title": "Recently Added in Shows", "featured": False, "total_count": len(ss), "items": ss},
         {"id": "hidden_gems", "section_type": "hidden_gems", "title": "Hidden Gems", "featured": False, "total_count": 10, "items": ms[12:22]},
         {"id": "trending", "section_type": "trending_on_server", "title": "Trending on Server", "featured": False, "total_count": 8, "items": ms[6:14]},
     ]}
+
+
+def item_limit_mode():
+    return str(STATE["switches"].get("item_limit") or "present")
+
+
+def item_limit_problem(handler):
+    """v2's answer to a query parameter it does not know (an older server)."""
+    handler.send(422, {"type": "https://siloserver.org/docs/api/v2/problems/validation_failed", "code": "validation_failed",
+                       "title": "Validation failed", "status": 422,
+                       "errors": [{"location": "query.item_limit", "code": "unknown_parameter", "message": "unknown query parameter"}]},
+                 "application/problem+json")
+
+
+def section_list(handler, p, q, sections):
+    """Sends a Home or library section list, honouring item_limit like the real server (or refusing
+    it like an older one, per the item_limit switch). Returns nothing; always answers."""
+    raw = q.get("item_limit", [""])[0]
+    print("SECTIONS %s item_limit=%s" % (p, raw or "-"), flush=True)
+    LOG.append("SECTIONS %s item_limit=%s" % (p, raw or "-"))
+    if raw:
+        if item_limit_mode() in ("off", "reject"):
+            return item_limit_problem(handler)
+        try:
+            n = int(raw)
+        except ValueError:
+            n = 0
+        cap = int(STATE["switches"].get("item_limit_max") or 100)
+        if n < 1 or n > cap:
+            return handler.problem(422, "validation_failed", "item_limit out of range")
+        out = []
+        for sct in sections:
+            sct = dict(sct)
+            sct["items"] = (sct.get("items") or [])[:n]
+            sct["item_limit"] = n
+            out.append(sct)
+        sections = out
+    handler.send(200, {"sections": sections})
+
+
+def section_full(section_id, lib):
+    """The full item list of a Home (lib "") or library row, for GET /catalog?source=section."""
+    if lib in ("", "1", "2"):
+        for sct in home_sections()["sections"]:
+            if sct["id"] == section_id:
+                return sct["items"]
+    return None
 
 
 def mixed_sections(full=False):
@@ -790,7 +847,7 @@ def audio_route(handler, method, p, q, b):
         else:
             secs = [{"id": "books_recent", "section_type": "recently_added", "title": "Recently Added in Audiobooks", "featured": False,
                      "total_count": len(AUDIOBOOKS), "items": [audiobook_card(i) for i in range(len(AUDIOBOOKS))]}]
-        handler.send(200, {"sections": secs})
+        section_list(handler, p, q, secs)
         return True
     if p == "/api/v2/playback/start" and method == "POST" and b.get("file_id") in AUDIO_FILES:
         f = AUDIO_FILES[b["file_id"]]
@@ -1942,13 +1999,25 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/v2/home/sections":
             if OPTS["home_delay"] > 0:
                 time.sleep(OPTS["home_delay"])  # --home-delay: a slow server, to watch the Home cache draw first
-            return self.send(200, home_sections())
+            return section_list(self, p, q, home_sections()["sections"])
+        if p == "/api/v2/home/capabilities":
+            mode = item_limit_mode()
+            print("HOME CAPS item_limit=%s" % mode, flush=True)
+            LOG.append("HOME CAPS item_limit=%s" % mode)
+            if mode == "slow":
+                time.sleep(30)
+            if mode == "fail":
+                return self.problem(500, "internal", "Home capabilities failed (item_limit=fail)")
+            caps = {"revision": "mock-home-1", "state": "available", "include_items_max": 4}
+            if mode != "off":
+                caps["section_item_limit_max"] = int(STATE["switches"].get("item_limit_max") or 100)
+            return self.send(200, caps)
         m = re.match(r"^/api/v2/library/([^/]+)/sections$", p)
         if m:
             secs = home_sections()["sections"]
             if m.group(1) == "5":
-                return self.send(200, {"sections": mixed_sections()})
-            return self.send(200, {"sections": secs[1:] if m.group(1) == "1" else secs[2:3]})
+                return section_list(self, p, q, mixed_sections())
+            return section_list(self, p, q, secs[1:] if m.group(1) == "1" else secs[2:3])
         m = re.match(r"^/api/v2/library/([^/]+)/collections$", p)
         if m:
             cols = [{"id": "c%d" % i, "title": t, "poster_url": img("poster", "collection-" + t), "item_count": 4} for i, t in enumerate(["Award Winners", "Night Owls", "Comfort Picks"])]
@@ -1976,6 +2045,17 @@ class Handler(BaseHTTPRequestHandler):
             LOG.append("SECTION CATALOG %s cursor=%s" % (sec["id"], q.get("cursor", [""])[0]))
             print("SECTION CATALOG", sec["id"], "cursor=" + q.get("cursor", [""])[0], flush=True)
             return self.send(200, page(sec["items"], q))
+        if p == "/api/v2/catalog" and q.get("source", [""])[0] == "section":
+            # A Home or library row's full page ("Explore all"), paged in the row's own order.
+            scope = q.get("scope", [""])[0]
+            lib = q.get("library_id", [""])[0] if scope == "library" else ""
+            sid = q.get("section_id", [""])[0]
+            items = section_full(sid, lib)
+            print("SECTION CATALOG scope=%s library=%s %s cursor=%s" % (scope, lib or "-", sid, q.get("cursor", [""])[0]), flush=True)
+            LOG.append("SECTION CATALOG scope=%s %s" % (scope, sid))
+            if items is None or scope not in ("home", "library"):
+                return self.problem(404, "not_found", "Unknown section")
+            return self.send(200, page(items, q))
         if p == "/api/v2/catalog":
             src = q.get("source", ["query"])[0]
             lib = q.get("library_id", [""])[0]

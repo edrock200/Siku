@@ -19,6 +19,11 @@ sub init()
     m.badgeBg = m.top.findNode("watchedBg")
     m.badgeIcon = m.top.findNode("watchedIcon")
     m.border = m.top.findNode("border")
+    m.explore = m.top.findNode("explore")
+    m.exploreCircle = m.top.findNode("exploreCircle")
+    m.exploreIcon = m.top.findNode("exploreIcon")
+    m.exploreLabel = m.top.findNode("exploreLabel")
+    m.isExplore = false
     m.title = m.top.findNode("title")
     m.subtitle = m.top.findNode("subtitle")
     m.style = "poster"
@@ -44,6 +49,24 @@ sub onContent()
     m.insetY = 0
     if c.cardInsetX <> invalid then m.insetX = c.cardInsetX
     if c.cardInsetY <> invalid then m.insetY = c.cardInsetY
+    ' RowList reuses item components, so every state is set for every content.
+    m.isExplore = c.hasField("exploreAll") and c.exploreAll = true
+    m.explore.visible = m.isExplore
+    if m.isExplore then
+        m.image.uri = ""
+        m.initialsText.visible = false
+        m.placeholderText.visible = false
+        m.title.text = ""
+        m.subtitle.text = ""
+        m.badge.visible = false
+        m.playGlyph.visible = false
+        m.defaultArt.visible = false
+        m.defaultMark.visible = false
+        layout()
+        onFocus()
+        return
+    end if
+    m.placeholder.blendColor = "0x15171CFF"
     ' Decode the artwork at the card's drawn size (with room for the 1.10 focus zoom) instead of the
     ' server's full image; the load size must be set before the uri.
     sz = imageSize()
@@ -84,7 +107,7 @@ end sub
 ' People (circle) keep the plain circle and initials cards their letters.
 sub updateDefaultArt()
     c = m.top.itemContent
-    if c = invalid then return
+    if c = invalid or m.isExplore then return
     noImage = c.HDPosterUrl = invalid or c.HDPosterUrl = "" or m.image.loadStatus = "failed"
     hasInitials = c.initials <> invalid and c.initials <> ""
     show = noImage and m.style <> "circle" and not hasInitials
@@ -151,6 +174,16 @@ sub layout()
     m.glow.height = h + 24
     m.glow.translation = [-12, -12]
     m.playGlyph.translation = [(w - 60) / 2, (h - 60) / 2]
+    if m.isExplore then
+        ' Arrow circle over the label, centred as one block (88 + 16 + label height).
+        lh = 34
+        m.exploreLabel.width = w - 16
+        m.exploreLabel.height = lh
+        top = Int((h - (88 + 16 + lh)) / 2)
+        m.exploreCircle.translation = [Int((w - 88) / 2), top]
+        m.exploreIcon.translation = [Int((w - 88) / 2) + 16, top + 16]
+        m.exploreLabel.translation = [8, top + 88 + 16]
+    end if
 
     ' Progress bar (6 px) on landscape and poster cards that have progress.
     c = m.top.itemContent
@@ -206,6 +239,19 @@ sub onFocus()
     m.card.scale = [s, s]
     m.border.opacity = p
     m.glow.opacity = p * 0.9
+    if m.isExplore then
+        ' White 8% at rest, 16% focused (over black; opaque, so the focus glow behind the tile
+        ' does not show through it); the circle and label brighten with it.
+        if p > 0.5 then
+            m.placeholder.blendColor = "0x2E2F33FF"
+            m.exploreCircle.blendColor = "0xFFFFFF3D"
+            m.exploreLabel.color = "0xFFFFFFFF"
+        else
+            m.placeholder.blendColor = "0x1A1B1EFF"
+            m.exploreCircle.blendColor = "0xFFFFFF24"
+            m.exploreLabel.color = "0xEDEDEDD9"
+        end if
+    end if
     if p > 0.5 then
         m.title.color = "0xEDEDEDFF"
     else
