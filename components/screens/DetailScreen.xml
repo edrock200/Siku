@@ -86,6 +86,8 @@
           <Label id="episodesMsg" text="Loading episodes…" color="0xEDEDED9E" translation="[0, 150]" visible="false">
             <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="27" />
           </Label>
+          <!-- Shown when the first seasons/episodes request failed: the only focusable thing there. -->
+          <PillButton id="episodesRetryBtn" text="Retry" translation="[0, 200]" visible="false" />
           <RowList id="episodeRow" translation="[0, 130]" itemComponentName="DetailEpisodeItem"
                    itemSize="[1820, 420]" rowItemSize="[[360, 420]]" rowItemSpacing="[[40, 0]]" numRows="1"
                    drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" showRowLabel="[false]" />
