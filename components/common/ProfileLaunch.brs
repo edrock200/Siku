@@ -2,8 +2,8 @@
 ' profile (Android TV #498 / #542, ProfileLaunchPreferences.kt). Device-wide, never sent to the
 ' server, and it survives sign-out. The choice and the pending "remember" offer live in the
 ' device prefs (m.global.prefs.profileLaunch / profileLaunchOffer); the time Siku was last in use
-' with a profile is its own registry key, written by MainScene's heartbeat, so the away clock
-' does not rewrite the prefs every few minutes.
+' with a profile is its own registry key, written by MainScene's heartbeat (at most every 5-10
+' minutes, ProfileLaunch_heartbeat), so the away clock does not rewrite the prefs.
 '
 ' Roku has no background state: a channel is either running or closed. The away interval is
 ' therefore "since Siku was last seen in use", recorded on exit through Back and every few
@@ -104,3 +104,27 @@ sub ProfileLaunch_markActive(minGap = 0 as integer)
     if minGap > 0 and now - ProfileLaunch_lastActive() < minGap and now >= ProfileLaunch_lastActive() then return
     Registry_write("profileLastActive", now)
 end sub
+
+' MainScene's heartbeat (every ProfileLaunch_heartbeatSeconds while Siku runs). Each registry
+' write wears flash, so the time is rewritten only as often as the away rule needs it: a twelfth
+' of the away interval, 5 to 10 minutes (After 1 Hour: 5 min, After 12 Hours: 10 min). Pressing
+' Home closes Siku without notice, so Who's Watching may then come back that much early at most.
+sub ProfileLaunch_heartbeat()
+    gap = ProfileLaunch_heartbeatGap()
+    if gap <= 0 then return
+    ' A tick that lands a few seconds early (timer drift) still counts as the full gap.
+    ProfileLaunch_markActive(gap - 30)
+end sub
+
+function ProfileLaunch_heartbeatGap() as integer
+    away = ProfileLaunch_behavior().awaySeconds
+    if away <= 0 then return 0
+    gap = Int(away / 12)
+    if gap < 300 then gap = 300
+    if gap > 600 then gap = 600
+    return gap
+end function
+
+function ProfileLaunch_heartbeatSeconds() as integer
+    return 300
+end function

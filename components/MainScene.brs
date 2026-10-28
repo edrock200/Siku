@@ -57,9 +57,9 @@ sub init()
     routeToStart()
 
     ' The away clock for the timed choices: Home closes a channel without telling it, so "last in
-    ' use" is refreshed every few minutes while Siku runs (and on Back out of the app).
+    ' use" is refreshed every 5-10 minutes while Siku runs (and on Back out of the app).
     m.activeTimer = CreateObject("roSGNode", "Timer")
-    m.activeTimer.duration = 120
+    m.activeTimer.duration = ProfileLaunch_heartbeatSeconds()
     m.activeTimer.repeat = true
     m.activeTimer.observeField("fire", "onActiveTick")
     m.activeTimer.control = "start"
@@ -95,7 +95,7 @@ sub onHomeCachePurge()
 end sub
 
 sub onActiveTick()
-    ProfileLaunch_markActive(100)
+    ProfileLaunch_heartbeat()
 end sub
 
 ' Decides the first screen from what we have stored.
