@@ -35,6 +35,9 @@ clears one); GET /mock/switch lists them.
   empty_inventory=once|always    GET /watch/{id} lists no versions (once: only the first read of each item)
   start_terminal=<reason>        POST /playback/start answers a terminal decision with that reason
   device_manual=1                device sign-in codes stay pending until POST /api/v2/auth/device/approve
+  seasons_fail=1 / episodes_fail=1
+                                 GET .../seasons or .../seasons/{n}/episodes answers 500
+  more_fail=1                    a catalog or notifications page after the first (a cursor) answers 500
   stale_profile=<profile id>     every request on that profile answers 403
                                  profile_verification_required until GET /api/v2/profiles runs
   reject_access=1                every authenticated request answers 401 invalid_token (an expired
@@ -146,12 +149,15 @@ def series(i):
     title, seasons, eps = SERIES[i]
     cid = "series:%s" % title.lower().replace(" ", "-")
     year = 2015 + h(title) % 10
+    # Next up: the first episode not marked watched (the real server also weighs progress).
+    play = next(((episode_id(cid, sn, e), sn) for sn in range(1, seasons + 1) for e in range(1, eps + 1)
+                 if episode_id(cid, sn, e) not in STATE["watched"]), (episode_id(cid, 1, 1), 1))
     return {
         "content_id": cid, "type": "series", "title": title, "year": year, "genres": [GENRES[h(title) % 8]],
         "keywords": [], "status": "matched", "content_rating": "TV-14", "season_count": seasons,
         "episode_count": seasons * eps, "overview": "%s follows a small crew through %d seasons of trouble, loyalty and very long nights." % (title, seasons),
         "poster_url": img("poster", cid), "backdrop_url": img("backdrop", cid), "logo_url": img("logo", cid),
-        "play_content_id": episode_id(cid, 1, 1), "play_season_number": 1, "first_air_date": "%d-03-04" % year,
+        "play_content_id": play[0], "play_season_number": play[1], "first_air_date": "%d-03-04" % year,
         "networks": ["Mock Network"],
         "user_state": {"played": False, "is_favorite": cid in STATE["favorites"], "in_watchlist": cid in STATE["watchlist"]},
     }
@@ -1936,6 +1942,8 @@ class Handler(BaseHTTPRequestHandler):
                 series = [g["name"] for g in audiobook_groups({"group_by": ["series"]})]
             return self.send(200, {"genres": genres, "studios": [], "networks": [], "countries": [], "original_languages": [], "content_ratings": ["PG", "PG-13", "R"],
                                    "authors": authors, "narrators": narrators, "series": series, "technical": {}})
+        if p == "/api/v2/catalog" and q.get("cursor", [""])[0] and STATE["switches"].get("more_fail"):
+            return self.problem(500, "internal", "Page failed (more_fail)")
         if p == "/api/v2/catalog" and q.get("source", [""])[0] == "section" and q.get("library_id", [""])[0] == "5":
             # A mixed library's shelf, paged in its stored order (TvLibraryMediaScope refills from it).
             sec = next((x for x in mixed_sections(full=True) if x["id"] == q.get("section_id", [""])[0]), None)
@@ -1994,6 +2002,8 @@ class Handler(BaseHTTPRequestHandler):
             d = detail(m.group(1))
             return self.send(200, series_effective(self, d, q)) if d else self.problem(404, "not_found", "Not found")
         m = re.match(r"^/api/v2/catalog/series/([^/]+)/seasons$", p)
+        if m and STATE["switches"].get("seasons_fail"):
+            return self.problem(500, "internal", "Seasons failed (seasons_fail)")
         if m:
             for i, s in enumerate(all_series()):
                 if s["content_id"] == m.group(1):
@@ -2003,6 +2013,8 @@ class Handler(BaseHTTPRequestHandler):
                                                        "poster_url": s["poster_url"]} for n in range(1, seasons + 1)]})
             return self.problem(404, "not_found", "Not found")
         m = re.match(r"^/api/v2/catalog/series/([^/]+)/seasons/(\d+)/episodes$", p)
+        if m and STATE["switches"].get("episodes_fail"):
+            return self.problem(500, "internal", "Episodes failed (episodes_fail)")
         if m:
             for i, s in enumerate(all_series()):
                 if s["content_id"] == m.group(1):
@@ -2374,6 +2386,9 @@ def notifications_route(handler, method, p, q, b):
             items = [r for r in rows if not r["read_at"]]
         limit = min(200, max(1, int((q.get("limit") or ["50"])[0])))
         cursor = (q.get("cursor") or [""])[0]
+        if cursor and STATE["switches"].get("more_fail"):
+            handler.send(500, {"error": {"code": "internal", "message": "Page failed (more_fail)"}})
+            return True
         offset = int(cursor[1:]) if cursor.startswith("o") and cursor[1:].isdigit() else 0
         chunk = items[offset:offset + limit]
         more = offset + limit < len(items)

@@ -3,9 +3,10 @@
 check of a stored file; Session_homeCachePurgeReason (Session.brs). Ideas from ManavA/silo-roku's
 tests/test_home_cache*.py (AGPL-3.0)."""
 import json
+import os
 import unittest
 
-from brs import check_cases
+from brs import ROOT, check_cases
 
 FILES = ["components/common/HomeCache.brs", "components/common/Utils.brs"]
 SESSION_FILES = ["components/common/Session.brs", "components/common/Utils.brs"]
@@ -81,7 +82,7 @@ class Trimming(unittest.TestCase):
              lambda v: v["content_id"] == "movie:glass-city" and v["title"] == "Glass City" and v["year"] == 2021
              and v["content_rating"] == "PG-13" and v["type"] == "movie"),
             ("two genres", "HomeCache_trimCard", [CARD], lambda v: v["genres"] == ["Drama", "Crime"]),
-            ("overview clipped", "HomeCache_trimCard", [CARD], lambda v: len(v["overview"]) == 280),
+            ("overview clipped", "HomeCache_trimCard", [CARD], lambda v: len(v["overview"]) == 150),
             ("nested objects keep scalars", "HomeCache_trimCard", [CARD],
              lambda v: v["user_state"] == {"played": False, "favorite": True}
              and v["user_data"]["position_seconds"] == 120 and v["overlay_summary"]["hdr"] == "dv"
@@ -104,9 +105,26 @@ class Trimming(unittest.TestCase):
             ("nothing secret anywhere", "HomeCache_payload", [entries], no_secrets),
             ("falls back to inline items", "HomeCache_payload", [[{"section": section, "items": [CARD]}]],
              lambda v: len(v["sections"][0]["items"]) == 1),
-            ("under the size limit", "HomeCache_payload", [entries], lambda v: len(json.dumps(v)) < 262144),
+            ("under the size limit", "HomeCache_payload", [entries], lambda v: len(json.dumps(v)) < 1048576),
         ])
 
+    def test_full_home_fits(self):
+        """A full Home (30 sections of 24 cards) fits the byte limit in English and in CJK text
+        (3 bytes a character); the file is written and read back in UTF-8 bytes. One card is
+        trimmed in brs-cli and the file is sized here (720 cards through brs-cli take minutes)."""
+        cjk = dict(CARD, title="\u6620" * 40, series_title="\u6620" * 40, episode_title="\u6620" * 40,
+                   overview="\u6620" * 1000)
+        r = check_cases(self, FILES, [
+            ("limit in bytes", "HomeCache_limits", [], lambda v: v["bytes"] == 1048576 and v["overview"] == 150),
+            ("an English card", "HomeCache_trimCard", [CARD], lambda v: len(v["overview"]) == 150),
+            ("a CJK card", "HomeCache_trimCard", [cjk], lambda v: len(v["overview"]) == 150),
+        ])
+        for label, card in (("English", r[1]["value"]), ("CJK", r[2]["value"])):
+            snapshot = {"schema": 1, "owner": HASH, "savedAt": NOW,
+                        "sections": [{"id": "s%d" % i, "title": "\u6620" * 30, "section_type": "custom", "items": [card] * 24}
+                                     for i in range(30)]}
+            size = len(json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+            self.assertLess(size, 1048576, "a full %s Home is %d bytes" % (label, size))
 
 class Check(unittest.TestCase):
     def snap(self, **kw):
@@ -147,6 +165,22 @@ class Purge(unittest.TestCase):
             ("was signed out", "Session_homeCachePurgeReason", [dict(SESSION, accessToken=""), SESSION], ""),
         ])
 
+    def test_check_reads_the_published_session(self):
+        """MainScene keeps the file of m.global.session's owner, so the purge is asked for only
+        after Session_save has published the new session; the check compares against it."""
+        g = {"global": {"session": dict(SESSION, profileId="p2"), "homeCachePurge": 0, "homeCachePurgeReason": ""}}
+        same = {"global": {"session": dict(SESSION), "homeCachePurge": 0, "homeCachePurgeReason": ""}}
+        check_cases(self, ["tests/session_io.brs"] + SESSION_FILES, [
+            ("profile switch asks for a purge", "SessionIo_check", [SESSION], {"purge": 1, "reason": "profile"}, g),
+            ("unchanged owner asks nothing", "SessionIo_check", [SESSION], {"purge": 0, "reason": ""}, same),
+        ])
+
+    def test_save_publishes_before_the_check(self):
+        with open(os.path.join(ROOT, "components/common/Session.brs"), encoding="utf-8") as fh:
+            src = fh.read()
+        body = src[src.index("sub Session_save("):src.index("end sub", src.index("sub Session_save("))]
+        self.assertLess(body.index("m.global.session = s"), body.index("Session_homeCacheCheck("))
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -172,6 +206,16 @@ class FileIo(unittest.TestCase):
         self.run_io("write then read", [{"op": "read"}, {"op": "write", "payload": PAYLOAD}, {"op": "read"}, {"op": "list"}],
                     lambda v: v[0]["status"] == "miss" and v[0]["reason"] == "none" and v[1]["status"] == "written"
                     and v[2]["status"] == "hit" and len(v[3]["names"]) == 1 and v[3]["names"][0].endswith(".json"))
+
+    def test_non_ascii_round_trip(self):
+        """The write limit counts bytes as the read does: a Home whose characters are under the
+        limit but whose UTF-8 bytes are over it is not written (it used to be, then refused)."""
+        def payload(n):
+            return {"schema": 1, "sections": [{"id": "s", "title": "x", "items": [{"title": "\u00e9" * n}]}]}
+        self.run_io("non-ASCII Home caches", [{"op": "write", "payload": payload(1000)}, {"op": "read"}],
+                    lambda v: v[0]["status"] == "written" and v[0]["bytes"] > 2000 and v[1]["status"] == "hit")
+        self.run_io("bytes over, characters under", [{"op": "write", "payload": payload(600000)}, {"op": "list"}],
+                    lambda v: v[0]["reason"] == "size" and v[1]["names"] == [])
 
     def test_corrupt_is_a_miss_and_deleted(self):
         self.run_io("corrupt", [{"op": "corrupt"}, {"op": "read"}, {"op": "list"}],

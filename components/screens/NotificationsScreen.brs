@@ -29,6 +29,7 @@ sub init()
     m.errorText = ""
     m.refreshing = false
     m.loadingMore = false
+    m.moreFailed = false    ' an older page failed: no more automatic requests until Retry
     m.refreshSeq = 0
     m.loaded = false
 
@@ -50,6 +51,7 @@ end sub
 
 sub refresh()
     m.refreshSeq = m.refreshSeq + 1
+    m.moreFailed = false
     m.refreshing = true
     m.errorText = ""
     m.pendingCount = invalid
@@ -101,7 +103,9 @@ function pageCursor(data as object) as string
 end function
 
 sub maybeLoadMore()
-    if m.nextCursor = "" or m.loadingMore or m.refreshing then return
+    ' After a failed page only the error card's Retry asks again; scrolling would re-request on
+    ' every key press.
+    if m.nextCursor = "" or m.loadingMore or m.refreshing or m.moreFailed then return
     if lastVisibleIndex() < m.items.Count() - 4 then return
     m.loadingMore = true
     cursor = m.nextCursor
@@ -111,8 +115,9 @@ end sub
 sub onMorePage(event as object)
     resp = Api_result(event)
     m.loadingMore = false
-    if resp.context = invalid or resp.context.cursor <> m.nextCursor then return
+    if resp.context = invalid or resp.context.cursor <> m.nextCursor or resp.context.seq <> m.refreshSeq then return
     if not resp.ok or resp.data = invalid then
+        m.moreFailed = true
         m.errorText = "Older notifications could not be loaded. Retry to continue."
         rebuild()
         return

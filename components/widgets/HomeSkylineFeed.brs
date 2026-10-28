@@ -16,8 +16,6 @@ sub init()
     m.synopsis = m.top.findNode("synopsis")
     m.rowList = m.top.findNode("rowList")
     m.rowTitles = m.top.findNode("rowTitles")
-    m.titlesAnim = m.top.findNode("titlesAnim")
-    m.titlesInterp = m.top.findNode("titlesInterp")
     ' Row title metrics: RowList reserves (label height + rowLabelOffset.y) above each row's items.
     probe = m.top.findNode("labelProbe")
     m.titleH = Int(Label_height(probe))
@@ -209,12 +207,12 @@ sub rebuildRowTitles()
         m.titleNodes[i].visible = false
         m.titleNodes[i].text = ""
     end for
-    layoutRowTitles(false)
+    layoutRowTitles()
 end sub
 
 ' Vertical fixedFocus keeps the focused row at bandTop; the titles group scrolls with it. Rows
 ' above the focused one have scrolled out of the band, so their titles hide.
-sub layoutRowTitles(animate as boolean)
+sub layoutRowTitles()
     f = m.focusRow
     if f < 0 then f = 0
     if f >= m.rowTops.Count() then f = m.rowTops.Count() - 1
@@ -224,9 +222,7 @@ sub layoutRowTitles(animate as boolean)
     for i = 0 to m.titleNodes.Count() - 1
         m.titleNodes[i].visible = i >= f and i < m.rowTops.Count()
     end for
-    ' Set directly (RowList's own scroll is ~instant on the focused row); the animation node is kept
-    ' for a later tween but is not relied on; an instant (non-animated) placement cancels any tween.
-    if not animate then m.titlesAnim.control = "stop"
+    ' Set directly: RowList's own scroll is about instant on the focused row.
     m.rowTitles.translation = target
 end sub
 
@@ -241,7 +237,7 @@ end function
 sub layoutBand()
     bt = m.top.bandTop
     m.rowList.translation = [40, bt]
-    layoutRowTitles(false)
+    layoutRowTitles()
     layoutMarquee()
 end sub
 
@@ -308,7 +304,7 @@ sub onRowItemFocused()
     rf = m.pendingFocus
     if rf <> invalid and rf.Count() >= 1 and rf[0] <> m.focusRow then
         m.focusRow = rf[0]
-        layoutRowTitles(true)
+        layoutRowTitles()
     end if
     m.restTimer.control = "stop"
     m.restTimer.control = "start"

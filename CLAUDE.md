@@ -161,6 +161,10 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   tokens. Mock: `--switch refresh_status=502|401|html` with `--switch reject_access=1` (every
   authenticated request answers 401 until a refresh succeeds); the speed-test endpoints refuse the
   Kids profile without its `X-Profile-Token` (mock log `PROBE ... token=yes|no`).
+- Mock failure switches for browsing (`--switch` or `POST /mock/switch`): `seasons_fail=1` /
+  `episodes_fail=1` (a series page's seasons or episodes answer 500: the Retry button), `more_fail=1`
+  (a catalog or notifications page after the first answers 500: Library backs off, Notifications
+  waits for Retry). The mock's series `play_content_id` is the first episode not marked watched.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

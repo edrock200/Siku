@@ -166,13 +166,15 @@ function homeCacheWrite(job as object, result as object) as object
     snapshot = { schema: HomeCache_schema(), owner: h, savedAt: CreateObject("roDateTime").AsSeconds(), sections: Arr_or(payload.sections) }
     text = FormatJson(snapshot)
     lim = HomeCache_limits()
-    if text = "" or Len(text) > lim.bytes then
+    ' Bytes, not characters: the reader checks the file size, and non-ASCII text takes 2-4 bytes
+    ' a character (FromAsciiString copies the string's UTF-8 bytes).
+    bytes = CreateObject("roByteArray")
+    if text <> "" then bytes.FromAsciiString(text)
+    if bytes.Count() = 0 or bytes.Count() > lim.bytes then
         result.reason = "size"
-        print "[siku-home] cache write skipped reason=size"
+        print "[siku-home] cache write skipped reason=size bytes="; bytes.Count()
         return result
     end if
-    bytes = CreateObject("roByteArray")
-    bytes.FromAsciiString(text)
     path = homeCachePath(h)
     ' Temp file then rename: an interrupted write leaves no half file under the real name. The
     ' temp name is unique per write, so two writes (two Home pages) never share one.

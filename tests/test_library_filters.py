@@ -24,5 +24,20 @@ class WatchRule(unittest.TestCase):
         ])
 
 
+class MoreRetryDelay(unittest.TestCase):
+    """A failed "load more" waits before the grid asks again (no request and toast per key)."""
+
+    def test_backoff(self):
+        f = "Library_moreRetryDelay"
+        check_cases(self, FILES, [
+            ("no failure", f, [0], 0, {}),
+            ("first", f, [1], 5, {}),
+            ("second", f, [2], 10, {}),
+            ("fourth", f, [4], 40, {}),
+            ("capped", f, [5], 60, {}),
+            ("many", f, [50], 60, {}),
+        ])
+
+
 if __name__ == "__main__":
     unittest.main()
