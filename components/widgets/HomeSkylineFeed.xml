@@ -81,9 +81,6 @@
       <Font role="rowLabelFont" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
     </RowList>
     <Group id="rowTitles" translation="[88, 540]" visible="false" />
-    <Animation id="titlesAnim" duration="0.2" easeFunction="outCubic">
-      <Vector2DFieldInterpolator id="titlesInterp" key="[0.0, 1.0]" keyValue="[[88, 540], [88, 540]]" fieldToInterp="rowTitles.translation" />
-    </Animation>
     <Label id="labelProbe" text="Ag" visible="false">
       <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
     </Label>

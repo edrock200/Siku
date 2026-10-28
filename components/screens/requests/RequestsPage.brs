@@ -331,9 +331,3 @@ sub onMutation(event as object)
     end if
     m.global.toast = Req_failureText(resp, "Couldn't cancel the request")
 end sub
-
-function onKeyEvent(key as string, press as boolean) as boolean
-    ' Parameters are part of the SceneGraph signature; this screen handles no keys itself.
-    if key = "" and press then return false
-    return false
-end function

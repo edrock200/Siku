@@ -487,9 +487,3 @@ end sub
 sub onMenuDismissed()
     m.feed.focusRequested = true
 end sub
-
-function onKeyEvent(key as string, press as boolean) as boolean
-    ' Parameters are part of the SceneGraph signature; the shell handles the keys this page does not.
-    if key = "" and press then return false
-    return false
-end function

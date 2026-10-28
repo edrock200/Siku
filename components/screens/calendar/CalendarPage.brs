@@ -262,7 +262,7 @@ sub applyFocusVisuals()
             sub1 = c.inkMuted
         else
             bg.blendColor = "0xFFFFFF14"
-            bg.visible = isDay or true
+            bg.visible = true
             tint = c.ink
             sub1 = c.inkMuted
         end if
