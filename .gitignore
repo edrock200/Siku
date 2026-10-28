@@ -1,6 +1,6 @@
 build/
 out/
-node_modules/
+node_modules
 *.zip
 .env
 __pycache__/
