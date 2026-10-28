@@ -71,7 +71,7 @@ end function
 ' ---------- State ----------
 
 function Settings_empty() as object
-    return { ready: false, available: false, identity: "", revision: 0, manifestRevision: 0, items: {}, error: "" }
+    return { ready: false, available: false, identity: "", revision: 0, manifestRevision: 0, items: {}, error: "", loadSeq: 0 }
 end function
 
 ' The server + profile the snapshot belongs to.
@@ -131,26 +131,52 @@ end sub
 
 ' Probes the contract (capabilities), then resolves every key the server knows in one request.
 ' Publishes the result on m.global.settings; observe that field to react.
+' Every load gets the next number of an app-wide sequence (m.global.settingsLoadSeq), and the
+' published snapshot remembers the number it came from (`loadSeq`). Loads from several screens and
+' the reload after a write overlap: an answer older than the snapshot already published is dropped,
+' so it cannot put back values that were changed meanwhile.
 sub Settings_load()
-    Api_call({ method: "GET", path: "/api/v2/settings/contract/capabilities", context: { identity: Settings_identity() } }, "Settings_onCaps")
+    if not m.global.hasField("settingsLoadSeq") then m.global.addFields({ settingsLoadSeq: 0 })
+    seq = m.global.settingsLoadSeq + 1
+    m.global.settingsLoadSeq = seq
+    Api_call({ method: "GET", path: "/api/v2/settings/contract/capabilities", context: { identity: Settings_identity(), seq: seq } }, "Settings_onCaps")
 end sub
+
+' True when an answer must not be published: it is for another server or profile, or a newer load
+' has already published (pure apart from the notify; tests/test_settings_load_seq.py). The screen
+' that started a superseded load is still told, so it re-reads the current snapshot.
+function Settings_superseded(context as dynamic, identity as string) as boolean
+    if identity <> Settings_identity() then return true
+    seq = Settings_contextSeq(context)
+    published = Int(Content_numOr(Settings_state().loadSeq, 0))
+    if seq >= published then return false
+    print "[Settings] load "; seq; " dropped: load "; published; " already published"
+    Settings_notify()
+    return true
+end function
+
+function Settings_contextSeq(context as dynamic) as integer
+    if Type(context) <> "roAssociativeArray" then return 0
+    return Int(Content_numOr(context.seq, 0))
+end function
 
 sub Settings_onCaps(event as object)
     resp = Api_result(event)
     identity = ""
     if resp.context <> invalid then identity = Str_orEmpty(resp.context.identity)
-    if identity <> Settings_identity() then return
+    if Settings_superseded(resp.context, identity) then return
+    seq = Settings_contextSeq(resp.context)
     if not resp.ok or Type(resp.data) <> "roAssociativeArray" then
-        Settings_publishError(identity, Api_errorText(resp))
+        Settings_publishError(identity, Api_errorText(resp), Settings_contextSeq(resp.context))
         return
     end if
     rev = Int(Content_numOr(resp.data.manifest_revision, 1))
-    Settings_readEffective(identity, rev, true)
+    Settings_readEffective(identity, rev, true, seq)
 end sub
 
 ' One batched read of every key the manifest revision knows; withOptional = false leaves out the
 ' keys a server at that revision may still refuse.
-sub Settings_readEffective(identity as string, rev as integer, withOptional as boolean)
+sub Settings_readEffective(identity as string, rev as integer, withOptional as boolean, seq as integer)
     keys = []
     hasOptional = false
     for each d in Settings_keyDefs()
@@ -164,7 +190,7 @@ sub Settings_readEffective(identity as string, rev as integer, withOptional as b
         end if
     end for
     mayRetry = withOptional and hasOptional
-    Api_call({ method: "GET", path: "/api/v2/settings/values/effective", query: { keys: keys }, context: { identity: identity, manifestRevision: rev, canRetry: mayRetry } }, "Settings_onEffective")
+    Api_call({ method: "GET", path: "/api/v2/settings/values/effective", query: { keys: keys }, context: { identity: identity, manifestRevision: rev, canRetry: mayRetry, seq: seq } }, "Settings_onEffective")
 end sub
 
 sub Settings_onEffective(event as object)
@@ -175,14 +201,14 @@ sub Settings_onEffective(event as object)
         identity = Str_orEmpty(resp.context.identity)
         rev = Int(Content_numOr(resp.context.manifestRevision, 0))
     end if
-    if identity <> Settings_identity() then return
+    if Settings_superseded(resp.context, identity) then return
     ' 404 unknown_setting / 422: the server does not know an optional key; read the rest.
     if not resp.ok and (resp.status = 404 or resp.status = 422) and resp.context <> invalid and resp.context.canRetry = true then
-        Settings_readEffective(identity, rev, false)
+        Settings_readEffective(identity, rev, false, Settings_contextSeq(resp.context))
         return
     end if
     if not resp.ok or Type(resp.data) <> "roAssociativeArray" then
-        Settings_publishError(identity, Api_errorText(resp))
+        Settings_publishError(identity, Api_errorText(resp), Settings_contextSeq(resp.context))
         return
     end if
     items = {}
@@ -206,6 +232,7 @@ sub Settings_onEffective(event as object)
         manifestRevision: rev
         items: items
         error: ""
+        loadSeq: Settings_contextSeq(resp.context)
     }
     Settings_notify()
 end sub
@@ -217,12 +244,13 @@ sub Settings_notify()
     if m.top <> invalid and m.top.hasField("settingsLoaded") then m.top.settingsLoaded = true
 end sub
 
-sub Settings_publishError(identity as string, message as string)
+sub Settings_publishError(identity as string, message as string, seq as integer)
     prev = Settings_state()
     st = Settings_empty()
     st.ready = true
     st.identity = identity
     st.error = message
+    st.loadSeq = seq
     ' Keep an earlier successful answer for the same server + profile; a transient failure
     ' should not throw away values playback is using.
     if prev.available = true and prev.identity = identity then
@@ -403,6 +431,8 @@ sub Settings_setLocal(key as string, scope as string, value as dynamic)
     end if
     items[key] = { value: value, source: scope, scope: scope, storedValue: value, constrained: false, suggested: [] }
     st.items = items
+    ' Loads already in flight may have read the old value: only a load started from now on publishes.
+    if m.global.hasField("settingsLoadSeq") then st.loadSeq = Int(Content_numOr(m.global.settingsLoadSeq, 0)) + 1
     m.global.settings = st
 end sub
 
