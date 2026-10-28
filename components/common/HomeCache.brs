@@ -26,8 +26,12 @@ function HomeCache_maxAgeSeconds() as integer
 end function
 
 ' Bounds that keep the file small (Roku's cachefs is shared and may be evicted at any time).
+' `bytes` bounds the file in UTF-8 bytes, checked the same way on write and read (Android TV's
+' Room cache allows 1.5 MB). A full Home (30 x 24 cards) is about 400 KB in English and 900 KB
+' in CJK text; the overview only feeds the marquee's two-line synopsis (about 120 characters),
+' so 150 are kept.
 function HomeCache_limits() as object
-    return { sections: 30, items: 24, overview: 280, text: 200, bytes: 262144 }
+    return { sections: 30, items: 24, overview: 150, text: 200, bytes: 1048576 }
 end function
 
 ' The identity a cache belongs to: server, account and profile. "" means "do not cache" (signed
