@@ -3,9 +3,10 @@
 check of a stored file; Session_homeCachePurgeReason (Session.brs). Ideas from ManavA/silo-roku's
 tests/test_home_cache*.py (AGPL-3.0)."""
 import json
+import os
 import unittest
 
-from brs import check_cases
+from brs import ROOT, check_cases
 
 FILES = ["components/common/HomeCache.brs", "components/common/Utils.brs"]
 SESSION_FILES = ["components/common/Session.brs", "components/common/Utils.brs"]
@@ -146,6 +147,22 @@ class Purge(unittest.TestCase):
             ("first sign-in", "Session_homeCachePurgeReason", [None, SESSION], ""),
             ("was signed out", "Session_homeCachePurgeReason", [dict(SESSION, accessToken=""), SESSION], ""),
         ])
+
+    def test_check_reads_the_published_session(self):
+        """MainScene keeps the file of m.global.session's owner, so the purge is asked for only
+        after Session_save has published the new session; the check compares against it."""
+        g = {"global": {"session": dict(SESSION, profileId="p2"), "homeCachePurge": 0, "homeCachePurgeReason": ""}}
+        same = {"global": {"session": dict(SESSION), "homeCachePurge": 0, "homeCachePurgeReason": ""}}
+        check_cases(self, ["tests/session_io.brs"] + SESSION_FILES, [
+            ("profile switch asks for a purge", "SessionIo_check", [SESSION], {"purge": 1, "reason": "profile"}, g),
+            ("unchanged owner asks nothing", "SessionIo_check", [SESSION], {"purge": 0, "reason": ""}, same),
+        ])
+
+    def test_save_publishes_before_the_check(self):
+        with open(os.path.join(ROOT, "components/common/Session.brs"), encoding="utf-8") as fh:
+            src = fh.read()
+        body = src[src.index("sub Session_save("):src.index("end sub", src.index("sub Session_save("))]
+        self.assertLess(body.index("m.global.session = s"), body.index("Session_homeCacheCheck("))
 
 
 if __name__ == "__main__":

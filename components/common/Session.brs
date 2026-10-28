@@ -45,12 +45,16 @@ end function
 sub Session_save(s as object)
     temporary = s.temporary <> invalid and (Type(s.temporary) = "Boolean" or Type(s.temporary) = "roBoolean")
     if temporary then temporary = s.temporary
+    prev = invalid
     if not temporary then
-        Session_homeCacheCheck(Registry_read("session"), s)
+        prev = Registry_read("session")
         Registry_write("session", s)
         Session_rememberServer(s)
     end if
     m.global.session = s
+    ' Only after publishing: MainScene's purge keeps the file of m.global.session's owner, which
+    ' must already be the new one (else the old owner's Home survives a profile switch).
+    if not temporary then Session_homeCacheCheck(prev)
     m.global.sessionChanged = m.global.sessionChanged + 1
     ' The server-synced settings snapshot (components/common/Settings.brs) belongs to one server
     ' and profile; drop it when either changes so the next screen reloads instead of mixing them.
@@ -81,12 +85,13 @@ function Session_homeCachePurgeReason(prev as dynamic, s as object) as string
     return ""
 end function
 
-' Asks MainScene to purge the Home cache (it runs HomeCacheTask) when the owner changed.
-sub Session_homeCacheCheck(prev as dynamic, s as object)
-    reason = Session_homeCachePurgeReason(prev, s)
-    if reason = "" then return
+' Asks MainScene to purge the Home cache (it runs HomeCacheTask) when the owner changed from
+' `prev` to the published m.global.session (Session_save publishes first; see there).
+sub Session_homeCacheCheck(prev as dynamic)
     g = m.global
     if g = invalid or not g.hasField("homeCachePurge") then return
+    reason = Session_homeCachePurgeReason(prev, g.session)
+    if reason = "" then return
     g.homeCachePurgeReason = reason
     g.homeCachePurge = g.homeCachePurge + 1
 end sub
