@@ -168,6 +168,7 @@ function Mdns_respond(query as dynamic, services as object, host as string, ip a
     answers = []
     additionals = []
     seen = {}
+    answered = {} ' record hex -> true: each answer goes out once however often it is asked for
     unicast = false
     hostL = LCase(host)
     for each q in query.questions
@@ -175,40 +176,48 @@ function Mdns_respond(query as dynamic, services as object, host as string, ip a
         anyType = q.qtype = 255
         if q.name = "_services._dns-sd._udp.local" and (q.qtype = 12 or anyType) then
             for each s in services
-                answers.Push(Mdns_record("_services._dns-sd._udp.local", 12, false, 4500, Mdns_nameHex(Mdns_fullType(s))))
+                Mdns_addOnce(answers, answered, "", Mdns_record("_services._dns-sd._udp.local", 12, false, 4500, Mdns_nameHex(Mdns_fullType(s))))
                 matched = true
             end for
         end if
         for each s in services
             if q.name = LCase(Mdns_fullType(s)) and (q.qtype = 12 or anyType) then
-                answers.Push(Mdns_ptrRecord(s, 4500))
+                Mdns_addOnce(answers, answered, "", Mdns_ptrRecord(s, 4500))
                 Mdns_addOnce(additionals, seen, "srv" + s.instance + s.serviceType, Mdns_srvRecord(s, host, 120))
                 Mdns_addOnce(additionals, seen, "txt" + s.instance + s.serviceType, Mdns_txtRecord(s, 4500))
                 Mdns_addOnce(additionals, seen, "a", Mdns_aRecord(host, ip, 120))
                 matched = true
             else if q.name = LCase(Mdns_fullInstance(s)) then
                 if q.qtype = 33 or anyType then
-                    answers.Push(Mdns_srvRecord(s, host, 120))
+                    Mdns_addOnce(answers, answered, "", Mdns_srvRecord(s, host, 120))
                     Mdns_addOnce(additionals, seen, "a", Mdns_aRecord(host, ip, 120))
                     matched = true
                 end if
                 if q.qtype = 16 or anyType then
-                    answers.Push(Mdns_txtRecord(s, 4500))
+                    Mdns_addOnce(answers, answered, "", Mdns_txtRecord(s, 4500))
                     matched = true
                 end if
             end if
         end for
         if q.name = hostL and (q.qtype = 1 or anyType) then
-            answers.Push(Mdns_aRecord(host, ip, 120))
+            Mdns_addOnce(answers, answered, "", Mdns_aRecord(host, ip, 120))
             matched = true
         end if
         if matched and q.unicast then unicast = true
     end for
     if answers.Count() = 0 then return invalid
+    ' An additional record that is already an answer is left out (RFC 6762 section 7.2).
+    extra = []
+    for each r in additionals
+        if not answered.DoesExist(r) then extra.Push(r)
+    end for
+    additionals = extra
     return { bytes: Mdns_message(answers, additionals), answers: answers, additionals: additionals, unicast: unicast }
 end function
 
+' Adds record to list unless key (or, with key "", the record itself) was added before.
 sub Mdns_addOnce(list as object, seen as object, key as string, record as string)
+    if key = "" then key = record
     if seen.DoesExist(key) then return
     seen[key] = true
     list.Push(record)

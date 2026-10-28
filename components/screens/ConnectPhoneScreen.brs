@@ -99,7 +99,7 @@ sub render()
         if m.prefs.sealed then
             status = status + " Only a phone that scanned this code can connect."
         else
-            status = status + " Any phone signed in to " + server + " on this network can connect."
+            status = status + " Without pairing, any device on this network that names " + server + " can connect."
         end if
     end if
     m.statusLabel.text = status

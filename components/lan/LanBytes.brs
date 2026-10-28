@@ -47,16 +47,6 @@ function Lan_u32be(n as integer) as object
     return b
 end function
 
-' The 4-byte big-endian length at offset, as a Double so a length with the high bit set stays
-' positive and is refused by the caller's maximum check.
-function Lan_readU32be(b as object, offset as integer) as double
-    v# = 0
-    for i = 0 to 3
-        v# = v# * 256 + b[offset + i]
-    end for
-    return v#
-end function
-
 ' A sequence number as 8 bytes, big-endian (the sealed frame's seq field). Sequence numbers in one
 ' connection stay far below 2^31, so the top four bytes are zero.
 function Lan_seq8(seq as integer) as object
@@ -252,12 +242,13 @@ function Lan_frame(payload as object) as object
     return Lan_concat([Lan_u32be(payload.Count()), payload])
 end function
 
+' max: the largest payload this buffer accepts (LanTask lowers it until a connection's hello).
 function LanFrames_new() as object
-    return { hex: "", failed: false }
+    return { hex: "", failed: false, max: Lan_maxFrameBytes() }
 end function
 
 ' Appends received bytes and returns every complete payload now available. A declared length over
-' the maximum sets fb.failed (the connection must be closed) and returns nothing more.
+' fb.max sets fb.failed (the connection must be closed) and returns nothing more.
 function LanFrames_append(fb as object, bytes as object) as object
     out = []
     if fb.failed then return out
@@ -267,7 +258,9 @@ function LanFrames_append(fb as object, bytes as object) as object
         for i = 0 to 3
             n# = n# * 256 + Val(Mid(fb.hex, i * 2 + 1, 2), 16)
         end for
-        if n# > Lan_maxFrameBytes() then
+        limit = Lan_maxFrameBytes()
+        if fb.max <> invalid then limit = fb.max
+        if n# > limit then
             fb.failed = true
             fb.hex = ""
             return out

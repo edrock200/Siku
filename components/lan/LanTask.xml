@@ -22,7 +22,7 @@
       by Connect a Phone through `pairingInfo`. Keys, nonces and tokens are never printed.
   Fields
     config      in:  {castEnabled, sealed, deviceId, deviceName, serverId, serverName,
-                      serverIdentity, signedIn, playing, pairing: {mode: ""|"setup"|"login", srv}}
+                      serverIdentity, signedIn, hasLogin, playing, pairing: {mode: ""|"setup"|"login", srv}}
     command     in:  {kind: castSend|castClose|castCloseAll|castAuthorize|pairSend|pairClose|resetKey, ...}
     discover    in:  {kind: start, token, allowSelf} | {kind: stop}; also read when the Task starts,
                      since the server screen can ask before the Task observes its fields

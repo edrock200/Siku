@@ -61,6 +61,7 @@ sub pushConfig()
         serverName: serverName
         serverIdentity: Str_orEmpty(s.serverId)
         signedIn: not Str_isEmpty(s.accessToken) and not Str_isEmpty(s.profileId)
+        hasLogin: not Str_isEmpty(s.accessToken)
         playing: m.global.castPlayer <> invalid
         pairing: pairing
     }
@@ -73,6 +74,34 @@ end sub
 
 sub onSessionChanged()
     s = m.global.session
+    if m.borrowed <> invalid then
+        if Lan_isTrue(s.temporary) then
+            if Str_isEmpty(s.accessToken) then
+                ' Sign Out on the phone's profile: the Roku signs out, its own account does not
+                ' come back when the identity ends.
+                endBorrowedBySignOut()
+                pushConfig()
+                return
+            end if
+            ' A token refresh of the borrowed session: logout must use the current token.
+            if Str_orEmpty(s.serverUrl) = m.borrowed.serverUrl then
+                m.borrowed.accessToken = Str_orEmpty(s.accessToken)
+                m.borrowed.session = s
+            end if
+        else if isOwnRefresh(s) then
+            ' A refresh of the Roku's own tokens that finished after the phone's profile went in:
+            ' keep it for the hand-back and put the borrowed session back.
+            m.ownSession = s
+            Session_save(m.borrowed.session)
+            pushConfig()
+            return
+        else
+            ' Change server or another sign-in replaced the Roku's own session (Android ends the
+            ' borrowed identity when the active server changes). Nothing old is restored.
+            print "[siku-cast] the TV's own session changed; ending the borrowed profile"
+            endBorrowedIdentity(true)
+        end if
+    end if
     if not Lan_isTrue(s.temporary) then
         own = Str_orEmpty(s.serverUrl)
         if own <> m.lastOwnServer then
@@ -83,6 +112,31 @@ sub onSessionChanged()
         end if
     end if
     pushConfig()
+end sub
+
+function isOwnRefresh(s as object) as boolean
+    own = m.ownSession
+    if own = invalid or Str_isEmpty(s.accessToken) then return false
+    if Str_orEmpty(s.serverUrl) <> Str_orEmpty(own.serverUrl) or Str_orEmpty(s.profileId) <> Str_orEmpty(own.profileId) then return false
+    return sessionUserId(s) = sessionUserId(own)
+end function
+
+function sessionUserId(s as object) as string
+    if s.user = invalid or Type(s.user) <> "roAssociativeArray" then return ""
+    return Str_orEmpty(s.user.id)
+end function
+
+' Sign Out while the phone's profile plays: end it, then sign the Roku's own account out too
+' (best-effort logout with its own token), keeping its server, as a Sign Out on it would.
+sub endBorrowedBySignOut()
+    print "[siku-cast] signed out on the phone's profile; ending it and signing the TV out"
+    own = endBorrowedIdentity(true)
+    if own = invalid then return
+    if not Str_isEmpty(own.accessToken) and not Str_isEmpty(own.serverUrl) then
+        Api_call({ method: "POST", path: "/api/v2/auth/logout", baseUrl: Str_orEmpty(own.serverUrl), auth: false, profile: false, headers: { Authorization: "Bearer " + Str_orEmpty(own.accessToken) }, timeout: 5 }, "Api_onFired")
+    end if
+    own.temporary = false
+    Session_signOutLocal(own)
 end sub
 
 sub onDisconnectAll()
@@ -194,7 +248,7 @@ sub onOffer(conn as string, offer as object, c as object)
     ' Reuse of the borrowed identity: the connection that installed it, or its resume token.
     b = m.borrowed
     if b <> invalid and b.serverId = Str_orEmpty(offer.serverId) and b.profileId = profileId and b.controllerDeviceId = Str_orEmpty(c.deviceId) then
-        tokenOk = b.resumeToken <> "" and Str_orEmpty(offer.resumeToken) = b.resumeToken
+        tokenOk = b.resumeToken <> "" and Lan_bytesEqual(Lan_bytes(Str_orEmpty(offer.resumeToken)), Lan_bytes(b.resumeToken))
         if b.connId = conn or tokenOk then
             m.endTimer.control = "stop"
             b.connId = conn
@@ -371,6 +425,9 @@ sub beginActivation(approved as object)
     player = m.global.castPlayer
     if player <> invalid then
         player.remoteCommand = { name: "stop" }
+        ' 8 s for the player to close (onCastPlayer shortens it to 1.5 s once it has).
+        m.activateTimer.control = "stop"
+        m.activateTimer.duration = 8
         m.activateTimer.control = "start"
     else
         activateBorrowed()
@@ -411,7 +468,8 @@ sub activateBorrowed()
     c = h.controller
     resume = ""
     if c <> invalid and c.features <> invalid and c.features.DoesExist("resume_token") then resume = Lan_base64url(Lan_bytes(CreateObject("roDeviceInfo").GetRandomUUID() + CreateObject("roDeviceInfo").GetRandomUUID()))
-    m.borrowed = { generation: CreateObject("roDeviceInfo").GetRandomUUID(), serverId: Str_orEmpty(offer.serverId), serverName: Str_orEmpty(offer.serverName), profileId: a.profileId, connId: h.conn, controllerDeviceId: Str_orEmpty(c.deviceId), resumeToken: resume, expiresAt: a.expiresAt }
+    ' serverUrl/accessToken: the borrowed session's own, so its logout never uses the Roku's.
+    m.borrowed = { generation: CreateObject("roDeviceInfo").GetRandomUUID(), serverId: Str_orEmpty(offer.serverId), serverName: Str_orEmpty(offer.serverName), profileId: a.profileId, connId: h.conn, controllerDeviceId: Str_orEmpty(c.deviceId), resumeToken: resume, expiresAt: a.expiresAt, serverUrl: t.serverUrl, accessToken: a.access, session: t }
     Session_forgetPlaybackCaps()
     Session_save(t) ' temporary: published, never written to the registry
     m.ready[h.conn] = m.borrowed.generation
@@ -424,24 +482,33 @@ end sub
 ' Hands the borrowed identity back: best-effort logout of the temporary session, then the
 ' Roku's own session again.
 sub restoreOwn(logout as boolean)
+    if m.borrowed = invalid then return
+    own = endBorrowedIdentity(logout)
+    if own <> invalid then Session_save(own)
+    print "[siku-cast] borrowed profile handed back"
+end sub
+
+' Ends the borrowed identity (best-effort logout with the borrowed session's own token, never
+' the Roku's) and its readiness and grant, and returns the Roku's own session snapshot (or
+' invalid) for the caller to restore or not.
+function endBorrowedIdentity(logout as boolean) as dynamic
     b = m.borrowed
-    if b = invalid then return
+    if b = invalid then return invalid
     m.borrowed = invalid
     m.endTimer.control = "stop"
-    s = m.global.session
-    if logout and not Str_isEmpty(s.accessToken) then
-        Api_call({ method: "POST", path: "/api/v2/auth/logout", baseUrl: Str_orEmpty(s.serverUrl), auth: false, profile: false, headers: { Authorization: "Bearer " + Str_orEmpty(s.accessToken) }, timeout: 5 }, "Api_onFired")
+    if logout and b.accessToken <> "" and b.serverUrl <> "" then
+        Api_call({ method: "POST", path: "/api/v2/auth/logout", baseUrl: b.serverUrl, auth: false, profile: false, headers: { Authorization: "Bearer " + b.accessToken }, timeout: 5 }, "Api_onFired")
     end if
     for each conn in m.ready.Keys()
         if Str_orEmpty(m.ready[conn]) = b.generation then m.ready.Delete(conn)
     end for
     if b.connId <> "" then m.task.command = { kind: "castAuthorize", conn: b.connId, authorized: false }
     Session_forgetPlaybackCaps()
-    if m.ownSession <> invalid then Session_save(m.ownSession)
+    own = m.ownSession
     m.ownSession = invalid
     m.global.homeDirty = true
-    print "[siku-cast] borrowed profile handed back"
-end sub
+    return own
+end function
 
 sub scheduleEnd(seconds as integer)
     if m.borrowed = invalid then return
@@ -458,8 +525,9 @@ end sub
 sub onEndBorrowed()
     if m.borrowed = invalid then return
     print "[siku-cast] borrowed session ended: " + m.top.endBorrowed
+    ' Only the controllers made ready for the borrowed identity; an "own" one is unaffected.
     for each conn in m.ready.Keys()
-        castError(conn, "temporary_session_expired", "The phone profile session expired.")
+        if Str_orEmpty(m.ready[conn]) = m.borrowed.generation then castError(conn, "temporary_session_expired", "The phone profile session expired.")
     end for
     player = m.global.castPlayer
     if player <> invalid then player.remoteCommand = { name: "stop" }
