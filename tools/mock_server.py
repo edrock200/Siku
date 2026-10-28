@@ -562,6 +562,10 @@ def sort_title(t):
     return t
 
 
+# Catalog rule fields whose value must be a JSON boolean (the server 500s otherwise).
+FLAG_RULE_FIELDS = {"hdr", "dolby_vision", "watched", "in_progress", "favorited", "in_watchlist"}
+
+
 def catalog_filter(items, q):
     """Shared GET /api/v2/catalog + POST /api/v2/catalog/query filters: name_prefix and rule groups
     (the client sends author / series "is" rules and genre "contains" rules), then sort."""
@@ -1725,6 +1729,12 @@ class Handler(BaseHTTPRequestHandler):
             for k, v in (b or {}).items():
                 if k == "groups":
                     q["_groups"] = v or []
+                    # Like the real server (Silo Android #702): a flag rule whose value is not a
+                    # JSON boolean fails the whole query with a 500.
+                    for g in q["_groups"]:
+                        for r in (g or {}).get("rules") or []:
+                            if r.get("field") in FLAG_RULE_FIELDS and not isinstance(r.get("value"), bool):
+                                return self.send(500, {"error": {"code": "internal", "message": "flag rule value must be a boolean"}})
                 elif v is not None:
                     q[k] = [str(v)]
             p, method = "/api/v2/catalog", "GET"

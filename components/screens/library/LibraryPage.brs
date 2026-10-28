@@ -469,21 +469,7 @@ sub requestPage(cursor as string)
     groups = []
     if inGroupDrill() then groups.Push({ match: "all", rules: [{ field: m.drill.field, op: "is", value: m.drill.name }] })
     if m.genre <> "" then groups.Push({ match: "any", rules: [{ field: "genre", op: "contains", value: m.genre }] })
-    if m.watchStatus <> "" then
-        ws = m.watchStatus
-        if ws = "unwatched" then
-            rule = { field: "watched", op: "is", value: "false" }
-        else if ws = "watched" then
-            rule = { field: "watched", op: "is", value: "true" }
-        else if ws = "in_progress" then
-            rule = { field: "in_progress", op: "is", value: "true" }
-        else if ws = "favorited" then
-            rule = { field: "favorited", op: "is", value: "true" }
-        else
-            rule = { field: "in_watchlist", op: "is", value: "true" }
-        end if
-        groups.Push({ match: "all", rules: [rule] })
-    end if
+    if m.watchStatus <> "" then groups.Push({ match: "all", rules: [Library_watchRule(m.watchStatus)] })
     if groups.Count() > 0 then
         body = q
         body.groups = groups
@@ -497,6 +483,16 @@ sub requestPage(cursor as string)
         Api_get("/api/v2/catalog", q, "onPage", ctx)
     end if
 end sub
+
+' The watch-status filter as a catalog rule. Flag rules carry JSON booleans: the server answers
+' 500 to "true"/"false" strings (Silo Android #702; the Apple clients send booleans too).
+function Library_watchRule(ws as string) as object
+    if ws = "unwatched" then return { field: "watched", op: "is", value: false }
+    if ws = "watched" then return { field: "watched", op: "is", value: true }
+    if ws = "in_progress" then return { field: "in_progress", op: "is", value: true }
+    if ws = "favorited" then return { field: "favorited", op: "is", value: true }
+    return { field: "in_watchlist", op: "is", value: true }
+end function
 
 sub checkLibraryHasItems()
     m.spinner.visible = true
