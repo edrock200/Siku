@@ -112,8 +112,13 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   9-patch rendering). Simulator deep links: `debugSession=mock`, `debugScreen`, `debugItem`,
   `debugFile` (mock 4K files 52 and 56; 56 always remuxes), `debugUrl`, `debugHoldSeek=1`
   (PlayerScreen starts hold-to-seek as a held Right would; the simulator cannot hold keys),
-  `debugVideoError=<code>` (fakes a Roku Video error on every plan) and `debugStallSeconds=<n|off>`
-  (the no-progress watchdog; `off` for long player runs in the simulator). The
+  `debugVideoError=<code>` (fakes a Roku Video error on every plan), `debugStallSeconds=<n|off>`
+  (the no-progress watchdog; `off` for long player runs in the simulator) and
+  `debugDeepLink=<seconds>` (PlayerScreen: a content deep link for the playing item arrives after
+  that long; MainScene prints `deep link replaces the player on top`). Stale answers print
+  `[siku-playback] start answer dropped` / `replan answer dropped`; a replan that could not be sent
+  `replan not sent kind=`; a player uncovered after it was closed `player shown again after it was
+  closed; leaving`. The
   mock serves seek previews for file 42 (`--trickplay ok|off|refused|invalid|expiring`).
 - `[siku-trailer]` lines trace a "Trailers & More" pick: a local extra's start, or the YouTube
   hand-off (installed check, `LaunchApp`, ECP status, outcome). `[siku-theme]` lines show the

@@ -107,6 +107,16 @@ sub onScreenShown()
         startPipeline()
         return
     end if
+    if m.closing then
+        ' Covered while playing (onScreenHidden stopped the audio and closed the server session):
+        ' leave instead of showing a player that can no longer play.
+        print "[siku-playback] audio player shown again after it was closed; leaving"
+        m.closed = true
+        m.stopTimeout.control = "stop"
+        m.focusSink.setFocus(true)
+        Nav_close()
+        return
+    end if
     restoreFocus()
 end sub
 

@@ -12,7 +12,9 @@ What it checks (the idea follows ManavA/silo-roku's tests/test_channel_integrity
   - no private-key blocks, Discord webhook URLs or hard-coded token values in any text file;
   - BrightScript and XML under source/ and components/: no LAN or loopback URLs (except the
     allowlisted ones below, each with its reason), no Silo v1 API or /health route, and every
-    file carries the SPDX-License-Identifier: AGPL-3.0-or-later header.
+    file carries the SPDX-License-Identifier: AGPL-3.0-or-later header;
+  - BrightScript under source/ and components/: no function result indexed directly (`f()[i]`),
+    a syntax error on a Roku that BrighterScript accepts (roku-brightscript skill, pitfall 1).
 Exits non-zero and lists every problem when a check fails.
 """
 import os
@@ -40,6 +42,20 @@ TOKEN_VALUE = re.compile(r"(?:[?&\"']token=[A-Za-z0-9._~+/-]{6,}|Bearer [A-Za-z0
 LAN_URL = re.compile(r"https?://(?:127\.\d+\.\d+\.\d+|localhost|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|"
                      r"172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+|169\.254\.\d+\.\d+|0\.0\.0\.0|\[::1?\])", re.I)
 V1 = re.compile(r"/api/v1\b|[\"'/]health\b")
+# A call's result indexed directly: `f()[i]` / `f(x) [i]` (pitfall 1).
+CALL_INDEX = re.compile(r"\)\s*\[")
+STRING_LITERAL = re.compile(r'"(?:[^"]|"")*"')
+
+
+def brs_code(line):
+    """The code part of a BrightScript line: string literals blanked, the ' comment dropped."""
+    code = STRING_LITERAL.sub('""', line)
+    cut = code.find("'")
+    if cut >= 0:
+        code = code[:cut]
+    if re.match(r"\s*rem\b", code, re.I):
+        return ""
+    return code
 # (file, text on the line) -> reason. Keep this list short and explained.
 LAN_ALLOW = {
     ("components/tasks/YouTubeLaunchTask.brs", "http://127.0.0.1:8060/launch/"):
@@ -131,6 +147,8 @@ def check(zip_path):
                 problems.append("%s:%d has a LAN/loopback URL: %s" % (n, i, line.strip()[:100]))
             if V1.search(line):
                 problems.append("%s:%d names the v1 API or /health: %s" % (n, i, line.strip()[:100]))
+            if n.endswith(".brs") and CALL_INDEX.search(brs_code(line)):
+                problems.append("%s:%d indexes a function result directly (a Roku syntax error; assign it first): %s" % (n, i, line.strip()[:100]))
     return problems
 
 
