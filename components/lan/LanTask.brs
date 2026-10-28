@@ -30,6 +30,23 @@ function lanMaxQueuedBytes() as integer
     return 524288
 end function
 
+' Frames before a cast connection's hello (sealed_hello, hello) are small; a larger declared
+' length closes it, so an unauthenticated peer cannot make Siku buffer a megabyte. Phone sign-in
+' frames (pushServer, done, cancel) stay small too.
+function lanPreHelloFrameBytes() as integer
+    return 4096
+end function
+
+function lanPairFrameBytes() as integer
+    return 65536
+end function
+
+' A phone sign-in connection that sends no frame this long after connecting is closed (it holds
+' the only slot). Once the phone has spoken, the sign-in flow's own steps govern it.
+function lanPairIdleMs() as integer
+    return 30000
+end function
+
 ' A queue that makes no progress for this long closes the connection.
 function lanSendStallMs() as integer
     return 10000
@@ -86,6 +103,10 @@ sub runLan()
     ' A screen can ask for a scan before this thread observes anything (ServerConnectScreen shows
     ' as the app starts), so the last request is read once here too.
     if m.top.discover <> invalid then onDiscover(m.top.discover)
+    ' RemoteControl publishes the idle state before this thread observes castState: without this
+    ' read, controllers got no state until a player opened.
+    st = m.top.castState
+    if st <> invalid and st.Count() > 0 then onCastState(st)
 
     while true
         msg = Wait(loopWaitMs(), m.port)
@@ -183,8 +204,14 @@ sub applyConfig(c as dynamic)
         ' The transport changed: every controller has to dial again.
         closeAll("cast", "unauthorized")
     end if
-    ' Who may control follows the server the TV plays from (its own, or a phone's borrowed one).
-    if Str_orEmpty(old.serverId) <> Str_orEmpty(c.serverId) or Str_orEmpty(old.serverIdentity) <> Str_orEmpty(c.serverIdentity) then
+    ' Who may control follows the server the TV plays from (its own, or a phone's borrowed one),
+    ' and needs the TV signed in with a profile; a sign-out (the login gone, not just a profile
+    ' being picked) drops every controller.
+    if m.io.castListener <> invalid and Lan_isTrue(old.hasLogin) and not Lan_isTrue(c.hasLogin) then
+        print "[siku-lan] signed out; closing remote control connections"
+        closeAll("cast", "unauthorized")
+    end if
+    if Str_orEmpty(old.serverId) <> Str_orEmpty(c.serverId) or Str_orEmpty(old.serverIdentity) <> Str_orEmpty(c.serverIdentity) or Lan_isTrue(old.signedIn) <> Lan_isTrue(c.signedIn) then
         for each id in m.conns
             cn = m.conns[id]
             if cn.kind = "cast" and cn.didHello then cn.authorized = cn.granted or helloMatches(cn)
@@ -311,9 +338,10 @@ sub acceptOne(s as object, kind as string)
     cn = { id: "c" + m.connSeq.ToStr(), kind: kind, sock: s, frames: LanFrames_new(), openedAt: nowMs(), peer: peer
         sealedState: "none", keys: invalid, sendSeq: 0, recvSeq: 0
         didHello: false, authorized: false, authorizedAtHello: false, granted: false, features: {}, deviceId: "", deviceName: "", serverId: "", serverIdentity: ""
-        passive: false, missed: 0, lastState: "", lastStateAt: 0, budgetAt: 0, budget: 0, rateNoticeAt: -100000
+        passive: false, missed: 0, lastState: "", lastStateAt: 0, budgetAt: 0, budget: 0, rateNoticeAt: -100000, gotFrame: false
         outQ: [], outOff: 0, outBytes: 0, outSince: 0 }
     if kind = "pair" then
+        cn.frames.max = lanPairFrameBytes()
         if countConns("pair") > 0 then
             print "[siku-lan] phone sign-in busy; refused " + peer
             s.Close()
@@ -328,14 +356,21 @@ sub acceptOne(s as object, kind as string)
     end if
     if countConns("cast") >= lanMaxControllers() then
         print "[siku-lan] remote control at its limit; refused " + peer
+        ' The refusal goes straight to the socket: this connection is never registered, so the
+        ' queued senders would drop it (TvSiloCastReceiver: hello, error, close with the reason).
+        ' At the sealed level nothing is sent: a plain answer to a sealed_hello reads on the phone
+        ' as a refused pairing key, which would send its user to pair again.
         if not Lan_isTrue(m.cfg.sealed) then
-            sendJson(cn, tvHello())
-            sendJson(cn, errorMessage("too_many_controllers", "Too many devices are controlling this TV. Disconnect one and try again."))
-            sendJson(cn, { "type": "close", "v": 2, "close": { "reason": "too_many_controllers" } })
+            refusal = [tvHello(), errorMessage("too_many_controllers", "Too many devices are controlling this TV. Disconnect one and try again."), { "type": "close", "v": 2, "close": { "reason": "too_many_controllers" } }]
+            for each frame in refusal
+                data = Lan_frame(Lan_bytes(FormatJson(frame)))
+                if s.Send(data, 0, data.Count()) <> data.Count() then exit for
+            end for
         end if
         s.Close()
         return
     end if
+    cn.frames.max = lanPreHelloFrameBytes()
     register(cn)
     print "[siku-lan] remote control connection " + cn.id + " from " + peer + " level=" + securityLevel()
     if Lan_isTrue(m.cfg.sealed) then
@@ -395,6 +430,7 @@ sub onReadable(cn as object)
 end sub
 
 sub onFrame(cn as object, payload as object)
+    cn.gotFrame = true
     if cn.kind = "cast" and cn.sealedState = "await" then
         onSealedHello(cn, payload)
         return
@@ -541,6 +577,7 @@ sub onHello(cn as object, h as dynamic)
         return
     end if
     cn.didHello = true
+    cn.frames.max = Lan_maxFrameBytes()
     cn.deviceId = Str_orEmpty(h.deviceId)
     cn.deviceName = Str_orEmpty(h.deviceName)
     cn.serverId = Str_orEmpty(h.serverId)
@@ -621,6 +658,7 @@ sub onTick()
     now = nowMs()
     if now - m.lastHeartbeat >= 3000 then
         m.lastHeartbeat = now
+        checkIp()
         for each id in connIds()
             cn = m.conns[id]
             if cn <> invalid and cn.kind = "cast" then
@@ -644,8 +682,34 @@ sub onTick()
     for each id in connIds()
         cn = m.conns[id]
         if cn <> invalid and cn.kind = "cast" and cn.authorized and now - cn.lastStateAt >= 2000 then sendState(cn, true)
+        if cn <> invalid and cn.kind = "pair" and not cn.gotFrame and now - cn.openedAt > lanPairIdleMs() then
+            print "[siku-lan] phone sign-in " + cn.id + " sent nothing in " + Int(lanPairIdleMs() / 1000).ToStr() + " s; closing"
+            closeConn(cn, "idle")
+        end if
     end for
     mdnsTick(now)
+end sub
+
+' A DHCP renewal or a network switch can give the Roku another address: the pairing link, the
+' status and the mDNS A record must follow. The 5353 socket is reopened (its group membership
+' belonged to the old interface) and everything is announced again.
+sub checkIp()
+    ip = deviceIp()
+    if ip = m.ip then return
+    print "[siku-lan] address changed to " + ip
+    m.ip = ip
+    if m.io.mdns <> invalid then
+        m.io.mdns.Close()
+        m.io.mdns = invalid
+        m.mdnsStatus = "off"
+        m.mdnsAdvertised = []
+        m.mdnsAnnounceAt = []
+        m.mdnsSentAt = {}
+        ensureMdns()
+        refreshAdvertisement()
+    end if
+    publishPairingInfo()
+    publishStatus()
 end sub
 
 ' ---------- Sending and closing ----------

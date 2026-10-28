@@ -358,14 +358,21 @@ Tokens never cross the LAN; the server gives them to the Roku over HTTPS after t
 - Siku's `hello` lists features `multi_controller, close_reason, resume_token, presence,
   volume_mute_only, no_playback_speed`. A controller is authorized when its hello's server
   matches (same URL-derived id, or same deployment identity) and Siku is signed in; ping every
-  3 s, more than three misses drops it; 5 s to say hello.
+  3 s, more than three misses drops it; 5 s to say hello. A sign-out closes every controller
+  (`unauthorized`). Frames before the hello may be at most 4 KiB (phone sign-in frames 64 KiB),
+  and a phone sign-in connection that sends nothing for 30 s is closed. At six controllers a new
+  one gets `hello`, `error {too_many_controllers}` and `close {reason: too_many_controllers}`
+  written straight to its socket (sealed level: closed without an answer).
 - `handoff_offer`: the profile Siku plays as gets `handoff_ready {reused: true}` at once; another
   profile (or server) takes the remote-playback handoff: `device/start {client_purpose:
   remote_playback, temporary: true}` at the phone's server, `handoff_challenge`, the phone
   approves, poll, `handoff_ready` (+ `resumeToken`). The approved session is published on
   `m.global.session` with `temporary: true`, which `Session_save` never writes to the registry;
   it is handed back (logout, own session restored) 5 s after the phone leaves with nothing
-  playing, or after 10 minutes idle, or when its refresh fails.
+  playing, or after 10 minutes idle, or when its refresh fails. The logout always uses the
+  borrowed session's own token. Sign Out while it is borrowed ends it and signs the Roku's own
+  account out too (its server is kept); Change server (any non-temporary save) ends it without
+  restoring the old session, as Android ends the identity when the active server changes.
 - `launch`: needs a ready handoff on that connection; opens PlayerScreen with the file id, the
   audio ordinal and the **combined subtitle ordinal** (a Roku launch carries the server's
   combined index, externals first; -1 is Off), start from the beginning or `resumePosition`.

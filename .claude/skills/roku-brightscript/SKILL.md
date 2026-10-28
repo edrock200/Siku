@@ -201,12 +201,27 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
 - A Task only hears field changes made after its thread runs `observeField(..., port)`: a
   screen that shows as the app starts set LanTask's `command` too early and the scan was lost
   (it worked in some runs, by timing). A request a screen may send at start-up gets its own field
-  that the Task also reads once when it starts (`discover`, like `config`).
+  that the Task also reads once when it starts (`discover`, like `config`, and `castState`:
+  RemoteControl's idle state was set before the Task observed it, so phones got no state until
+  a player opened).
 - A Task loop that sends must never block: LanTask queues frames per connection and drains them
   every pass (25 ms waits while anything is queued), reads only readable sockets, and checks
   datagram byte counts. Device checks still open: `[siku-lan] mdns step` lines on a Roku with
   AirPlay (shared 5353?), Find servers against a real Silo server (`discovery complete: N`,
   `found server identity ... matched=true`), and the `send queue full` / `send stalled` paths.
+- A connection the LanTask never registered (refused at the controller limit) cannot use the
+  queued senders: `sendRaw` drops frames for an unregistered conn, so that refusal was silent
+  for a release. Write such last words straight to the socket (`s.Send`) before `Close`.
+- The borrowed phone identity (RemoteControl) is undone by any later `Session_save`: a
+  non-temporary save (Change server, a sign-in) or a temporary one with no token (Sign Out on
+  the phone's profile) must end it without restoring the snapshot taken at activation, and its
+  logout must use the token stored with it, never `m.global.session`'s (by then it may be the
+  Roku's own). Verify with `silo_phone.py cast --profile p-sam --hold 150` while the simulator
+  presses Sign Out / Change server on ProfileScreen; the mock prints `LOGOUT session=handoff|debug`.
+- Bound everything an unauthenticated LAN peer controls: frames before the hello are capped at
+  4 KiB (`cn.frames.max`), a silent phone sign-in connection closes after 30 s, mDNS answers are
+  de-duplicated within one response. `silo_phone.py cast --check-limits` and `pair --idle` check
+  the first two; `lan_vectors.py` the framing cap and the de-duplication.
 - `roAudioGuide` lives in a Task (A11yTask), never on the render thread; spoken text is label,
   role and position only, never a value, PIN, address or URL.
 - brs-cli `ParseJson` objects are case-sensitive, unlike Roku event objects: read a device event
@@ -338,7 +353,8 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
 6. LAN code (`components/lan/`): `python3 tools/lan_vectors.py` must print `0 failure(s)` (the
    phone's sealed vectors, framing, mDNS); then run the simulator with `debugSession=mock` and
    `python3 tools/silo_phone.py cast --key <lanPairingKey from the brs-cli registry> ...` /
-   `pair ...` against it (see the tool's docstring). Find servers: with nothing else holding UDP
+   `pair ...` against it (see the tool's docstring); `cast --check-limits`, `cast --hold N` and
+   `pair --idle` cover the limits and the borrowed-profile endings. Find servers: with nothing else holding UDP
    5353, start `sudo python3 tools/silo_responder.py --raw-to <this machine's IP> --address <same>
    --port <mock port> --id mock-server-1` and the simulator with
    `debugScreen=ServerConnectScreen,debugLanSelf=1` (the deep link lets the strict reader accept

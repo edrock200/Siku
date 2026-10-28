@@ -105,5 +105,15 @@ sub main()
     tooBig = LanFrames_new()
     LanFrames_append(tooBig, Lan_hexBytes("80000000"))
     out["tooBigRefused"] = tooBig.failed = true
+    ' A lowered cap (LanTask before a hello): over it fails, under it waits for the bytes.
+    capped = LanFrames_new()
+    capped.max = 4096
+    LanFrames_append(capped, Lan_u32be(5000))
+    out["capRefused"] = capped.failed = true
+    under = LanFrames_new()
+    under.max = 4096
+    LanFrames_append(under, Lan_u32be(4000))
+    out["capAccepted"] = under.failed = true
+    out["bytesEqual"] = [Lan_bytesEqual(Lan_bytes("token-a"), Lan_bytes("token-a")), Lan_bytesEqual(Lan_bytes("token-a"), Lan_bytes("token-b")), Lan_bytesEqual(Lan_bytes("token"), Lan_bytes("token-a")), Lan_bytesEqual(Lan_bytes(""), Lan_bytes(""))]
     print "LAN-VECTORS " + FormatJson(out)
 end sub

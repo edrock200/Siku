@@ -2,8 +2,8 @@
 ' to reach the receiver. Any component may include this file.
 '   enabled  Remote Control on (default on): Siku listens for Silo's phone app.
 '   sealed   Require pairing (default on): only a phone that scanned Connect a Phone's code
-'            (holding the pairing key) can connect; off = any phone signed in to this Roku's
-'            server on the network.
+'            (holding the pairing key) can connect; off = any device on this network whose
+'            hello names this Roku's server (nothing proves it is signed in to it).
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
 function RemotePrefs_load() as object

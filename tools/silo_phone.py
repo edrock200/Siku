@@ -13,7 +13,11 @@ Examples (mock server on 8111, simulator on this machine):
       --identity mock-server-1 --profile p-owner --content movie:glass-city
   python3 tools/silo_phone.py cast --host 192.168.1.20 --port 52817 --server https://media.example.com ...
 
-`cast --check-refusals` also verifies that a wrong pairing key and a foreign server are refused.
+`cast --check-refusals` also verifies that a wrong pairing key and a foreign server are refused;
+`cast --check-limits` that an oversized frame before the hello is refused and a seventh controller
+is turned away; `cast --hold N` stops after the handoff and keeps the connection N seconds (sign out
+or change server on the Roku meanwhile to see the borrowed profile end); `pair --idle` connects and
+says nothing, expecting the Roku to close the sign-in connection after about 30 s.
 The protocol code is tools/silo_lan.py (ported from silo-android FETCH_HEAD 88db96c). The phone
 approves handoff codes through the mock's /api/v2/auth/device/approve-handoff; against a real
 server pass --token (an access token of the phone's account) to approve with it.
@@ -88,6 +92,20 @@ def cmd_pair(args):
     conn = L.PlainConnection(sock)
     hello = conn.recv(15)
     log("roku hello:", hello)
+    if args.idle:
+        started = time.time()
+        try:
+            m = conn.recv(60)
+        except socket.timeout:
+            m = "nothing (still open)"
+        except OSError:
+            m = None
+        waited = time.time() - started
+        if m is None and 25 <= waited <= 45:
+            log("ok: the Roku closed the silent sign-in connection after %.0f s" % waited)
+            return 0
+        log("FAIL: after %.0f s the Roku sent %r" % (waited, m))
+        return 1
     if not hello or hello.get("type") != "hello" or 1 not in hello.get("supportedVersions", []):
         log("not a compatible pairing hello")
         return 1
@@ -223,6 +241,10 @@ def cmd_cast(args):
         ok = check_refusals(args, host, port, key)
         if not ok:
             return 1
+    if args.check_limits:
+        ok = check_limits(args, host, port, key)
+        if not ok:
+            return 1
     conn = L.dial(host, port, key)
     log("connected (%s)" % ("sealed" if key else "plain"))
     c = Controller(conn)
@@ -259,6 +281,17 @@ def cmd_cast(args):
             log("handoff did not complete:", reply)
             return 1
     log("handoff ready: reused=%s profile=%s" % (reply["handoffReady"].get("reused"), reply["handoffReady"].get("profileId")))
+    if args.hold:
+        log("holding the connection for %.0f s (no launch)" % args.hold)
+        closed = c.wait(lambda m: m.get("type") == "close", args.hold)
+        if closed:
+            log("roku closed the connection:", closed.get("close"))
+        elif c.closed:
+            log("roku dropped the connection")
+        else:
+            c.send({"type": "close", "v": 2})
+        conn.close()
+        return 0
     playback = {"contentId": args.content, "startFromBeginning": True}
     if args.subtitle is not None:
         playback["subtitleTrackIndex"] = args.subtitle
@@ -289,6 +322,15 @@ def cmd_cast(args):
     c.send({"type": "close", "v": 2})
     conn.close()
     return 0 if ok else 1
+
+
+def hangup(conn):
+    """Close now: a reader thread blocked in recv would otherwise hold the socket open (no FIN)."""
+    try:
+        conn.sock.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
+    conn.close()
 
 
 def check_refusals(args, host, port, key):
@@ -328,7 +370,80 @@ def check_refusals(args, host, port, key):
     else:
         log("FAIL: a phone on another server was not refused:", err)
         ok = False
-    conn.close()
+    hangup(conn)
+    time.sleep(2)
+    return ok
+
+
+def check_limits(args, host, port, key):
+    ok = True
+    # A frame header declaring 5000 bytes before the hello: the Roku closes the connection.
+    sock = socket.create_connection((host, port), timeout=10)
+    if key is None:
+        L.PlainConnection(sock).recv(5)  # the Roku's plain hello comes first
+    sock.sendall(struct.pack(">I", 5000) + b"{" * 64)
+    sock.settimeout(8)
+    try:
+        data = sock.recv(4096)
+        while data:
+            data = sock.recv(4096)
+        log("ok: an oversized frame before the hello closes the connection")
+    except socket.timeout:
+        log("FAIL: an oversized frame before the hello was kept open")
+        ok = False
+    except OSError as e:
+        log("ok: an oversized frame before the hello closes the connection (%s)" % e)
+    sock.close()
+    # Six controllers fill the TV; a seventh is turned away.
+    held = []
+    for i in range(6):
+        conn = L.dial(host, port, key)
+        c = Controller(conn)
+        c.wait(lambda m: m.get("type") == "hello", 10)
+        a = argparse.Namespace(**vars(args))
+        a.device_id = "limit-%d-%s" % (i, uuid.uuid4().hex[:6])
+        c.send(phone_hello(a))
+        held.append((conn, c))
+        # An authorized controller gets the state; wait for it so a slow simulator does not
+        # close this one for a late hello while the next ones dial.
+        if not c.wait(lambda m: m.get("type") == "state", 30):
+            log("controller %d got no state (is this phone's server the Roku's?)" % i)
+    if any(c.closed for _, c in held):
+        log("FAIL: a controller was closed before the limit was reached")
+        ok = False
+    time.sleep(1)
+    try:
+        conn = L.dial(host, port, key)
+        got = []
+        while True:
+            try:
+                m = conn.recv(5)
+            except socket.timeout:
+                got.append({"type": "still-open"})
+                break
+            if m is None:
+                break
+            got.append(m)
+        conn.close()
+    except (IOError, OSError) as e:
+        got = None
+        log("seventh controller: %s" % e)
+    if key is None:
+        codes = [m.get("type") + ":" + (m.get("error", {}).get("code") or m.get("close", {}).get("reason") or "") for m in got or []]
+        if codes[-2:] == ["error:too_many_controllers", "close:too_many_controllers"]:
+            log("ok: a seventh controller gets too_many_controllers (%s)" % codes)
+        else:
+            log("FAIL: a seventh controller got %s" % codes)
+            ok = False
+    elif got is None or not got:
+        log("ok: a seventh sealed controller is closed without an answer")
+    else:
+        log("FAIL: a seventh sealed controller got %s" % got)
+        ok = False
+    for conn, c in held:
+        c.send({"type": "close", "v": 2})
+        hangup(conn)
+    time.sleep(1)
     return ok
 
 
@@ -347,6 +462,7 @@ def main():
     p.add_argument("--endpoint", action="append", default=[])
     p.add_argument("--timeout", type=float, default=120)
     p.add_argument("--approve", action="store_true", help="approve the code on the mock (switch device_manual=1)")
+    p.add_argument("--idle", action="store_true", help="say nothing; expect the Roku to close after about 30 s")
     c = sub.add_parser("cast")
     c.add_argument("--link")
     c.add_argument("--host")
@@ -362,6 +478,8 @@ def main():
     c.add_argument("--step", type=float, default=1.5)
     c.add_argument("--stop", action="store_true", help="stop playback at the end")
     c.add_argument("--check-refusals", action="store_true")
+    c.add_argument("--check-limits", action="store_true", help="oversized pre-hello frame and a seventh controller")
+    c.add_argument("--hold", type=float, default=0, help="after the handoff, keep the connection this long and launch nothing")
     c.add_argument("--device-name", default="Test Phone")
     c.add_argument("--device-id", default="phone-" + uuid.uuid4().hex[:8])
     args = ap.parse_args()

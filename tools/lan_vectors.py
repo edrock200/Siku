@@ -62,6 +62,15 @@ def dns_query(name, qtype, unicast=False, compress_second=None):
     return hdr + body
 
 
+def dns_multi(questions):
+    """One query with several (possibly repeated) questions, none compressed."""
+    hdr = struct.pack(">HHHHHH", 0, 0, len(questions), 0, 0, 0)
+    body = b""
+    for name, qtype in questions:
+        body += b"".join(bytes([len(p)]) + p.encode() for p in name.split(".")) + b"\x00" + struct.pack(">HH", qtype, 1)
+    return hdr + body
+
+
 def dns_parse(b):
     def name(off):
         labels, jumped, end = [], False, None
@@ -224,7 +233,9 @@ def main():
                dns_query("Siku-0123abcd._silocast-roku._tcp.local", 33, compress_second=("x", 16)),
                dns_query("siku-0123abcd.local", 1),
                dns_query("_services._dns-sd._udp.local", 12),
-               dns_query("_silocast._tcp.local", 12)]
+               dns_query("_silocast._tcp.local", 12),
+               dns_multi([("_silocast-roku._tcp.local", 12)] * 3 + [("siku-0123abcd.local", 1)] * 2
+                         + [("Siku-0123abcd._silocast-roku._tcp.local", 255)] * 2)]
     dcases = disc_cases()
     names = ["Den Silo", "Silo (2)", "\x07Bad<script>name", "A" * 80, "  spaced   out  ", "L.A. Media_Box-1 & Co's"]
     ids = ["3f2a9d5e-0000-4000-8000-000000000000", "", "a" * 128, "a" * 129, "bad/id", "mock-server-1", "ok_ID-9", "has space"]
@@ -288,6 +299,8 @@ def main():
     check("servers match", got["match"]["sameId"] and got["match"]["sameIdentity"] and not got["match"]["different"], str(got["match"]))
     check("frames across split reads", got["frames"] == ["abc", "de"], str(got["frames"]))
     check("frame over 1 MiB refused", got["tooBigRefused"])
+    check("pre-hello cap refuses a 5000-byte frame, takes a 4000-byte one", got["capRefused"] and not got["capAccepted"], str((got["capRefused"], got["capAccepted"])))
+    check("bytes equal (constant-time compare)", got["bytesEqual"] == [True, False, False, True], str(got["bytesEqual"]))
 
     inst = "Siku-0123abcd._silocast-roku._tcp.local"
     m = got["mdns"]
@@ -310,6 +323,15 @@ def main():
     check("mdns A answer", m[2] is not None and any(t == 1 and v == "192.168.1.20" for _, t, _, _, v in dns_parse(bytes.fromhex(m[2]))[1]))
     check("mdns services meta query", m[3] is not None and any(v == "_silocast-roku._tcp.local" for _, t, _, _, v in dns_parse(bytes.fromhex(m[3]))[1]))
     check("mdns ignores other types", m[4] is None)
+    if m[5]:
+        hdr = bytes.fromhex(m[5])[:12]
+        _, an, _, ad = struct.unpack(">HHHHHH", hdr)[2:]
+        _, recs = dns_parse(bytes.fromhex(m[5]))
+        keys = [(n, t, str(v)) for n, t, _, _, v in recs]
+        check("mdns repeated questions: each record once (%d answers, %d additionals)" % (an, ad),
+              len(keys) == len(set(keys)) and an == 4 and ad == 0, str(keys))
+    else:
+        check("mdns repeated questions answered", False, "no answer")
     _, recs = dns_parse(bytes.fromhex(got["announce"]))
     check("mdns announcement", any(t == 33 and v == (52819, "siku-0123abcd.local") for _, t, _, _, v in recs), str(recs))
 

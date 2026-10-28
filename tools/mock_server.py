@@ -1795,6 +1795,7 @@ class Handler(BaseHTTPRequestHandler):
                 del STATE["devices"][code]
                 t = tokens()
                 t.pop("user", None)
+                STATE.setdefault("handoff_tokens", set()).add(t["access_token"])
                 return self.send(200, {"status": "approved", "tokens": t, "profile_id": handoff["profile_id"],
                                        "profile_token": "ptok-" + uuid.uuid4().hex[:8], "temporary": True,
                                        "session_expires_at": "2030-01-01T00:00:00Z"})
@@ -1850,6 +1851,11 @@ class Handler(BaseHTTPRequestHandler):
             t.pop("user", None)
             return self.send(200, t)
         if p == "/api/v2/auth/logout":
+            # Which session was revoked (never the token itself): a SiloCast handoff's, the
+            # debugSession's, or another sign-in's.
+            bearer = (self.headers.get("Authorization") or "")[len("Bearer "):]
+            kind = "handoff" if bearer in STATE.setdefault("handoff_tokens", set()) else "debug" if bearer == "acc-debug" else "login" if bearer else "none"
+            print("LOGOUT session=%s" % kind, flush=True)
             return self.send(204)
 
         if re.match(r"^/api/v2/catalog/items/.+/themes/[^/]+/audio$", p) and "token=mock-theme-grant" in self.path:

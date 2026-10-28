@@ -126,7 +126,11 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
 - Phone features (`components/lan/`, `components/remote/`): `[siku-lan]` (sockets, sealed frames,
   mDNS bind steps/answers, send queues, Find servers: `discovery complete: N server(s)`,
   `found server identity ... matched=`), `[siku-cast]` (remote control: handoff, launch, commands, borrowed profile),
-  `[siku-pair]` (phone sign-in). Keys, nonces and tokens are never printed. `tools/silo_phone.py`
+  `[siku-pair]` (phone sign-in). Keys, nonces and tokens are never printed. Also:
+  `[siku-lan] signed out; closing remote control connections`, `address changed to <ip>` (the
+  heartbeat re-reads the IP and re-announces), `phone sign-in cN sent nothing in 30 s; closing`;
+  `[siku-cast] signed out on the phone's profile; ending it and signing the TV out` and `the TV's
+  own session changed; ending the borrowed profile`. The mock prints `LOGOUT session=handoff|debug|login`. `tools/silo_phone.py`
   acts as Silo's phone app against the simulator; `tools/lan_vectors.py` checks the crypto and
   framing against the phone's own test vectors.
 - `[siku-launch]` lines show the launch beacons (`beacon AppLaunchComplete`, `ready: home`);

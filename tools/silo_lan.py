@@ -255,7 +255,10 @@ def dial(host, port, key=None, timeout=10.0):
     if hello is None or hello[0] != kid:
         plain.close()
         raise PairingRefused("the TV refused the pairing key: %s" % reply.decode()[:200])
-    return SealedConnection(sock, SessionKeys(key, nonce, hello[1]))
+    sealed = SealedConnection(sock, SessionKeys(key, nonce, hello[1]))
+    # The TV's first sealed frame can arrive in the same read as its sealed_hello: keep the bytes.
+    sealed.reader = plain.reader
+    return sealed
 
 
 # ---------- DNS-SD for Silo servers (_silo._tcp) ----------
