@@ -3,6 +3,19 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.27
+
+Brings Siku up to date with Silo's Android TV app as of October 28, 2026.
+
+**New**
+- **Explore all.** Rows on Home and on library pages show up to 20 titles and end with an **Explore all** card that opens the whole row as its own page. A Movies or Series view of a mixed library keeps that filter there. On newer Silo servers, Home and library pages ask only for the titles a row shows, so they load less; older servers work as before.
+- **Show artwork for episodes.** On servers that send it, episodes fill the Home banner, the episode page and the Up Next screen with their show's artwork, even when spoiler protection hides episode pictures. Episode posters in grids show the season or show poster instead of a stretched episode picture.
+
+**Fixed**
+- **Mark as Watched tells the truth.** If marking a card watched or unwatched fails, the card goes back to how it was and a message says why, instead of claiming it worked.
+
+**Needs testing on a real Roku:** the Explore all card's look and the screen reader reading it, show artwork from a real server (and on the Up Next screen), and that a long "Couldn't mark as watched" message wraps instead of being cut off.
+
 ## v0.1.26
 
 Fixes from a full review of Siku, plus a library fix from Silo's Android TV app (October 27, 2026).

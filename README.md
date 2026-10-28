@@ -26,6 +26,7 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Browse | Library grids with sort and filters, collections, A‑Z rail; audiobook Authors / Series groups; music Genres | ✅ |
 | Detail | Movies, series (seasons and episodes), episodes, cast, person pages | ✅ |
 | Discover | Search, For You (Watchlist and Favorites), release Calendar | ✅ |
+| Home | "Explore all" at the end of every row (20-title rows on newer servers), show artwork for episodes, honest Mark as Watched errors (new in 0.1.27) | 🟡 simulator-tested, needs device testing |
 | Quality | Full code review fixes in 0.1.26: compile fix for title pages and the player on a Roku, library filters, frozen player, staying signed in, phone sign-out | 🟡 simulator-tested, needs device testing |
 | Playback | Direct Play or Transcode chosen by the server from the Roku's real capabilities (4K, Dolby Vision, HDR10/HDR10+/HLG, surround passthrough) | ✅ (the lighter MPEG-TS copy route on servers from Oct 26, 2026 is new in 0.1.24 and needs device testing; Settings › Playback › Experimental: MPEG-TS Copy turns it off; [details](docs/upstream/silo-server-roku-hls-audio.md)) |
 | Playback | Resume, progress sync, mark watched, Skip Intro, Up Next, audio and version selection, automatic subtitles from your Off / Auto / Always setting | ✅ |
