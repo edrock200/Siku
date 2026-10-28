@@ -197,6 +197,7 @@ sub resetPlaybackState()
     m.closing = false
     m.finished = false
     m.resumeAfterStart = invalid
+    m.pauseAfterStart = false   ' a re-anchored seek made while paused stays paused once the new plan plays
     m.watchBackTarget = invalid
     m.waitingForToken = false
     SeekReanchor_reset()
@@ -213,6 +214,16 @@ sub onScreenShown()
     if not m.started then
         m.started = true
         startPipeline()
+        return
+    end if
+    if m.closing then
+        ' Covered while playing (onScreenHidden stopped the video and closed the server session):
+        ' there is nothing left to resume, so the player leaves instead of showing a dead screen
+        ' whose keys are all swallowed.
+        print "[siku-playback] player shown again after it was closed; leaving"
+        m.stopTimeout.control = "stop"
+        m.focusSink.setFocus(true)
+        Nav_close()
         return
     end if
     restoreFocus()
@@ -586,12 +597,18 @@ sub startSession(installation as string)
     body = PlaybackCaps_startBody(installation, m.fileId, m.attemptId, startPos, audioId, subId)
     Bufq_decorateBody(body, invalid)
     m.lastRequestBody = body
-    Api_send("POST", "/api/v2/playback/start", body, "onStart")
+    Api_send("POST", "/api/v2/playback/start", body, "onStart", { attemptId: m.attemptId })
 end sub
 
 sub onStart(event as object)
     resp = Api_result(event)
     if m.closing then return
+    ' An answer for an earlier attempt (Up Next moved on, or a 409 restarted the attempt) never
+    ' mounts on this one.
+    if resp.context = invalid or Str_orEmpty(resp.context.attemptId) <> m.attemptId then
+        print "[siku-playback] start answer dropped: it belongs to an earlier attempt"
+        return
+    end if
     if resp.status = 409 and not m.retriedInstall then
         ' installation_changed: refetch capabilities once and start a fresh attempt.
         m.retriedInstall = true
@@ -647,6 +664,8 @@ sub onStart(event as object)
     end if
     ' Simulator aid (deep link debugVoice=<command>[:<seconds>]): a voice transport event, once.
     Voice_debugArm()
+    ' Simulator aid (deep link debugDeepLink=<seconds>): a content deep link arrives mid-playback, once.
+    DeepLink_debugArm()
     ' Every new session reads the playing file's markers again (the start may also have landed on
     ' another version than the one asked for).
     if planFileId(d.playback_plan) <> m.markersFileId then
@@ -694,6 +713,11 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
     if opts = invalid then opts = {}
     Recovery_notePlan(plan)
     m.plan = plan
+    ' No captions carry over from the previous plan (another episode's track): a plan with no
+    ' subtitle pick shows none. A remount re-selects its track once it plays (onVideoState).
+    m.video.subtitleTrack = ""
+    m.video.globalCaptionMode = "Off"
+    m.pauseAfterStart = false
     m.plannedAudioApplied = false
     resetBuffered()
     s = m.global.session
@@ -885,6 +909,11 @@ sub onVideoState()
         m.bufferLabel.text = "Buffering"
         m.isPaused = false
         m.playPauseBtn.iconUri = "pkg:/images/icons/pause.png"
+        if m.pauseAfterStart then
+            ' A seek re-anchored while paused (PlayerSeekReanchor): the new plan stays paused there.
+            m.pauseAfterStart = false
+            m.video.control = "pause"
+        end if
         if m.resumeAfterStart <> invalid then
             ' Only when PlayStart didn't land us there already.
             if Abs(m.video.position + m.timelineOffset - m.resumeAfterStart) > 3 then seekToSource(m.resumeAfterStart)
@@ -964,10 +993,6 @@ sub onVideoPosition()
     checkUpNext()
 end sub
 
-function sourcePosition() as float
-    return m.position
-end function
-
 sub seekToSource(seconds as float)
     if seconds < 0 then seconds = 0
     if m.duration > 0 and seconds > m.duration - 1 then seconds = m.duration - 1
@@ -1017,11 +1042,14 @@ sub sendProgress()
     if inst = "" then return
     m.sequence = m.sequence + 1
     body = { installation_id: inst, sequence: m.sequence, position: m.position, is_paused: m.isPaused }
-    Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/progress", body, "onProgressResult")
+    Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/progress", body, "onProgressResult", { sid: m.sessionId })
 end sub
 
 sub onProgressResult(event as object)
     resp = Api_result(event)
+    ' Only answers about the session playing now count: a late 404/410 for the previous episode's
+    ' session must not end this one (or leave the player).
+    if resp.context = invalid or Str_orEmpty(resp.context.sid) <> m.sessionId or m.sessionId = "" then return
     if isSessionEndedByServer(resp) then
         leaveServerEndedSession()
         return
@@ -1050,22 +1078,27 @@ sub leaveServerEndedSession()
     exitPlayer()
 end sub
 
-' DELETE the session with a final sample. Safe to call twice.
-sub stopSession()
-    if m.sessionId = "" then return
+' DELETE the session with a final sample. Safe to call twice. True when a DELETE was sent (its
+' answer, onStopped, then finishes a close).
+function stopSession() as boolean
+    if m.sessionId = "" then return false
     inst = installationId()
     sid = m.sessionId
     m.sessionId = ""
     m.progressTimer.control = "stop"
-    if inst = "" then return
+    if inst = "" then return false
     if m.stopId = "" then m.stopId = m.di.GetRandomUUID()
     m.sequence = m.sequence + 1
     body = { installation_id: inst, stop_id: m.stopId, sequence: m.sequence, position: m.position, is_paused: true }
-    Api_send("DELETE", "/api/v2/playback/" + Str_urlEncode(sid), body, "onStopped")
-end sub
+    m.stopSid = sid
+    Api_send("DELETE", "/api/v2/playback/" + Str_urlEncode(sid), body, "onStopped", { sid: sid })
+    return true
+end function
 
 sub onStopped(event as object)
-    Api_result(event)
+    resp = Api_result(event)
+    ' Only the DELETE sent for this close finishes it (not the previous episode's, sent by playInPlace).
+    if resp.context = invalid or Str_orEmpty(resp.context.sid) <> Str_orEmpty(m.stopSid) then return
     if m.closing then finishClose()
 end sub
 
@@ -1081,15 +1114,14 @@ sub exitPlayer()
     m.subsAiTimer.control = "stop"
     HoldSeek_stop()
     Trickplay_reset()   ' empties the sheet Posters (texture memory)
-    hadSession = m.sessionId <> ""
     Bufq_onStopped()
     m.bufqTimer.control = "stop"
     if m.video.hasField("bufferingStatus") then m.video.unobserveField("bufferingStatus")
     if m.video.hasField("downloadedSegment") then m.video.unobserveField("downloadedSegment")
     m.video.control = "stop"
     m.video.visible = false
-    stopSession()
-    if hadSession then
+    ' Wait (at most stopTimeout) only for a DELETE that was actually sent.
+    if stopSession() then
         m.stopTimeout.control = "start"
     else
         finishClose()
@@ -1730,6 +1762,9 @@ end sub
 sub checkUpNext()
     if (not m.isEpisode and m.shuffle = invalid) or m.nextEpisode = invalid or m.upNextShown or m.upNextDismissed then return
     if m.duration <= 0 then return
+    ' A picker or subtitle dialog the viewer has open is left alone: the card shows on a later
+    ' position tick once it closes (onFinished still closes it at the very end).
+    if m.picker.visible or m.subsDialog.visible then return
     ' playback.next_up_prompt_seconds: how long before the end the card appears (0 = at the end).
     trigger = m.duration - Settings_nextUpPromptSeconds()
     for each mk in m.markers
@@ -1762,6 +1797,13 @@ end sub
 sub showUpNext()
     if m.nextEpisode = invalid and m.shuffle = invalid then return
     m.upNextShown = true
+    ' The end of the video (onFinished) does not wait for an open picker or subtitle dialog: it is
+    ' closed so the card takes the keys (onKeyEvent gives an open dialog every key first).
+    if m.picker.visible then m.picker.visible = false
+    if m.subsDialog.visible then
+        m.subs.dialog = ""
+        m.subsDialog.visible = false
+    end if
     hideControlsNow()
     m.hud.visible = false
     m.skipGroup.visible = false
@@ -2283,7 +2325,7 @@ function hudRowSpecs() as object
             ch = m.chapters[i]
             t = Str_orEmpty(ch.title)
             if t = "" then t = "Chapter " + (i + 1).ToStr()
-            rows.Push({ id: "chapter:" + i.ToStr(), label: t, value: Time_clock(ch.start_seconds), actionable: true })
+            rows.Push({ id: "chapter:" + i.ToStr(), label: t, value: Time_clock(Content_num(ch.start_seconds)), actionable: true })
         end for
         if rows.Count() = 0 then rows.Push({ id: "noch", label: "No chapters in this title", value: "", actionable: false })
     end if
@@ -2469,7 +2511,7 @@ sub activateHudRow()
     else if Left(id, 8) = "chapter:" then
         idx = Int(Val(Mid(id, 9)))
         if idx >= 0 and idx < m.chapters.Count() then
-            seekToSource(m.chapters[idx].start_seconds * 1.0)
+            seekToSource(Content_num(m.chapters[idx].start_seconds))
             closeHud()
         end if
     end if
@@ -2740,7 +2782,10 @@ end sub
 ' controller's replan output when it asked for this one (the kept-estimate rule needs it).
 sub sendReplan(operation as string, kind as string, failure = invalid as dynamic, selectedOverride = invalid as dynamic, extra = invalid as dynamic, lowering = invalid as dynamic)
     inst = installationId()
-    if inst = "" then return
+    if inst = "" or m.plan = invalid or m.sessionId = "" then
+        replanNotSent(kind)
+        return
+    end if
     selected = {}
     if m.plan.selected_tracks <> invalid then selected = m.plan.selected_tracks
     if selectedOverride <> invalid then selected = selectedOverride
@@ -2755,12 +2800,29 @@ sub sendReplan(operation as string, kind as string, failure = invalid as dynamic
     m.replanKind = kind
     m.replanPending = true
     setBuffering(true)
-    Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/replan", body, "onReplan")
+    Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/replan", body, "onReplan", { attemptId: m.attemptId, sessionId: m.sessionId })
+end sub
+
+' A replan that could not be sent (no installation id or session): undo what the caller set up
+' for it, as a refused answer would (the quality pick, the buffering controller's pending pick,
+' the audio row's "Applying…").
+sub replanNotSent(kind as string)
+    print "[siku-playback] replan not sent kind=" + kind + ": no installation or session"
+    if (kind = "quality" or kind = "bq") and m.prevQualityPref <> invalid then m.qualityPref = m.prevQualityPref
+    Bufq_onReplanFailed(kind)
+    m.pendingAudioIndex = -1
+    if m.hud.visible then buildHudRows()
 end sub
 
 sub onReplan(event as object)
     resp = Api_result(event)
     if m.closing then return
+    ' An answer for an earlier attempt or session (the next episode started meanwhile) is stale:
+    ' the bookkeeping below belongs to the current one.
+    if resp.context = invalid or Str_orEmpty(resp.context.attemptId) <> m.attemptId or Str_orEmpty(resp.context.sessionId) <> m.sessionId then
+        print "[siku-playback] replan answer dropped: it belongs to an earlier attempt or session"
+        return
+    end if
     m.replanPending = false
     Recovery_onReplanAnswered()
     if isSessionEndedByServer(resp) then
@@ -2978,6 +3040,28 @@ sub Voice_debugFire()
     if scene = invalid or m.closing then return
     print "[siku-voice] debugVoice: injecting " + Str_orEmpty(m.top.params.debugVoice)
     scene.callFunc("handleTransport", Voice_debugInfo(Str_orEmpty(m.top.params.debugVoice)))
+end sub
+
+' debugDeepLink=<seconds>: that long after the first plan, MainScene receives a content deep link
+' for this item (inputArgs, as Roku sends one while the channel runs), so a link arriving over a
+' playing player can be watched in the simulator (MainScene replaces the player).
+sub DeepLink_debugArm()
+    if m.deepLinkDebugDone = true or m.top.params = invalid then return
+    secs = Int(Num_or(m.top.params.debugDeepLink, 0))
+    if secs <= 0 then return
+    m.deepLinkDebugDone = true
+    m.deepLinkDebugTimer = CreateObject("roSGNode", "Timer")
+    m.deepLinkDebugTimer.duration = secs
+    m.deepLinkDebugTimer.observeField("fire", "DeepLink_debugFire")
+    m.top.appendChild(m.deepLinkDebugTimer)
+    m.deepLinkDebugTimer.control = "start"
+end sub
+
+sub DeepLink_debugFire()
+    scene = m.top.getScene()
+    if scene = invalid or m.closing then return
+    print "[siku-playback] debugDeepLink: a content deep link arrives for " + m.itemId
+    scene.inputArgs = { contentId: m.itemId, mediaType: "movie" }
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean

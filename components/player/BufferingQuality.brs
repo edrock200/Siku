@@ -467,12 +467,6 @@ function BQ_pillSecondsLeft(bq as object, now as dynamic) as integer
     return (remaining + 999) \ 1000
 end function
 
-' The playing plan's summary so far, or invalid without a plan.
-function BQ_runningSummary(bq as object, now as dynamic) as dynamic
-    if bq.current = invalid then return invalid
-    return BQ_summaryOf(bq, bq.current, now)
-end function
-
 ' ---------- Trigger ----------
 
 sub BQ_evaluate(bq as object, now as dynamic)

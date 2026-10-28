@@ -252,6 +252,13 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
 - A refreshed `RowList` keeps the viewer's place only if you restore it: `HomeSkylineFeed.onRows`
   finds the focused row id and card `contentId` in the new content and sets `jumpToRowItem` after the
   row sizes are set.
+- A covered player has stopped: `onScreenHidden` closes the server session, so when it is uncovered
+  (`onScreenShown` with `m.closing`) it closes itself, and anything that opens a screen while a
+  player is on top (a deep link, a phone launch) replaces the player instead of pushing over it.
+  Every playback answer (`start`, `replan`, `progress`, the stop `DELETE`) carries a context
+  (`attemptId`, `sessionId` / `sid`) and is dropped when it no longer matches: Up Next and retries
+  start a new attempt while the old answers are still on their way. Simulator check:
+  `debugDeepLink=<seconds>` on PlayerScreen.
 - A Roku channel has no background state: it runs or it is closed, and Home closes it without
   notice. "Time away" rules (Profile Selection) measure from a periodically written last-active
   time (`ProfileLaunch.brs`), never from an exit hook alone.

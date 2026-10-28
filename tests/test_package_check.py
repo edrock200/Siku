@@ -85,6 +85,17 @@ class PackageCheck(unittest.TestCase):
         self.assertFinds("v1 API", self.problems(**{"components/v.brs": HDR + 'p = "/health"\n'}))
         self.assertFinds("header", self.problems(**{"components/n.brs": "sub x()\nend sub\n"}))
 
+    def test_function_result_indexed(self):
+        # Pitfall 1: `f()[i]` compiles in bsc and is a syntax error on a Roku.
+        self.assertFinds("indexes a function result", self.problems(**{"components/i.brs": HDR + "btns()[i].setFocus(true)\n"}))
+        self.assertFinds("indexes a function result", self.problems(**{"source/i.brs": HDR + 'x = State()[k + "|" + j]\n'}))
+        self.assertFinds("indexes a function result", self.problems(**{"components/i.brs": HDR + "x = f(a) [0]\n"}))
+        # Assigning first is fine, and so is the pattern inside a string or a comment.
+        self.assertEqual(self.problems(**{"components/i.brs": HDR + "b = btns() : b[i].setFocus(true)\n"}), [])
+        self.assertEqual(self.problems(**{"components/i.brs": HDR + 'print "f()[i]" \' never f()[i]\nREM g()[0]\n'}), [])
+        # XML is not BrightScript code.
+        self.assertEqual(self.problems(**{"components/A.xml": '<?xml version="1.0"?>\n<!-- ' + package_check.SPDX + ' f()[i] -->\n<component name="A" />\n'}), [])
+
 
 if __name__ == "__main__":
     unittest.main()

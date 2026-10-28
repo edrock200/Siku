@@ -49,6 +49,7 @@ sub Subs_resetPlayback()
     s.ai = { phase: "idle", error: "", job: invalid, progress: 0.0, message: "", quota: invalid, mode: "subtitles", subPos: 0, audioPos: 0, targetPos: -1 }
     s.adoptId = ""
     s.adoptOrigin = ""
+    s.adoptBody = invalid   ' the adoption replan's request (diagnostics line)
     if m.subsSyncTimer <> invalid then m.subsSyncTimer.control = "stop"
     if m.subsAiTimer <> invalid then m.subsAiTimer.control = "stop"
 end sub
@@ -1328,6 +1329,10 @@ sub Subs_adoptStored(storedId as string, origin as string)
     if m.plan.selected_tracks <> invalid then selected = m.plan.selected_tracks
     body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, "track_change", m.qualityPref, m.position, selected)
     Bufq_decorateBody(body, invalid)
+    ' Like every replan: the attempt's tried routes go along, and the recovery ladder and stall
+    ' watchdog hold until the answer (m.rec.inFlight); voice commands wait on m.subs.adoptId.
+    Recovery_decorateReplan(body, "track_change")
+    m.subs.adoptBody = body
     Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/replan", body, "Subs_onAdoptReplan", { fileId: m.fileId, sessionId: m.sessionId, storedId: storedId })
 end sub
 
@@ -1337,13 +1342,22 @@ sub Subs_onAdoptReplan(event as object)
     storedId = Str_orEmpty(resp.context.storedId)
     origin = m.subs.adoptOrigin
     m.subs.adoptId = ""
+    Recovery_onReplanAnswered()
+    ' 410 playback_session_ended: an administrator stopped the session; leave as onReplan does.
+    if isSessionEndedByServer(resp) then
+        setBuffering(false)
+        leaveServerEndedSession()
+        return
+    end if
     ok = resp.ok and resp.data <> invalid and resp.data.outcome = "playable" and resp.data.playback_plan <> invalid and PlaybackCaps_planProblem(resp.data) = ""
     if not ok then
         Subs_adoptFailed(origin, Subs_adoptPrefix(origin) + ", but the subtitle list could not be refreshed.")
         return
     end if
     PlaybackCaps_notePlanFeatures(resp.data)
+    Bufq_noteDecision(resp.data)
     plan = resp.data.playback_plan
+    print PlaybackCaps_diagLine(m.subs.adoptBody, plan)
     trackId = ""
     renderable = false
     if plan.subtitle <> invalid then

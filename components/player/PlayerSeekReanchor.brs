@@ -145,6 +145,8 @@ sub onSeekReanchor(event as object)
     m.video.control = "stop"
     ' "remount": the playing recipe again, only the source reloads (buffering quality keeps its plan).
     applyPlan(plan, { resumeAt: target, subtitleTrackId: Subs_selectedTrackId(), mountKind: "remount" })
+    ' A seek made while paused stays paused: the new plan is paused again once it plays (onVideoState).
+    if m.reanchorWasPaused then m.pauseAfterStart = true
     Bufq_onSeek()
     m.position = target
     m.scrubber.position = target

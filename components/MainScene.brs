@@ -476,6 +476,7 @@ sub handleDeepLink(args as dynamic)
         if not Str_isEmpty(args.debugStallSeconds) then params.debugStallSeconds = Str_orEmpty(args.debugStallSeconds) ' PlayerScreen: no-progress limit for the buffering_timeout recovery (default 60 s / 120 s)
         if not Str_isEmpty(args.debugSubtitle) then params.subtitleTrackIndex = Int(Val(Str_orEmpty(args.debugSubtitle))) ' PlayerScreen: start with this subtitle (combined index), as a details-page pick
         if not Str_isEmpty(args.debugUrl) then params.url = args.debugUrl ' StreamTestScreen: an extra stream to try
+        if not Str_isEmpty(args.debugDeepLink) then params.debugDeepLink = Str_orEmpty(args.debugDeepLink) ' PlayerScreen: a content deep link for the playing item arrives after this many seconds (replaces the player)
         if not Str_isEmpty(args.debugVoice) then params.debugVoice = Str_orEmpty(args.debugVoice) ' PlayerScreen / AudioPlayerScreen: inject this voice transport command (<command>[:<seconds>]) once playback has started (the simulator sends none)
         if not Str_isEmpty(args.debugLanSelf) then params.debugLanSelf = true ' ServerConnectScreen: Find servers also accepts this machine's own address (tools/silo_responder.py)
         resetTo(args.debugScreen, params)
@@ -488,10 +489,26 @@ sub handleDeepLink(args as dynamic)
         return
     end if
     mediaType = LCase(Str_orEmpty(args.mediaType))
+    ' A link that arrives while a player is on top replaces the player (as a phone launch does): a
+    ' player covered by another screen has stopped and closed its session, so it is never kept.
+    replacePlayer = false
+    top = topScreen()
+    if top <> invalid then replacePlayer = top.subtype() = "PlayerScreen" or top.subtype() = "AudioPlayerScreen"
+    screenName = ""
+    params = invalid
     if mediaType = "album" or mediaType = "artist" or mediaType = "audiobook" or mediaType = "track" then
-        pushScreen("AudioDetailScreen", { itemId: args.contentId, itemType: mediaType })
+        screenName = "AudioDetailScreen"
+        params = { itemId: args.contentId, itemType: mediaType }
     else if mediaType = "movie" or mediaType = "episode" or mediaType = "series" or mediaType = "season" or mediaType = "" then
-        pushScreen("DetailScreen", { itemId: args.contentId })
+        screenName = "DetailScreen"
+        params = { itemId: args.contentId }
+    end if
+    if screenName = "" then return
+    if replacePlayer then
+        print "[MainScene] deep link replaces the player on top"
+        replaceTop(screenName, params)
+    else
+        pushScreen(screenName, params)
     end if
 end sub
 
