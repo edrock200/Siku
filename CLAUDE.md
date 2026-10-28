@@ -145,6 +145,13 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   brs-cli keeps `cachefs:` in memory only, so `debugRelaunch=<seconds>` rebuilds the start screen once
   in the same run (a "second launch"); pair it with `tools/mock_server.py --home-delay <seconds>` to see
   Home drawn from the cache before the server answers.
+- `[siku-auth]` lines trace token refreshes (AuthTask): `refresh ok`, `refresh failed status= code=
+  attempt=` (kept session, retried with back-off), `refresh gave up, keeping the session`, `refresh
+  skipped` (the same token failed moments ago), `refresh rejected status= code=` (400/401: the only
+  answer that signs the user out) and `refresh answer dropped` (the session changed meanwhile). No
+  tokens. Mock: `--switch refresh_status=502|401|html` with `--switch reject_access=1` (every
+  authenticated request answers 401 until a refresh succeeds); the speed-test endpoints refuse the
+  Kids profile without its `X-Profile-Token` (mock log `PROBE ... token=yes|no`).
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

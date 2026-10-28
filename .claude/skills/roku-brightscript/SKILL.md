@@ -255,6 +255,23 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
 - A Roku channel has no background state: it runs or it is closed, and Home closes it without
   notice. "Time away" rules (Profile Selection) measure from a periodically written last-active
   time (`ProfileLaunch.brs`), never from an exit hook alone.
+- Token refresh (AuthTask): only a 400/401 answer to `POST /auth/refresh` means the refresh token
+  is dead (sign out). A 5xx from a proxy, a 403, a captive portal's 200 HTML page or no answer keeps
+  the session: three tries with back-off, then give up quietly so the caller shows its error and a
+  later request (Retry) tries again. Save a refresh by merging only the token fields into the
+  *current* `m.global.session` (a profile switch may have happened meanwhile), never a copy taken
+  before the request. `Auth_refresh` (Http.brs, any Task) waits for AuthTask's `answered` field to
+  echo its own request id, longer than `AuthTask_worstCaseSeconds` (host-tested); never time a wait
+  shorter than the work it waits for. Any Task that calls the API outside ApiTask (ProbeTask) must
+  send the same credentials (`X-Profile-Token` for a PIN profile) and refresh on 401 the same way.
+- A request that reads `m.global.session` when its Task runs cannot target a server the screen is
+  about to forget: pass `baseUrl` explicitly when the session changes right after the call (Change
+  server's device-code cancel).
+- Loads that several screens start and whose answers replace one shared snapshot (settings) carry a
+  sequence number; the snapshot keeps the number it came from and an older answer is dropped. An
+  optimistic local write bumps the snapshot past the loads already in flight.
+- Registry writes wear flash: a heartbeat writes only as often as the rule it serves needs
+  (Profile Selection's away clock: a twelfth of the away interval, 5-10 minutes).
 
 ## Project conventions (short version; `docs/ARCHITECTURE.md` has the full one)
 - 1920×1080 canvas, pixel coordinates. Android dp × 2 = px; Android sp × 1.72 = px.
@@ -325,14 +342,18 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
    must have loaded before the relaunch; with several simulators running that takes 60-110 s); the
    console must show `cache write` then, after `debug relaunch`, `cache hit` and `cache drawn` while the
    mock is still sleeping, and a snapshot then shows titles over default artwork.
-8. Host tests: `python3 -m unittest discover -s tests` (pure BrightScript functions run in brs-cli)
+8. Auth changes: start the mock with `--switch reject_access=1 --switch refresh_status=502`; Home
+   must show its error with Retry (still signed in, `[siku-auth] refresh gave up`), and after
+   `curl -X POST -d '{"refresh_status": null}' localhost:<port>/mock/switch` Down + OK on Retry loads
+   Home (`refresh ok`). With `refresh_status=401` the Login screen must appear.
+9. Host tests: `python3 -m unittest discover -s tests` (pure BrightScript functions run in brs-cli)
    and, after `npm run package`, `python3 tools/package_check.py` (manifest images, no secrets,
    LAN/loopback URLs, v1 paths, webhooks, SPDX headers). CI runs both.
-9. Build: `npm run package` → `out/siku.zip`. Side-load on a Roku in developer mode
+10. Build: `npm run package` → `out/siku.zip`. Side-load on a Roku in developer mode
    (`http://<roku-ip>`, user `rokudev`) and watch `telnet <roku-ip> 8085` for errors. A compile
    error prints `Syntax Error ... in pkg:/...(line)`; a runtime crash prints a full backtrace with
    local variables, which is the single most useful thing to paste into a bug report.
-10. Playback changes: on the device, play one direct-play title and one that needs a server route,
+11. Playback changes: on the device, play one direct-play title and one that needs a server route,
    and read the two `[siku-playback]` lines (declared caps | request | decision). Open the debug
    screens with `curl -d '' "http://<roku-ip>:8060/launch/dev?debugScreen=StreamTestScreen"`
    (ECP needs POST; `&debugUrl=<url-encoded>` adds a stream) to test a packaging claim against
