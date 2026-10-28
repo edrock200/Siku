@@ -59,14 +59,16 @@ sub Content_fillCard(node as object, card as object, style as string)
     node.description = subtitle
 
     ' Spoiler protection (Spoilers.brs) drops an unwatched episode's still; the card then shows
-    ' series art the server marks as such, else the default artwork.
-    backdrop = Spoilers_imageUrl(card, "backdrop")
+    ' series art the server marks as such, else the default artwork. backdropUrl feeds the
+    ' marquee hero, which prefers an episode's series backdrop (#711); poster-shaped episode cards
+    ' prefer its season or series poster. Older servers send neither and keep the card's own art.
+    backdrop = Spoilers_heroBackdropUrl(card)
     if style = "landscape" then
         img = Spoilers_wideImageUrl(card)
     else if style = "circle" then
         img = Str_orEmpty(card.photo_url)
     else
-        img = Spoilers_imageUrl(card, "poster")
+        img = Spoilers_posterUrl(card)
     end if
     if t = "audiobook_group" then
         node.initials = Content_initials(title)
@@ -79,6 +81,12 @@ sub Content_fillCard(node as object, card as object, style as string)
     node.backdropUrl = Url_resolve(backdrop)
     node.logoUrl = Url_resolve(card.logo_url)
 
+    node.progress = Content_progressOf(card)
+    node.watched = Content_watchedOf(card)
+end sub
+
+' A card's progress bar fraction (0..1) from position_seconds / duration_seconds.
+function Content_progressOf(card as object) as float
     progress = 0.0
     posSec = card.position_seconds
     dur = card.duration_seconds
@@ -91,14 +99,17 @@ sub Content_fillCard(node as object, card as object, style as string)
     if dur > 0 then progress = posSec / dur
     if progress < 0 then progress = 0
     if progress > 1 then progress = 1
-    node.progress = progress
+    return progress
+end function
 
+' Whether a card shows as watched (user_state / user_data played, or the card's own flag).
+function Content_watchedOf(card as object) as boolean
     watched = false
     if card.user_state <> invalid and card.user_state.played = true then watched = true
     if card.user_data <> invalid and card.user_data.played = true then watched = true
     if card.watched = true then watched = true
-    node.watched = watched
-end sub
+    return watched
+end function
 
 function Content_seasonEpisode(season as dynamic, episode as dynamic) as string
     if season = invalid and episode = invalid then return ""

@@ -94,3 +94,18 @@ function Api_errorText(resp as object) as string
     if resp.status = 0 then return "Can't reach the server. Check your connection and try again."
     return resp.error.title
 end function
+
+' The server's reason for a failed write, for a toast after "Couldn't …": the problem's detail,
+' else its title, the connection advice when the server was not reached, else `fallback`.
+' Http_problem's stand-in title ("Something went wrong (500)") is not a reason.
+function Api_reasonText(resp as dynamic, fallback as string) as string
+    if resp = invalid or Type(resp) <> "roAssociativeArray" then return fallback
+    if Int(Num_or(resp.status, 0)) <= 0 then return "Can't reach the server. Check your connection."
+    err = resp.error
+    if err = invalid or Type(err) <> "roAssociativeArray" then return fallback
+    reason = Str_orEmpty(err.detail).Trim()
+    if reason <> "" then return reason
+    title = Str_orEmpty(err.title).Trim()
+    if title <> "" and Left(title, 20) <> "Something went wrong" then return title
+    return fallback
+end function

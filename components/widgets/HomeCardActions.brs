@@ -2,6 +2,9 @@
 ' Include with <script uri="pkg:/components/widgets/HomeCardActions.brs" />; needs Utils, Api, Nav, Session, Content.
 ' A page that offers "dismiss" (Home's progress rows) defines `sub CardActions_onDismissed(event)`,
 ' which runs when the server answers the dismissal.
+' Every page defines `sub CardActions_rollback(target, patch)`: Mark as Watched / Unwatched patches
+' the card at once and waits for the server; a refused write hands the page a patch that puts the
+' card back (Silo Android #706), with `contentId` so the page can check the card is still there.
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
 ' Builds the action list for a card. rowId tells whether it came from a progress row.
@@ -66,7 +69,9 @@ end function
 
 ' Performs an action. Returns a patch {watched?, favorite?, inWatchlist?, remove?} for the card,
 ' or invalid when the action opened another screen. Fires the API calls and sets homeDirty.
-function CardActions_perform(actionId as string, card as object, rowId as string) as dynamic
+' `target` is the page's own reference to the card (indices), handed back to
+' CardActions_rollback if a watched write fails.
+function CardActions_perform(actionId as string, card as object, rowId as string, target = invalid as dynamic) as dynamic
     id = Str_orEmpty(card.content_id)
     enc = Str_urlEncode(id)
     if actionId = "play" or actionId = "resume" then
@@ -76,16 +81,8 @@ function CardActions_perform(actionId as string, card as object, rowId as string
         if actionId = "resume" and Content_num(card.position_seconds) > 0 then params.startPosition = Content_num(card.position_seconds)
         Nav_play(params)
         return invalid
-    else if actionId = "watched" then
-        Api_fire("POST", "/api/v2/watched/" + enc)
-        m.global.homeDirty = true
-        m.global.toast = "Marked as watched"
-        return { watched: true, progress: 0.0 }
-    else if actionId = "unwatched" then
-        Api_fire("DELETE", "/api/v2/watched/" + enc)
-        m.global.homeDirty = true
-        m.global.toast = "Marked as unwatched"
-        return { watched: false }
+    else if actionId = "watched" or actionId = "unwatched" then
+        return CardActions_writeWatched(actionId = "watched", card, target)
     else if actionId = "favorite" then
         Api_fire("PUT", "/api/v2/favorites/" + enc)
         m.global.homeDirty = true
@@ -117,6 +114,64 @@ function CardActions_perform(actionId as string, card as object, rowId as string
     end if
     return invalid
 end function
+
+' Mark as Watched / Unwatched (TvCardActionsHelpers, Silo Android #706): the card changes at once,
+' the toast and Home's refresh wait for the server, and a refused write puts the card back and
+' says why. Only the latest write for a card may roll it back (MediaActionsCoordinator.isCurrent).
+function CardActions_writeWatched(watched as boolean, card as object, target as dynamic) as object
+    id = Str_orEmpty(card.content_id)
+    if m.cardWatchSeq = invalid then m.cardWatchSeq = {}
+    seq = Int(Num_or(m.cardWatchSeq[id], 0)) + 1
+    m.cardWatchSeq[id] = seq
+    if watched then
+        patch = { watched: true, progress: 0.0 }
+    else
+        patch = { watched: false }
+    end if
+    ctx = { watched: watched, contentId: id, seq: seq, target: target, rollback: CardActions_rollbackPatch(card) }
+    method = "DELETE"
+    if watched then method = "POST"
+    Api_send(method, "/api/v2/watched/" + Str_urlEncode(id), invalid, "CardActions_onWatchedAnswer", ctx)
+    return patch
+end function
+
+' The patch that restores a card's watched mark and progress bar as they were before the write.
+function CardActions_rollbackPatch(card as object) as object
+    return { watched: Content_watchedOf(card), progress: Content_progressOf(card), contentId: Str_orEmpty(card.content_id) }
+end function
+
+' Toast for a refused watched write: the server's reason, or a generic "Try again." (Android:
+' "Couldn't mark as watched. <errorMessage("Try again.")>").
+function CardActions_watchedFailureText(watched as boolean, resp as dynamic) as string
+    action = "unwatched"
+    if watched then action = "watched"
+    return "Couldn't mark as " + action + ". " + Api_reasonText(resp, "Try again.")
+end function
+
+sub CardActions_onWatchedAnswer(event as object)
+    resp = Api_result(event)
+    ctx = resp.context
+    if ctx = invalid then return
+    id = Str_orEmpty(ctx.contentId)
+    current = m.cardWatchSeq <> invalid and Int(Num_or(m.cardWatchSeq[id], 0)) = Int(Num_or(ctx.seq, 0))
+    if resp.ok then
+        m.global.homeDirty = true
+        if ctx.watched = true then
+            m.global.toast = "Marked as watched"
+        else
+            m.global.toast = "Marked as unwatched"
+        end if
+        return
+    end if
+    print "[siku-cards] watched write failed status="; Int(Num_or(resp.status, 0)); " current="; current
+    ' A newer write for this card decides what it shows.
+    if not current then return
+    CardActions_rollback(ctx.target, ctx.rollback)
+    ' A sentence to read (Android shows it as a long toast).
+    if not m.global.hasField("toastSeconds") then m.global.addFields({ toastSeconds: 0.0 })
+    m.global.toastSeconds = 5.0
+    m.global.toast = CardActions_watchedFailureText(ctx.watched = true, resp)
+end sub
 
 ' Opens the detail page for a card.
 sub CardActions_openDetail(card as object)

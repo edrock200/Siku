@@ -1863,11 +1863,12 @@ sub layoutUpNext()
 end sub
 
 ' The Up Next artwork: the next episode's still (a shuffled movie's backdrop), else the first On
-' Deck item's art. Spoiler protection withholds an unwatched episode's still (Spoilers.brs).
+' Deck item's art: an episode's series backdrop when its card carries one (#711), else its backdrop
+' unless spoiler protection hides it. Protection withholds an unwatched episode's still (Spoilers.brs).
 function upNextStillUrl(ep as dynamic) as string
     u = ""
     if ep <> invalid then u = Spoilers_wideImageUrl(ep)
-    if u = "" and onDeckShown() then u = Str_orEmpty(m.onDeck[0].backdrop_url)
+    if u = "" and onDeckShown() then u = Spoilers_firstBackdropUrl(m.onDeck)
     return Url_resolve(u)
 end function
 

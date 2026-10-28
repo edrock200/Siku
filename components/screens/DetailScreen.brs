@@ -305,9 +305,10 @@ end function
 sub renderHero()
     it = m.item
     t = m.itemType
-    ' Spoiler protection: an unwatched episode's still (or a backdrop the server does not mark as
-    ' series art) is not shown (Spoilers.brs).
-    m.backdrop.uri = Url_resolve(Spoilers_imageUrl(it, "backdrop"))
+    ' An episode prefers the series backdrop newer servers send (#711; never a still, so spoiler
+    ' protection keeps it). Otherwise an unwatched episode's still (or a backdrop the server does
+    ' not mark as series art) is not shown (Spoilers.brs).
+    m.backdrop.uri = Url_resolve(Spoilers_heroBackdropUrl(it))
     if m.backdrop.uri = "" and t = "episode" then m.backdrop.uri = Url_resolve(Spoilers_imageUrl(it, "still"))
 
     heading = Str_orEmpty(it.title)
@@ -1499,13 +1500,11 @@ sub onMenuChosen()
     else if id = "watched" or id = "unwatched" then
         if m.item.user_state = invalid then m.item.user_state = {}
         if id = "watched" then
-            Api_call({ method: "POST", path: "/api/v2/watched/" + cid }, "onWatchedWritten")
+            Api_call({ method: "POST", path: "/api/v2/watched/" + cid, context: { watched: true } }, "onWatchedWritten")
             m.item.user_state.played = true
-            m.global.toast = "Marked as Watched"
         else
-            Api_call({ method: "DELETE", path: "/api/v2/watched/" + cid }, "onWatchedWritten")
+            Api_call({ method: "DELETE", path: "/api/v2/watched/" + cid, context: { watched: false } }, "onWatchedWritten")
             m.item.user_state.played = false
-            m.global.toast = "Marked as Unwatched"
         end if
         if m.item.user_data <> invalid then m.item.user_data.played = (id = "watched")
         m.global.homeDirty = true
@@ -1525,10 +1524,22 @@ sub onMenuChosen()
 end sub
 
 ' Once the watched write has landed, refetch the item and its episodes: their watched flags and
-' the next-up episode change with it (refreshing before the write could read the old state).
+' the next-up episode change with it (refreshing before the write could read the old state). A
+' refused write says why (Silo Android #706); the refetch puts the server's state back.
 sub onWatchedWritten(event as object)
     resp = Api_result(event)
-    if not resp.ok and resp.error <> invalid then print "[Api] "; resp.status; " "; resp.error.title
+    if not resp.ok then
+        if resp.error <> invalid then print "[Api] "; resp.status; " "; resp.error.title
+        action = "unwatched"
+        if resp.context <> invalid and resp.context.watched = true then action = "watched"
+        if not m.global.hasField("toastSeconds") then m.global.addFields({ toastSeconds: 0.0 })
+        m.global.toastSeconds = 5.0
+        m.global.toast = "Couldn't mark as " + action + ". " + Api_reasonText(resp, "Try again.")
+    else if resp.context <> invalid and resp.context.watched = true then
+        m.global.toast = "Marked as Watched"
+    else
+        m.global.toast = "Marked as Unwatched"
+    end if
     if m.item <> invalid then refreshUserState()
 end sub
 

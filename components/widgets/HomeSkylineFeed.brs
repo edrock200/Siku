@@ -640,6 +640,8 @@ sub onItemPatch()
     if p = invalid then return
     node = cardAt(p.rowIndex, p.itemIndex)
     if node = invalid then return
+    ' A rollback (HomeCardActions.brs) names its card: skip it if the rows changed meanwhile.
+    if p.contentId <> invalid and Str_orEmpty(node.raw.content_id) <> p.contentId then return
     if p.remove = true then
         row = m.rowList.content.getChild(p.rowIndex)
         row.removeChild(node)

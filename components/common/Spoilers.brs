@@ -90,11 +90,61 @@ function Spoilers_imageUrl(item as dynamic, slot = "still" as string) as string
 end function
 
 ' A 16:9 image for an episode card or the player's Up Next panel: its still, else a backdrop or
-' poster that is not the episode's still when protection hides the still, else "".
+' poster that is not the episode's still when protection hides the still, else the series
+' backdrop newer servers send (never a still), else "".
 function Spoilers_wideImageUrl(item as dynamic) as string
     if item = invalid or Type(item) <> "roAssociativeArray" then return ""
     for each slot in ["still", "backdrop", "poster"]
         u = Spoilers_imageUrl(item, slot)
+        if u <> "" then return u
+    end for
+    return Spoilers_seriesBackdropUrl(item)
+end function
+
+' ---------- Episode parent artwork (Silo Android #711, EpisodeParentArtwork.kt) ----------
+' Servers with episode_parent_artwork send series_poster_url, series_backdrop_url and
+' season_poster_url (+ *_thumbhash) on episode cards, catalog cards and item detail. Series and
+' season art is never an episode still, so spoiler protection leaves it visible. Older servers omit
+' the fields and every helper below falls back to the card's own artwork, as before. All return a
+' raw API URL; resolve it with Url_resolve like any other artwork.
+
+' An episode's series backdrop (series_backdrop_url), or "" for other types and older servers.
+function Spoilers_seriesBackdropUrl(item as dynamic) as string
+    if not Spoilers_isEpisode(item) then return ""
+    return Str_orEmpty(item.series_backdrop_url).Trim()
+end function
+
+' An episode's season poster, else its series poster; "" for other types and older servers.
+function Spoilers_parentPosterUrl(item as dynamic) as string
+    if not Spoilers_isEpisode(item) then return ""
+    u = Str_orEmpty(item.season_poster_url).Trim()
+    if u = "" then u = Str_orEmpty(item.series_poster_url).Trim()
+    return u
+end function
+
+' The backdrop for a hero or full-screen background (Home/library marquee, detail hero): an
+' episode's series backdrop when the card carries one, else its own backdrop unless protection
+' hides it (TvFocusMarqueeModel, resolveTvDetailHeroArtwork).
+function Spoilers_heroBackdropUrl(item as dynamic) as string
+    u = Spoilers_seriesBackdropUrl(item)
+    if u <> "" then return u
+    return Spoilers_imageUrl(item, "backdrop")
+end function
+
+' Poster-shaped art for a card: an episode's season or series poster when the server sends one,
+' else its own poster unless protection hides it.
+function Spoilers_posterUrl(item as dynamic) as string
+    u = Spoilers_parentPosterUrl(item)
+    if u <> "" then return u
+    return Spoilers_imageUrl(item, "poster")
+end function
+
+' The Up Next background from On Deck cards (TvPlayerNextUpOverlay): the first card's series
+' backdrop, else its backdrop unless protection hides it; cards with nothing visible are skipped.
+function Spoilers_firstBackdropUrl(items as dynamic) as string
+    if items = invalid or Type(items) <> "roArray" then return ""
+    for each it in items
+        u = Spoilers_heroBackdropUrl(it)
         if u <> "" then return u
     end for
     return ""

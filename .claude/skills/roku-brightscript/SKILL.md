@@ -303,6 +303,19 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
 - Loads that several screens start and whose answers replace one shared snapshot (settings) carry a
   sequence number; the snapshot keeps the number it came from and an older answer is dropped. An
   optimistic local write bumps the snapshot past the loads already in flight.
+- Episode parent artwork (Silo #711): the choice lives in `Spoilers.brs` (`Spoilers_heroBackdropUrl`,
+  `Spoilers_posterUrl`, `Spoilers_firstBackdropUrl`, the series-backdrop fallback of
+  `Spoilers_wideImageUrl`) and reaches every card through `Content_fillCard` (`backdropUrl` is the
+  marquee hero). Series/season art is never a still, so it bypasses spoiler protection; older servers
+  omit the fields and the helpers fall back to the card's own art. The Home cache keeps a whitelist of
+  card keys, so the new signed URLs never reach `cachefs:` (`tests/test_parent_artwork.py` checks it).
+- Optimistic card writes (Mark as Watched, Silo #706): patch the card at once, toast only after the
+  server answers, and roll back on failure. `CardActions_perform(..., target)` keeps the page's
+  reference in the request context; every page that includes `HomeCardActions.brs` must define
+  `CardActions_rollback(target, patch)` (bsc reports a missing one as an unknown function; Roku
+  would not compile the component). The rollback patch carries `contentId`
+  and the feed/grid ignores it when the rows changed meanwhile; only the newest write per card may
+  roll back (`m.cardWatchSeq`). `Api_reasonText(resp, fallback)` turns a problem into toast text.
 - Registry writes wear flash: a heartbeat writes only as often as the rule it serves needs
   (Profile Selection's away clock: a twelfth of the away interval, 5-10 minutes).
 

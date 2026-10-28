@@ -83,7 +83,7 @@ sub onMenuChosen()
     target = m.optionsTarget
     m.feed.focusRequested = true
     if target = invalid then return
-    patch = CardActions_perform(m.menu.chosen, target.card, "")
+    patch = CardActions_perform(m.menu.chosen, target.card, "", target)
     if patch <> invalid then
         patch.rowIndex = target.rowIndex
         patch.itemIndex = target.itemIndex
@@ -93,6 +93,16 @@ end sub
 
 sub onMenuDismissed()
     m.feed.focusRequested = true
+end sub
+
+' A refused Mark as Watched / Unwatched (HomeCardActions.brs): put the card back. The feed skips
+' the patch when another card now sits at that place (contentId).
+sub CardActions_rollback(target as dynamic, patch as object)
+    if target = invalid then return
+    p = AA_copy(patch)
+    p.rowIndex = target.rowIndex
+    p.itemIndex = target.itemIndex
+    m.feed.itemPatch = p
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean

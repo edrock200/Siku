@@ -165,6 +165,16 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   `episodes_fail=1` (a series page's seasons or episodes answer 500: the Retry button), `more_fail=1`
   (a catalog or notifications page after the first answers 500: Library backs off, Notifications
   waits for Retry). The mock's series `play_content_id` is the first episode not marked watched.
+- Card menu Mark as Watched / Unwatched (Home, For You, Library) waits for the server: a refused
+  write rolls the card back, toasts "Couldn't mark as watched. <reason>" and prints
+  `[siku-cards] watched write failed status=<n> current=true|false` (`false`: a newer write for that
+  card decides, no rollback). Mock: `--switch watched_fail=<code>` (a problem with a detail, default
+  409) or `watched_fail=bare` (a 500 with no body: "Try again.").
+- Episode parent artwork (Silo #711): mock `--switch parent_artwork=1` adds `series_backdrop_url`,
+  `series_poster_url`, `season_poster_url` (+ thumbhashes) to episodes; `--switch episode_stills=1`
+  makes an episode's own backdrop/poster its still (flagged, as many real servers send);
+  `--switch hide_episode_images=1` turns spoiler protection on by default. With all three an unwatched
+  episode's Home hero and detail hero show the series backdrop; without `parent_artwork` they go dark.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

@@ -42,6 +42,14 @@ clears one); GET /mock/switch lists them.
                                  profile_verification_required until GET /api/v2/profiles runs
   reject_access=1                every authenticated request answers 401 invalid_token (an expired
                                  access token) until a refresh succeeds
+  parent_artwork=1               episode cards, episode lists and episode detail carry series_poster_url,
+                                 series_backdrop_url and season_poster_url (+ *_thumbhash), as servers with
+                                 episode_parent_artwork send them (Silo #711)
+  episode_stills=1               an episode's own backdrop_url and poster_url are its still, flagged
+                                 *_is_episode_still true (as many real servers send; Wild Coast has none)
+  hide_episode_images=1          catalog.hide_unwatched_episode_images defaults to true (spoiler protection)
+  watched_fail=<code>|bare       POST/DELETE /api/v2/watched/{id} answers that status (default 409) with a
+                                 problem detail, or (bare) a 500 with no body; Siku rolls the card back
   refresh_status=<code>|html     POST /auth/refresh answers that status (400/401 session_expired, others
                                  a bad_gateway problem) or, with html, a 200 HTML page (a captive portal).
                                  Siku must sign out only on 400/401 (look for [siku-auth] lines)
@@ -183,7 +191,23 @@ def episode(si, s, e):
         "user_data": {"position_seconds": pos, "duration_seconds": 2880, "played": cid in STATE["watched"]},
         "user_state": {"played": cid in STATE["watched"], "is_favorite": False, "in_watchlist": False},
         **({"machine_translated_fields": ["overview"]} if si == 0 and s == 1 and e % 2 == 0 else {}),
-    }
+    } | episode_artwork_switches(sr, cid, s)
+
+
+def episode_artwork_switches(sr, cid, s):
+    """episode_stills: the episode's own backdrop/poster are its still (as many real servers send);
+    parent_artwork: the episode carries its series' and season's art (Silo #711, episode_parent_artwork)."""
+    out = {}
+    sw = STATE["switches"]
+    if sw.get("episode_stills"):
+        still = None if sr["title"] == "Wild Coast" else img("still", cid)
+        out.update(backdrop_url=still, poster_url=still, backdrop_is_episode_still=True, poster_is_episode_still=True)
+    if sw.get("parent_artwork"):
+        out.update(series_poster_url=sr["poster_url"], series_poster_thumbhash="mock",
+                   series_backdrop_url=sr["backdrop_url"], series_backdrop_thumbhash="mock",
+                   season_poster_url=img("poster", "season:%s-%d" % (sr["content_id"].split(":", 1)[1], s)),
+                   season_poster_thumbhash="mock")
+    return out
 
 
 # ---------- Trailers & More, theme music, AI translation markers ----------
@@ -2254,6 +2278,15 @@ class Handler(BaseHTTPRequestHandler):
         if m and method == "DELETE":
             return self.send(200, {"outcome": "stopped", "stop_id": b.get("stop_id")})
         m = re.match(r"^/api/v2/(watchlist|favorites|watched)/(.+)$", p)
+        if m and m.group(1) == "watched" and STATE["switches"].get("watched_fail"):
+            fail = str(STATE["switches"]["watched_fail"])
+            print("WATCHED %s refused (switch watched_fail=%s)" % (method, fail), flush=True)
+            if fail == "bare":
+                return self.send(500)
+            code = int(fail) if fail.isdigit() else 409
+            return self.send(code, {"type": "https://siloserver.org/docs/api/v2/problems/conflict", "title": "Conflict",
+                                    "status": code, "detail": "Watched state is managed by your administrator."},
+                             "application/problem+json")
         if m:
             key = {"watchlist": "watchlist", "favorites": "favorites", "watched": "watched"}[m.group(1)]
             if method in ("PUT", "POST"):
@@ -2583,6 +2616,8 @@ def settings_effective(handler, key, q):
     if key == "ui.disabled_library_ids" and STATE["switches"].get("hidden_libraries"):
         hid = STATE["switches"]["hidden_libraries"]
         default = json.loads(hid) if isinstance(hid, str) else hid
+    if key == "catalog.hide_unwatched_episode_images" and STATE["switches"].get("hide_episode_images"):
+        default = True
     store = settings_store()
     for scope in order:
         ident = settings_identity(handler, scope, q)

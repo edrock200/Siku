@@ -1345,10 +1345,23 @@ sub onMenuChosen()
     target = m.optionsTarget
     m.grid.setFocus(true)
     if target = invalid then return
-    patch = CardActions_perform(m.menu.chosen, target.card, "")
+    patch = CardActions_perform(m.menu.chosen, target.card, "", target)
     if patch = invalid then return
-    node = m.grid.content.getChild(target.index)
+    applyCardPatch(target.index, patch)
+end sub
+
+' A refused Mark as Watched / Unwatched (HomeCardActions.brs): put the card back, unless the grid
+' has reloaded and another card sits at that index.
+sub CardActions_rollback(target as dynamic, patch as object)
+    if target = invalid then return
+    applyCardPatch(target.index, patch)
+end sub
+
+sub applyCardPatch(index as dynamic, patch as object)
+    if index = invalid or m.grid.content = invalid then return
+    node = m.grid.content.getChild(index)
     if node = invalid then return
+    if patch.contentId <> invalid and Str_orEmpty(node.raw.content_id) <> patch.contentId then return
     raw = AA_copy(node.raw)
     us = AA_copy(raw.user_state)
     if patch.watched <> invalid then
@@ -1357,9 +1370,10 @@ sub onMenuChosen()
     end if
     if patch.favorite <> invalid then us.is_favorite = patch.favorite
     if patch.inWatchlist <> invalid then us.in_watchlist = patch.inWatchlist
+    if patch.progress <> invalid then node.progress = patch.progress
     raw.user_state = us
     node.raw = raw
-    m.cards[target.index] = raw
+    if index < m.cards.Count() then m.cards[index] = raw
 end sub
 
 sub onMenuDismissed()
