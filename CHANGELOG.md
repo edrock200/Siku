@@ -3,6 +3,30 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.26
+
+Fixes from a full review of Siku, plus a library fix from Silo's Android TV app (October 27, 2026).
+
+**Fixed**
+- **Titles and playback on a Roku.** A line added in v0.1.23 is refused by Roku's own compiler, which could stop title pages and the player from opening on a real Roku. If v0.1.23–v0.1.25 couldn't open titles for you, this is the fix. Releases now check for this automatically.
+- **Library filters work again.** Unwatched, Watched, In Progress, Favorited and Watchlist showed "Something went wrong" with current servers.
+- **No more frozen player.** Opening a title from the Roku home screen, search or the mobile app while something plays no longer leaves a dead player behind when you press Back.
+- **You stay signed in.** A temporary server or network problem no longer signs you out; Siku only asks you to sign in again when your session has really expired.
+- **Next episode.** Starting the next episode quickly can no longer be disturbed by the previous episode's late answers, and its subtitles no longer carry over. A show's page moves "Play" to the right episode after you watch one or mark it watched.
+- **Phone control.** Signing out or changing server while a phone's profile is playing now sticks (your old account no longer comes back), signing out disconnects every phone, and phones see the TV as ready as soon as they connect.
+- **Smaller fixes:**
+  - Up Next waits until an open menu is closed.
+  - A paused stream stays paused after a far jump.
+  - The connection speed test works on PIN-protected profiles.
+  - "Change server" on the sign-in screen cancels the pending sign-in code.
+  - A setting you just changed no longer flips back.
+  - If a show's episodes fail to load, there's a Retry button you can reach with the remote, and a failed "load more" no longer pops up an error on every button press.
+  - Home opens instantly more often (large Homes and non-English titles are now saved), and switching profiles no longer leaves the previous profile's Home behind.
+  - A seventh phone is told "too many devices" (when pairing is off), the TV keeps announcing itself after its network address changes, and Siku ignores oversized or repeated network messages.
+  - Connect a Phone now says plainly that, without pairing, any device on your network that names your server can connect.
+
+**Needs testing on a real Roku:** that titles and the player open (the compile fix), staying signed in through a server restart (`[siku-auth]` lines in `telnet <roku-ip> 8085`), Up Next and subtitles between episodes, and signing out while a phone's title plays.
+
 ## v0.1.25
 
 Brings Siku up to date with Silo's Android TV app as of October 27, 2026, with two more ideas from [ManavA/silo-roku](https://github.com/ManavA/silo-roku).
