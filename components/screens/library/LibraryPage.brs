@@ -241,7 +241,7 @@ end function
 
 function showsControls() as boolean
     if m.drill <> invalid then return m.drill.kind = "group"
-    return m.mode = "browse" or m.mode = "favorites" or m.mode = "watchlist" or m.mode = "collection" or m.mode = "person" or m.mode = "section"
+    return m.mode = "browse" or m.mode = "favorites" or m.mode = "watchlist" or m.mode = "collection" or m.mode = "person"
 end function
 
 ' The A–Z rail: Browse (while sorted by title, like TvLibraryDetailScreen) and the A-Z section.
@@ -450,10 +450,17 @@ sub requestPage(cursor as string)
             updateSortPill()
         end if
     else if m.mode = "section" then
+        ' A row's full page ("Explore all", Silo Android #688): the section in its own order. The
+        ' section source takes no sort or type overlay; a mixed library's Movies / Series view is
+        ' filtered here (Section_pageCards).
         q.source = "section"
         q.section_id = Str_orEmpty(prm("sectionId"))
         q.scope = Str_orEmpty(prm("scope", "home"))
-        if not Str_isEmpty(prm("libraryId")) then q.library_id = prm("libraryId")
+        if q.scope = "library" and not Str_isEmpty(prm("libraryId")) then q.library_id = prm("libraryId")
+        q.limit = 50
+        if cursor <> "" then q.cursor = cursor
+        Api_get("/api/v2/catalog", q, "onPage", ctx)
+        return
     else
         src = Str_orEmpty(prm("source"))
         if src = "" then src = "query"
@@ -548,9 +555,13 @@ sub onPage(event as object)
     m.loadingMore = false
     m.spinner.visible = false
     if not resp.ok then
-        if isMore then
+        if m.mode = "section" and Int(Num_or(resp.status, 0)) = 404 then
+            ' The row was removed, hidden, or is no longer visible to this profile.
+            showSectionGone()
+        else if isMore and m.cards.Count() > 0 then
             moreFailed(resp)
         else
+            ' (A row's page that was still reading past filtered-out pages has nothing drawn.)
             showError(Api_errorText(resp))
         end if
         return
@@ -560,8 +571,24 @@ sub onPage(event as object)
     items = []
     if data <> invalid then items = Arr_or(data.items)
     readPaging(data)
-    ' A group drill keeps the group's own "3 books · 2h" line.
-    if not isMore and not inGroupDrill() then showCount(data, "title", "titles")
+    if m.mode = "section" then
+        m.loaded = true
+        seen = {}
+        if isMore then seen = m.sectionSeen
+        items = Section_pageCards(items, Str_orEmpty(prm("mediaType")), seen)
+        m.sectionSeen = seen
+        ' A Movies / Series view can filter a whole page away: read on until a card matches or
+        ' the row ends, since the grid only pages when focus nears its end.
+        if items.Count() = 0 and m.hasMore and m.nextCursor <> ctx.cursor then
+            if not isMore then m.loading = true else m.loadingMore = true
+            m.spinner.visible = not isMore
+            requestPage(m.nextCursor)
+            return
+        end if
+    end if
+    ' A group drill keeps the group's own "3 books · 2h" line; a row's page shows none (its total
+    ' would count cards a Movies / Series view hides).
+    if not isMore and not inGroupDrill() and m.mode <> "section" then showCount(data, "title", "titles")
     if isMore then
         appendCards(items)
     else
@@ -824,6 +851,9 @@ sub showEmpty()
     else if isGroupsMode() and m.drill = invalid then
         title = "No audiobook " + LCase(groupsLabel()) + " found."
         body = ""
+    else if m.mode = "section" then
+        title = "This row has no titles right now."
+        body = ""
     else if m.mode = "browse" and m.libraryHasItems = false then
         title = "No titles found"
         body = "This library is empty."
@@ -850,6 +880,44 @@ sub showEmpty()
         end if
     end if
 end sub
+
+' A row's page whose section answered 404: say so, with nothing to retry (TvSectionBrowseScreen).
+sub showSectionGone()
+    m.grid.visible = false
+    m.status.visible = true
+    m.retryBtn.visible = false
+    m.errClearBtn.visible = false
+    m.statusTitle.text = "This row is no longer available."
+    m.statusBody.text = ""
+    if m.top.hasFocus() or m.grid.hasFocus() then m.top.setFocus(true)
+end sub
+
+' The cards a page of a row's full list adds: those of the Movies / Series view (mediaType, "" for
+' every card) not already shown (`seen`, content id -> true, is updated).
+function Section_pageCards(items as object, mediaType as string, seen as object) as object
+    out = []
+    mt = LCase(mediaType)
+    for each c in items
+        if c <> invalid and Type(c) = "roAssociativeArray" then
+            cid = Str_orEmpty(c.content_id)
+            if cid = "" then cid = Str_orEmpty(c.id)
+            if Section_matchesMediaType(c, mt) and (cid = "" or not seen.DoesExist(cid)) then
+                if cid <> "" then seen[cid] = true
+                out.Push(c)
+            end if
+        end if
+    end for
+    return out
+end function
+
+' Whether a card belongs to a mixed library's Movies ("movie") or Series ("series") view
+' (HomePage.matchesScope, matchesLibraryMediaScope); every card for "".
+function Section_matchesMediaType(card as object, mediaType as string) as boolean
+    t = LCase(Str_orEmpty(card.type).Trim())
+    if mediaType = "movie" then return t = "movie" or t = "movies" or t = "film"
+    if mediaType = "series" then return t = "series" or t = "show" or t = "shows" or t = "tv" or t = "episode"
+    return true
+end function
 
 ' ---------- Grid events ----------
 

@@ -69,7 +69,7 @@ sub onRows()
     for each r in rows
         style = Str_orEmpty(r.style)
         if style = "" then style = "poster"
-        specs.Push({ id: r.id, title: r.title, style: style, items: Arr_or(r.items) })
+        specs.Push({ id: r.id, title: r.title, style: style, items: Arr_or(r.items), exploreSectionId: Str_orEmpty(r.exploreSectionId), exploreTitle: Str_orEmpty(r.exploreTitle) })
     end for
     if specs.Count() = 0 then
         m.rowList.content = invalid
@@ -81,7 +81,9 @@ sub onRows()
     ' A refresh (the server answer replacing the cached Home, or a re-read) keeps the focused
     ' card when it is still there, else the same position in the same row, else the first card.
     keep = focusKey()
-    m.rowList.content = Content_rows(specs, m.cellPad)
+    content = Content_rows(specs, m.cellPad)
+    addExploreCards(content, specs)
+    m.rowList.content = content
     m.focusRow = 0
     target = findFocus(keep)
     m.focusRow = target[0]
@@ -93,10 +95,56 @@ sub onRows()
     ' Marquee for the focused (or first) card without waiting for a focus event.
     if m.top.state = "ready" then
         card = cardAt(target[0], target[1])
+        if isExploreNode(card) then card = cardAt(target[0], target[1] - 1)
         if card = invalid then card = firstCard()
         if card <> invalid then showCard(card)
     end if
 end sub
+
+' ---------- "Explore all" (Silo Android #688, TvExploreAllCard) ----------
+' The last card of a Home or library row opens the row's full page. It is an ordinary item after
+' the row's cards, shaped like them, so D-pad Right past the last card reaches it, the RowList cell
+' headroom (cardInsetY) applies to it as to the cards, and Roku's screen reader reads its title and
+' description ("Explore all", the row's title) like any list item.
+
+function exploreContentId() as string
+    return "siku:explore-all"
+end function
+
+sub addExploreCards(content as object, specs as object)
+    for i = 0 to specs.Count() - 1
+        spec = specs[i]
+        if spec.exploreSectionId <> "" and spec.items.Count() > 0 then
+            row = content.getChild(i)
+            node = row.createChild("ContentNode")
+            Content_ensureFields(node)
+            node.addFields({ exploreAll: true, exploreSectionId: spec.exploreSectionId })
+            node.contentId = exploreContentId()
+            node.itemType = "explore_all"
+            node.cardStyle = spec.style
+            node.title = "Explore all"
+            title = spec.exploreTitle
+            if title = "" then title = Str_orEmpty(spec.title)
+            node.description = title
+            node.addFields({ exploreTitle: title })
+            node.raw = {}
+            node.cardInsetY = m.cellPad
+        end if
+    end for
+end sub
+
+function isExploreNode(node as dynamic) as boolean
+    if node = invalid then return false
+    if not node.hasField("exploreAll") then return false
+    return node.exploreAll = true
+end function
+
+' The cards of a row, not counting its "Explore all" card.
+function rowCardCount(row as object) as integer
+    n = row.getChildCount()
+    if n > 0 and isExploreNode(row.getChild(n - 1)) then n = n - 1
+    return n
+end function
 
 ' {rowId, contentId, row, item} of the focused card, or invalid when nothing is drawn.
 function focusKey() as dynamic
@@ -315,6 +363,8 @@ sub onRest()
     if rf = invalid or rf.Count() < 2 then return
     node = cardAt(rf[0], rf[1])
     if node = invalid then return
+    ' "Explore all" leaves the marquee on the last card previewed (TvSkylineSectionFeed).
+    if isExploreNode(node) then return
     showCard(node)
     m.top.focusedCard = { rowIndex: rf[0], itemIndex: rf[1] }
 end sub
@@ -337,6 +387,12 @@ sub onRowItemSelected()
     node = cardAt(sel[0], sel[1])
     if node = invalid then return
     row = m.rowList.content.getChild(sel[0])
+    if isExploreNode(node) then
+        ' No card menu on "Explore all": it opens at once.
+        m.pendingSelect = invalid
+        m.top.exploreSelected = { rowIndex: sel[0], rowId: row.rowId, sectionId: node.exploreSectionId, title: node.exploreTitle }
+        return
+    end if
     payload = { rowIndex: sel[0], itemIndex: sel[1], rowId: row.rowId, card: node.raw }
     if LongPress_enabled() then
         m.pendingSelect = payload
@@ -609,7 +665,7 @@ sub removeShowFromProgressRows(seriesId as string)
     for r = 0 to c.getChildCount() - 1
         row = c.getChild(r)
         if isProgressRowId(row.rowId) then
-            for i = row.getChildCount() - 1 to 0 step -1
+            for i = rowCardCount(row) - 1 to 0 step -1
                 card = row.getChild(i).raw
                 if card <> invalid and (Str_orEmpty(card.series_id) = seriesId or Str_orEmpty(card.content_id) = seriesId) then row.removeChild(row.getChild(i))
             end for
@@ -621,7 +677,8 @@ sub removeEmptyRows()
     c = m.rowList.content
     removed = false
     for r = c.getChildCount() - 1 to 0 step -1
-        if c.getChild(r).getChildCount() = 0 then
+        ' A row left with only its "Explore all" card goes too.
+        if rowCardCount(c.getChild(r)) = 0 then
             c.removeChild(c.getChild(r))
             removed = true
         end if
@@ -639,7 +696,7 @@ sub onItemPatch()
     p = m.top.itemPatch
     if p = invalid then return
     node = cardAt(p.rowIndex, p.itemIndex)
-    if node = invalid then return
+    if node = invalid or isExploreNode(node) then return
     if p.remove = true then
         row = m.rowList.content.getChild(p.rowIndex)
         row.removeChild(node)
@@ -679,6 +736,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         rf = m.rowList.rowItemFocused
         if rf <> invalid and rf.Count() >= 2 then
             node = cardAt(rf[0], rf[1])
+            if isExploreNode(node) then return true
             if node <> invalid then
                 row = m.rowList.content.getChild(rf[0])
                 m.top.itemOptions = { rowIndex: rf[0], itemIndex: rf[1], rowId: row.rowId, card: node.raw }

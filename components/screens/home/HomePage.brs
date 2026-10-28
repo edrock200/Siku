@@ -6,6 +6,7 @@ sub init()
     m.feed.observeField("itemSelected", "onItemSelected")
     m.feed.observeField("itemOptions", "onItemOptions")
     m.feed.observeField("actionSelected", "load")
+    m.feed.observeField("exploreSelected", "onExploreSelected")
     m.menu.observeField("chosen", "onMenuChosen")
     m.menu.observeField("dismissed", "onMenuDismissed")
     m.loaded = false
@@ -60,23 +61,79 @@ sub load()
         readHomeCache()
     end if
     ' Artwork at drawn size (Artwork.brs): ask the server once whether it takes per-slot widths;
-    ' Home waits for that answer (at most 3 s) so its first read is already sized.
+    ' and whether its section lists take item_limit (SectionRows.brs). Both reads run at once and
+    ' Home waits for them (at most 3 s each) so its first read is already sized and capped.
+    if m.capsPending = invalid then m.capsPending = 0
     if not Artwork_capsSettled() and m.artCapsAsked <> true then
         m.artCapsAsked = true
+        m.capsPending = m.capsPending + 1
         Artwork_fetchCaps("onArtworkCaps")
-        return
     end if
+    if not SectionRows_capsSettled() and m.rowCapsAsked <> true then
+        m.rowCapsAsked = true
+        m.rowCapsWaiting = true
+        m.capsPending = m.capsPending + 1
+        SectionRows_fetchCaps("onRowCaps")
+        ' The request has its own 3 s timeout; this 20 s backstop on the render thread makes "slow =
+        ' unsupported" hold even if the Task's wait overruns. brs-engine does not honour the Task's
+        ' timeout, and a busy simulator took over 8 s to deliver even an instant answer, so the
+        ' backstop is generous; on a Roku the 3 s request timeout decides.
+        m.rowCapsTimer = CreateObject("roSGNode", "Timer")
+        m.rowCapsTimer.duration = 20
+        m.rowCapsTimer.repeat = false
+        m.rowCapsTimer.observeField("fire", "onRowCapsTimeout")
+        m.rowCapsTimer.control = "start"
+    end if
+    if m.capsPending > 0 then return
+    requestSections()
+end sub
+
+' GET the section list, with item_limit only for a server that advertised it.
+sub requestSections()
+    q = artworkQuery()
+    limit = SectionRows_activeLimit()
+    if limit > 0 then q.item_limit = limit
+    ctx = { seq: m.loadSeq, itemLimit: limit }
     lib = libraryId()
     if lib <> "" then
-        Api_get("/api/v2/library/" + Str_urlEncode(lib) + "/sections", artworkQuery(), "onSections", { seq: m.loadSeq })
+        Api_get("/api/v2/library/" + Str_urlEncode(lib) + "/sections", q, "onSections", ctx)
     else
-        Api_get("/api/v2/home/sections", artworkQuery(), "onSections", { seq: m.loadSeq })
+        Api_get("/api/v2/home/sections", q, "onSections", ctx)
     end if
 end sub
 
 sub onArtworkCaps(event as object)
     Artwork_storeCaps(event)
-    load()
+    capsAnswered()
+end sub
+
+sub onRowCaps(event as object)
+    if m.rowCapsWaiting <> true then
+        ' Answered after the page stopped waiting: the session already counts it unsupported.
+        Api_result(event)
+        print "[siku-home] section item limit answer arrived late; ignored"
+        return
+    end if
+    m.rowCapsWaiting = false
+    if m.rowCapsTimer <> invalid then m.rowCapsTimer.control = "stop"
+    SectionRows_storeCaps(event)
+    capsAnswered()
+end sub
+
+sub onRowCapsTimeout()
+    if m.rowCapsWaiting <> true then return
+    m.rowCapsWaiting = false
+    print "[siku-home] section item limit read timed out; sending none"
+    SectionRows_setLimit(Str_orEmpty(m.global.session.serverUrl), 0)
+    capsAnswered()
+end sub
+
+sub capsAnswered()
+    m.capsPending = m.capsPending - 1
+    if m.capsPending <= 0 then
+        m.capsPending = 0
+        load()
+    end if
 end sub
 
 function artworkQuery() as object
@@ -95,6 +152,14 @@ end function
 sub onSections(event as object)
     resp = Api_result(event)
     if resp.context = invalid or resp.context.seq <> m.loadSeq then return
+    ' A server that advertised item_limit but refuses it (422 unknown_parameter): read again
+    ' once without it; SectionRows_markUnsupported keeps it off for the session.
+    if not resp.ok and Int(Num_or(resp.context.itemLimit, 0)) > 0 and SectionRows_rejectsItemLimit(resp.status, resp.data) then
+        print "[siku-home] item_limit rejected by the server; reading the rows again without it"
+        SectionRows_markUnsupported()
+        requestSections()
+        return
+    end if
     if not resp.ok then
         m.loading = false
         if m.rows.Count() > 0 then
@@ -185,7 +250,9 @@ function scopeSection(entry as object, index as integer, scope as string) as boo
         target = Arr_or(s.items).Count()
         if target < 20 then target = 20
     end if
-    if target > 100 then target = 100
+    ' A row shows at most 20 cards (the rest are on its "Explore all" page), so a refill never
+    ' looks for more than that, whatever the shelf's own limit.
+    if target > SectionRows_max() then target = SectionRows_max()
     entry.target = target
     entry.items = takeFirst(initial, target)
     if initial.Count() >= target then return false
@@ -330,10 +397,13 @@ sub buildRows(fromCache = false as boolean)
     if squareLibrary() then defaultStyle = "square"
     for each e in m.sections
         s = e.section
-        items = e.items
+        ' At most 20 cards a row, whatever the server sent (an older server sends up to 100).
+        items = SectionRows_capped(e.items)
         if items.Count() > 0 then
             st = LCase(Str_orEmpty(s.section_type))
             sid = Str_orEmpty(s.id)
+            ' Every non-featured row ends with "Explore all", opening the section's full page.
+            explore = SectionRows_offersExploreAll(s, items.Count())
             isProgress = st = "continue_watching" or st = "next_up" or sid = "continue_watching" or sid = "next_up"
             if isProgress then
                 video = []
@@ -341,10 +411,12 @@ sub buildRows(fromCache = false as boolean)
                 for each c in items
                     if isAudiobook(c) then audio.Push(c) else video.Push(c)
                 end for
-                if video.Count() > 0 then rows.Push({ id: sid, title: Str_orEmpty(s.title), style: "landscape", items: video })
-                if audio.Count() > 0 then rows.Push({ id: "continue_listening", title: "Continue Listening", style: "square", items: audio })
+                ' The section's page goes on the first row drawn from it (Continue Listening
+                ' when the section holds only audiobooks).
+                if video.Count() > 0 then rows.Push({ id: sid, title: Str_orEmpty(s.title), style: "landscape", items: video, exploreSectionId: exploreId(explore, sid), exploreTitle: Str_orEmpty(s.title) })
+                if audio.Count() > 0 then rows.Push({ id: "continue_listening", title: "Continue Listening", style: "square", items: audio, exploreSectionId: exploreId(explore and video.Count() = 0, sid), exploreTitle: Str_orEmpty(s.title) })
             else
-                rows.Push({ id: sid, title: Str_orEmpty(s.title), style: defaultStyle, items: items })
+                rows.Push({ id: sid, title: Str_orEmpty(s.title), style: defaultStyle, items: items, exploreSectionId: exploreId(explore, sid), exploreTitle: Str_orEmpty(s.title) })
             end if
         end if
     end for
@@ -368,6 +440,39 @@ sub buildRows(fromCache = false as boolean)
         m.scopeIncomplete = false
         m.global.toast = "Some shelves could not be fully loaded for this media type. Retry or open Browse."
     end if
+end sub
+
+function exploreId(offered as boolean, sectionId as string) as string
+    if offered then return sectionId
+    return ""
+end function
+
+' "Explore all" on a row: the row's full page (TvSectionBrowseScreen), paged through
+' GET /api/v2/catalog?source=section (scope home, or library with library_id). A mixed library's
+' Movies or Series view keeps its filter on the page. Back returns to the same card (the feed's
+' RowList keeps its focus while the page is covered).
+sub onExploreSelected()
+    sel = m.feed.exploreSelected
+    if sel = invalid then return
+    sid = Str_orEmpty(sel.sectionId)
+    if sid = "" then return
+    title = Str_orEmpty(sel.title)
+    params = { section: "section", sectionId: sid, title: title }
+    lib = libraryId()
+    scope = "home"
+    if lib <> "" then scope = "library"
+    print "[siku-home] explore all scope="; scope; " row="; Int(Num_or(sel.rowIndex, 0))
+    if lib <> "" then
+        p = m.top.params
+        params.scope = "library"
+        params.libraryId = lib
+        params.libraryName = Str_orEmpty(p.libraryName)
+        params.mode = Str_orEmpty(p.mode)
+        params.mediaType = mediaScope()
+    else
+        params.scope = "home"
+    end if
+    Nav_push("LibraryScreen", params)
 end sub
 
 ' ---------- Home cache (HomeCache.brs, HomeCacheTask) ----------
