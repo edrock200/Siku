@@ -133,6 +133,22 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   own session changed; ending the borrowed profile`. The mock prints `LOGOUT session=handoff|debug|login`. `tools/silo_phone.py`
   acts as Silo's phone app against the simulator; `tools/lan_vectors.py` checks the crypto and
   framing against the phone's own test vectors.
+- Handoff address (Silo Android #716, `components/remote/HandoffAddress.brs`): with the phone's
+  deployment identity the Roku probes its own saved addresses for that server, the phone's address
+  and up to 6 offered `serverEndpoints` at once (GET `/api/v2/system/identity`, 6 s each, 8 s in all)
+  and runs the handoff at the first, in that order, reporting the same identity:
+  `[siku-cast] full handoff: checking N address(es)`, then `handoff address own|phone|endpoint (tried N)`,
+  `handoff address none (tried N)` (nothing answered: "This TV can't reach …") or `handoff address
+  refused: another server answered at the phone's address`. An offer without an identity prints
+  `handoff address phone (tried 0)`. Plain-HTTP addresses other than the phone's are probed only at
+  an origin this Roku saved. Own identity (#717): `reading the server identity (none recorded)`, then
+  `recorded server identity` or `server identity not recorded (<state> status=N); trying again at
+  the next start`. Mock: `--also-port 8182` serves the same deployment at a second address;
+  `--switch port_<N>=down|slow|other|none` makes one address unreachable, slow, another deployment
+  or identity-less, `no_identity=1` every port (log: `IDENTITY port= answer=`, `HANDOFF <method>
+  <path> port=`). Simulator: `debugNoServerId=1` seeds the mock session without an identity,
+  `debugServers=reset` forgets other worktrees' remembered servers. Phone tool: `cast --endpoint URL`
+  (repeatable), `--expect-refused`, `--expect-identity ID`.
 - `[siku-launch]` lines show the launch beacons (`beacon AppLaunchComplete`, `ready: home`);
   `[siku-memory]` lines show a memory warning (`pressure`) and screens that `released` /
   `restored` pictures; `[siku-a11y] say:` appears with `debugA11y=1` (forces speech in the

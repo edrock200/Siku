@@ -13,6 +13,10 @@ Examples (mock server on 8111, simulator on this machine):
       --identity mock-server-1 --profile p-owner --content movie:glass-city
   python3 tools/silo_phone.py cast --host 192.168.1.20 --port 52817 --server https://media.example.com ...
 
+`cast --endpoint URL` offers the server's other addresses (serverEndpoints); the Roku runs the
+handoff at the first address reporting --identity (its own saved one first; mock log `HANDOFF ...
+port=`). `cast --expect-refused` succeeds only on a handoff_cancel; `--expect-identity ID` checks the
+identity the Roku's hello advertises (Silo Android #717).
 `cast --check-refusals` also verifies that a wrong pairing key and a foreign server are refused;
 `cast --check-limits` that an oversized frame before the hello is refused and a seventh controller
 is turned away; `cast --hold N` stops after the handoff and keeps the connection N seconds (sign out
@@ -175,7 +179,7 @@ class Controller:
                         log("state:", summary(st))
                     self.state = st
                 else:
-                    log("roku:", json.dumps(m)[:400])
+                    log("roku:", json.dumps(redact(m))[:400])
                 with self.cv:
                     self.inbox.append(m)
                     self.cv.notify_all()
@@ -196,6 +200,15 @@ class Controller:
                     return None
                 self.cv.wait(0.2)
         return None
+
+
+def redact(m):
+    """A copy of a message with resume tokens hidden (never print tokens)."""
+    if isinstance(m, dict):
+        return {k: ("<redacted>" if k == "resumeToken" else redact(v)) for k, v in m.items()}
+    if isinstance(m, list):
+        return [redact(v) for v in m]
+    return m
 
 
 def summary(st):
@@ -253,13 +266,20 @@ def cmd_cast(args):
         log("no hello from the Roku")
         return 1
     feats = tv["hello"].get("features", [])
-    log("roku hello: name=%r server=%r features=%s" % (tv["hello"].get("deviceName"), tv["hello"].get("serverName"), feats))
+    log("roku hello: name=%r server=%r identity=%s features=%s" % (tv["hello"].get("deviceName"), tv["hello"].get("serverName"),
+        "yes" if tv["hello"].get("serverIdentity") else "none", feats))
+    if args.expect_identity and tv["hello"].get("serverIdentity") != args.expect_identity:
+        log("FAIL: the Roku advertises identity %r, expected %r" % (tv["hello"].get("serverIdentity"), args.expect_identity))
+        return 1
     c.send(phone_hello(args))
     request_id = str(uuid.uuid4())
     offer = {"requestId": request_id, "serverId": L.server_id_for(args.server), "serverURL": args.server.rstrip("/"),
              "serverName": "Phone's server", "profileId": args.profile, "profileName": args.profile, "title": "A title"}
     if args.identity:
         offer["serverIdentity"] = args.identity
+    if args.endpoint:
+        # The deployment's other addresses (SiloCastHandoffOffer.serverEndpoints, Silo Android #716).
+        offer["serverEndpoints"] = [{"url": u, "kind": "public"} for u in args.endpoint]
     c.send({"type": "handoff_offer", "v": 2, "handoffOffer": offer})
     reply = c.wait(lambda m: m.get("type") in ("handoff_ready", "handoff_challenge", "handoff_cancel"), 20)
     if not reply:
@@ -267,6 +287,12 @@ def cmd_cast(args):
         return 1
     if reply["type"] == "handoff_cancel":
         log("handoff refused:", reply["handoffCancel"])
+        if args.expect_refused:
+            log("ok: refused as expected")
+            return 0
+        return 1
+    if args.expect_refused:
+        log("FAIL: expected the handoff to be refused, got", reply["type"])
         return 1
     if reply["type"] == "handoff_challenge":
         ch = reply["handoffChallenge"]
@@ -470,6 +496,10 @@ def main():
     c.add_argument("--key", help="pairing key (base32 or hex) for a sealed Roku")
     c.add_argument("--server", required=True, help="the phone's active server URL")
     c.add_argument("--identity", help="the server's deployment identity (GET /api/v2/system/identity)")
+    c.add_argument("--endpoint", action="append", default=[],
+                   help="another address of the server, offered as serverEndpoints (repeatable)")
+    c.add_argument("--expect-identity", help="fail unless the Roku's hello advertises this deployment identity")
+    c.add_argument("--expect-refused", action="store_true", help="succeed only if the Roku refuses the handoff")
     c.add_argument("--profile", default="p-owner")
     c.add_argument("--token", help="access token for approving a handoff on a real server")
     c.add_argument("--content", default="movie:glass-city")

@@ -8,7 +8,11 @@
     - handoff_offer: the profile Siku plays as answers handoff_ready at once; another profile or
       server takes the remote-playback device-code handoff (handoff_challenge, the phone
       approves, handoff_ready) and Siku plays on that borrowed, never-saved identity until the
-      phone leaves or nothing has played for 10 minutes;
+      phone leaves or nothing has played for 10 minutes; the handoff runs at the first address
+      that reports the phone's deployment identity: this Roku's own saved address for that
+      server, the phone's, then the server's other offered addresses (HandoffAddress.brs);
+    - the own server's identity is read once per listener start when none is recorded, saved
+      and advertised (Silo Android #717);
     - launch: opens PlayerScreen with the phone's file, audio ordinal, combined subtitle ordinal
       and start position; control: forwarded to the player (remoteCommand);
     - state: PlayerScreen publishes it (RemoteState_publish); idle "Ready" otherwise.
@@ -31,6 +35,7 @@
   </interface>
   <script type="text/brightscript" uri="pkg:/components/remote/RemoteControl.brs" />
   <script type="text/brightscript" uri="pkg:/components/remote/RemotePrefs.brs" />
+  <script type="text/brightscript" uri="pkg:/components/remote/HandoffAddress.brs" />
   <script type="text/brightscript" uri="pkg:/components/lan/LanBytes.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Api.brs" />
@@ -39,5 +44,6 @@
     <Timer id="pollTimer" repeat="false" />
     <Timer id="endTimer" repeat="false" />
     <Timer id="activateTimer" repeat="false" duration="8" />
+    <Timer id="addrTimer" repeat="false" duration="8" />
   </children>
 </component>

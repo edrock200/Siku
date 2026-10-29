@@ -17,6 +17,9 @@ sub init()
     m.endTimer.observeField("fire", "onEndTimer")
     m.activateTimer = m.top.findNode("activateTimer")
     m.activateTimer.observeField("fire", "onActivateTimer")
+    m.addrTimer = m.top.findNode("addrTimer")
+    m.addrTimer.observeField("fire", "onAddrTimer")
+    m.identityAsked = ""   ' the own server whose identity this listener start already asked for
 
     m.task = CreateObject("roSGNode", "LanTask")
     if not m.global.hasField("castPlayer") then m.global.addField("castPlayer", "node", false)
@@ -28,6 +31,7 @@ sub init()
     pushConfig()
     m.task.castState = RemoteState_idle()
     m.task.control = "RUN"
+    recordOwnIdentity()
 end sub
 
 ' ---------- Config for the LanTask ----------
@@ -68,8 +72,65 @@ sub pushConfig()
 end sub
 
 sub onReloadPrefs()
+    wasEnabled = m.prefs.enabled
     m.prefs = RemotePrefs_load()
     pushConfig()
+    ' A listener start: an identity that could not be read last time is tried again.
+    if m.prefs.enabled and not wasEnabled then
+        m.identityAsked = ""
+        recordOwnIdentity()
+    end if
+end sub
+
+' ---------- The own server's identity (Silo Android #717) ----------
+
+' Phones on another address of this server find the Roku by the deployment identity it
+' advertises (mDNS TXT `serverIdentity`, the hello). Sessions saved by older Siku builds (and a
+' server whose identity read failed at connect) have none: read it once per listener start, save
+' it on the session (and the remembered server), and the next config re-advertises. An
+' unreachable server is tried again on the next listener start.
+function ownSession() as dynamic
+    if m.borrowed <> invalid then return m.ownSession
+    s = m.global.session
+    if s = invalid or Lan_isTrue(s.temporary) then return invalid
+    return s
+end function
+
+sub recordOwnIdentity()
+    if not m.prefs.enabled then return
+    s = ownSession()
+    if s = invalid then return
+    url = Str_orEmpty(s.serverUrl)
+    if url = "" or Lan_isServerId(s.serverId) or url = m.identityAsked then return
+    m.identityAsked = url
+    print "[siku-cast] reading the server identity (none recorded)"
+    Api_call({ method: "GET", path: "/api/v2/system/identity", baseUrl: url, auth: false, profile: false, timeout: 8, context: { url: url } }, "onOwnIdentity")
+end sub
+
+sub onOwnIdentity(event as object)
+    resp = Api_result(event)
+    url = ""
+    if resp.context <> invalid then url = Str_orEmpty(resp.context.url)
+    answer = HandoffAddr_classify(resp)
+    if answer.state <> "identity" then
+        print "[siku-cast] server identity not recorded (" + answer.state + " status=" + Str_orEmpty(resp.status) + "); trying again at the next start"
+        return
+    end if
+    s = ownSession()
+    if s = invalid or Str_orEmpty(s.serverUrl) <> url or Lan_isServerId(s.serverId) then return
+    if m.borrowed <> invalid then
+        ' The phone's profile is in use: record it on the Roku's own session for the hand-back
+        ' (a Session_save now would end the borrowed profile).
+        m.ownSession.serverId = answer.id
+        Registry_write("session", m.ownSession)
+        Session_rememberServer(m.ownSession)
+        print "[siku-cast] recorded server identity"
+        return
+    end if
+    c = AA_copy(s)
+    c.serverId = answer.id
+    print "[siku-cast] recorded server identity"
+    Session_save(c) ' onSessionChanged pushes the config: LanTask re-advertises with it
 end sub
 
 sub onSessionChanged()
@@ -112,6 +173,7 @@ sub onSessionChanged()
         end if
     end if
     pushConfig()
+    recordOwnIdentity()
 end sub
 
 function isOwnRefresh(s as object) as boolean
@@ -269,9 +331,9 @@ function readyMessage(requestId as string, b as object, reused as boolean, c as 
 end function
 
 sub startFullHandoff(conn as string, offer as object, c as object)
-    base = Lan_trimUrl(offer.serverURL)
     m.handoffGen = Int(Num_or(m.handoffGen, 0)) + 1
-    m.handoff = { conn: conn, requestId: Str_orEmpty(offer.requestId), offer: offer, controller: c, base: base, gen: m.handoffGen, deviceCode: "", interval: 3, deadline: 0 }
+    ' base: where the handoff runs, chosen by resolveHandoffAddress before the first request.
+    m.handoff = { conn: conn, requestId: Str_orEmpty(offer.requestId), offer: offer, controller: c, base: "", gen: m.handoffGen, deviceCode: "", interval: 3, deadline: 0, probes: invalid, answers: invalid }
     who = Str_orEmpty(c.deviceName)
     if who = "" then who = "your phone"
     title = Str_orEmpty(offer.title)
@@ -280,8 +342,83 @@ sub startFullHandoff(conn as string, offer as object, c as object)
     else
         m.global.toast = "Getting ready for " + who
     end if
+    resolveHandoffAddress()
+end sub
+
+' ---------- The handoff's server address (Silo Android #716; HandoffAddress.brs) ----------
+
+' With the phone's deployment identity, every candidate address is probed at once and the first,
+' in order, that reports that identity from here is used, so a Roku signed in over the LAN stays
+' on the LAN while the phone uses a public address. Without one, the phone's address as before.
+' The handoff still names the phone's server id (offer.serverId).
+sub resolveHandoffAddress()
+    h = m.handoff
+    plan = HandoffAddr_plan(h.offer, ownSession(), Session_savedServers())
+    if plan.expected = "" then
+        print "[siku-cast] handoff address phone (tried 0)"
+        runHandoffAt(plan.offered)
+        return
+    end if
+    probes = plan.candidates
+    h.probes = probes
+    h.answers = []
+    for i = 0 to probes.Count() - 1
+        h.answers.Push(invalid)
+    end for
+    print "[siku-cast] full handoff: checking " + probes.Count().ToStr() + " address(es) for the phone's server"
+    for i = 0 to probes.Count() - 1
+        Api_call({ method: "GET", path: "/api/v2/system/identity", baseUrl: probes[i].url, auth: false, profile: false, timeout: HandoffAddr_probeTimeout(), context: { gen: h.gen, probe: i } }, "onHandoffProbe")
+    end for
+    m.addrTimer.control = "stop"
+    m.addrTimer.duration = HandoffAddr_budgetSeconds()
+    m.addrTimer.control = "start"
+    judgeHandoffAddress(false)
+end sub
+
+sub onHandoffProbe(event as object)
+    resp = Api_result(event)
+    if not handoffCurrent(resp) then return
+    h = m.handoff
+    if h.probes = invalid then return ' already decided
+    i = Int(Num_or(resp.context.probe, -1))
+    if i < 0 or i >= h.answers.Count() then return
+    h.answers[i] = HandoffAddr_classify(resp)
+    judgeHandoffAddress(false)
+end sub
+
+sub onAddrTimer()
+    h = m.handoff
+    if h = invalid or h.probes = invalid then return
+    judgeHandoffAddress(true)
+end sub
+
+sub judgeHandoffAddress(final as boolean)
+    h = m.handoff
+    offered = Lan_trimUrl(h.offer.serverURL)
+    r = HandoffAddr_judge(h.probes, h.answers, offered, Str_orEmpty(h.offer.serverIdentity).Trim(), final)
+    if not r.done then return
+    tried = h.probes.Count().ToStr()
+    h.probes = invalid
+    h.answers = invalid
+    m.addrTimer.control = "stop"
+    if r.url <> "" then
+        print "[siku-cast] handoff address " + r.kind + " (tried " + tried + ")"
+        runHandoffAt(r.url)
+    else if r.failure = "mismatch" then
+        print "[siku-cast] handoff address refused: another server answered at the phone's address (tried " + tried + ")"
+        failHandoff("The phone's server address reached a different Silo server.")
+    else
+        print "[siku-cast] handoff address none (tried " + tried + ")"
+        name = Str_orEmpty(h.offer.serverName).Trim()
+        if name = "" then name = "the phone's server"
+        failHandoff("This TV can't reach " + name + ".")
+    end if
+end sub
+
+sub runHandoffAt(base as string)
+    m.handoff.base = base
     print "[siku-cast] full handoff: checking the phone's server"
-    Api_call({ method: "GET", path: "/api/v2/auth/device/capability", baseUrl: base, auth: false, profile: false, timeout: 8, context: { gen: m.handoffGen } }, "onHandoffCapability")
+    Api_call({ method: "GET", path: "/api/v2/auth/device/capability", baseUrl: base, auth: false, profile: false, timeout: 8, context: { gen: m.handoff.gen } }, "onHandoffCapability")
 end sub
 
 function handoffCurrent(resp as object) as boolean
@@ -293,6 +430,7 @@ sub failHandoff(text as string)
     if h = invalid then return
     m.handoff = invalid
     m.pollTimer.control = "stop"
+    m.addrTimer.control = "stop"
     handoffCancel(h.conn, h.requestId, "handoff_failed", text)
 end sub
 
@@ -414,6 +552,7 @@ sub abandonHandoff(why as string)
     if h = invalid then return
     m.handoff = invalid
     m.pollTimer.control = "stop"
+    m.addrTimer.control = "stop"
     print "[siku-cast] handoff abandoned (" + why + ")"
     if h.deviceCode <> "" then Api_call({ method: "POST", path: "/api/v2/auth/device/cancel", baseUrl: h.base, body: { device_code: h.deviceCode }, auth: false, profile: false, timeout: 5 }, "Api_onFired")
 end sub

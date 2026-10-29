@@ -441,6 +441,12 @@ sub handleDeepLink(args as dynamic)
         s.serverOrigin = s.serverUrl
         s.serverName = "Mock Silo"
         s.serverId = "mock-server-1"
+        ' debugNoServerId=1: a session saved by an older Siku, with no deployment identity recorded
+        ' (RemoteControl reads and records it, Silo Android #717).
+        if args.debugNoServerId = "1" then s.serverId = ""
+        ' debugServers=reset: forget the remembered servers first (the simulator's registry is shared
+        ' by every worktree's runs), so a handoff's saved addresses are only this mock's.
+        if args.debugServers = "reset" then Registry_write("servers", [])
         s.accessToken = "acc-debug"
         s.refreshToken = "ref-debug"
         s.expiresAt = Time_nowSeconds() + 3600

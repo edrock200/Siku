@@ -62,7 +62,15 @@ clears one); GET /mock/switch lists them.
   refresh_status=<code>|html     POST /auth/refresh answers that status (400/401 session_expired, others
                                  a bad_gateway problem) or, with html, a 200 HTML page (a captive portal).
                                  Siku must sign out only on 400/401 (look for [siku-auth] lines)
+  port_<N>=down|slow|other|none  the address at port N (--port or an --also-port): down = no answer
+                                 (the connection closes), slow = every answer after 30 s, other =
+                                 /system/identity names another deployment, none = it answers 404 (a
+                                 server before the identity contract). /mock/ paths always answer.
+                                 The log prints IDENTITY port= answer= and HANDOFF <method> <path>
+                                 port= (where a SiloCast handoff ran, Silo Android #716)
+  no_identity=1                  /system/identity answers 404 on every port
 Options that emulate other servers:
+  --also-port N           also serve this deployment on port N (another address of the same server)
   --settings-revision N   settings manifest revision (default 17: spoiler keys; 16 hides them)
   --no-slot-widths        images capability without slot_width_params (older server)
   --empty-library ID      that library holds nothing (empty library vs filters that match nothing)
@@ -1773,6 +1781,18 @@ class Handler(BaseHTTPRequestHandler):
         q = parse_qs(u.query)
         b = self.body() if method in ("POST", "PUT", "PATCH", "DELETE") else {}
         print(method, self.path, flush=True)
+        # --also-port / port_<N>: this deployment at more than one address (SiloCast handoff, #716).
+        port = self.server.server_address[1]
+        port_mode = str(STATE["switches"].get("port_%d" % port) or "")
+        if port_mode in ("down", "slow") and not p.startswith("/mock/"):
+            print("PORT %d %s: %s %s" % (port, port_mode, method, p), flush=True)
+            if port_mode == "down":
+                # No answer at all (the connection closes): an unreachable address.
+                self.close_connection = True
+                return
+            time.sleep(30)
+        if p.startswith("/api/v2/auth/device/") and p != "/api/v2/auth/device/approve-handoff":
+            print("HANDOFF %s %s port=%d" % (method, p, port), flush=True)
 
         if p.startswith("/mock-img/"):
             _, _, kind, name = p.split("/", 3)
@@ -1839,7 +1859,13 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/v2/system/info":
             return self.send(200, {"api_major": 2, "server_version": "mock", "contract_digest": "x", "links": {}})
         if p == "/api/v2/system/identity":
-            return self.send(200, {"server_id": "mock-server-1"})
+            answer = {"other": "other-deployment", "none": "404"}.get(port_mode, "mock-server-1")
+            if STATE["switches"].get("no_identity"):
+                answer = "404"
+            print("IDENTITY port=%d answer=%s" % (port, answer), flush=True)
+            if answer == "404":
+                return self.send(404, b"404 page not found", "text/plain")
+            return self.send(200, {"server_id": answer})
         if p == "/api/v2/system/setup":
             return self.send(200, {"needs_setup": False, "wizard_completed": True})
         if p == "/api/v2/theme/branding":
@@ -2897,6 +2923,8 @@ def main():
                     help="seek-bar previews for file 42: served, not offered, 404, a sheet missing, or URLs expiring in 75 s")
     ap.add_argument("--hls-copy-ts", action="store_true",
                     help="a server with hls_copy_mpegts_v1 and seek_reanchor_v1: MPEG-TS remuxes on an open-ended timeline")
+    ap.add_argument("--also-port", type=int, action="append", default=[], metavar="PORT",
+                    help="also serve this deployment on PORT (another address of the same server; see port_<N>)")
     ap.add_argument("--home-delay", type=float, default=0.0, metavar="SECONDS",
                     help="answer GET /api/v2/home/sections after this many seconds (the Home cache draws first)")
     args = ap.parse_args()
@@ -2919,6 +2947,10 @@ def main():
     OPTS["hls_copy_ts"] = args.hls_copy_ts
     srv = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
     print("Mock Silo on http://127.0.0.1:%d" % args.port, flush=True)
+    for extra in args.also_port:
+        alt = ThreadingHTTPServer(("0.0.0.0", extra), Handler)
+        threading.Thread(target=alt.serve_forever, daemon=True).start()
+        print("Mock Silo also on http://127.0.0.1:%d" % extra, flush=True)
     srv.serve_forever()
 
 

@@ -333,6 +333,25 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
   view filters client-side and reads on past pages the filter empties; 404 = "This row is no longer
   available."). HomePage's mixed-library refill target is capped at 20 too, and the Home cache keeps
   up to 24 raw cards a row (headroom for hide-watched), so a cached row still draws 20.
+- Phone handoff address (Silo Android #716/#717): a phone offers its own server address, which may
+  be public while the Roku is on the LAN. `HandoffAddress.brs` holds the pure choice (host-tested in
+  `tests/test_handoff_address.py`, a port of Android's `RemotePlaybackServerAddressTest`):
+  candidates are this Roku's saved addresses recorded under the offer's identity, then unverified
+  saved ones (active first, at most 6), the phone's address, then at most 6 probe-able of the first
+  24 `serverEndpoints`. All are probed at once (one Api_call each) and judged *in order* as answers
+  land, under one 8 s budget Timer, so stale addresses cost one timeout in total (Android phones
+  wait 15 s for the challenge). Another identity at the phone's address (or an endpoint) ends the
+  handoff; at a saved-only address it is skipped. Siku records no separate plain-HTTP consent: a
+  saved http:// server is the approval (ServerConnect asks before saving one). The handoff keeps
+  naming the phone's server id; only `base` (capability/start/poll/cancel, borrowed `serverUrl`)
+  moves. The own identity is read once per listener start when the session has none and saved with
+  `Session_save` (a dotted `serverId` lands in the registry as `serverid`; reads are
+  case-insensitive), which also purges the Home cache once (its owner key includes the identity).
+  While a phone's profile is borrowed, it is written to `m.ownSession` and the registry instead,
+  because any non-temporary `Session_save` ends the borrowed profile. Simulator check: mock
+  `--also-port 8182`, `debugServers=reset`, `silo_phone.py cast --server http://127.0.0.1:8182
+  --identity mock-server-1` and read `HANDOFF ... port=8181` in the mock log. Never grep for a
+  pattern that also appears in your own shell command line before `kill` (it killed the shell).
 - Registry writes wear flash: a heartbeat writes only as often as the rule it serves needs
   (Profile Selection's away clock: a twelfth of the away interval, 5-10 minutes).
 
