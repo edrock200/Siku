@@ -3,6 +3,16 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.28
+
+Two phone-control fixes from Silo's Android TV app (October 28, 2026).
+
+**Fixed**
+- **Phone hand-off stays on your home network.** When your phone reaches your server at its internet address and hands a title to a Roku on your home network, the Roku now connects to the server at its own home-network address (or another address the phone offers) instead of failing or streaming over the internet. It checks each address is really the same server first.
+- **Phones find Rokus signed in with an older Siku.** A Roku first signed in with an older Siku now shows up in the phone app's remote list even when the phone reaches your server at a different address.
+
+**Needs testing on a real Roku and phone:** a phone on your server's internet address (or Tailscale) handing a title to a Roku on your home network, and an iPhone on another address finding the Roku. The debug log `telnet <roku-ip> 8085` shows `[siku-cast] handoff address own|phone|endpoint`.
+
 ## v0.1.27
 
 Brings Siku up to date with Silo's Android TV app as of October 28, 2026.
