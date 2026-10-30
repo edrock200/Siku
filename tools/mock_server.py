@@ -37,6 +37,8 @@ clears one); GET /mock/switch lists them.
                                  refused with that 422; slow: the capability read takes 30 s; fail:
                                  it answers 500. Rows carry up to 24 cards without item_limit.
   item_limit_max=<n>             the advertised section_item_limit_max (default 100)
+  ai_session=missing             POST /subtitles/ai/translate with a session_id answers 404 playback_session_not_found
+                                 (Silo Android #726: the client sends it again without one, as a background job)
   route_events=accept|reject|bad_receipt
                                  /playback/capabilities lists playback_route_diagnostics; POST
                                  /playback/route-events logs the body and answers 202 with the receipt,
@@ -1576,6 +1578,11 @@ def subtitle_route(handler, method, p, q, b):
             if k not in b:
                 handler.problem(422, "validation_failed", "%s is required" % k)
                 return True
+        sid = b.get("session_id")
+        print("AI TRANSLATE session=%s" % ("yes" if sid else "no"), flush=True)
+        if sid and str(STATE["switches"].get("ai_session") or "") == "missing":
+            handler.problem(404, "playback_session_not_found", "Playback session not found")
+            return True
         if b["kind"] not in ("translate", "transcribe", "transcribe_translate"):
             handler.problem(422, "validation_failed", "unknown kind")
             return True
@@ -1589,7 +1596,7 @@ def subtitle_route(handler, method, p, q, b):
                "status": "pending", "progress": 0.0, "progress_message": "", "result_subtitle_id": None,
                "created_at": "2026-10-06T00:00:00.000Z", "updated_at": "2026-10-06T00:00:00.000Z", "_reads": 0}
         SUBS["ai_jobs"][job["id"]] = job
-        handler.send(202, {"job": {k: v for k, v in job.items() if not k.startswith("_")}, "live_delivery_attached": False})
+        handler.send(202, {"job": {k: v for k, v in job.items() if not k.startswith("_")}, "live_delivery_attached": bool(sid)})
         return True
     m = re.match(r"^/api/v2/subtitles/ai/jobs/([^/]+)(/cancel)?$", p)
     if m:

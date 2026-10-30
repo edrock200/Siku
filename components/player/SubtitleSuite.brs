@@ -46,7 +46,7 @@ sub Subs_resetPlayback()
     s.syncLoaded = false
     s.sync = { available: false, external: false, entries: {}, polledMs: {}, loadedTiming: {} }
     s.search = { language: "en", searching: false, hasSearched: false, results: [], warnings: [], error: "", downloadingKey: "" }
-    s.ai = { phase: "idle", error: "", job: invalid, progress: 0.0, message: "", quota: invalid, mode: "subtitles", subPos: 0, audioPos: 0, targetPos: -1 }
+    s.ai = { phase: "idle", error: "", job: invalid, progress: 0.0, message: "", quota: invalid, mode: "subtitles", subPos: 0, audioPos: 0, targetPos: -1, request: invalid }
     s.adoptId = ""
     s.adoptOrigin = ""
     s.adoptBody = invalid   ' the adoption replan's request (diagnostics line)
@@ -1605,7 +1605,10 @@ end sub
 
 ' POST /api/v2/subtitles/ai/translate: source_index is the combined subtitle index for
 ' "translate" and the audio track index for the transcribe kinds; start_position is the playhead.
-' No session_id: like Android, Siku polls the job instead of streaming live cues.
+' session_id names the playback session (Silo Android #726): the server then runs the job in
+' the foreground, transcribing from the playhead in short chunks, so progress moves within
+' seconds. Without it the whole file is extracted first and the dialog sits at 0% for minutes.
+' Siku still polls the job and ignores the live cues the server streams to the session.
 sub Subs_aiSubmit()
     ai = m.subs.ai
     if m.fileId = "" or ai.phase = "running" or ai.phase = "submitting" or Subs_quotaExhausted() then return
@@ -1637,14 +1640,42 @@ sub Subs_aiSubmit()
     ai.phase = "submitting"
     ai.error = ""
     body = { media_file_id: m.fileId, kind: kind, source_index: sourceIndex, source_language: sourceLanguage, target_language: target, start_position: m.position }
-    Api_send("POST", "/api/v2/subtitles/ai/translate", body, "Subs_onAiCreated", { fileId: m.fileId, sessionId: m.sessionId })
+    ai.request = body
+    Subs_aiSend(m.sessionId)
     Subs_renderAi()
 end sub
+
+' Sends ai.request, naming the playback session when there is one.
+sub Subs_aiSend(sessionId as string)
+    body = Subs_aiRequestBody(m.subs.ai.request, sessionId)
+    Api_send("POST", "/api/v2/subtitles/ai/translate", body, "Subs_onAiCreated", { fileId: m.fileId, sessionId: m.sessionId, withSession: body.session_id <> invalid })
+end sub
+
+' A copy of the request with session_id set when sessionId is not empty.
+function Subs_aiRequestBody(request as object, sessionId as string) as object
+    body = {}
+    if request <> invalid then body.Append(request)
+    if sessionId <> "" then body.session_id = sessionId
+    return body
+end function
+
+' The server binds the session before it creates a job, so a 404 to a request that named one
+' created nothing (the session ended, or another replica holds it). Send it once more without
+' the session, as a background job, unless the user cancelled while the first was out.
+function Subs_aiResendWithoutSession(status as dynamic, withSession as dynamic, phase as string) as boolean
+    if type(withSession) <> "Boolean" and type(withSession) <> "roBoolean" then return false
+    return withSession and Num_or(status, 0) = 404 and phase = "submitting"
+end function
 
 sub Subs_onAiCreated(event as object)
     resp = Api_result(event)
     if m.closing or not Subs_sameFile(resp) or Str_orEmpty(resp.context.sessionId) <> m.sessionId then return
     ai = m.subs.ai
+    if not resp.ok and Subs_aiResendWithoutSession(resp.status, resp.context.withSession, ai.phase) then
+        print "[siku-playback] ai subtitle session not found (404); sending again without it"
+        Subs_aiSend("")
+        return
+    end if
     if resp.ok and resp.data <> invalid and resp.data.job <> invalid then
         job = resp.data.job
         ai.job = job

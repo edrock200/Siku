@@ -101,7 +101,7 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   `seek reanchor target= reason=` / `seek reanchored target= origin= same_route=` /
   `seek reanchor failed` trace a seek the server re-anchored. Player errors print
   `[siku-playback] video error …`, each recovery `recovery <n> …`, and the shown error
-  `error #<n> …` (numbers: `docs/playback-errors.md`). Other lines: `subtitle auto:` (the track chosen automatically), `markers file=` (the playing file's
+  `error #<n> …` (numbers: `docs/playback-errors.md`). Other lines: `subtitle auto:` (the track chosen automatically), `ai subtitle session not found (404); sending again without it` (Silo Android #726: AI jobs carry `session_id`; mock `--switch ai_session=missing`), `markers file=` (the playing file's
   markers), `hls subtitle rendition …` (selected or not found), `buffering replan …` / `buffering
   plan=…` (a lowering and each plan's stall summary), `speed test outcome=…`. `[siku-trickplay]`
   lines: the seek-preview manifest (geometry, sheet count, `expires_in`, renewals), a refused or

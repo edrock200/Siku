@@ -3,6 +3,15 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.29
+
+One subtitle fix from Silo's Android TV app (October 30, 2026).
+
+**Fixed**
+- **AI subtitles start much sooner.** "Translate with AI" now tells the server which video you are watching, so it works from where you are in short pieces and the progress moves within seconds. Before, it prepared the whole file first and sat at "0% · Preparing audio" for minutes. If the server has lost track of your video, Siku asks once more the old way, so the subtitles still arrive.
+
+**Needs testing on a real Roku:** a "Translate with AI" or transcribe job against a real Silo server, to see the progress start moving within seconds. The debug log `telnet <roku-ip> 8085` prints `[siku-playback] ai subtitle session not found (404); sending again without it` when the fallback is used.
+
 ## v0.1.28
 
 Two phone-control fixes from Silo's Android TV app (October 28, 2026).
