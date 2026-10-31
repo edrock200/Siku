@@ -112,6 +112,8 @@ end sub
 
 sub onScreenShown()
     m.onTop = true
+    ' Back on top (Back from a page this one opened): its More Like This rail picks again.
+    m.chainLeaving = false
     if m.item = invalid then
         if not m.loading then load()
         return
@@ -1133,7 +1135,23 @@ sub onRelatedSelected()
     if sel = invalid or sel.Count() < 2 or m.similar = invalid then return
     if sel[1] >= m.similar.Count() then return
     card = m.similar[sel[1]]
-    Nav_push("DetailScreen", { itemId: Str_orEmpty(card.content_id), itemType: Str_orEmpty(card.type) })
+    if m.chainLeaving = true then return
+    currentId = Str_orEmpty(m.top.params.itemId)
+    chainStart = Str_orEmpty(m.top.params.chainStartId)
+    picked = Str_orEmpty(card.content_id)
+    if m.item <> invalid and picked = Str_orEmpty(m.item.content_id) then picked = currentId
+    action = Nav_chainAction(currentId, chainStart, picked)
+    print "[siku-detail] more like this pick action="; action
+    if action = "ignore" then return
+    ' One move per page: a second Select that lands while this page is leaving opens nothing.
+    m.chainLeaving = true
+    if action = "back" then
+        Nav_close()
+    else if action = "replace" then
+        Nav_replace("DetailScreen", { itemId: picked, itemType: Str_orEmpty(card.type), chainStartId: chainStart })
+    else
+        Nav_push("DetailScreen", { itemId: picked, itemType: Str_orEmpty(card.type), chainStartId: currentId })
+    end if
 end sub
 
 ' ---------- Trailers & More (TvDetailTrailersSection, silo-android #640 / #641) ----------

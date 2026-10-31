@@ -54,3 +54,17 @@ sub Nav_openItem(itemId as string, itemType = "" as dynamic)
         Nav_push("DetailScreen", { itemId: itemId, itemType: t })
     end if
 end sub
+
+' A "More Like This" pick on a detail page (Silo Android #737): the first pick from a page opens a
+' new page, and every later pick replaces the page a rail opened, so Back goes to the title the
+' chain started from, then to wherever that title was opened. Picking the starting title again
+' goes back to it; picking the title on screen does nothing (a repeat Select while the page is
+' changing). chainStartId is "" on a page not opened from a rail.
+' Returns "ignore", "push", "replace" or "back".
+function Nav_chainAction(currentId as string, chainStartId as string, pickedId as string) as string
+    if pickedId = "" or pickedId = currentId then return "ignore"
+    if chainStartId = "" then return "push"
+    if pickedId = chainStartId then return "back"
+    return "replace"
+end function
+

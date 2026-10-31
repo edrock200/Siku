@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Movie / series / season / episode detail (docs/design-spec.md §4.3).
-  params: { itemId, itemType?, libraryId? }
+  params: { itemId, itemType?, libraryId?, chainStartId? (set on a page a More Like This pick opened: the title the chain started from) }
   The whole page scrolls: `page` is translated with `scrollAnim` as focus moves between zones
   (actions → season chips → episode rail → cast → trailers → related → details).
   "Trailers & More" (Trailers.brs) lists local extras, which play in the player, then YouTube

@@ -201,6 +201,10 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   makes an episode's own backdrop/poster its still (flagged, as many real servers send);
   `--switch hide_episode_images=1` turns spoiler protection on by default. With all three an unwatched
   episode's Home hero and detail hero show the series backdrop; without `parent_artwork` they go dark.
+- More Like This chain (Silo Android #737, `Nav_chainAction` in `Nav.brs`): a rail pick prints
+  `[siku-detail] more like this pick action=push|replace|back|ignore`. A rail-opened DetailScreen carries
+  `chainStartId`; the first pick pushes, later picks replace, the start title closes back to it, the title on
+  screen (or a second OK while the page is leaving) does nothing.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

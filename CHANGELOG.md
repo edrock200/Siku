@@ -3,6 +3,15 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.30
+
+One change from Silo's Android TV app (October 30, 2026).
+
+**Changed**
+- **Back from "More Like This" takes two presses, not twenty.** Following one title after another from a page's Related Movies or Recommended Series row no longer piles up pages: Back returns to the title you started from, then to wherever you opened it. Picking that first title again from the row takes you back to it, and pressing OK twice on a card opens it only once. It also keeps fewer pages in the Roku's memory.
+
+**Needs testing on a real Roku:** a long More Like This chain followed by Back.
+
 ## v0.1.29
 
 One subtitle fix from Silo's Android TV app (October 30, 2026).
