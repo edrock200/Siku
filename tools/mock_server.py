@@ -63,6 +63,10 @@ clears one); GET /mock/switch lists them.
                                  problem detail, or (bare) a 500 with no body; Siku rolls the card back
   art_expire=<seconds>           artwork URLs carry ?exp=<now+seconds> and answer 404 once expired
                                  (signed artwork); the log prints ART EXPIRED <kind>/<name>
+  discover_layout=1              GET /requests/discover sends an admin layout (row_order: mixed rows, a
+                                 studios brand row, an empty row); log REQUESTS DISCOVER layout=
+  mine_fail=1                    GET /requests/mine answers 500 (the hub still shows Discover)
+  follow_fail=1                  PUT/DELETE /requests/follows/... answer 409 (log REQUESTS FOLLOW)
   member_fail=<code>|bare        PUT/DELETE /api/v2/watchlist|favorites/{id} answers that status (default 409)
                                  with a problem detail, or (bare) a 500; the detail page rolls back
   refresh_status=<code>|html     POST /auth/refresh answers that status (400/401 session_expired, others
@@ -932,7 +936,7 @@ REQ_TITLES = [
     ("series", 9104, "Orbital", 2016, "Science Fiction", "series:orbital"),
     ("series", 9105, "Signal & Noise", 2026, "Drama", None),
 ]
-REQ_STATE = {"requests": [], "seq": 10}
+REQ_STATE = {"requests": [], "seq": 10, "follows": set()}
 
 
 def req_ts(days_ago):
@@ -1008,6 +1012,10 @@ def req_annotation(t):
         state.update({"status": r["status"], "state": r["state"], "request_id": r["id"],
                       "requested_by_viewer": r["requested_by_user_id"] == "1"})
         state["requestable"] = r["outcome"] in ("declined", "failed")
+        if r["outcome"] == "active" and r["requested_by_user_id"] != "1":
+            # Someone else's open request: the viewer may follow it (Notify me when available).
+            state["reason"] = "already_requested"
+            state["following"] = "%s/%d" % (mt, tid) in REQ_STATE["follows"]
     if lib and (r is None or r["outcome"] != "active" or r["state"] == "available"):
         state["requestable"] = False
         state["reason"] = "already_available"
@@ -1089,12 +1097,43 @@ def requests_route(handler, method, p, q, b):
         sections = [("trending_movies", "Trending Movies", movies[:6]), ("trending_series", "Trending Series", series_[:4]),
                     ("popular_movies", "Popular Movies", movies[3:]), ("popular_series", "Popular Series", series_[1:]),
                     ("upcoming_movies", "Upcoming Movies", [t for t in movies if t[3] >= 2026])]
+        layout = bool(STATE["switches"].get("discover_layout"))
+        if layout:
+            # An admin-defined Discover layout (row_order): mixed rows in the admin's order, a brand
+            # row the TV apps do not draw, and a row with no titles.
+            sections = [("staff_picks", "Staff Picks", [movies[4], series_[0], movies[1], series_[4]]),
+                        ("trending_movies", "Trending Movies", movies[:6]),
+                        ("anime_list", "Anime List", []),
+                        ("crime_series", "Crime & Mystery", [t for t in series_ if t[4] in ("Crime", "Drama", "Documentary")])]
         items = []
         for key, title, ts in sections:
             sec = req_page(handler, ts)
             sec.update({"key": key, "title": title})
             items.append(sec)
-        handler.send(200, {"items": items})
+        out = {"items": items}
+        if layout:
+            out["row_order"] = [{"key": "staff_picks", "type": "tmdb_list", "title": "Staff Picks"},
+                                {"key": "studios", "type": "studios", "title": "Studios"},
+                                {"key": "trending_movies", "type": "tmdb_chart", "title": "Trending Movies"},
+                                {"key": "anime_list", "type": "mdblist", "title": "Anime List"},
+                                {"key": "crime_series", "type": "tmdb_discover", "title": "Crime & Mystery"}]
+        print("REQUESTS DISCOVER layout=%s" % ("row_order" if layout else "legacy"), flush=True)
+        handler.send(200, out)
+        return True
+    m = re.match(r"^/api/v2/requests/follows/(movie|series)/(\d+)$", p)
+    if m and method in ("PUT", "DELETE"):
+        key = "%s/%s" % (m.group(1), m.group(2))
+        print("REQUESTS FOLLOW %s %s" % (method, key), flush=True)
+        if STATE["switches"].get("follow_fail"):
+            handler.problem(409, "conflict", "Notifications are turned off for this profile.")
+            return True
+        if method == "PUT":
+            REQ_STATE["follows"].add(key)
+            t = req_title(m.group(1), int(m.group(2)))
+            handler.send(200, req_annotation(t) if t else {"following": True})
+        else:
+            REQ_STATE["follows"].discard(key)
+            handler.send(204)
         return True
     m = re.match(r"^/api/v2/requests/discover/([a-z_]+)$", p)
     if m:
@@ -1152,6 +1191,10 @@ def requests_route(handler, method, p, q, b):
         rec = req_record("r-%d" % REQ_STATE["seq"], mt, tid, "1", "pending", "active", "pending", 0)
         REQ_STATE["requests"].append(rec)
         handler.send(201, req_images(handler, dict(rec)))
+        return True
+    if p == "/api/v2/requests/mine" and STATE["switches"].get("mine_fail"):
+        print("REQUESTS MINE refused (switch mine_fail)", flush=True)
+        handler.problem(500, "internal", "Your requests failed (mine_fail)")
         return True
     if p == "/api/v2/requests/mine":
         mine = req_filter([r for r in REQ_STATE["requests"] if r["requested_by_user_id"] == "1"], q)

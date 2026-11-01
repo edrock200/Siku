@@ -22,6 +22,20 @@ sub Req_setGate(g as object)
     m.global.requests = g
 end sub
 
+' Whether the server takes follows (PUT/DELETE /api/v2/requests/follows/..., `follow_supported` in
+' GET /api/v2/requests/status; absent on older servers). Read from a status answer or the gate.
+function Req_flag(v as dynamic) as boolean
+    t = Type(v)
+    if t = "roBoolean" or t = "Boolean" then return v
+    return false
+end function
+
+function Req_followSupported() as boolean
+    g = Req_gate()
+    if Type(g) <> "roAssociativeArray" then return false
+    return Req_flag(g.followSupported)
+end function
+
 function Req_statusAvailable(data as dynamic) as boolean
     if data = invalid then return false
     return data.requests_enabled = true and data.allowed = true and Str_orEmpty(data.state) = "available"
@@ -389,6 +403,45 @@ function Req_currentRecord(records as object) as dynamic
     newest = sortedRecords[0]
     if Str_orEmpty(newest.outcome) = "cancelled" then return invalid
     return newest
+end function
+
+' The hub's Discover rows (RequestCarouselMerge.discoverCarousels). A server with an admin-defined
+' Discover layout sends `row_order`: its rows show as they are, in that order. Rows the TV app does
+' not draw (studio, network and genre brand rows) and rows without titles are skipped. An older
+' server gets the two merged carousels (Req_mergeDiscover).
+function Req_discoverCarousels(data as dynamic) as object
+    if Type(data) <> "roAssociativeArray" then return []
+    sections = Arr_or(data.items)
+    order = Arr_or(data.row_order)
+    if order.Count() = 0 then return Req_mergeDiscover(sections)
+    byKey = {}
+    for each sec in sections
+        if Type(sec) = "roAssociativeArray" then
+            k = Str_orEmpty(sec.key)
+            if k <> "" and not byKey.DoesExist(k) then byKey[k] = sec
+        end if
+    end for
+    brand = { studios: true, networks: true, genres: true }
+    out = []
+    seenRows = {}
+    for each row in order
+        if Type(row) = "roAssociativeArray" then
+            k = Str_orEmpty(row.key)
+            t = LCase(Str_orEmpty(row.type))
+            if k <> "" and not brand.DoesExist(t) and byKey.DoesExist(k) and not seenRows.DoesExist(k) then
+                seenRows[k] = true
+                sec = byKey[k]
+                results = []
+                for each it in Arr_or(sec.results)
+                    if Type(it) = "roAssociativeArray" and Req_isSupportedType(it.media_type) then results.Push(it)
+                end for
+                title = Str_orEmpty(sec.title)
+                if title = "" then title = Str_orEmpty(row.title)
+                if results.Count() > 0 then out.Push({ key: k, title: title, results: results })
+            end if
+        end if
+    end for
+    return out
 end function
 
 ' Merges the server's per-media-type discover sections into "Trending now" and "Crowd favorites",
