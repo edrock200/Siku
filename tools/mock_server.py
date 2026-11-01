@@ -61,6 +61,8 @@ clears one); GET /mock/switch lists them.
   hide_episode_images=1          catalog.hide_unwatched_episode_images defaults to true (spoiler protection)
   watched_fail=<code>|bare       POST/DELETE /api/v2/watched/{id} answers that status (default 409) with a
                                  problem detail, or (bare) a 500 with no body; Siku rolls the card back
+  member_fail=<code>|bare        PUT/DELETE /api/v2/watchlist|favorites/{id} answers that status (default 409)
+                                 with a problem detail, or (bare) a 500; the detail page rolls back
   refresh_status=<code>|html     POST /auth/refresh answers that status (400/401 session_expired, others
                                  a bad_gateway problem) or, with html, a 200 HTML page (a captive portal).
                                  Siku must sign out only on 400/401 (look for [siku-auth] lines)
@@ -2147,6 +2149,7 @@ class Handler(BaseHTTPRequestHandler):
                     _, seasons, eps = SERIES[i]
                     return self.send(200, {"items": [{"content_id": "season:%s-%d" % (s["content_id"], n), "season_number": n,
                                                        "title": "Season %d" % n, "episode_count": eps, "is_specials": False,
+                                                       "user_data": {"played": all(episode_id(s["content_id"], n, e) in STATE["watched"] for e in range(1, eps + 1))},
                                                        "poster_url": s["poster_url"]} for n in range(1, seasons + 1)]})
             return self.problem(404, "not_found", "Not found")
         m = re.match(r"^/api/v2/catalog/series/([^/]+)/seasons/(\d+)/episodes$", p)
@@ -2411,12 +2414,30 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(code, {"type": "https://siloserver.org/docs/api/v2/problems/conflict", "title": "Conflict",
                                     "status": code, "detail": "Watched state is managed by your administrator."},
                              "application/problem+json")
+        if m and m.group(1) in ("watchlist", "favorites") and STATE["switches"].get("member_fail"):
+            fail = str(STATE["switches"]["member_fail"])
+            print("MEMBERSHIP %s %s refused (switch member_fail=%s)" % (method, m.group(1), fail), flush=True)
+            if fail == "bare":
+                return self.send(500)
+            code = int(fail) if fail.isdigit() else 409
+            return self.send(code, {"type": "https://siloserver.org/docs/api/v2/problems/conflict", "title": "Conflict",
+                                    "status": code, "detail": "Lists are read-only for this profile."},
+                             "application/problem+json")
         if m:
             key = {"watchlist": "watchlist", "favorites": "favorites", "watched": "watched"}[m.group(1)]
-            if method in ("PUT", "POST"):
-                STATE[key].add(m.group(2))
-            elif method == "DELETE":
-                STATE[key].discard(m.group(2))
+            ids = [m.group(2)]
+            # A season's watched mark covers its episodes, as the real server applies it.
+            sm = re.match(r"^season:(.+)-(\d+)$", m.group(2))
+            if key == "watched" and sm:
+                for i, srs in enumerate(all_series()):
+                    if srs["content_id"] == sm.group(1):
+                        ids += [episode_id(srs["content_id"], int(sm.group(2)), e) for e in range(1, SERIES[i][2] + 1)]
+            print("%s %s %s (%d id%s)" % (key.upper(), method, m.group(2), len(ids), "" if len(ids) == 1 else "s"), flush=True)
+            for one in ids:
+                if method in ("PUT", "POST"):
+                    STATE[key].add(one)
+                elif method == "DELETE":
+                    STATE[key].discard(one)
             return self.send(204)
         m = re.match(r"^/api/v2/home/dismissals/(continue_watching|next_up)/(.+)$", p)
         if m and method in ("PUT", "DELETE"):

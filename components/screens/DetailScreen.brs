@@ -736,10 +736,8 @@ sub applySelections(params as object, targetId as string)
 end sub
 
 sub updateToggles()
-    st = m.item.user_state
-    if st = invalid then st = {}
-    m.watchlistBtn.active = st.in_watchlist = true
-    m.favBtn.active = st.is_favorite = true
+    m.watchlistBtn.active = membershipOn("watchlist")
+    m.favBtn.active = membershipOn("favorite")
 end sub
 
 ' ---------- Body: layout and zones ----------
@@ -1371,44 +1369,118 @@ sub onStartOver()
 end sub
 
 sub onWatchlistToggle()
-    st = m.item.user_state
-    if st = invalid then
-        st = {}
-        m.item.user_state = st
-    end if
-    id = Str_urlEncode(Str_orEmpty(m.item.content_id))
-    if st.in_watchlist = true then
-        st.in_watchlist = false
-        Api_fire("DELETE", "/api/v2/watchlist/" + id)
-        m.global.toast = "Removed from Watchlist"
-    else
-        st.in_watchlist = true
-        Api_fire("PUT", "/api/v2/watchlist/" + id)
-        m.global.toast = "Added to Watchlist"
-    end if
-    m.global.homeDirty = true
-    updateToggles()
+    toggleMembership("watchlist")
 end sub
 
 sub onFavoriteToggle()
+    toggleMembership("favorite")
+end sub
+
+' ---------- Watchlist and Favorites writes ----------
+' The button changes at once; the toast waits for the server. One write per list is in flight at a
+' time: a press meanwhile is kept and sent when the first answers (the latest press wins), so two
+' quick presses can never reach the server out of order. A refused write puts the button back to
+' the last state the server confirmed and toasts its reason, as the card menus do (Silo Android
+' #706); Android TV's membership writes behave the same way (PersonalDataRepository.memberships).
+
+function membershipField(kind as string) as string
+    if kind = "watchlist" then return "in_watchlist"
+    return "is_favorite"
+end function
+
+function membershipOn(kind as string) as boolean
     st = m.item.user_state
-    if st = invalid then
-        st = {}
-        m.item.user_state = st
-    end if
-    id = Str_urlEncode(Str_orEmpty(m.item.content_id))
-    if st.is_favorite = true then
-        st.is_favorite = false
-        Api_fire("DELETE", "/api/v2/favorites/" + id)
-        m.global.toast = "Removed from Favorites"
-    else
-        st.is_favorite = true
-        Api_fire("PUT", "/api/v2/favorites/" + id)
-        m.global.toast = "Added to Favorites"
-    end if
-    m.global.homeDirty = true
+    if Type(st) <> "roAssociativeArray" then return false
+    v = st[membershipField(kind)]
+    t = Type(v)
+    if t <> "roBoolean" and t <> "Boolean" then return false
+    return v
+end function
+
+sub setMembership(kind as string, value as boolean)
+    if Type(m.item.user_state) <> "roAssociativeArray" then m.item.user_state = {}
+    m.item.user_state[membershipField(kind)] = value
     updateToggles()
 end sub
+
+sub toggleMembership(kind as string)
+    if m.item = invalid then return
+    if m.memberWrites = invalid then m.memberWrites = {}
+    w = m.memberWrites[kind]
+    desired = not membershipOn(kind)
+    if w <> invalid and w.inFlight then
+        ' Never compare a possibly-invalid value with a boolean (pitfall 16): hasPending says.
+        w.hasPending = true
+        w.pending = desired
+        setMembership(kind, desired)
+        return
+    end if
+    m.memberWrites[kind] = { inFlight: false, hasPending: false, pending: false, confirmed: not desired }
+    setMembership(kind, desired)
+    sendMembership(kind, desired)
+end sub
+
+sub sendMembership(kind as string, value as boolean)
+    w = m.memberWrites[kind]
+    w.inFlight = true
+    w.hasPending = false
+    method = "DELETE"
+    if value then method = "PUT"
+    path = "/api/v2/favorites/"
+    if kind = "watchlist" then path = "/api/v2/watchlist/"
+    id = Str_orEmpty(m.item.content_id)
+    Api_call({ method: method, path: path + Str_urlEncode(id), context: { kind: kind, value: value, contentId: id } }, "onMembershipWritten")
+end sub
+
+sub onMembershipWritten(event as object)
+    resp = Api_result(event)
+    ctx = resp.context
+    if ctx = invalid or m.memberWrites = invalid or m.item = invalid then return
+    if Str_orEmpty(ctx.contentId) <> Str_orEmpty(m.item.content_id) then return
+    kind = Str_orEmpty(ctx.kind)
+    w = m.memberWrites[kind]
+    if w = invalid then return
+    w.inFlight = false
+    value = ctx.value = true
+    hasPending = w.hasPending = true
+    pending = w.pending = true
+    w.hasPending = false
+    if resp.ok then
+        w.confirmed = value
+        m.global.homeDirty = true
+        ' A press made meanwhile that changes the outcome goes next; its answer brings the toast.
+        if hasPending and pending <> value then
+            sendMembership(kind, pending)
+            return
+        end if
+        m.global.toast = membershipToast(kind, value)
+        return
+    end if
+    print "[siku-detail] "; kind; " write failed status="; Int(Num_or(resp.status, 0)); " pending="; hasPending
+    ' Back to what the server last confirmed, and say why.
+    setMembership(kind, w.confirmed)
+    if not m.global.hasField("toastSeconds") then m.global.addFields({ toastSeconds: 0.0 })
+    m.global.toastSeconds = 5.0
+    m.global.toast = membershipFailureText(kind, value, resp)
+end sub
+
+function membershipToast(kind as string, value as boolean) as string
+    if kind = "watchlist" then
+        if value then return "Added to Watchlist"
+        return "Removed from Watchlist"
+    end if
+    if value then return "Added to Favorites"
+    return "Removed from Favorites"
+end function
+
+' "Couldn't add to Watchlist. <the server's reason>" (or "Try again.").
+function membershipFailureText(kind as string, value as boolean, resp as dynamic) as string
+    listName = "Favorites"
+    if kind = "watchlist" then listName = "Watchlist"
+    verb = "remove from "
+    if value then verb = "add to "
+    return "Couldn't " + verb + listName + ". " + Api_reasonText(resp, "Try again.")
+end function
 
 function isPlayed() as boolean
     if m.item.user_state <> invalid and m.item.user_state.played = true then return true
@@ -1458,12 +1530,21 @@ sub onMore()
     else
         acts.Push({ id: "watched", label: ("Mark " + noun + " Watched").Replace("  ", " ").Trim() })
     end if
-    if m.item.user_state <> invalid and m.item.user_state.is_favorite = true then
+    ' A series page also marks the season on screen (Android TV TvItemDetailScreen "season-watched":
+    ' "Mark Season 2 Watched" for the selected season when it has episodes).
+    if m.itemType = "series" and season <> invalid and not Str_isEmpty(season.content_id) and seasonHasEpisodes(season) then
+        if seasonPlayed(season) then
+            acts.Push({ id: "season_unwatched", label: "Mark " + seasonLabel(season) + " Unwatched" })
+        else
+            acts.Push({ id: "season_watched", label: "Mark " + seasonLabel(season) + " Watched" })
+        end if
+    end if
+    if membershipOn("favorite") then
         acts.Push({ id: "favorite", label: "Remove from Favorites" })
     else
         acts.Push({ id: "favorite", label: "Add to Favorites" })
     end if
-    if m.item.user_state <> invalid and m.item.user_state.in_watchlist = true then
+    if membershipOn("watchlist") then
         acts.Push({ id: "watchlist", label: "Remove from Watchlist" })
     else
         acts.Push({ id: "watchlist", label: "Add to Watchlist" })
@@ -1485,6 +1566,85 @@ sub onMore()
     m.menu.setFocus(true)
 end sub
 
+' Whether a flag in a season or episode's user_data / user_state is set (never compares invalid
+' with a boolean, pitfall 16).
+function playedFlag(obj as dynamic) as boolean
+    if Type(obj) <> "roAssociativeArray" then return false
+    for each k in ["user_data", "user_state"]
+        st = obj[k]
+        if Type(st) = "roAssociativeArray" then
+            t = Type(st.played)
+            if (t = "roBoolean" or t = "Boolean") and st.played then return true
+        end if
+    end for
+    return false
+end function
+
+function seasonHasEpisodes(season as object) as boolean
+    if Num_or(season.episode_count, 0) > 0 then return true
+    for each ep in m.episodes
+        if toInt(ep.season_number) = toInt(season.season_number) then return true
+    end for
+    return false
+end function
+
+' A season reads as watched when the server says so, else when every loaded episode of it is.
+function seasonPlayed(season as object) as boolean
+    if playedFlag(season) then return true
+    n = 0
+    for each ep in m.episodes
+        if toInt(ep.season_number) = toInt(season.season_number) then
+            if not playedFlag(ep) then return false
+            n = n + 1
+        end if
+    end for
+    return n > 0
+end function
+
+' POST / DELETE /api/v2/watched/{id} for a season or an episode of this page; the answer refreshes
+' the page (onWatchedWritten) or says why the server refused.
+sub writeWatched(contentId as string, watched as boolean, scope as string)
+    if contentId = "" then return
+    method = "DELETE"
+    if watched then method = "POST"
+    print "[siku-detail] mark "; scope; " watched="; watched
+    Api_call({ method: method, path: "/api/v2/watched/" + Str_urlEncode(contentId), context: { watched: watched, scope: scope } }, "onWatchedWritten")
+    m.global.homeDirty = true
+end sub
+
+' The Options (*) key on an episode card opens its menu (Android TV's episode card actions:
+' Mark Episode Watched / Unwatched).
+sub openEpisodeMenu()
+    idx = -1
+    sel = m.episodeRow.rowItemFocused
+    if sel <> invalid and sel.Count() >= 2 then idx = sel[1]
+    if idx < 0 or idx >= m.episodes.Count() then return
+    ep = m.episodes[idx]
+    m.episodeMenuId = Str_orEmpty(ep.content_id)
+    if m.episodeMenuId = "" then return
+    acts = []
+    if playedFlag(ep) then
+        acts.Push({ id: "ep_unwatched", label: "Mark Episode Unwatched" })
+    else
+        acts.Push({ id: "ep_watched", label: "Mark Episode Watched" })
+    end if
+    acts.Push({ id: "ep_open", label: "Go to Episode" })
+    m.menuKind = "episode"
+    m.menu.title = Str_joinDots([Content_seShort(ep.season_number, ep.episode_number), Str_orEmpty(ep.title)])
+    m.menu.actions = acts
+    m.menu.visible = true
+    m.menu.setFocus(true)
+end sub
+
+sub onEpisodeMenuChosen(id as string)
+    epId = Str_orEmpty(m.episodeMenuId)
+    if id = "ep_watched" or id = "ep_unwatched" then
+        writeWatched(epId, id = "ep_watched", "episode")
+    else if id = "ep_open" and epId <> "" then
+        Nav_push("DetailScreen", { itemId: epId, itemType: "episode" })
+    end if
+end sub
+
 sub onShuffleStarted(event as object)
     resp = Api_result(event)
     Shuffle_play(resp)
@@ -1502,6 +1662,10 @@ end sub
 sub onMenuChosen()
     id = m.menu.chosen
     closeMenu()
+    if m.menuKind = "episode" then
+        onEpisodeMenuChosen(id)
+        return
+    end if
     if m.menuKind <> "more" then
         onSelectorChosen(m.menuKind, id)
         return
@@ -1523,6 +1687,9 @@ sub onMenuChosen()
         end if
         if m.item.user_data <> invalid then m.item.user_data.played = (id = "watched")
         m.global.homeDirty = true
+    else if id = "season_watched" or id = "season_unwatched" then
+        season = selectedSeasonEntry()
+        if season <> invalid then writeWatched(Str_orEmpty(season.content_id), id = "season_watched", "season")
     else if id = "favorite" then
         onFavoriteToggle()
     else if id = "watchlist" then
@@ -1636,6 +1803,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
         return false
     else if key = "play" then
         onPlay()
+        return true
+    else if key = "options" and z = "episodes" and m.episodeRow.hasFocus() then
+        openEpisodeMenu()
         return true
     end if
     return false
