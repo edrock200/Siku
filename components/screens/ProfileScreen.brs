@@ -27,6 +27,7 @@ sub init()
     m.pinDialog = invalid
     m.pinProfile = invalid
     m.busy = false
+    m.offerVisible = false
     m.loaded = false
     m.active = false
     m.cols = 6
@@ -257,7 +258,7 @@ end function
 sub applyFocus()
     if not m.active then return
     if m.offerVisible = true then
-        m.top.setFocus(true)
+        renderOffer()
         return
     end if
     if m.pinDialog <> invalid then
@@ -348,16 +349,22 @@ end sub
 sub showOffer(p as object)
     name = Str_orEmpty(p.name)
     m.offerTitleLabel = m.top.findNode("offerTitle")
-    m.offerRows = [m.top.findNode("offerRemember"), m.top.findNode("offerAsk")]
+    m.offerBodyLabel = m.top.findNode("offerBody")
+    ' Left to right: Ask Every Time | Remember (index 1, focused first).
+    m.offerButtons = [m.top.findNode("offerAsk"), m.top.findNode("offerRemember")]
     Label_setFont(m.offerTitleLabel, "bold", 36)
-    w = 980
-    m.offerTitleLabel.width = w - 72
+    w = 900
+    m.offerTitleLabel.width = w - 96
     m.offerTitleLabel.text = "Open " + name + " automatically?"
+    m.offerBodyLabel.width = w - 96
+    ' Wording adapted from Silo-Server/silo-roku, AGPL-3.0 (locale/en_US/strings.json).
+    m.offerBodyLabel.text = "Siku can skip Who's watching and open this profile when it starts on this Roku. You can change this later in Settings > General > Profile Selection."
     titleH = Int(Label_height(m.offerTitleLabel))
     if titleH <= 0 then titleH = 44
-    rowH = 140
-    labels = [["Remember", "Open " + name + " when Siku starts on this Roku."], ["Ask every time", "Show Who's watching when Siku starts. Change this in Settings > General > Profile Selection."]]
-    h = 40 + titleH + 28 + 2 * (rowH + 8) + 28
+    bodyH = Int(Label_height(m.offerBodyLabel))
+    if bodyH <= 0 then bodyH = 96
+    btnH = 68
+    h = 48 + titleH + 20 + bodyH + 40 + btnH + 48
     x = (1920 - w) \ 2
     top = (1080 - h) \ 2
     bg = m.top.findNode("offerBg")
@@ -367,50 +374,59 @@ sub showOffer(p as object)
         node.height = h
         node.translation = [x, top]
     end for
-    m.offerTitleLabel.translation = [x + 36, top + 40]
-    y = top + 40 + titleH + 28
-    for i = 0 to 1
-        r = m.offerRows[i]
-        r.rowWidth = w - 48
-        r.rowHeight = rowH
-        r.label = labels[i][0]
-        r.description = labels[i][1]
-        r.showChevron = false
-        r.translation = [x + 24, y]
-        y = y + rowH + 8
+    m.offerTitleLabel.translation = [x + 48, top + 48]
+    m.offerBodyLabel.translation = [x + 48, top + 48 + titleH + 20]
+    m.offerButtonsY = top + 48 + titleH + 20 + bodyH + 40
+    m.offerX = x
+    m.offerW = w
+    for each b in m.offerButtons
+        b.observeField("width", "layoutOfferButtons")
+        b.observeField("buttonSelected", "onOfferButton")
     end for
-    m.offerIndex = 0
+    layoutOfferButtons()
+    m.offerIndex = 1
     m.offerVisible = true
     m.content.visible = false
     m.buttonsGroup.visible = false
     m.top.findNode("offer").visible = true
     renderOffer()
-    m.top.setFocus(true)
+end sub
+
+sub layoutOfferButtons()
+    if m.offerButtons = invalid then return
+    gap = 24
+    total = m.offerButtons[0].width + gap + m.offerButtons[1].width
+    bx = m.offerX + (m.offerW - total) \ 2
+    m.offerButtons[0].translation = [bx, m.offerButtonsY]
+    m.offerButtons[1].translation = [bx + m.offerButtons[0].width + gap, m.offerButtonsY]
 end sub
 
 sub renderOffer()
-    for i = 0 to m.offerRows.Count() - 1
-        m.offerRows[i].focusedState = i = m.offerIndex
-    end for
+    m.offerButtons[m.offerIndex].setFocus(true)
+end sub
+
+sub onOfferButton(event as object)
+    if m.offerVisible <> true then return
+    b = event.getRoSGNode()
+    answerOffer(b.isSameNode(m.offerButtons[1]))
 end sub
 
 sub answerOffer(remember as boolean)
+    if m.offerVisible <> true then return
     m.offerVisible = false
     m.top.findNode("offer").visible = false
+    print "[siku-profiles] open automatically answered remember=" + Session_boolWord(remember)
     ProfileLaunch_answerOffer(remember)
     Nav_reset("ShellScreen")
 end sub
 
 function onOfferKey(key as string) as boolean
-    if key = "up" and m.offerIndex > 0 then
+    if key = "left" and m.offerIndex > 0 then
         m.offerIndex = m.offerIndex - 1
-    else if key = "down" and m.offerIndex < m.offerRows.Count() - 1 then
+    else if key = "right" and m.offerIndex < m.offerButtons.Count() - 1 then
         m.offerIndex = m.offerIndex + 1
-    else if key = "OK" then
-        answerOffer(m.offerIndex = 0)
-        return true
     else if key = "back" then
-        ' Closing the question keeps asking, as upstream's dismiss does.
+        ' Back answers Ask Every Time, as upstream's dismiss does.
         answerOffer(false)
         return true
     end if
@@ -485,21 +501,18 @@ end sub
 
 sub onChangeServer()
     if m.busy then return
-    Session_clearServer()
-    Nav_reset("ServerConnectScreen")
+    ' Manage Servers: this server keeps its sign-in; Back returns here.
+    Nav_push("ServerConnectScreen", { manage: true })
 end sub
 
 sub onSignOut()
     if m.busy then return
-    m.busy = true
-    m.signOutButton.text = "Signing out…"
-    Api_call({ method: "POST", path: "/api/v2/auth/logout", profile: false, timeout: 8 }, "onLoggedOut")
+    SignOut_ask("Sign out?")
 end sub
 
-sub onLoggedOut(event as object)
-    Api_result(event) ' sign out locally whatever the server said
-    Session_signOutLocal(m.global.session)
-    Nav_reset("@start")
+' SignOutFlow.brs: Cancel (or Back) leaves focus on Sign out.
+sub SignOut_afterCancel()
+    applyFocus()
 end sub
 
 function isTrue(v as dynamic) as boolean

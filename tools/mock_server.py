@@ -71,8 +71,15 @@ clears one); GET /mock/switch lists them.
                                  The log prints IDENTITY port= answer= and HANDOFF <method> <path>
                                  port= (where a SiloCast handoff ran, Silo Android #716)
   no_identity=1                  /system/identity answers 404 on every port
+  info_status=<code>[:<detail>]  GET /system/info answers that status: a problem with that detail, or
+                                 a bare text error without one (the address screen's "Could not reach
+                                 server: <detail>" / "Could not reach a Silo server at that address.")
 Options that emulate other servers:
   --also-port N           also serve this deployment on port N (another address of the same server)
+  --server-id ID          this deployment's /system/identity server_id (default mock-server-1); with
+  --server-name NAME      /theme/branding's name (default Mock Silo): a second, distinct server for
+                          Manage Servers (run another mock on another port, e.g. --server-id
+                          mock-server-2 --server-name "Den Silo")
   --settings-revision N   settings manifest revision (default 17: spoiler keys; 16 hides them)
   --no-slot-widths        images capability without slot_width_params (older server)
   --empty-library ID      that library holds nothing (empty library vs filters that match nothing)
@@ -1864,9 +1871,17 @@ class Handler(BaseHTTPRequestHandler):
 
         # ---- public
         if p == "/api/v2/system/info":
+            info_fail = str(STATE["switches"].get("info_status") or "")
+            if info_fail:
+                code, _, detail = info_fail.partition(":")
+                print("INFO answered %s (switch info_status)" % code, flush=True)
+                if detail:
+                    return self.send(int(code), {"type": "https://siloserver.org/docs/api/v2/problems/unavailable", "title": "Unavailable",
+                                                 "status": int(code), "detail": detail}, "application/problem+json")
+                return self.send(int(code), b"error", "text/plain")
             return self.send(200, {"api_major": 2, "server_version": "mock", "contract_digest": "x", "links": {}})
         if p == "/api/v2/system/identity":
-            answer = {"other": "other-deployment", "none": "404"}.get(port_mode, "mock-server-1")
+            answer = {"other": "other-deployment", "none": "404"}.get(port_mode, OPTS.get("server_id", "mock-server-1"))
             if STATE["switches"].get("no_identity"):
                 answer = "404"
             print("IDENTITY port=%d answer=%s" % (port, answer), flush=True)
@@ -1876,7 +1891,8 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/v2/system/setup":
             return self.send(200, {"needs_setup": False, "wizard_completed": True})
         if p == "/api/v2/theme/branding":
-            return self.send(200, {"server_name": "Mock Silo", "name": "Mock Silo"})
+            name = OPTS.get("server_name", "Mock Silo")
+            return self.send(200, {"server_name": name, "name": name})
         if p == "/api/v2/auth/signup":
             return self.send(200, {"enabled": False})
         if p == "/api/v2/auth/providers":
@@ -2930,12 +2946,16 @@ def main():
                     help="seek-bar previews for file 42: served, not offered, 404, a sheet missing, or URLs expiring in 75 s")
     ap.add_argument("--hls-copy-ts", action="store_true",
                     help="a server with hls_copy_mpegts_v1 and seek_reanchor_v1: MPEG-TS remuxes on an open-ended timeline")
+    ap.add_argument("--server-id", default="mock-server-1", help="/system/identity server_id (a second, distinct server)")
+    ap.add_argument("--server-name", default="Mock Silo", help="/theme/branding server name")
     ap.add_argument("--also-port", type=int, action="append", default=[], metavar="PORT",
                     help="also serve this deployment on PORT (another address of the same server; see port_<N>)")
     ap.add_argument("--home-delay", type=float, default=0.0, metavar="SECONDS",
                     help="answer GET /api/v2/home/sections after this many seconds (the Home cache draws first)")
     args = ap.parse_args()
     OPTS["home_delay"] = args.home_delay
+    OPTS["server_id"] = args.server_id
+    OPTS["server_name"] = args.server_name
     SETTINGS_REVISION = args.settings_revision
     OPTS["slot_widths"] = not args.no_slot_widths
     OPTS["empty_libraries"] = set(args.empty_library)

@@ -49,7 +49,8 @@ sub Session_save(s as object)
     if not temporary then
         prev = Registry_read("session")
         Registry_write("session", s)
-        Session_rememberServer(s)
+        ' The server it replaces keeps its sign-in in the saved-servers list (Session_serversNext).
+        Session_storeServers(prev, s)
     end if
     m.global.session = s
     ' Only after publishing: MainScene's purge keeps the file of m.global.session's owner, which
@@ -96,20 +97,222 @@ sub Session_homeCacheCheck(prev as dynamic)
     g.homeCachePurge = g.homeCachePurge + 1
 end sub
 
-' Records the server in the saved-servers list (for Switch Server).
+' ---------- Saved servers, each with its own sign-in ----------
+' Registry "servers": [{url, name, id, session}], most recently used first. The active server's
+' sign-in stays in "session" (as before) and its entry carries none; when another server becomes
+' active, the one it replaces is stashed in its own entry with its tokens and profile, so
+' switching back needs no new sign-in. A refresh while a server is active is saved in "session",
+' so the stash always holds the newest tokens. Entries written by an older Siku ({url, name, id})
+' read as signed out. Bounded: Session_maxServers() entries and Session_serversBudget() bytes of
+' JSON; over the budget the least recently used servers lose their sign-in first.
+' Same model as Android TV's ServerRegistry + TokenManager; adapted from Silo-Server/silo-roku,
+' AGPL-3.0 (source/storage/registry.bs, source/onboarding/servers.bs).
+
+function Session_maxServers() as integer
+    return 6
+end function
+
+function Session_serversBudget() as integer
+    return 8000
+end function
+
+' The sign-in part of a session, as stored in a saved server's entry; invalid when signed out.
+' Unquoted keys on purpose: they are stored lower-case, like the rest of the session, so dot reads
+' match in brs-cli too (its ParseJson objects are case-sensitive).
+function Session_storedSignIn(s as dynamic) as dynamic
+    if s = invalid or Type(s) <> "roAssociativeArray" then return invalid
+    if Str_isEmpty(s.accessToken) and Str_isEmpty(s.refreshToken) then return invalid
+    user = s.user
+    if user = invalid or Type(user) <> "roAssociativeArray" then user = {}
+    return {
+        serverOrigin: Str_orEmpty(s.serverOrigin)
+        accessToken: Str_orEmpty(s.accessToken)
+        refreshToken: Str_orEmpty(s.refreshToken)
+        expiresAt: Int(Num_or(s.expiresAt, 0))
+        user: user
+        profileId: Str_orEmpty(s.profileId)
+        profileToken: Str_orEmpty(s.profileToken)
+        profileName: Str_orEmpty(s.profileName)
+        profileAvatar: Str_orEmpty(s.profileAvatar)
+    }
+end function
+
+' The saved-servers list after `s` (being saved, never temporary) replaced `prev` (the registry
+' session before it). Pure (tests/test_saved_servers.py). `s`'s server moves to the front without
+' a stored sign-in (it lives in "session"); `prev`'s server, when it is another one, keeps its
+' sign-in in its entry. A server missing from the list is never added back for `prev` (it was
+' removed).
+function Session_serversNext(list as dynamic, prev as dynamic, s as object) as object
+    url = Str_orEmpty(s.serverUrl)
+    prevUrl = ""
+    if prev <> invalid and Type(prev) = "roAssociativeArray" then prevUrl = Str_orEmpty(prev.serverUrl)
+    out = []
+    if url <> "" then out.Push({ "url": url, "name": Str_orEmpty(s.serverName), "id": Str_orEmpty(s.serverId) })
+    items = Arr_or(list)
+    for i = 0 to items.Count() - 1
+        e = items[i]
+        if e <> invalid and Type(e) = "roAssociativeArray" and not Str_isEmpty(e.url) then
+            eu = Str_orEmpty(e.url)
+            if eu <> url and not Session_serversHas(out, eu) then
+                c = { "url": eu, "name": Str_orEmpty(e.name), "id": Str_orEmpty(e.id) }
+                if prevUrl <> "" and eu = prevUrl then
+                    c.session = Session_storedSignIn(prev)
+                    if not Str_isEmpty(prev.serverName) then c.name = Str_orEmpty(prev.serverName)
+                    if not Str_isEmpty(prev.serverId) then c.id = Str_orEmpty(prev.serverId)
+                else if e.session <> invalid and Type(e.session) = "roAssociativeArray" then
+                    c.session = e.session
+                end if
+                if c.session = invalid then c.Delete("session")
+                out.Push(c)
+            end if
+        end if
+    end for
+    while out.Count() > Session_maxServers()
+        out.Pop()
+    end while
+    return Session_serversFit(out)
+end function
+
+function Session_serversHas(list as object, url as string) as boolean
+    for i = 0 to list.Count() - 1
+        if Str_orEmpty(list[i].url) = url then return true
+    end for
+    return false
+end function
+
+' Keeps the list's JSON within Session_serversBudget(): the least recently used servers lose
+' their stored sign-in first, then whole entries go from the end (the first one always stays).
+function Session_serversFit(list as object) as object
+    while Len(FormatJson(list)) > Session_serversBudget()
+        dropped = false
+        for i = list.Count() - 1 to 1 step -1
+            if list[i].session <> invalid then
+                list[i].Delete("session")
+                print "[siku-servers] registry budget: forgot the sign-in of a least recently used server"
+                dropped = true
+                exit for
+            end if
+        end for
+        if not dropped then
+            if list.Count() <= 1 then exit while
+            list.Pop()
+        end if
+    end while
+    return list
+end function
+
+' Writes the saved-servers list for a save of `s` over `prev` (only when it changed: registry
+' writes wear flash).
+sub Session_storeServers(prev as dynamic, s as object)
+    old = Registry_read("servers", [])
+    nxt = Session_serversNext(old, prev, s)
+    if FormatJson(nxt) = FormatJson(Arr_or(old)) then return
+    Registry_write("servers", nxt)
+end sub
+
+' Records the server in the saved-servers list without touching another server's sign-in.
 sub Session_rememberServer(s as object)
     if Str_isEmpty(s.serverUrl) then return
-    servers = Registry_read("servers", [])
-    out = [{ url: s.serverUrl, name: s.serverName, id: s.serverId }]
-    for each e in servers
-        if e.url <> s.serverUrl then out.Push(e)
-    end for
-    Registry_write("servers", out)
+    Session_storeServers(invalid, s)
 end sub
 
 function Session_savedServers() as object
-    return Registry_read("servers", [])
+    return Arr_or(Registry_read("servers", []))
 end function
+
+' The saved entry for `url`, or invalid.
+function Session_savedServer(url as string) as dynamic
+    list = Session_savedServers()
+    for i = 0 to list.Count() - 1
+        e = list[i]
+        if Type(e) = "roAssociativeArray" and Str_orEmpty(e.url) = url then return e
+    end for
+    return invalid
+end function
+
+' True when the entry (not the active server) holds a sign-in to switch back to.
+function Session_entrySignedIn(e as dynamic) as boolean
+    if e = invalid or Type(e) <> "roAssociativeArray" then return false
+    st = e.session
+    if st = invalid or Type(st) <> "roAssociativeArray" then return false
+    return not Str_isEmpty(st.accessToken) or not Str_isEmpty(st.refreshToken)
+end function
+
+' Drops `url` from the saved-servers list and returns its entry (invalid when it was not saved).
+' Pure list form: Session_serversWithout.
+function Session_forgetServer(url as string) as dynamic
+    list = Session_savedServers()
+    removed = invalid
+    for i = 0 to list.Count() - 1
+        if Type(list[i]) = "roAssociativeArray" and Str_orEmpty(list[i].url) = url then removed = list[i]
+    end for
+    Registry_write("servers", Session_serversWithout(list, url))
+    return removed
+end function
+
+function Session_serversWithout(list as dynamic, url as string) as object
+    out = []
+    items = Arr_or(list)
+    for i = 0 to items.Count() - 1
+        e = items[i]
+        if Type(e) = "roAssociativeArray" and Str_orEmpty(e.url) <> url then out.Push(e)
+    end for
+    return out
+end function
+
+' The session a saved entry restores: its address, name, identity and stored sign-in (pure).
+' askProfile (Profile Selection would ask at launch, or the caller wants the picker) drops the
+' stored profile so Who's watching shows; it never reopens a PIN profile without its PIN then.
+function Session_fromEntry(e as object, deviceId as string, askProfile as boolean) as object
+    s = Session_empty()
+    s.deviceId = deviceId
+    s.serverUrl = Str_orEmpty(e.url)
+    s.serverOrigin = Url_origin(s.serverUrl)
+    s.serverName = Str_orEmpty(e.name)
+    s.serverId = Str_orEmpty(e.id)
+    st = e.session
+    if st <> invalid and Type(st) = "roAssociativeArray" then
+        s.accessToken = Str_orEmpty(st.accessToken)
+        s.refreshToken = Str_orEmpty(st.refreshToken)
+        s.expiresAt = Int(Num_or(st.expiresAt, 0))
+        if st.user <> invalid and Type(st.user) = "roAssociativeArray" then s.user = st.user
+        if not askProfile then
+            s.profileId = Str_orEmpty(st.profileId)
+            s.profileToken = Str_orEmpty(st.profileToken)
+            s.profileName = Str_orEmpty(st.profileName)
+            s.profileAvatar = Str_orEmpty(st.profileAvatar)
+        end if
+    end if
+    return s
+end function
+
+' Makes a saved server the active one with its own sign-in (Manage Servers, Sign Out & Remove
+' Server). The server it replaces keeps its sign-in (Session_save). Callers then route with
+' Nav_reset("@start"): Home, Who's watching or the sign-in screen, whatever the sign-in reaches.
+sub Session_activateServer(e as object, askProfile as boolean)
+    Session_forgetPlaybackCaps()
+    Session_forgetServerState()
+    s = Session_fromEntry(e, Str_orEmpty(m.global.session.deviceId), askProfile)
+    signedIn = not Str_isEmpty(s.accessToken) or not Str_isEmpty(s.refreshToken)
+    profile = "none"
+    if not Str_isEmpty(s.profileId) then profile = "kept"
+    if signedIn and askProfile then profile = "ask"
+    print "[siku-servers] switched signed_in=" + Session_boolWord(signedIn) + " profile=" + profile
+    Session_save(s)
+end sub
+
+function Session_boolWord(b as boolean) as string
+    if b then return "true"
+    return "false"
+end function
+
+' Per-server answers kept on m.global for the session (Requests gate, Shuffle capability).
+sub Session_forgetServerState()
+    g = m.global
+    if g = invalid then return
+    if g.hasField("requests") then g.requests = { enabled: false, resolved: false }
+    if g.hasField("shuffleCaps") then g.shuffleCaps = {}
+end sub
 
 ' Clears tokens and profile but keeps the server.
 sub Session_signOutLocal(s as object)

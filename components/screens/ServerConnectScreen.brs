@@ -14,6 +14,17 @@ sub init()
     m.note = m.top.findNode("note")
     m.connectButton = m.top.findNode("connect")
     m.findButton = m.top.findNode("find")
+    m.advToggle = m.top.findNode("advToggle")
+    m.advRow = m.top.findNode("advRow")
+    m.schemeButtons = [m.top.findNode("schemeAuto"), m.top.findNode("schemeHttps"), m.top.findNode("schemeHttp")]
+    m.schemeIds = ["auto", "https", "http"]
+    m.portField = m.top.findNode("portField")
+    m.scheme = "auto"
+    m.showAdv = false
+    m.manage = false
+    m.setupDone = false
+    m.savedPick = invalid   ' a saved server picked from the card: {url, name, id, session?}
+    m.lastServerMessage = ""
     m.foundCard = m.top.findNode("foundCard")
     m.foundStatus = m.top.findNode("foundStatus")
     m.foundRowsGroup = m.top.findNode("foundRows")
@@ -54,20 +65,48 @@ sub init()
     m.scanTimer.repeat = false
     m.scanTimer.observeField("fire", "onScanTimeout")
     m.connectButton.observeField("width", "layout")
+    m.advToggle.observeField("buttonSelected", "onAdvToggle")
+    m.advToggle.observeField("width", "layout")
+    for each b in m.schemeButtons
+        b.observeField("buttonSelected", "onSchemePressed")
+        b.observeField("width", "layoutAdv")
+    end for
+    m.portField.observeField("text", "onFieldText")
     for each c in m.chips
         c.observeField("buttonSelected", "onChipPressed")
         c.observeField("width", "layoutChips")
     end for
 
-    ' Prefill with the last server, if one was used before.
-    saved = Session_savedServers()
-    if saved.Count() > 0 and saved[0].url <> invalid then m.field.text = saved[0].url
-    buildSavedRows(saved)
+    buildSavedRows(Session_savedServers())
+    renderScheme()
     layoutChips()
+    layoutAdv()
     layout()
 end sub
 
+' Params arrive after init: Manage Servers (params.manage) or first-run setup.
+sub setupMode()
+    m.setupDone = true
+    p = m.top.params
+    m.manage = false
+    if Type(p) = "roAssociativeArray" then m.manage = Lan_isTrue(p.manage)
+    saved = Session_savedServers()
+    if m.manage then
+        m.headline.text = "Choose a server"
+        m.body.text = "Switch to a saved server, or add another."
+        print "[siku-servers] manage servers: " + saved.Count().ToStr() + " saved"
+    else if saved.Count() > 0 and saved[0].url <> invalid then
+        ' Prefill with the last server, if one was used before.
+        m.field.text = saved[0].url
+    end if
+    buildSavedRows(saved)
+    layout()
+    ' Manage Servers starts on the list.
+    if m.manage and m.rows.Count() > 0 then focusOn("saved", 0)
+end sub
+
 sub onScreenShown()
+    if not m.setupDone then setupMode()
     Pair_start("setup")
     ' Like Android TV, servers on this network are looked for as soon as setup shows.
     if not m.scannedOnce then startScan()
@@ -113,7 +152,16 @@ sub layout()
     m.chipsGroup.translation = [0, y]
     y = y + 61 + 18
     m.note.translation = [0, y]
-    y = y + Int(Label_height(m.note)) + 40
+    y = y + Int(Label_height(m.note)) + 14
+    m.advToggle.translation = [0, y]
+    y = y + 61
+    m.advRow.visible = m.showAdv
+    if m.showAdv then
+        y = y + 10
+        m.advRow.translation = [0, y]
+        y = y + 84
+    end if
+    y = y + 30
     m.connectButton.translation = [0, y]
     m.findButton.translation = [m.connectButton.width + 20, y]
     y = y + 76
@@ -156,6 +204,41 @@ sub layout()
     m.card.translation = [1190, 124 + (896 - h) \ 2]
 end sub
 
+' The protocol buttons and the Port field on one row (84 px, the field's height).
+sub layoutAdv()
+    x = 0
+    for each b in m.schemeButtons
+        b.translation = [x, 11]
+        x = x + b.width + 12
+    end for
+    m.portField.translation = [x + 8, 0]
+end sub
+
+sub renderScheme()
+    for i = 0 to m.schemeButtons.Count() - 1
+        m.schemeButtons[i].selectedState = m.schemeIds[i] = m.scheme
+    end for
+    if m.showAdv then m.advToggle.text = "Hide advanced options" else m.advToggle.text = "Advanced options"
+end sub
+
+sub onAdvToggle()
+    if m.busy then return
+    m.showAdv = not m.showAdv
+    renderScheme()
+    layout()
+    if m.showAdv then focusOn("adv", 0) else focusOn("advToggle")
+end sub
+
+sub onSchemePressed(event as object)
+    if m.busy then return
+    b = event.getRoSGNode()
+    for i = 0 to m.schemeButtons.Count() - 1
+        if m.schemeButtons[i].isSameNode(b) then m.scheme = m.schemeIds[i]
+    end for
+    renderScheme()
+    onFieldText()
+end sub
+
 function infoTitleHeight() as float
     t = m.top.findNode("infoTitle")
     return Label_height(t)
@@ -172,7 +255,7 @@ sub buildSavedRows(saved as object)
     hostFont.size = 22
     y = 0
     for each srv in saved
-        if srv <> invalid and not Str_isEmpty(srv.url) and m.rows.Count() < 3 then
+        if srv <> invalid and Type(srv) = "roAssociativeArray" and not Str_isEmpty(srv.url) and m.rows.Count() < Session_maxServers() then
             g = m.savedRowsGroup.createChild("Group")
             g.translation = [0, y]
             g.focusable = true
@@ -204,6 +287,8 @@ sub buildSavedRows(saved as object)
             host.width = 430
             host.height = 30
             host.text = srv.url
+            badge = savedBadge(srv)
+            if badge <> "" then host.text = badge + " · " + srv.url
             m.rows.Push({ group: g, bg: bg, ring: ring, icon: icon, name: nm, host: host, server: srv })
             y = y + 96 + 14
         end if
@@ -212,6 +297,21 @@ sub buildSavedRows(saved as object)
     m.infoCard.visible = m.rows.Count() = 0
     renderRows()
 end sub
+
+' "Current", "Signed out", both, or "" (adapted from silo-roku's server list badges).
+function savedBadge(srv as object) as string
+    s = m.global.session
+    if Str_orEmpty(srv.url) = Str_orEmpty(s.serverUrl) then
+        if Str_isEmpty(s.accessToken) and Str_isEmpty(s.refreshToken) then return "Current · Signed out"
+        return "Current"
+    end if
+    if Session_entrySignedIn(srv) then return ""
+    return "Signed out"
+end function
+
+function isCurrent(srv as object) as boolean
+    return Str_orEmpty(srv.url) <> "" and Str_orEmpty(srv.url) = Str_orEmpty(m.global.session.serverUrl)
+end function
 
 sub renderRows()
     renderRowList(m.rows, "saved")
@@ -243,9 +343,12 @@ end sub
 sub onFieldText()
     clearError()
     t = LCase(m.field.text.Trim())
-    if Left(t, 7) = "http://" then
+    if m.scheme = "http" or (m.scheme = "auto" and Left(t, 7) = "http://") then
         m.note.text = "This address uses unencrypted HTTP. Fine on a trusted home network; avoid it on public Wi-Fi."
         m.note.color = "0xF4C869FF"
+    else if m.scheme = "https" or Left(t, 8) = "https://" then
+        m.note.text = "Only secure HTTPS is tried."
+        m.note.color = "0xEDEDED66"
     else
         m.note.text = "Secure HTTPS is tried automatically."
         m.note.color = "0xEDEDED66"
@@ -272,6 +375,7 @@ sub setBusy(busy as boolean)
     if busy then m.connectButton.text = "Connecting…" else m.connectButton.text = "Connect"
     m.field.disabled = busy
     m.findButton.disabled = busy
+    m.portField.disabled = busy
 end sub
 
 ' ---------- Focus ----------
@@ -281,6 +385,10 @@ sub applyFocus()
         m.field.setFocus(true)
     else if m.focusZone = "chips" then
         m.chips[m.focusIndex].setFocus(true)
+    else if m.focusZone = "advToggle" then
+        m.advToggle.setFocus(true)
+    else if m.focusZone = "adv" and m.showAdv then
+        if m.focusIndex < 3 then m.schemeButtons[m.focusIndex].setFocus(true) else m.portField.setFocus(true)
     else if m.focusZone = "connect" then
         m.connectButton.setFocus(true)
     else if m.focusZone = "find" then
@@ -317,50 +425,38 @@ sub focusOn(zone as string, index = 0 as integer)
     applyFocus()
 end sub
 
+' The left column top to bottom: field, chips, Advanced options, its row (when shown), buttons.
+function zoneBelow(z as string) as string
+    if z = "field" then return "chips"
+    if z = "chips" then return "advToggle"
+    if z = "advToggle" then
+        if m.showAdv then return "adv"
+        return "connect"
+    end if
+    if z = "adv" then return "connect"
+    return ""
+end function
+
+function zoneAbove(z as string) as string
+    if z = "chips" then return "field"
+    if z = "advToggle" then return "chips"
+    if z = "adv" then return "advToggle"
+    if z = "connect" or z = "find" then
+        if m.showAdv then return "adv"
+        return "advToggle"
+    end if
+    return ""
+end function
+
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
     z = m.focusZone
     if key = "back" then return false
-    if z = "field" then
-        if key = "down" then
-            focusOn("chips", 0)
-        else if key = "right" then
-            focusCard()
-        end if
+    if key = "options" then
+        if z = "saved" then askRemove(m.focusIndex)
         return true
-    else if z = "chips" then
-        if key = "up" then
-            focusOn("field")
-        else if key = "down" then
-            focusOn("connect")
-        else if key = "left" and m.focusIndex > 0 then
-            focusOn("chips", m.focusIndex - 1)
-        else if key = "right" then
-            if m.focusIndex < m.chips.Count() - 1 then
-                focusOn("chips", m.focusIndex + 1)
-            else
-                m.lastFocus = "chips"
-                focusCard()
-            end if
-        end if
-        return true
-    else if z = "connect" then
-        if key = "up" then
-            focusOn("chips", 0)
-        else if key = "right" then
-            focusOn("find")
-        end if
-        return true
-    else if z = "find" then
-        if key = "up" then
-            focusOn("chips", 0)
-        else if key = "left" then
-            focusOn("connect")
-        else if key = "right" then
-            focusCard()
-        end if
-        return true
-    else if z = "saved" then
+    end if
+    if z = "saved" then
         if key = "up" and m.focusIndex > 0 then
             focusOn("saved", m.focusIndex - 1)
         else if key = "down" and m.focusIndex < m.rows.Count() - 1 then
@@ -387,7 +483,31 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
         return true
     end if
-    return false
+    if key = "down" then
+        nz = zoneBelow(z)
+        if nz <> "" then focusOn(nz, 0)
+    else if key = "up" then
+        nz = zoneAbove(z)
+        if nz <> "" then focusOn(nz, 0)
+    else if key = "left" then
+        if (z = "chips" or z = "adv") and m.focusIndex > 0 then
+            focusOn(z, m.focusIndex - 1)
+        else if z = "find" then
+            focusOn("connect")
+        end if
+    else if key = "right" then
+        if z = "chips" and m.focusIndex < m.chips.Count() - 1 then
+            focusOn("chips", m.focusIndex + 1)
+        else if z = "adv" and m.focusIndex < 3 then
+            focusOn("adv", m.focusIndex + 1)
+        else if z = "connect" then
+            focusOn("find")
+        else
+            m.lastFocus = z
+            focusCard()
+        end if
+    end if
+    return true
 end function
 
 ' ---------- Actions ----------
@@ -418,33 +538,123 @@ sub onConnectPressed()
     startConnect(m.field.text)
 end sub
 
+' A saved server: the current one goes back where it was; one with its own sign-in is checked
+' (it must answer as a Silo v2 server, and as the same deployment) and switched to without a new
+' sign-in; a signed-out one connects like a typed address and opens its sign-in screen.
 sub pickSaved(i as integer)
-    if m.busy then return
+    if m.busy or i < 0 or i >= m.rows.Count() then return
     srv = m.rows[i].server
+    if isCurrent(srv) then
+        print "[siku-servers] picked the current server"
+        if m.manage and not Str_isEmpty(m.global.session.accessToken) then
+            Nav_close()
+        else
+            Nav_reset("@start")
+        end if
+        return
+    end if
+    m.savedPick = srv
     m.field.text = srv.url
-    startConnect(srv.url)
+    startConnect(srv.url, "", [srv.url])
+end sub
+
+' Options (*) on a saved row: remove it (silo-roku's server list wording, AGPL-3.0).
+sub askRemove(i as integer)
+    if m.busy or i < 0 or i >= m.rows.Count() then return
+    srv = m.rows[i].server
+    name = serverLabel(srv)
+    if isCurrent(srv) then
+        nxt = invalid
+        for each e in Session_savedServers()
+            if nxt = invalid and Type(e) = "roAssociativeArray" and Str_orEmpty(e.url) <> Str_orEmpty(srv.url) then nxt = e
+        end for
+        if nxt <> invalid then
+            body = "You'll be signed out of " + name + ", and this Roku will switch to " + serverLabel(nxt) + "."
+        else
+            body = "You'll be signed out of " + name + ", and you'll need to enter a server address again."
+        end if
+    else
+        body = "Its sign-in will be forgotten on this Roku. You can add it again later."
+    end if
+    m.removeTarget = srv
+    openConfirm("Remove " + name + "?", [body], ["Cancel", "Remove"], "onRemoveButton", "onRemoveClosed")
+end sub
+
+function serverLabel(srv as object) as string
+    name = Str_orEmpty(srv.name).Trim()
+    if name = "" then name = Url_host(Str_orEmpty(srv.url))
+    return name
+end function
+
+sub onRemoveButton()
+    dlg = m.confirmDialog
+    if dlg = invalid then return
+    choice = dlg.buttonSelected
+    srv = m.removeTarget
+    closeConfirm()
+    m.removeTarget = invalid
+    if choice <> 1 or srv = invalid then
+        applyFocus()
+        return
+    end if
+    if isCurrent(srv) then
+        ' The active server: the one sign-out, then the next saved server or first-run setup.
+        SignOut_run(true)
+        return
+    end if
+    ' Another server: revoke its stored sign-in (best effort), then forget it.
+    st = srv.session
+    if st <> invalid and Type(st) = "roAssociativeArray" and not Str_isEmpty(st.accessToken) then
+        Api_call({ method: "POST", path: "/api/v2/auth/logout", baseUrl: Str_orEmpty(srv.url), auth: false, profile: false, headers: { Authorization: "Bearer " + Str_orEmpty(st.accessToken) }, timeout: 5 }, "Api_onFired")
+    end if
+    Session_forgetServer(Str_orEmpty(srv.url))
+    print "[siku-servers] removed current=false"
+    m.global.toast = serverLabel(srv) + " was removed."
+    buildSavedRows(Session_savedServers())
+    layout()
+    if m.rows.Count() = 0 then
+        focusOn("field")
+    else
+        if m.focusIndex >= m.rows.Count() then m.focusIndex = m.rows.Count() - 1
+        focusOn("saved", m.focusIndex)
+    end if
+end sub
+
+sub onRemoveClosed()
+    if m.confirmDialog = invalid then return
+    closeConfirm()
+    m.removeTarget = invalid
+    applyFocus()
+end sub
+
+' SignOutFlow.brs hook (this screen asks its own question).
+sub SignOut_afterCancel()
+    applyFocus()
 end sub
 
 ' expectedId: a found server's advertised (and already checked) id, which the identity read in
 ' finishConnect must repeat; "" for a typed or saved address.
-sub startConnect(raw as string, expectedId = "" as string)
+' exact: the addresses to probe as they are (a saved or found server), skipping Advanced options.
+sub startConnect(raw as string, expectedId = "" as string, exact = invalid as dynamic)
     if m.busy then return
     m.expectedServerId = expectedId
-    raw = raw.Trim()
-    if raw = "" then
-        showError("Enter your server address.")
-        return
+    if exact = invalid then
+        m.savedPick = invalid
+        plan = ServerAddr_candidates(raw, m.scheme, m.portField.text)
+        if plan.error <> "" then
+            print "[siku-servers] address refused: " + plan.error
+            showError(plan.error)
+            return
+        end if
+        m.candidates = []
+        for each c in plan.candidates
+            m.candidates.Push(Url_normalize(c))
+        end for
+    else
+        m.candidates = exact
     end if
     clearError()
-    lower = LCase(raw)
-    if Left(lower, 7) = "http://" or Left(lower, 8) = "https://" then
-        m.candidates = [Url_normalize(raw)]
-    else if Instr(1, raw, "://") > 0 then
-        showError("Use an http:// or https:// address.")
-        return
-    else
-        m.candidates = [Url_normalize("https://" + raw), Url_normalize("http://" + raw)]
-    end if
+    m.lastServerMessage = ""
     m.candidateIndex = 0
     m.updateNeeded = false
     setBusy(true)
@@ -456,9 +666,13 @@ sub probeNext()
         setBusy(false)
         if m.updateNeeded then
             showError("This server needs an update to work with Siku.")
+        else if m.savedPick <> invalid then
+            showError("Couldn't reach " + serverLabel(m.savedPick) + ". Check that it's on and connected, then try again.")
         else
-            showError("Can't reach that server. Check the address and try again.")
+            showError(ServerAddr_unreachableText(m.scheme, m.lastServerMessage))
         end if
+        print "[siku-servers] connect failed update=" + Session_boolWord(m.updateNeeded) + " server_message=" + Session_boolWord(m.lastServerMessage <> "")
+        m.savedPick = invalid
         return
     end if
     base = m.candidates[m.candidateIndex]
@@ -486,13 +700,16 @@ sub onInfo(event as object)
         probeNext()
         return
     end if
+    ' The server's own reason, when it gave one (Silo Android #771); the last address tried decides.
+    m.lastServerMessage = ServerAddr_serverMessage(resp.status, resp.error)
     m.candidateIndex = m.candidateIndex + 1
     probeNext()
 end sub
 
 sub onReachable(base as string)
     m.pendingBase = base
-    if LCase(Left(base, 7)) = "http://" then
+    ' A saved http:// server was approved when it was added (ServerConnect asked then).
+    if LCase(Left(base, 7)) = "http://" and Session_savedServer(base) = invalid then
         askCleartext(base)
     else
         finishConnect()
@@ -599,6 +816,33 @@ sub lookupDone()
     end if
     name = m.serverName
     if name = "" then name = Url_host(base)
+    cur = m.global.session
+    if base = Str_orEmpty(cur.serverUrl) and not Str_isEmpty(cur.accessToken) then
+        ' The address of the server already in use: nothing to switch.
+        setBusy(false)
+        m.savedPick = invalid
+        print "[siku-servers] that is the current server"
+        if m.manage then Nav_close() else Nav_reset("@start")
+        return
+    end if
+    e = Session_savedServer(base)
+    if Session_entrySignedIn(e) then
+        known = Str_orEmpty(e.id)
+        if known = "" or m.serverId = "" or known = m.serverId then
+            ' Switch with its own sign-in. Profile Selection asks again when it would at launch.
+            c = AA_copy(e)
+            c.name = name
+            if m.serverId <> "" then c.id = m.serverId
+            setBusy(false)
+            m.savedPick = invalid
+            Session_activateServer(c, ProfileLaunch_requiresSelectionAtLaunch())
+            Nav_reset("@start")
+            return
+        end if
+        ' Another deployment answers at that address now: its stored sign-in is not sent there.
+        print "[siku-servers] saved server answered as another deployment; signing in again"
+    end if
+    m.savedPick = invalid
     s = AA_copy(m.global.session)
     s.serverUrl = base
     s.serverOrigin = Url_origin(base)
@@ -884,5 +1128,6 @@ sub onFoundIdentity(event as object)
     end if
     m.field.text = srv.url
     focusOn("connect")
-    startConnect(srv.url, srv.serverId)
+    m.savedPick = invalid
+    startConnect(srv.url, srv.serverId, [Url_normalize(srv.url)])
 end sub
