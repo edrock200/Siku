@@ -1244,7 +1244,7 @@ sub openFilterPanel()
     m.draftMatch = m.matchAll
     m.filterPanel.header = "FILTER BY"
     m.filterPanel.footer = "→ picks values · Back applies"
-    m.filterPanel.maxRows = 10
+    m.filterPanel.maxRows = 9 ' ends above the title-safe bottom edge
     m.filterPanel.focusIndex = 0
     renderFilterMain()
     m.filterPanel.translation = [80 + m.filterPill.translation[0], m.controls.translation[1] + 64]
