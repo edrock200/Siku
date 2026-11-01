@@ -23,7 +23,9 @@
   Fields
     config      in:  {castEnabled, sealed, deviceId, deviceName, serverId, serverName,
                       serverIdentity, signedIn, hasLogin, playing, pairing: {mode: ""|"setup"|"login", srv}}
-    command     in:  {kind: castSend|castClose|castCloseAll|castAuthorize|pairSend|pairClose|resetKey, ...}
+    command     in:  {kind: castSend|castClose|castCloseAll|castAuthorize|pairSend|pairClose|pairBusy|resetKey|shutdown, ...}
+                     pairBusy {conn, busy}: a phone sign-in attempt is in flight (no 180 s idle limit);
+                     shutdown: the app is leaving (cancel/close every phone, mDNS goodbye, then `stopped`)
     discover    in:  {kind: start, token, allowSelf} | {kind: stop}; also read when the Task starts,
                      since the server screen can ask before the Task observes its fields
     castState   in:  the latest SiloCast playback state, sent to every authorized controller
@@ -31,6 +33,7 @@
     pairEvent   out: {type: connected|message|closed, conn, message}
     status      out: {castPort, castListening, pairPort, pairListening, mdns, ip, controllers: [...]}
     pairingInfo out: {keyId, keyText (groups of four), keyBase32, ip, port, sealed}
+    stopped     out: true once `shutdown` has said goodbye
     discovery   out: {token, status: scanning|complete|unavailable|cancelled, sent, received,
                       servers: [{name, url (http://ip:port), address, port, serverId}]}
   SPDX-License-Identifier: AGPL-3.0-or-later
@@ -46,6 +49,7 @@
     <field id="status" type="assocarray" />
     <field id="pairingInfo" type="assocarray" />
     <field id="discovery" type="assocarray" alwaysNotify="true" />
+    <field id="stopped" type="boolean" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/lan/LanTask.brs" />
   <script type="text/brightscript" uri="pkg:/components/lan/LanBytes.brs" />

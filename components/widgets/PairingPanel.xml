@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Phone sign-in overlay for the server and sign-in screens (Android TV TvPairingPanel): a dimmed
-  screen with one glass card: eyebrow ("Step 01 — Connect"), title, detail, an optional code in
-  large type, an optional server line, a spinner while waiting, and up to three buttons.
+  screen with one glass card: a chip that says what is happening ("A nearby phone is setting up
+  this TV"), title, detail, an optional code in large type, an optional card title (the server)
+  and card note, a spinner while waiting, up to three buttons and a note under them (Silo Android
+  TV #761, worded like Apple TV's receiver panel).
   Fields
-    view    in   {eyebrow, title, detail, code, server, busy, buttons: [{id, text}]}; invalid hides
+    view    in   {eyebrow, title, detail, code, server, cardNote, busy, buttons: [{id, text}], note}; invalid hides
     chosen  out  the id of the button pressed, or "back"
   Focus stays on the buttons (left/right); a view without buttons keeps focus on the card so
   Back still reaches it.
@@ -37,8 +39,14 @@
       <Label id="server" width="880" color="0xEDEDED66">
         <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="22" />
       </Label>
+      <Label id="cardNote" width="880" wrap="true" maxLines="3" color="0xEDEDED66">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="22" />
+      </Label>
       <LoadingSpinner id="spinner" size="44" color="0xEDEDED9E" visible="false" />
       <Group id="buttons" focusable="true" />
+      <Label id="note" width="880" wrap="true" maxLines="3" color="0xEDEDED66">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="22" />
+      </Label>
     </Group>
   </children>
 </component>

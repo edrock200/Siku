@@ -158,6 +158,7 @@ end sub
 
 sub onSealedPressed()
     m.prefs.sealed = not m.prefs.sealed
+    m.prefs.sealedChosen = true
     savePrefs()
 end sub
 

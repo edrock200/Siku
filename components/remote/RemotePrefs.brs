@@ -1,23 +1,33 @@
 ' Remote Control settings, device-local (registry "remoteControl"), and the helpers screens use
 ' to reach the receiver. Any component may include this file.
 '   enabled  Remote Control on (default on): Siku listens for Silo's phone app.
-'   sealed   Require pairing (default on): only a phone that scanned Connect a Phone's code
-'            (holding the pairing key) can connect; off = any device on this network whose
-'            hello names this Roku's server (nothing proves it is signed in to it).
+'   sealed   Require pairing (optional, default OFF): only a phone that scanned Connect a Phone's
+'            code (holding the pairing key) can connect; off = any device on this network whose
+'            hello names this Roku's server (as Silo's own Roku app, where pairing is opt-in).
+'            Builds before v0.1.31 saved sealed: true with every save, so a saved value counts only
+'            when the person chose it on Connect a Phone (sealedChosen); everyone else gets the
+'            default. Phone sign-in (setup / sign-in screens) never needs the key.
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
 function RemotePrefs_load() as object
-    p = { enabled: true, sealed: true }
+    p = { enabled: true, sealed: false, sealedChosen: false }
     saved = Registry_read("remoteControl")
     if saved <> invalid and Type(saved) = "roAssociativeArray" then
         if Type(saved.enabled) = "Boolean" or Type(saved.enabled) = "roBoolean" then p.enabled = saved.enabled
-        if Type(saved.sealed) = "Boolean" or Type(saved.sealed) = "roBoolean" then p.sealed = saved.sealed
+        chosen = saved.sealedChosen
+        if (Type(chosen) = "Boolean" or Type(chosen) = "roBoolean") and chosen then
+            if Type(saved.sealed) = "Boolean" or Type(saved.sealed) = "roBoolean" then p.sealed = saved.sealed
+            p.sealedChosen = true
+        end if
     end if
     return p
 end function
 
 sub RemotePrefs_save(p as object)
-    Registry_write("remoteControl", { enabled: p.enabled, sealed: p.sealed })
+    chosen = false
+    c = p.sealedChosen
+    if Type(c) = "Boolean" or Type(c) = "roBoolean" then chosen = c
+    Registry_write("remoteControl", { enabled: p.enabled, sealed: p.sealed, sealedChosen: chosen })
     rc = RemoteControl_node()
     if rc <> invalid then rc.reloadPrefs = true
 end sub

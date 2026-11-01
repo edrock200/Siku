@@ -176,31 +176,31 @@ function Mdns_respond(query as dynamic, services as object, host as string, ip a
         anyType = q.qtype = 255
         if q.name = "_services._dns-sd._udp.local" and (q.qtype = 12 or anyType) then
             for each s in services
-                Mdns_addOnce(answers, answered, "", Mdns_record("_services._dns-sd._udp.local", 12, false, 4500, Mdns_nameHex(Mdns_fullType(s))))
+                Mdns_addOnce(answers, answered, "", Mdns_record("_services._dns-sd._udp.local", 12, false, Mdns_shortTtl(), Mdns_nameHex(Mdns_fullType(s))))
                 matched = true
             end for
         end if
         for each s in services
             if q.name = LCase(Mdns_fullType(s)) and (q.qtype = 12 or anyType) then
-                Mdns_addOnce(answers, answered, "", Mdns_ptrRecord(s, 4500))
-                Mdns_addOnce(additionals, seen, "srv" + s.instance + s.serviceType, Mdns_srvRecord(s, host, 120))
-                Mdns_addOnce(additionals, seen, "txt" + s.instance + s.serviceType, Mdns_txtRecord(s, 4500))
-                Mdns_addOnce(additionals, seen, "a", Mdns_aRecord(host, ip, 120))
+                Mdns_addOnce(answers, answered, "", Mdns_ptrRecord(s, Mdns_shortTtl()))
+                Mdns_addOnce(additionals, seen, "srv" + s.instance + s.serviceType, Mdns_srvRecord(s, host, Mdns_shortTtl()))
+                Mdns_addOnce(additionals, seen, "txt" + s.instance + s.serviceType, Mdns_txtRecord(s, Mdns_txtTtl()))
+                Mdns_addOnce(additionals, seen, "a", Mdns_aRecord(host, ip, Mdns_shortTtl()))
                 matched = true
             else if q.name = LCase(Mdns_fullInstance(s)) then
                 if q.qtype = 33 or anyType then
-                    Mdns_addOnce(answers, answered, "", Mdns_srvRecord(s, host, 120))
-                    Mdns_addOnce(additionals, seen, "a", Mdns_aRecord(host, ip, 120))
+                    Mdns_addOnce(answers, answered, "", Mdns_srvRecord(s, host, Mdns_shortTtl()))
+                    Mdns_addOnce(additionals, seen, "a", Mdns_aRecord(host, ip, Mdns_shortTtl()))
                     matched = true
                 end if
                 if q.qtype = 16 or anyType then
-                    Mdns_addOnce(answers, answered, "", Mdns_txtRecord(s, 4500))
+                    Mdns_addOnce(answers, answered, "", Mdns_txtRecord(s, Mdns_txtTtl()))
                     matched = true
                 end if
             end if
         end for
         if q.name = hostL and (q.qtype = 1 or anyType) then
-            Mdns_addOnce(answers, answered, "", Mdns_aRecord(host, ip, 120))
+            Mdns_addOnce(answers, answered, "", Mdns_aRecord(host, ip, Mdns_shortTtl()))
             matched = true
         end if
         if matched and q.unicast then unicast = true
@@ -223,17 +223,33 @@ sub Mdns_addOnce(list as object, seen as object, key as string, record as string
     list.Push(record)
 end sub
 
-' Every record of every service at once: the unsolicited announcement (ttl 4500/120) or, with
-' ttl 0, the goodbye that removes them from the phones' caches.
+' Every record of every service at once: the unsolicited announcement (any ttl > 0: PTR, SRV and
+' A 120 s, TXT 4500 s) or, with ttl 0, the goodbye that removes them from the phones' caches.
 function Mdns_announcement(services as object, host as string, ip as string, ttl as integer) as object
     answers = []
-    short = 120
-    if ttl = 0 then short = 0
+    short = Mdns_shortTtl()
+    txtTtl = Mdns_txtTtl()
+    if ttl = 0 then
+        short = 0
+        txtTtl = 0
+    end if
     for each s in services
-        answers.Push(Mdns_ptrRecord(s, ttl))
+        answers.Push(Mdns_ptrRecord(s, short))
         answers.Push(Mdns_srvRecord(s, host, short))
-        answers.Push(Mdns_txtRecord(s, ttl))
+        answers.Push(Mdns_txtRecord(s, txtTtl))
     end for
     answers.Push(Mdns_aRecord(host, ip, short))
     return Mdns_message(answers, [])
+end function
+
+' Record lifetimes, as Silo's Roku app announces them (Silo-Server/silo-roku, AGPL-3.0,
+' source/control/mdns.bs HOST_TTL / TXT_TTL; docs/silocontrol.md): PTR, SRV and A live 120 s, so
+' a Roku that was switched off without goodbyes leaves the phones' lists within two minutes; TXT
+' keeps 4500 s (it is re-read with the SRV anyway).
+function Mdns_shortTtl() as integer
+    return 120
+end function
+
+function Mdns_txtTtl() as integer
+    return 4500
 end function

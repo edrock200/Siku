@@ -20,7 +20,7 @@ sub Pair_start(mode as string, srv = "" as string)
         m.pairTimer.repeat = false
         m.pairTimer.observeField("fire", "Pair_onTimer")
     end if
-    m.pair = { mode: mode, srv: srv, conn: "", consented: false, push: invalid, attempt: invalid, signedIn: "", view: "idle", gen: 0, timerAction: "" }
+    m.pair = { mode: mode, srv: srv, conn: "", consented: false, push: invalid, attempt: invalid, signedIn: "", view: "idle", gen: 0, timerAction: "", busy: false, routed: false }
     t = RemoteControl_lanTask()
     if t = invalid then return
     t.unobserveField("pairEvent")
@@ -60,6 +60,7 @@ sub Pair_onEvent(event as object)
         m.pair.conn = conn
         m.pair.consented = false
         m.pair.signedIn = ""
+        m.pair.busy = false
         print "[siku-pair] phone connected"
         Pair_view("connected")
     else if conn <> m.pair.conn then
@@ -131,7 +132,7 @@ end sub
 ' ---------- The panel ----------
 
 function Pair_noun() as string
-    return "this Roku"
+    return "this TV"
 end function
 
 sub Pair_show(view as dynamic)
@@ -139,54 +140,75 @@ sub Pair_show(view as dynamic)
     if view = invalid then
         m.pair.view = "idle"
         m.pairPanel.view = {}
+        Pair_setBusy(false)
         applyFocus()
         return
     end if
     m.pairPanel.view = view
 end sub
 
+' The LanTask closes a phone that is silent for 180 s, except while an attempt is in flight
+' (checking the pushed address, waiting on the viewer's choice of address, or showing the code).
+sub Pair_setBusy(busy as boolean)
+    if m.pair = invalid or m.pair.conn = "" then return
+    if m.pair.busy = busy then return
+    m.pair.busy = busy
+    t = RemoteControl_lanTask()
+    if t <> invalid then t.command = { kind: "pairBusy", conn: m.pair.conn, busy: busy }
+end sub
+
+' The panel, state by state, in the words of Silo's Android TV receiver panel (Silo Android #761,
+' itself worded like Apple TV's, "this TV" for "this Apple TV"): a chip that says what is happening,
+' the headline, the detail, and the card's title and note.
 sub Pair_view(name as string, extra = {} as object)
     m.pair.view = name
+    print "[siku-pair] panel " + name
+    Pair_setBusy(name = "starting" or name = "unreachable" or name = "confirm")
     login = Pair_isLogin()
     push = m.pair.push
     server = ""
     if push <> invalid then server = Pair_displayName(push)
     v = invalid
     if name = "connected" then
-        detail = "On your phone or tablet, choose which server " + Pair_noun() + " should sign in to."
-        if login then detail = "Continue on your phone or tablet."
-        v = { eyebrow: "Step 01 — Connect", title: "Phone or tablet connected", detail: detail, buttons: [{ id: "cancel", text: "Cancel" }] }
+        if login then
+            v = { eyebrow: "Phone or tablet connected", title: "Continue on your phone", detail: "Continue on your phone or tablet.", server: "On your phone", cardNote: "Approve the sign-in there.", busy: true, buttons: [{ id: "cancel", text: "Cancel" }] }
+        else
+            v = { eyebrow: "Phone or tablet connected", title: "Choose servers on your phone", detail: "On your phone or tablet, choose which servers " + Pair_noun() + " should sign in to.", server: "On your phone", cardNote: "Pick the servers to bring over, then tap Continue.", busy: true, buttons: [{ id: "cancel", text: "Cancel" }] }
+        end if
     else if name = "consent" then
+        chip = "A nearby phone is setting up " + Pair_noun()
         title = "Allow this setup?"
-        if login then title = "Allow this sign-in?"
+        note = "Only allow it if you started setup on your own phone or tablet."
+        if login then
+            chip = "A nearby phone is signing in " + Pair_noun()
+            title = "Allow this sign-in?"
+            note = "Only allow it if you started this on your own phone or tablet."
+        end if
         detail = "A nearby phone or tablet wants to sign " + Pair_noun() + " in to " + server + "."
         if Lan_isTrue(m.pair.unencrypted) then detail = detail + " Your password and what you watch will be sent unencrypted to " + Url_host(Lan_trimUrl(push.serverURL)) + ". Only do this on a network you trust."
-        v = { eyebrow: "Step 01 — Connect", title: title, detail: detail, buttons: [{ id: "allow", text: "Allow" }, { id: "deny", text: "Don't allow" }] }
+        v = { eyebrow: chip, title: title, detail: detail, server: server, cardNote: "After you allow it, a code appears here to compare with your phone.", buttons: [{ id: "allow", text: "Allow" }, { id: "deny", text: "Don" + Chr(8217) + "t Allow" }], note: note }
     else if name = "starting" then
-        title = "Setting up " + Pair_noun()
-        label = "SETTING UP "
-        if login then
-            title = "Signing in " + Pair_noun()
-            label = "SIGNING IN TO "
-        end if
-        v = { eyebrow: "Step 02 — Account", title: title, detail: "Starting secure sign-in…", server: label + server, busy: true, buttons: [{ id: "cancel", text: "Cancel" }] }
+        v = { eyebrow: "Getting a code", title: "Signing in to " + server, detail: "Getting " + Pair_noun() + Chr(8217) + "s sign-in code.", server: server, busy: true, buttons: [{ id: "cancel", text: "Cancel" }] }
     else if name = "unreachable" then
-        detail = "This Roku can't reach " + server + " at " + Url_host(Lan_trimUrl(push.serverURL)) + ". Check its network connection and try again."
+        detail = "This TV can" + Chr(8217) + "t reach " + server + " at " + Url_host(Lan_trimUrl(push.serverURL)) + ". Check its network connection and try again."
         buttons = []
         if not Str_isEmpty(extra.alternate) then buttons.Push({ id: "alternate", text: "Use " + Url_host(extra.alternate) })
         buttons.Push({ id: "retry", text: "Try again" })
         buttons.Push({ id: "cancel", text: "Cancel" })
-        v = { eyebrow: "Step 02 — Account", title: "Can't reach " + server, detail: detail, buttons: buttons }
+        v = { title: "Can" + Chr(8217) + "t reach " + server, detail: detail, server: "No answer", cardNote: "This TV couldn" + Chr(8217) + "t reach the address your phone sent.", buttons: buttons }
     else if name = "confirm" then
-        v = { eyebrow: "Almost there", title: "Confirm on your phone or tablet", detail: "Check that your phone or tablet shows this code, then approve.", code: Pair_codeText(extra.userCode), server: server, buttons: [{ id: "cancel", text: "Cancel" }] }
+        cardNote = ""
+        words = UCase(Str_orEmpty(extra.matchCode).Trim())
+        if words <> "" then cardNote = "Older phones show " + words + " instead."
+        v = { eyebrow: "Waiting for your phone", title: "Confirm on your phone", detail: "Check that your phone or tablet shows this code, then approve.", code: Pair_codeText(extra.userCode), server: server, cardNote: cardNote, busy: true, buttons: [{ id: "cancel", text: "Cancel" }] }
     else if name = "signedIn" then
-        v = { eyebrow: "All set", title: "Signed in", detail: "Finishing up on your phone or tablet…", server: server, busy: true }
+        v = { title: "Signed in", detail: "Finishing up on your phone or tablet" + Chr(8230), server: server, busy: true }
     else if name = "completed" then
-        v = { eyebrow: "All set", title: "You're all set", detail: "Signed in to " + m.pair.signedIn + ". Taking you to your profiles…", busy: true }
+        v = { title: "You" + Chr(8217) + "re all set", detail: "Signed in to " + m.pair.signedIn + ". Taking you to your profiles" + Chr(8230), server: "Signed in", buttons: [{ id: "continue", text: "Continue" }] }
     else if name = "failed" then
-        title = "Setup didn't finish"
-        if login then title = "Sign-in didn't finish"
-        v = { eyebrow: "Step 02 — Account", title: title, detail: Pair_failureText(Str_orEmpty(extra.code), server), buttons: [{ id: "close", text: "OK" }] }
+        title = "Setup didn" + Chr(8217) + "t finish"
+        if login then title = "Sign-in didn" + Chr(8217) + "t finish"
+        v = { title: title, detail: Pair_failureText(Str_orEmpty(extra.code), server), server: "Not finished", cardNote: server + " wasn" + Chr(8217) + "t signed in.", buttons: [{ id: "close", text: "OK" }] }
     end if
     Pair_show(v)
 end sub
@@ -198,12 +220,15 @@ function Pair_codeText(code as dynamic) as string
 end function
 
 function Pair_failureText(code as string, server as string) as string
-    if code = "denied" then return "The sign-in to " + server + " was declined on the phone."
-    if code = "expired" then return "The code for " + server + " expired before it was approved. Try again from your phone."
-    if code = "unreachable" then return "This Roku can't reach " + server + ". Check its network connection and try again."
-    if code = "identity_mismatch" then return "The address for " + server + " answered as a different server, so nothing was signed in."
-    if code = "update_required" then return server + " or Siku needs an update before this Roku can sign in."
-    return "Something went wrong signing in to " + server + ". Try again from your phone, or sign in on this Roku."
+    if code = "denied" then return "The sign-in to " + server + " was declined. Try again from your phone or tablet."
+    if code = "expired" then return "The code for " + server + " expired before it was approved. Try again from your phone or tablet."
+    if code = "unreachable" then return "This TV can" + Chr(8217) + "t reach " + server + ". You can also add the server manually with its public address."
+    if code = "identity_mismatch" then
+        if Pair_isLogin() then return "The phone or tablet offered " + server + ", which isn" + Chr(8217) + "t the server this TV uses. Choose this TV" + Chr(8217) + "s server on your phone or tablet, or sign in here with a password."
+        return "The phone or tablet sent an address for " + server + " that answered as a different server. Check the server on your phone or tablet, or add your server manually."
+    end if
+    if code = "update_required" then return server + " or this app needs an update before this TV can sign in."
+    return "Something went wrong signing in to " + server + ". Try again from your phone or tablet, or add your server manually."
 end function
 
 sub Pair_onChosen()
@@ -221,6 +246,8 @@ sub Pair_onChosen()
         Pair_useTarget(m.pair.alternate, Str_orEmpty(m.pair.push.serverIdentity).Trim())
     else if id = "retry" and v = "unreachable" then
         Pair_begin()
+    else if id = "continue" and v = "completed" then
+        Pair_onTimerRoute()
     else if id = "close" or (id = "back" and v = "failed") then
         Pair_show(invalid)
     else if id = "cancel" or id = "back" then
@@ -255,7 +282,7 @@ end sub
 sub Pair_complete()
     if m.pair.view = "completed" then return
     Pair_view("completed")
-    Pair_schedule("route", 1.5)
+    Pair_schedule("route", 2)
 end sub
 
 ' Ends the attempt in flight; withdraws a setup code nobody will approve now.
@@ -286,9 +313,17 @@ sub Pair_onTimer()
     else if a = "complete" then
         Pair_complete()
     else if a = "route" then
-        Pair_stop()
-        Nav_reset("@start")
+        Pair_onTimerRoute()
     end if
+end sub
+
+' "You're all set": Continue, or 2 s later, moves on to the profiles.
+sub Pair_onTimerRoute()
+    if m.pair = invalid or m.pair.routed = true then return
+    m.pair.routed = true
+    m.pairTimer.control = "stop"
+    Pair_stop()
+    Nav_reset("@start")
 end sub
 
 sub Pair_begin()
@@ -402,7 +437,7 @@ sub Pair_onStart(event as object)
     if expiresIn < 1 then expiresIn = 900
     a.deadline = Time_nowSeconds() + expiresIn
     Pair_send({ "v": 1, "type": "deviceStarted", "serverURL": Str_orEmpty(m.pair.push.serverURL), "userCode": Str_orEmpty(d.user_code), "matchCode": Str_orEmpty(d.match_code) })
-    Pair_view("confirm", { userCode: d.user_code })
+    Pair_view("confirm", { userCode: d.user_code, matchCode: d.match_code })
     Pair_schedule("poll", interval)
 end sub
 
@@ -498,7 +533,7 @@ sub Pair_loginCode()
     end if
     a.userCode = Str_orEmpty(code.user_code)
     Pair_send({ "v": 1, "type": "deviceStarted", "serverURL": Str_orEmpty(m.pair.push.serverURL), "userCode": a.userCode, "matchCode": Str_orEmpty(code.match_code) })
-    Pair_view("confirm", { userCode: a.userCode })
+    Pair_view("confirm", { userCode: a.userCode, matchCode: code.match_code })
     print "[siku-pair] sent the sign-in screen's code"
 end sub
 

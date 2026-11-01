@@ -42,9 +42,18 @@ function lanPairFrameBytes() as integer
 end function
 
 ' A phone sign-in connection that sends no frame this long after connecting is closed (it holds
-' the only slot). Once the phone has spoken, the sign-in flow's own steps govern it.
+' the only slot).
 function lanPairIdleMs() as integer
     return 30000
+end function
+
+' Once the phone has spoken, it is closed after this long without a frame (with cancel
+' idle_timeout), except while a sign-in attempt is in flight (the screen reports it with
+' pairBusy): the person may take a while on the phone's server chooser, but a phone that went to
+' sleep without closing must not hold the only slot. Silo Android TV #748; Silo-Server/silo-roku,
+' AGPL-3.0 (components/AppSceneCompanion.bs COMPANION_IDLE_SECONDS).
+function lanPairQuietMs() as integer
+    return 180000
 end function
 
 ' A queue that makes no progress for this long closes the connection.
@@ -92,6 +101,7 @@ sub runLan()
     m.mdnsSendFailures = 0
     m.mdnsIgnored = 0
     m.disc = invalid      ' the running "Find servers" scan, if any
+    m.down = false        ' shutdown ran: the app is leaving, nothing listens or announces again
     m.ip = deviceIp()
     loadKey()
 
@@ -189,7 +199,7 @@ end sub
 ' ---------- Config ----------
 
 sub applyConfig(c as dynamic)
-    if c = invalid or Type(c) <> "roAssociativeArray" then return
+    if c = invalid or Type(c) <> "roAssociativeArray" or m.down then return
     old = m.cfg
     m.cfg = c
     if m.cfg.pairing = invalid then m.cfg.pairing = { mode: "" }
@@ -338,7 +348,7 @@ sub acceptOne(s as object, kind as string)
     cn = { id: "c" + m.connSeq.ToStr(), kind: kind, sock: s, frames: LanFrames_new(), openedAt: nowMs(), peer: peer
         sealedState: "none", keys: invalid, sendSeq: 0, recvSeq: 0
         didHello: false, authorized: false, authorizedAtHello: false, granted: false, features: {}, deviceId: "", deviceName: "", serverId: "", serverIdentity: ""
-        passive: false, missed: 0, lastState: "", lastStateAt: 0, budgetAt: 0, budget: 0, rateNoticeAt: -100000, gotFrame: false
+        passive: false, missed: 0, lastState: "", lastStateAt: 0, budgetAt: 0, budget: 0, rateNoticeAt: -100000, gotFrame: false, lastFrameAt: 0, busy: false
         outQ: [], outOff: 0, outBytes: 0, outSince: 0 }
     if kind = "pair" then
         cn.frames.max = lanPairFrameBytes()
@@ -431,6 +441,7 @@ end sub
 
 sub onFrame(cn as object, payload as object)
     cn.gotFrame = true
+    cn.lastFrameAt = nowMs()
     if cn.kind = "cast" and cn.sealedState = "await" then
         onSealedHello(cn, payload)
         return
@@ -607,6 +618,16 @@ sub onCommand(c as dynamic)
         if cn <> invalid and c.message <> invalid then sendJson(cn, c.message)
     else if kind = "castClose" or kind = "pairClose" then
         if cn <> invalid then goodbye(cn, Str_orEmpty(c.reason))
+    else if kind = "pairBusy" then
+        ' A sign-in attempt started or ended: no idle limit while one is in flight, and the quiet
+        ' time counts again from when it ends.
+        if cn <> invalid and cn.kind = "pair" then
+            busy = Lan_isTrue(c.busy)
+            if cn.busy and not busy then cn.lastFrameAt = nowMs()
+            cn.busy = busy
+        end if
+    else if kind = "shutdown" then
+        shutdown()
     else if kind = "castCloseAll" then
         closeAll("cast", Str_orEmpty(c.reason))
     else if kind = "castCloseActive" then
@@ -685,6 +706,9 @@ sub onTick()
         if cn <> invalid and cn.kind = "pair" and not cn.gotFrame and now - cn.openedAt > lanPairIdleMs() then
             print "[siku-lan] phone sign-in " + cn.id + " sent nothing in " + Int(lanPairIdleMs() / 1000).ToStr() + " s; closing"
             closeConn(cn, "idle")
+        else if cn <> invalid and cn.kind = "pair" and cn.gotFrame and not cn.busy and now - cn.lastFrameAt > lanPairQuietMs() then
+            print "[siku-lan] phone sign-in " + cn.id + " silent for " + Int(lanPairQuietMs() / 1000).ToStr() + " s with no sign-in in progress; closing (idle_timeout)"
+            goodbye(cn, "idle_timeout")
         end if
     end for
     mdnsTick(now)
@@ -807,6 +831,34 @@ sub goodbye(cn as object, reason as string)
         sendJson(cn, { "v": 1, "type": "cancel", "reason": reason })
     end if
     closeConn(cn, "goodbye " + reason)
+end sub
+
+' The app is leaving (Back from the first screen): every phone hears why, the mDNS records are
+' withdrawn (TTL 0, so phones drop this Roku now rather than when the records expire) and the
+' listeners close. `stopped` tells MainScene it may exit; it waits at most 2 s for it.
+sub shutdown()
+    if m.down then
+        m.top.stopped = true
+        return
+    end if
+    m.down = true
+    discoverStop()
+    closeAll("pair", "receiver_cancelled")
+    closeAll("cast", "tv_disconnected")
+    flushAll()
+    if m.io.mdns <> invalid and m.mdnsAdvertised.Count() > 0 then
+        sent = mdnsSend(Mdns_announcement(m.mdnsAdvertised, mdnsHost(), m.ip, 0), invalid)
+        print "[siku-lan] app exit: mdns goodbye for " + m.mdnsAdvertised.Count().ToStr() + " service(s) sent=" + Lan_boolText(sent)
+        m.mdnsAdvertised = []
+        m.mdnsAnnounceAt = []
+    else
+        print "[siku-lan] app exit: nothing advertised"
+    end if
+    if m.io.pairListener <> invalid then m.io.pairListener.Close()
+    m.io.pairListener = invalid
+    if m.io.castListener <> invalid then m.io.castListener.Close()
+    m.io.castListener = invalid
+    m.top.stopped = true
 end sub
 
 sub closeAll(kind as string, reason as string)
@@ -966,7 +1018,7 @@ sub mdnsTick(now as integer)
     if m.mdnsAnnounceAt.Count() > 0 and now >= m.mdnsAnnounceAt[0] then
         m.mdnsAnnounceAt.Shift()
         if m.mdnsAdvertised.Count() > 0 then
-            ann = Mdns_announcement(m.mdnsAdvertised, mdnsHost(), m.ip, 4500)
+            ann = Mdns_announcement(m.mdnsAdvertised, mdnsHost(), m.ip, Mdns_txtTtl())
             if mdnsSend(ann, invalid) then print "[siku-lan] mdns announced " + m.mdnsAdvertised.Count().ToStr() + " service(s) as " + mdnsHost() + " " + m.ip
         end if
     end if

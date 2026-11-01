@@ -21,7 +21,9 @@ identity the Roku's hello advertises (Silo Android #717).
 `cast --check-limits` that an oversized frame before the hello is refused and a seventh controller
 is turned away; `cast --hold N` stops after the handoff and keeps the connection N seconds (sign out
 or change server on the Roku meanwhile to see the borrowed profile end); `pair --idle` connects and
-says nothing, expecting the Roku to close the sign-in connection after about 30 s.
+says nothing, expecting the Roku to close the sign-in connection after about 30 s;
+`pair --expect-idle-timeout` pushes and then says nothing, expecting `cancel idle_timeout` after
+about 180 s (Silo Android #748; no limit while a sign-in attempt is in flight).
 The protocol code is tools/silo_lan.py (ported from silo-android FETCH_HEAD 88db96c). The phone
 approves handoff codes through the mock's /api/v2/auth/device/approve-handoff; against a real
 server pass --token (an access token of the phone's account) to approve with it.
@@ -120,6 +122,25 @@ def cmd_pair(args):
         push["endpoints"] = [{"url": u, "kind": "public"} for u in args.endpoint]
     conn.send(push)
     log("pushed", args.server, "- allow it on the Roku (OK on Allow) if it asks")
+    if args.expect_idle_timeout:
+        # Silo Android #748: after its last frame the phone says nothing; with no sign-in attempt in
+        # flight (consent left unanswered on the Roku) the Roku sends cancel idle_timeout at ~180 s.
+        pushed_at = time.time()
+        while True:
+            try:
+                m = conn.recv(400)
+            except socket.timeout:
+                log("FAIL: nothing from the Roku in 400 s")
+                return 1
+            waited = time.time() - pushed_at
+            if m is None:
+                log("FAIL: the Roku closed after %.0f s without cancel idle_timeout" % waited)
+                return 1
+            log("roku (%.0f s):" % waited, m)
+            if m.get("type") == "cancel":
+                ok = m.get("reason") == "idle_timeout" and 170 <= waited <= 320
+                log(("ok: " if ok else "FAIL: ") + "cancel %s after %.0f s of silence" % (m.get("reason"), waited))
+                return 0 if ok else 1
     started = None
     deadline = time.time() + args.timeout
     while time.time() < deadline:
@@ -489,6 +510,8 @@ def main():
     p.add_argument("--timeout", type=float, default=120)
     p.add_argument("--approve", action="store_true", help="approve the code on the mock (switch device_manual=1)")
     p.add_argument("--idle", action="store_true", help="say nothing; expect the Roku to close after about 30 s")
+    p.add_argument("--expect-idle-timeout", action="store_true",
+                   help="push, then say nothing (leave the Roku's consent unanswered); expect cancel idle_timeout after about 180 s")
     c = sub.add_parser("cast")
     c.add_argument("--link")
     c.add_argument("--host")

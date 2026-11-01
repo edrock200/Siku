@@ -212,6 +212,12 @@ function buildPane(catId as string) as object
         out.Push({ kind: "header", text: "Profile" })
         out.Push({ kind: "row", row: rowDef("switchProfile", "action", "Switch Profile") })
 
+        ' Remote control from Silo's phone app (ConnectPhoneScreen, also in the profile menu):
+        ' Remote Control on/off and the optional Require Pairing (off unless turned on there).
+        out.Push({ kind: "header", text: "Phones" })
+        out.Push({ kind: "row", row: rowDef("connectPhone", "action", "Connect a Phone") })
+        out.Push({ kind: "footer", text: "Control Siku from Silo's app on your phone or tablet. Require Pairing is optional: turn it on there if only phones that scanned this Roku's code may connect." })
+
         out.Push({ kind: "header", text: "Metadata" })
         out.Push({ kind: "row", row: rowDef("metadataLanguage", "choice", "Metadata Language") })
         out.Push({ kind: "footer", text: "Fallback language Silo prefers for titles, descriptions, and artwork." })
@@ -1265,6 +1271,8 @@ sub activateRow(row as object)
         deleteValue("ui.theme_music_loop", "profile_device")
     else if id = "switchProfile" then
         Nav_push("ProfileScreen", { switching: true })
+    else if id = "connectPhone" then
+        Nav_push("ConnectPhoneScreen", {})
     else if id = "learnedLimit" then
         Conn_resetLimit()
     else if id = "connectionSpeed" then
