@@ -13,7 +13,7 @@ sub Memory_release(root as object)
     stash = { posters: [], lists: [] }
     Memory_walk(root, stash)
     m.memoryStash = stash
-    print "[siku-memory] released "; root.subtype(); " posters="; stash.posters.Count(); " lists="; stash.lists.Count()
+    Diag_log(Diag_join(["[siku-memory] released ", root.subtype(), " posters=", stash.posters.Count(), " lists=", stash.lists.Count()]))
 end sub
 
 sub Memory_walk(node as object, stash as object)
@@ -65,5 +65,5 @@ sub Memory_restore()
             end if
         end if
     end for
-    print "[siku-memory] restored "; m.top.subtype()
+    Diag_log(Diag_join(["[siku-memory] restored ", m.top.subtype()]))
 end sub

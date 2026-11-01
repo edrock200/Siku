@@ -46,11 +46,26 @@ sub Main(args as dynamic)
         warnings = monitor.EnableMemoryWarningEvent(true)
     end if
     if not warnings and di <> invalid then di.EnableLowGeneralMemoryEvent(true)
+    ' A low-memory Roku (MainEvents_deviceTier) gets smaller budgets from MainScene (MemoryPolicy.brs).
+    scene.deviceTier = MainEvents_deviceTier(MainEvents_deviceFacts(di, monitor, warnings))
 
+    ' After a warning the channel's usage is sampled every 2 s until it has stayed under 65 % for
+    ' three samples, so the level can come back down (Roku OS 15.1 sends one warning at 80 % only).
+    calm = 3
     while true
-        msg = Wait(0, port)
+        timeout = 0
+        if calm < 3 then timeout = 2000
+        msg = Wait(timeout, port)
         msgType = Type(msg)
-        if msgType = "roSGScreenEvent"
+        if msg = invalid then
+            sample = MainEvents_memorySample(monitor)
+            if sample < 0 then
+                calm = 3
+            else
+                scene.memoryPressure = sample
+                if sample < 65 then calm = calm + 1 else calm = 0
+            end if
+        else if msgType = "roSGScreenEvent"
             if msg.IsScreenClosed() then return
         else if msgType = "roSGNodeEvent"
             if msg.GetField() = "exitApp" and msg.GetData() = true
@@ -76,6 +91,7 @@ sub Main(args as dynamic)
             info = msg.GetInfo()
             pressure = MainEvents_memoryPressure(msgType, info)
             if pressure >= 0 then scene.memoryPressure = pressure
+            if pressure >= 65 then calm = 0
             if msgType = "roDeviceInfoEvent" then
                 focused = MainEvents_appFocus(info)
                 if focused <> invalid then scene.appFocused = focused

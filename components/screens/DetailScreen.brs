@@ -1134,7 +1134,7 @@ sub onRelatedSelected()
     picked = Str_orEmpty(card.content_id)
     if m.item <> invalid and picked = Str_orEmpty(m.item.content_id) then picked = currentId
     action = Nav_chainAction(currentId, chainStart, picked)
-    print "[siku-detail] more like this pick action="; action
+    Diag_log(Diag_join(["[siku-detail] more like this pick action=", action]))
     if action = "ignore" then return
     ' One move per page: a second Select that lands while this page is leaving opens nothing.
     m.chainLeaving = true
@@ -1220,7 +1220,7 @@ sub playExtra(e as object)
     if fid <> "" then params.fileId = fid
     d = Num_or(ex.duration_seconds, 0)
     if d > 0 then params.durationSeconds = d
-    print "[siku-trailer] play local extra " + params.itemId + " file=" + fid
+    Diag_log("[siku-trailer] play local extra " + params.itemId + " file=" + fid)
     ThemeMusic_stop()
     Nav_play(params)
 end sub
@@ -1230,7 +1230,7 @@ end sub
 sub openYouTube(e as object)
     if m.ytTask <> invalid then return
     m.ytEntry = e
-    print "[siku-trailer] open YouTube video=" + e.videoId
+    Diag_log("[siku-trailer] open YouTube video=" + e.videoId)
     m.global.toast = "Opening YouTube…"
     task = CreateObject("roSGNode", "YouTubeLaunchTask")
     task.request = { videoId: e.videoId, title: e.title }
@@ -1456,7 +1456,7 @@ sub onMembershipWritten(event as object)
         m.global.toast = membershipToast(kind, value)
         return
     end if
-    print "[siku-detail] "; kind; " write failed status="; Int(Num_or(resp.status, 0)); " pending="; hasPending
+    Diag_log(Diag_join(["[siku-detail] ", kind, " write failed status=", Int(Num_or(resp.status, 0)), " pending=", hasPending]))
     ' Back to what the server last confirmed, and say why.
     setMembership(kind, w.confirmed)
     if not m.global.hasField("toastSeconds") then m.global.addFields({ toastSeconds: 0.0 })
@@ -1607,7 +1607,7 @@ sub writeWatched(contentId as string, watched as boolean, scope as string)
     if contentId = "" then return
     method = "DELETE"
     if watched then method = "POST"
-    print "[siku-detail] mark "; scope; " watched="; watched
+    Diag_log(Diag_join(["[siku-detail] mark ", scope, " watched=", watched]))
     Api_call({ method: method, path: "/api/v2/watched/" + Str_urlEncode(contentId), context: { watched: watched, scope: scope } }, "onWatchedWritten")
     m.global.homeDirty = true
 end sub

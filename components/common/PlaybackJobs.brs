@@ -83,17 +83,17 @@ sub PlaybackJobs_onAnswer(event as object)
         if player.hasField("stopAnswered") then player.stopAnswered = job.sid
     end if
     if not PlaybackJobs_retriable(resp.status) then
-        if job.tries > 1 then print "[siku-playback] stop delivered status=" + Str_orEmpty(resp.status) + " tries=" + job.tries.ToStr()
+        if job.tries > 1 then Diag_log("[siku-playback] stop delivered status=" + Str_orEmpty(resp.status) + " tries=" + job.tries.ToStr())
         return
     end if
     if job.tries >= PlaybackJobs_maxTries() then
-        print "[siku-playback] stop not delivered after " + job.tries.ToStr() + " tries status=" + Str_orEmpty(resp.status) + "; giving up"
+        Diag_log("[siku-playback] stop not delivered after " + job.tries.ToStr() + " tries status=" + Str_orEmpty(resp.status) + "; giving up")
         return
     end if
     delay = PlaybackJobs_retryDelay(job.tries)
     job.dueAt = m.pjClock.TotalMilliseconds() / 1000.0 + delay
     m.playbackJobs.Push(job)
-    print "[siku-playback] stop not delivered status=" + Str_orEmpty(resp.status) + "; try " + (job.tries + 1).ToStr() + " in " + delay.ToStr() + " s"
+    Diag_log("[siku-playback] stop not delivered status=" + Str_orEmpty(resp.status) + "; try " + (job.tries + 1).ToStr() + " in " + delay.ToStr() + " s")
     m.pjTimer.control = "start"
 end sub
 
@@ -111,7 +111,7 @@ sub PlaybackJobs_onTick()
     for i = 0 to due.Count() - 1
         job = due[i]
         if job.identity <> current then
-            print "[siku-playback] stop dropped: the account, profile or server changed"
+            Diag_log("[siku-playback] stop dropped: the account, profile or server changed")
         else
             PlaybackJobs_send(job)
         end if

@@ -110,7 +110,7 @@ sub onScreenShown()
     if m.closing then
         ' Covered while playing (onScreenHidden stopped the audio and closed the server session):
         ' leave instead of showing a player that can no longer play.
-        print "[siku-playback] audio player shown again after it was closed; leaving"
+        Diag_log("[siku-playback] audio player shown again after it was closed; leaving")
         m.closed = true
         m.stopTimeout.control = "stop"
         m.focusSink.setFocus(true)
@@ -1216,7 +1216,7 @@ end sub
 sub Voice_debugFire()
     scene = m.top.getScene()
     if scene = invalid or m.closing then return
-    print "[siku-voice] debugVoice: injecting " + Str_orEmpty(m.top.params.debugVoice)
+    Diag_log("[siku-voice] debugVoice: injecting " + Str_orEmpty(m.top.params.debugVoice))
     scene.callFunc("handleTransport", Voice_debugInfo(Str_orEmpty(m.top.params.debugVoice)))
 end sub
 

@@ -28,13 +28,13 @@ sub runLaunch()
         finish("launch_failed", "no video id")
         return
     end if
-    print "[siku-trailer] youtube hand-off start video=" + videoId + " channel=" + youTubeChannelId() + " mediaType=" + youTubeMediaType()
+    Diag_log("[siku-trailer] youtube hand-off start video=" + videoId + " channel=" + youTubeChannelId() + " mediaType=" + youTubeMediaType())
 
     am = invalid
     try
         am = CreateObject("roAppManager")
     catch err
-        print "[siku-trailer] roAppManager unavailable: " + errText(err)
+        Diag_log("[siku-trailer] roAppManager unavailable: " + errText(err))
         am = invalid
     end try
 
@@ -43,11 +43,11 @@ sub runLaunch()
         try
             if am.IsAppInstalled(youTubeChannelId(), "") = true then installed = "yes" else installed = "no"
         catch err2
-            print "[siku-trailer] IsAppInstalled failed: " + errText(err2)
+            Diag_log("[siku-trailer] IsAppInstalled failed: " + errText(err2))
             installed = "unknown"
         end try
     end if
-    print "[siku-trailer] youtube installed=" + installed
+    Diag_log("[siku-trailer] youtube installed=" + installed)
     if installed = "no" then
         finish("not_installed", "IsAppInstalled(837) returned false")
         return
@@ -60,23 +60,23 @@ sub runLaunch()
             am.LaunchApp(youTubeChannelId(), "", { contentId: videoId, mediaType: youTubeMediaType() })
             called = true
         catch err3
-            print "[siku-trailer] LaunchApp threw: " + errText(err3)
+            Diag_log("[siku-trailer] LaunchApp threw: " + errText(err3))
         end try
         if called then
-            print "[siku-trailer] LaunchApp(837, contentId, mediaType) called; waiting for YouTube to take over"
+            Diag_log("[siku-trailer] LaunchApp(837, contentId, mediaType) called; waiting for YouTube to take over")
             ' A successful launch ends this channel during the wait.
             sleep(6000)
-            print "[siku-trailer] still running 6 s after LaunchApp: no hand-off; trying ECP"
+            Diag_log("[siku-trailer] still running 6 s after LaunchApp: no hand-off; trying ECP")
         end if
     end if
 
     ' 2. Fallback: the device's own External Control Protocol, as a phone remote would launch it.
     ' Refused (403) when Settings > System > Advanced > Control by mobile apps is Limited/Disabled.
     code = ecpLaunch(videoId)
-    print "[siku-trailer] ECP POST /launch/837 status=" + code.ToStr()
+    Diag_log("[siku-trailer] ECP POST /launch/837 status=" + code.ToStr())
     if code >= 200 and code < 300 then
         sleep(6000)
-        print "[siku-trailer] still running 6 s after ECP launch: no hand-off"
+        Diag_log("[siku-trailer] still running 6 s after ECP launch: no hand-off")
     end if
     finish("launch_failed", "LaunchApp and ECP did not open YouTube (ECP status " + code.ToStr() + ")")
 end sub
@@ -86,7 +86,7 @@ function ecpLaunch(videoId as string) as integer
     try
         xfer = CreateObject("roUrlTransfer")
     catch err
-        print "[siku-trailer] roUrlTransfer unavailable: " + errText(err)
+        Diag_log("[siku-trailer] roUrlTransfer unavailable: " + errText(err))
         return 0
     end try
     if xfer = invalid then return 0
@@ -112,6 +112,6 @@ function errText(err as dynamic) as string
 end function
 
 sub finish(outcome as string, detail as string)
-    print "[siku-trailer] outcome=" + outcome + " (" + detail + ")"
+    Diag_log("[siku-trailer] outcome=" + outcome + " (" + detail + ")")
     m.top.result = { outcome: outcome, detail: detail }
 end sub

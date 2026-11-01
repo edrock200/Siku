@@ -95,10 +95,10 @@ sub Recovery_notePlan(plan as object)
     ' A new plan replaces the one a reconnect was scheduled for.
     m.rec.waiting = false
     if m.reconnectTimer <> invalid then m.reconnectTimer.control = "stop"
-    if m.rec.outageAt >= 0 then print "[siku-playback] reconnect " + m.rec.tries.ToStr() + " mounted delivery=" + Str_orEmpty(plan.delivery)
+    if m.rec.outageAt >= 0 then Diag_log("[siku-playback] reconnect " + m.rec.tries.ToStr() + " mounted delivery=" + Str_orEmpty(plan.delivery))
     if m.rec.nativePending then
         m.rec.nativePending = false
-        print "[siku-playback] recovery " + m.rec.native.ToStr() + " mounted delivery=" + Str_orEmpty(plan.delivery) + " quality=" + PlaybackCaps_videoQuality(m.qualityPref)
+        Diag_log("[siku-playback] recovery " + m.rec.native.ToStr() + " mounted delivery=" + Str_orEmpty(plan.delivery) + " quality=" + PlaybackCaps_videoQuality(m.qualityPref))
     end if
     if m.recDebugTimer <> invalid and m.top.params <> invalid and Recovery_debugSpec(m.top.params.debugVideoError) <> invalid then
         m.recDebugTimer.control = "stop"
@@ -135,11 +135,11 @@ sub Recovery_onVideoError(code as dynamic, msg as string, detail as string, info
     if m.plan <> invalid then delivery = Str_orEmpty(m.plan.delivery)
     kind = Recovery_errorKind(code, msg, detail, info)
     ' To the debug console too: the code matters for a bug report. Only the code leaves the device.
-    print "[siku-playback] video error delivery=" + delivery + " code=" + Str_orEmpty(code) + " kind=" + kind + " msg=" + Recovery_scrub(msg) + " str=" + Recovery_scrub(detail)
+    Diag_log("[siku-playback] video error delivery=" + delivery + " code=" + Str_orEmpty(code) + " kind=" + kind + " msg=" + Recovery_scrub(msg) + " str=" + Recovery_scrub(detail))
     if m.rec <> invalid then m.rec.errorSeen = true
     if Recovery_playlistTooLarge(msg, detail, info) then
         ' Roku refuses an HLS playlist over 4 MiB (4,194,304 bytes; silo-roku hardware run 2, H2).
-        print "[siku-playback] playlist too large: Roku refuses HLS playlists over 4 MiB delivery=" + delivery + " define=" + PlaybackCaps_str(PlaybackCaps_defineNegotiable())
+        Diag_log("[siku-playback] playlist too large: Roku refuses HLS playlists over 4 MiB delivery=" + delivery + " define=" + PlaybackCaps_str(PlaybackCaps_defineNegotiable()))
     end if
     classification = Recovery_classify(code)
     if kind = "network" or kind = "server" then
@@ -257,11 +257,11 @@ function Recovery_reconnect(code as dynamic) as boolean
         m.rec.outageAt = now
         m.rec.tries = 0
         m.rec.outagePaused = m.isPaused
-        print "[siku-playback] connection lost code=" + Str_orEmpty(code) + " delivery=" + delivery + "; reconnecting for up to " + Recovery_reconnectBudget().ToStr() + " s"
+        Diag_log("[siku-playback] connection lost code=" + Str_orEmpty(code) + " delivery=" + delivery + "; reconnecting for up to " + Recovery_reconnectBudget().ToStr() + " s")
     end if
     elapsed = now - m.rec.outageAt
     if elapsed >= Recovery_reconnectBudget() then
-        print "[siku-playback] reconnect gave up after " + Int(elapsed).ToStr() + " s tries=" + m.rec.tries.ToStr() + "; asking for another route"
+        Diag_log("[siku-playback] reconnect gave up after " + Int(elapsed).ToStr() + " s tries=" + m.rec.tries.ToStr() + "; asking for another route")
         m.rec.outageAt = -1.0
         m.rec.waiting = false
         m.rec.outageSpent = true
@@ -277,7 +277,7 @@ function Recovery_reconnect(code as dynamic) as boolean
     setBuffering(true)
     m.bufferLabel.text = "Reconnecting"
     m.rec.waiting = true
-    print "[siku-playback] reconnect " + m.rec.tries.ToStr() + " in " + Str(delay).Trim() + " s"
+    Diag_log("[siku-playback] reconnect " + m.rec.tries.ToStr() + " in " + Str(delay).Trim() + " s")
     m.reconnectTimer.control = "stop"
     m.reconnectTimer.duration = delay
     m.reconnectTimer.control = "start"
@@ -311,7 +311,7 @@ sub Recovery_notePlaying()
     m.rec.attemptPlayed = true
     m.rec.outageSpent = false
     if m.rec.outageAt >= 0 then
-        print "[siku-playback] reconnected after " + Int(Recovery_now() - m.rec.outageAt).ToStr() + " s tries=" + m.rec.tries.ToStr()
+        Diag_log("[siku-playback] reconnected after " + Int(Recovery_now() - m.rec.outageAt).ToStr() + " s tries=" + m.rec.tries.ToStr())
         m.rec.outageAt = -1.0
         m.rec.tries = 0
         m.bufferLabel.text = "Buffering"
@@ -376,7 +376,7 @@ sub Recovery_fail(classification as string, rokuCode as dynamic)
         m.rec.rungHeight = ladderStep.height
     end if
     nextCount = m.rec.count + 1
-    print "[siku-playback] recovery " + m.rec.native.ToStr() + " classification=" + classification + " quality=" + PlaybackCaps_videoQuality(m.qualityPref) + " attempt_count=" + nextCount.ToStr()
+    Diag_log("[siku-playback] recovery " + m.rec.native.ToStr() + " classification=" + classification + " quality=" + PlaybackCaps_videoQuality(m.qualityPref) + " attempt_count=" + nextCount.ToStr())
     m.video.control = "stop"
     msg = "Roku Video node failure"
     roku = PlaybackError_rokuCode(rokuCode)
@@ -462,7 +462,7 @@ function Recovery_takeFailedReplan(resp as object) as boolean
     if resp.ok and Type(d) = "roAssociativeArray" and Str_orEmpty(d.outcome) <> "playable" then
         reason = ""
         if d.terminal <> invalid and Type(d.terminal) = "roAssociativeArray" then reason = Str_orEmpty(d.terminal.reason)
-        print "[siku-playback] recovery " + m.rec.native.ToStr() + " answered outcome=" + Str_orEmpty(d.outcome) + " reason=" + reason
+        Diag_log("[siku-playback] recovery " + m.rec.native.ToStr() + " answered outcome=" + Str_orEmpty(d.outcome) + " reason=" + reason)
         if reason <> "" then m.rec.lastClassification = reason
         if Recovery_nextStep() <> invalid then
             Recovery_fail(cls, m.rec.lastRoku)
@@ -471,7 +471,7 @@ function Recovery_takeFailedReplan(resp as object) as boolean
         PlaybackError_show("3003", { rokuCode: m.rec.lastRoku, reason: m.rec.lastClassification })
         return true
     end if
-    print "[siku-playback] recovery " + m.rec.native.ToStr() + " replan failed status=" + Str_orEmpty(resp.status)
+    Diag_log("[siku-playback] recovery " + m.rec.native.ToStr() + " replan failed status=" + Str_orEmpty(resp.status))
     PlaybackError_show("3003", { rokuCode: m.rec.lastRoku, reason: cls })
     return true
 end function
@@ -480,7 +480,7 @@ end function
 ' again on the schedule. A lost session: a new one at the position (renewSession). A terminal
 ' answer or the budget used up: the failure_recovery ladder.
 function Recovery_takeFailedReconnect(resp as object) as boolean
-    print "[siku-playback] reconnect " + m.rec.tries.ToStr() + " answered status=" + Str_orEmpty(resp.status)
+    Diag_log("[siku-playback] reconnect " + m.rec.tries.ToStr() + " answered status=" + Str_orEmpty(resp.status))
     if (resp.status = 404 or resp.status = 410) and renewSession("reconnect") then return true
     if resp.status = 404 or resp.status = 410 then
         setBuffering(false)
@@ -530,7 +530,7 @@ sub Recovery_onTick()
     end if
     if m.rec.still < limit then return
     m.rec.still = 0
-    print "[siku-playback] no progress for " + limit.ToStr() + " s state=" + st + " played=" + PlaybackCaps_str(m.rec.everPlayed)
+    Diag_log("[siku-playback] no progress for " + limit.ToStr() + " s state=" + st + " played=" + PlaybackCaps_str(m.rec.everPlayed))
     Recovery_fail("buffering_timeout", invalid)
 end sub
 
@@ -542,7 +542,7 @@ sub Recovery_onDebugError()
     if spec = invalid then return
     if spec.limit > 0 and m.recDebugFaked >= spec.limit then return
     m.recDebugFaked = m.recDebugFaked + 1
-    print "[siku-playback] debugVideoError: faking Roku error " + spec.code.ToStr()
+    Diag_log("[siku-playback] debugVideoError: faking Roku error " + spec.code.ToStr())
     Recovery_onVideoError(spec.code, "debug", spec.text)
 end sub
 
@@ -572,7 +572,7 @@ function Recovery_rereadInventory() as boolean
     if m.rec = invalid then Recovery_reset()
     if m.rec.inventoryRetried then return false
     m.rec.inventoryRetried = true
-    print "[siku-playback] no playable file in the item's inventory; reading it once more"
+    Diag_log("[siku-playback] no playable file in the item's inventory; reading it once more")
     p = m.top.params
     q = { image_size: "medium" }
     if p <> invalid and not Str_isEmpty(p.fileId) then q.file_id = Str_orEmpty(p.fileId)

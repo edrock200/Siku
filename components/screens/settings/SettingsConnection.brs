@@ -291,7 +291,7 @@ sub Conn_onProbe()
     m.connProbeTask = invalid
     m.conn.testing = false
     if r = invalid then r = { outcome: "failed" }
-    print "[siku-playback] speed test outcome=" + Str_orEmpty(r.outcome) + " kbps=" + Str_orEmpty(r.kbps) + " lower_bound=" + Str_orEmpty(r.lowerBound) + " bytes=" + Str_orEmpty(r.bytes) + " ms=" + Str_orEmpty(r.durationMs) + " method=" + Str_orEmpty(r.method) + " status=" + Str_orEmpty(r.status) + " saved=" + Str_orEmpty(r.saved)
+    Diag_log("[siku-playback] speed test outcome=" + Str_orEmpty(r.outcome) + " kbps=" + Str_orEmpty(r.kbps) + " lower_bound=" + Str_orEmpty(r.lowerBound) + " bytes=" + Str_orEmpty(r.bytes) + " ms=" + Str_orEmpty(r.durationMs) + " method=" + Str_orEmpty(r.method) + " status=" + Str_orEmpty(r.status) + " saved=" + Str_orEmpty(r.saved))
     if r.outcome = "measured" then
         Conn_storeProbe({ kbps: r.kbps, at: CreateObject("roDateTime").AsSeconds(), transport: Str_orEmpty(r.transport), lowerBound: r.lowerBound = true })
         if r.saved <> true then m.conn.message = "Couldn't save the speed test. Try again."

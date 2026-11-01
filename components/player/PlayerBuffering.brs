@@ -201,7 +201,7 @@ sub Bufq_debugStep(now as integer)
     if m.bufqDebugAt = invalid then return
     if m.bufqDebugStage = 0 and now - m.bufqDebugAt >= 500 then
         m.bufqDebugStage = 1
-        print "[siku-playback] debugBufq: faking playing, then a network wait"
+        Diag_log("[siku-playback] debugBufq: faking playing, then a network wait")
         BQ_setThroughput(m.bq, 3000) ' below the plan's bitrate, as on a slow link
         BQ_onPlaying(m.bq, now)
     else if m.bufqDebugStage = 1 and now - m.bufqDebugAt >= 1500 then
@@ -224,7 +224,7 @@ sub Bufq_drain()
             if o.key = "cant_lower" then m.global.toast = "Can't lower quality for this video"
         else if o.type = "summary" then
             s = o.summary
-            print "[siku-playback] buffering plan=" + Str_orEmpty(s.planId) + " played_ms=" + Str_orEmpty(s.playedMs) + " stalls=" + Str_orEmpty(s.stallCount) + " stall_ms=" + Str_orEmpty(s.stallTotalMs) + " longest_ms=" + Str_orEmpty(s.stallLongestMs) + " delivered_kbps=" + Str_orEmpty(s.deliveredKbps) + " mode=" + s.mode + " action=" + s.action
+            Diag_log("[siku-playback] buffering plan=" + Str_orEmpty(s.planId) + " played_ms=" + Str_orEmpty(s.playedMs) + " stalls=" + Str_orEmpty(s.stallCount) + " stall_ms=" + Str_orEmpty(s.stallTotalMs) + " longest_ms=" + Str_orEmpty(s.stallLongestMs) + " delivered_kbps=" + Str_orEmpty(s.deliveredKbps) + " mode=" + s.mode + " action=" + s.action)
         end if
     end for
     Bufq_renderPill()
@@ -241,7 +241,7 @@ sub Bufq_sendReplan(o as object)
     if o.estimateSource <> "" then extra.bandwidth_estimate_source = o.estimateSource
     if o.estimateSource = "observed_rebuffer" and m.bq.throughputKbps > 0 then extra.observed_throughput_kbps = m.bq.throughputKbps
     if o.learnedLimit <> "" then extra.learned_limit = o.learnedLimit
-    print "[siku-playback] buffering replan quality=" + o.quality + " est=" + Str_orEmpty(o.estimateKbps) + " source=" + o.estimateSource + " learned_limit=" + o.learnedLimit + " observed=" + Str_orEmpty(m.bq.throughputKbps)
+    Diag_log("[siku-playback] buffering replan quality=" + o.quality + " est=" + Str_orEmpty(o.estimateKbps) + " source=" + o.estimateSource + " learned_limit=" + o.learnedLimit + " observed=" + Str_orEmpty(m.bq.throughputKbps))
     m.prevQualityPref = m.qualityPref
     m.qualityPref = o.quality
     sendReplan("quality_change", "bq", invalid, invalid, extra, o)

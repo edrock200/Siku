@@ -163,7 +163,7 @@ sub CardActions_onWatchedAnswer(event as object)
         end if
         return
     end if
-    print "[siku-cards] watched write failed status="; Int(Num_or(resp.status, 0)); " current="; current
+    Diag_log(Diag_join(["[siku-cards] watched write failed status=", Int(Num_or(resp.status, 0)), " current=", current]))
     ' A newer write for this card decides what it shows.
     if not current then return
     CardActions_rollback(ctx.target, ctx.rollback)

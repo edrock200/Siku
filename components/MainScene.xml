@@ -10,6 +10,8 @@
          and app focus (false while a system overlay or the screensaver covers Siku). -->
     <field id="memoryPressure" type="integer" alwaysNotify="true" onChange="onMemoryPressure" />
     <field id="appFocused" type="boolean" value="true" onChange="onAppFocused" />
+    <!-- From source/main.brs at launch: { low, reasons, foregroundMb } (MainEvents_deviceTier). -->
+    <field id="deviceTier" type="assocarray" onChange="onDeviceTier" />
     <!-- From source/main.brs: a Roku voice transport event; returns { status } for EventResponse. -->
     <function name="handleTransport" />
     <!-- From PlayerScreen: a playback stop to deliver, retried after a failure (PlaybackJobs.brs). -->
@@ -26,6 +28,9 @@
   <script type="text/brightscript" uri="pkg:/components/common/DeepLink.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Api.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/PlaybackJobs.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/MemoryPolicy.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Diag.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/DiagScene.brs" />
   <children>
     <Rectangle id="bg" width="1920" height="1080" color="0x000000FF" />
     <Group id="screens" />

@@ -28,13 +28,16 @@ sub init()
     a11yTask.control = "RUN"
     m.top.observeField("dialog", "onDialogChanged")
     ' Launch beacons (Launch_ready in Utils.brs; onLaunchReady below) and memory warnings.
-    m.global.addFields({ launchReady: "", memoryLow: false })
+    ' memoryLevel / lowEnd: MemoryPolicy.brs (0 normal .. 3 critical; a low-memory Roku, onDeviceTier).
+    m.global.addFields({ launchReady: "", memoryLow: false, memoryLevel: 0, lowEnd: false })
     m.global.observeField("launchReady", "onLaunchReady")
     ' Home cache (HomeCache.brs): Session_save bumps homeCachePurge when the account, server or
     ' profile that owns the cached Home changes; onHomeCachePurge deletes the files in a Task.
     m.global.addFields({ homeCachePurge: 0, homeCachePurgeReason: "" })
     m.global.observeField("homeCachePurge", "onHomeCachePurge")
     m.launch = { done: false, dialog: false }
+    ' Diagnostics log and last-exit notice (DiagScene.brs).
+    Diag_init()
 
     ' Single-flight token refresher used by every ApiTask.
     authTask = CreateObject("roSGNode", "AuthTask")
@@ -88,7 +91,7 @@ sub applyLaunchProfileRule()
 end sub
 
 sub onDebugRelaunch()
-    print "[siku-home] debug relaunch"
+    Diag_log("[siku-home] debug relaunch")
     routeToStart()
 end sub
 
@@ -155,8 +158,8 @@ sub pushScreen(name as string, params = {} as object)
     A11y_reset()
     Launch_onScreen(name)
     screen.active = true
-    ' Under memory pressure a screen gives back its artwork as soon as it is covered.
-    if prev <> invalid and m.global.memoryLow = true then prev.memoryRelease = true
+    ' Screens deeper than the budget give back their artwork and lists (all covered ones under pressure).
+    trimStack()
     if m.debugMemoryAt <> invalid and m.stack.Count() >= 2 then
         m.top.memoryPressure = m.debugMemoryAt
         m.debugMemoryAt = invalid
@@ -206,7 +209,7 @@ sub beginExit()
         m.leaving.lan = lan
         lan.command = { kind: "shutdown" }
     end if
-    print "[siku-launch] leaving: requests=" + m.global.exitHolds.Count().ToStr() + " lan=" + exitBool(lan <> invalid)
+    Diag_log("[siku-launch] leaving: requests=" + m.global.exitHolds.Count().ToStr() + " lan=" + exitBool(lan <> invalid))
     m.exitTimer = CreateObject("roSGNode", "Timer")
     m.exitTimer.duration = 0.1
     m.exitTimer.repeat = true
@@ -229,7 +232,7 @@ sub onExitTick()
     ms = e.clock.TotalMilliseconds()
     if (pending = 0 and lanDone) or ms >= 2000 then
         m.exitTimer.control = "stop"
-        print "[siku-launch] exit after " + ms.ToStr() + " ms (requests pending=" + pending.ToStr() + " lan done=" + exitBool(lanDone) + ")"
+        Diag_log("[siku-launch] exit after " + ms.ToStr() + " ms (requests pending=" + pending.ToStr() + " lan done=" + exitBool(lanDone) + ")")
         m.top.exitApp = true
     end if
 end sub
@@ -297,37 +300,54 @@ sub onLaunchReady()
     end if
     m.launch.done = true
     Launch_beacon("AppLaunchComplete")
-    print "[siku-launch] ready: "; what
+    Diag_log("[siku-launch] ready: " + what)
     m.global.unobserveField("launchReady")
+    Diag_tryNotice()
 end sub
 
 sub Launch_beacon(name as string)
-    print "[siku-launch] beacon "; name
+    Diag_log(Diag_join(["[siku-launch] beacon ", name]))
     m.top.signalBeacon(name)
 end sub
 
 ' ---------- Memory and focus ----------
 
-' A memory warning (70 % of the channel's limit or more): every screen under the top one drops its
-' artwork and list content, and keeps doing so when covered until the pressure eases (50 % or
-' less); the top screen drops its own caches (onMemoryPressure).
+' A memory warning or a sample from source/main.brs (percent of the channel's limit) moves the
+' level (MemoryPolicy.brs): trim, pressure, critical. A rising level asks the top screen to drop its
+' own caches (onMemoryPressure) and releases the covered screens past the level's budget.
 sub onMemoryPressure()
-    level = m.top.memoryPressure
-    print "[siku-memory] pressure "; level
-    if level <= 50 then
-        m.global.memoryLow = false
-        return
-    end if
-    if level < 70 then return
-    m.global.memoryLow = true
+    pct = m.top.memoryPressure
+    prev = Memory_currentLevel()
+    level = Memory_nextLevel(prev, pct)
+    if level = prev then return
+    Diag_log("[siku-memory] pressure " + pct.ToStr() + " level=" + Memory_levelName(level) + " was=" + Memory_levelName(prev))
+    m.global.memoryLevel = level
+    m.global.memoryLow = level >= 2
+    if level < prev then return
     top = topScreen()
-    for each s in m.stack
-        if top <> invalid and s.isSameNode(top) then
-            s.memoryPressure = level
-        else
-            s.memoryRelease = true
-        end if
+    if top <> invalid then top.memoryPressure = pct
+    trimStack()
+end sub
+
+' Keeps the top screen and Memory_aliveBelow() screens under it whole; deeper ones give back their
+' artwork and lists (Memory.brs) and get them back, state intact, when they are on top again.
+sub trimStack()
+    keep = Memory_aliveBelow(Memory_currentLevel(), Memory_isLowEnd())
+    for i = 0 to m.stack.Count() - 2 - keep
+        m.stack[i].memoryRelease = true
     end for
+end sub
+
+' From source/main.brs at launch: a low-memory Roku gets smaller budgets (MemoryPolicy.brs).
+sub onDeviceTier()
+    t = m.top.deviceTier
+    if Type(t) <> "roAssociativeArray" then return
+    low = false
+    if Type(t.low) = "Boolean" or Type(t.low) = "roBoolean" then low = t.low
+    m.global.lowEnd = low
+    tier = "standard"
+    if low then tier = "low"
+    Diag_log("[siku-memory] device tier=" + tier + " reasons=" + Str_orEmpty(t.reasons) + " limit_mb=" + Str_orEmpty(t.foregroundMb))
 end sub
 
 sub onAppFocused()
@@ -471,6 +491,7 @@ end sub
 
 sub onLaunchArgs()
     args = m.top.launchArgs
+    Diag_launchArgs(args)
     ' A content link at launch never shows Who's Watching for a profile this Roku already had open:
     ' the launch rule (Profile Selection) asked for the picker, so the profile it put aside opens
     ' again and the link plays over Home (Roku certification 5.1; silo-roku does the same).

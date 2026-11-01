@@ -148,7 +148,7 @@ sub SeriesChoice_save(kind as string, key as string, body as dynamic)
     end if
     st[id] = ne
     SeriesChoice_store(st)
-    print "[siku-playback] series choice " + kind + " key=" + key + " " + SeriesChoice_describe(ne)
+    Diag_log("[siku-playback] series choice " + kind + " key=" + key + " " + SeriesChoice_describe(ne))
     SeriesChoice_send(id)
 end sub
 
@@ -201,7 +201,7 @@ sub SeriesChoice_onSent(event as object)
     sentSeq = Int(Num_or(ctx.seq, 0))
     landed = resp.ok or (resp.status = 404 and e.isDelete = true)
     refused = not landed and resp.status >= 400 and resp.status < 500 and resp.status <> 408 and resp.status <> 429
-    if not landed then print "[siku-playback] series choice " + e.kind + " key=" + e.key + " failed status=" + Str_orEmpty(resp.status)
+    if not landed then Diag_log("[siku-playback] series choice " + e.kind + " key=" + e.key + " failed status=" + Str_orEmpty(resp.status))
     e = AA_copy(e)
     e.sentSeq = 0
     e.sentAt = 0

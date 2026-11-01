@@ -386,3 +386,43 @@ function Node_find(parent as object, id as string) as object
     end while
     return invalid
 end function
+
+' ---------- Diagnostics log ----------
+
+' Prints a console line and, once MainScene has started DiagTask, keeps it (redacted) in the
+' on-device diagnostics log that Settings › Diagnostics shows (Diag.brs, DiagTask). Use for
+' `[siku-*]` lines a user report would need; never pass tokens or signed URLs (the log scrubs
+' URLs, addresses, ids and tokens anyway).
+sub Diag_log(line as string)
+    print line
+    g = m.global
+    if g = invalid then return
+    if not g.hasField("diagLine") then return
+    ' Lines from before DiagTask listens wait in diagBacklog (DiagTask reads it once it is ready).
+    if not g.diagReady then
+        b = g.diagBacklog
+        if Type(b) = "roArray" and b.Count() < 50 then
+            b.Push(line)
+            g.diagBacklog = b
+        end if
+    end if
+    g.diagLine = line
+end sub
+
+' The text `print a; b; c` would show, for Diag_log (tools/diag_log_convert.py writes these calls).
+function Diag_join(parts as object) as string
+    s = ""
+    for each p in parts
+        t = Type(p)
+        if t = "String" or t = "roString" then
+            s = s + p
+        else if t = "Invalid" or t = "roInvalid" or t = "<uninitialized>" then
+            s = s + "invalid"
+        else
+            v = Str_orEmpty(p)
+            if v = "" then v = "<" + t + ">"
+            s = s + v
+        end if
+    end for
+    return s
+end function

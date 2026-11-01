@@ -133,7 +133,7 @@ sub onRowCaps(event as object)
     if m.rowCapsWaiting <> true then
         ' Answered after the page stopped waiting: the session already counts it unsupported.
         Api_result(event)
-        print "[siku-home] section item limit answer arrived late; ignored"
+        Diag_log("[siku-home] section item limit answer arrived late; ignored")
         return
     end if
     m.rowCapsWaiting = false
@@ -145,7 +145,7 @@ end sub
 sub onRowCapsTimeout()
     if m.rowCapsWaiting <> true then return
     m.rowCapsWaiting = false
-    print "[siku-home] section item limit read timed out; sending none"
+    Diag_log("[siku-home] section item limit read timed out; sending none")
     SectionRows_setLimit(Str_orEmpty(m.global.session.serverUrl), 0)
     capsAnswered()
 end sub
@@ -177,7 +177,7 @@ sub onSections(event as object)
     ' A server that advertised item_limit but refuses it (422 unknown_parameter): read again
     ' once without it; SectionRows_markUnsupported keeps it off for the session.
     if not resp.ok and Int(Num_or(resp.context.itemLimit, 0)) > 0 and SectionRows_rejectsItemLimit(resp.status, resp.data) then
-        print "[siku-home] item_limit rejected by the server; reading the rows again without it"
+        Diag_log("[siku-home] item_limit rejected by the server; reading the rows again without it")
         SectionRows_markUnsupported()
         requestSections()
         return
@@ -186,7 +186,7 @@ sub onSections(event as object)
         m.loading = false
         if m.rows.Count() > 0 then
             ' Keep what is drawn (the cached Home or the last answer); the next visit tries again.
-            print "[siku-home] refresh failed status="; resp.status; ", keeping the drawn rows"
+            Diag_log(Diag_join(["[siku-home] refresh failed status=", resp.status, ", keeping the drawn rows"]))
             m.loaded = false
             if m.top.active then m.global.toast = "Couldn't refresh Home. " + Api_errorText(resp)
         else
@@ -444,7 +444,7 @@ sub buildRows(fromCache = false as boolean)
     end for
     m.rows = rows
     if fromCache then
-        print "[siku-home] cache drawn rows="; rows.Count()
+        Diag_log(Diag_join(["[siku-home] cache drawn rows=", rows.Count()]))
     else
         m.loading = false
         m.loaded = true
@@ -484,7 +484,7 @@ sub onExploreSelected()
     lib = libraryId()
     scope = "home"
     if lib <> "" then scope = "library"
-    print "[siku-home] explore all scope="; scope; " row="; Int(Num_or(sel.rowIndex, 0))
+    Diag_log(Diag_join(["[siku-home] explore all scope=", scope, " row=", Int(Num_or(sel.rowIndex, 0))]))
     if lib <> "" then
         p = m.top.params
         params.scope = "library"
@@ -516,11 +516,11 @@ sub onHomeCacheRead(event as object)
     m.cacheTask = invalid
     if res = invalid or Type(res) <> "roAssociativeArray" or res.status <> "hit" then return
     if Str_orEmpty(res.ownerSource) <> HomeCache_ownerSource(m.global.session) then
-        print "[siku-home] cache dropped reason=session"
+        Diag_log("[siku-home] cache dropped reason=session")
         return
     end if
     if m.serverAnswered then
-        print "[siku-home] cache dropped reason=server-first"
+        Diag_log("[siku-home] cache dropped reason=server-first")
         return
     end if
     ' This Roku's section order, hidden rows and hide-watched apply as they are now.

@@ -150,24 +150,24 @@ sub Subs_onCheck()
     playing = Str_orEmpty(m.video.currentSubtitleTrack)
     playingLabel = Subs_nameForLog(m.subtitleTracks, playing)
     if Subs_drawn(t.url, selected, playing) then
-        print "[siku-playback] subtitle check " + c.kind + ": roku plays " + playingLabel + " (ok)"
+        Diag_log("[siku-playback] subtitle check " + c.kind + ": roku plays " + playingLabel + " (ok)")
         return
     end if
     other = Subs_trackIndexOf(m.subtitleTracks, playing)
     ' One reload per switch: the remount's own selection is checked as "settle", which never reloads.
     if c.kind = "switch" and other >= 0 and other <> c.idx then
-        print "[siku-playback] subtitle check switch: roku still plays " + playingLabel + "; reloading at the position"
+        Diag_log("[siku-playback] subtitle check switch: roku still plays " + playingLabel + "; reloading at the position")
         remountSubtitles()
         return
     end if
     if m.subsReselected then
-        print "[siku-playback] subtitle check " + c.kind + ": roku plays " + playingLabel + " after a second selection; left as it is"
+        Diag_log("[siku-playback] subtitle check " + c.kind + ": roku plays " + playingLabel + " after a second selection; left as it is")
         return
     end if
     m.subsReselected = true
     name = Subs_listedName(m.video.availableSubtitleTracks, t.url)
     if name = "" then name = t.url
-    print "[siku-playback] subtitle check " + c.kind + ": roku plays " + playingLabel + "; selected again (listed=" + Str_orEmpty(name <> t.url) + ")"
+    Diag_log("[siku-playback] subtitle check " + c.kind + ": roku plays " + playingLabel + "; selected again (listed=" + Str_orEmpty(name <> t.url) + ")")
     m.video.subtitleTrack = name
 end sub
 
@@ -205,7 +205,7 @@ sub Subs_onLoadTimer()
     if Subs_selectedTrackId() <> p.trackId then return
     p.shown = true
     m.subsLoading.visible = true
-    print "[siku-playback] subtitle loading track=" + p.trackId + " (the server is still preparing it)"
+    Diag_log("[siku-playback] subtitle loading track=" + p.trackId + " (the server is still preparing it)")
 end sub
 
 sub Subs_onProbe(event as object)
@@ -224,17 +224,17 @@ sub Subs_onProbe(event as object)
     secs = Int(elapsed / 1000).ToStr()
     stillSelected = Subs_selectedTrackId() = p.trackId
     if action = "failed" then
-        print "[siku-playback] subtitle load failed track=" + p.trackId + " status=" + Str_orEmpty(resp.status) + " after " + secs + "s"
+        Diag_log("[siku-playback] subtitle load failed track=" + p.trackId + " status=" + Str_orEmpty(resp.status) + " after " + secs + "s")
         if stillSelected and p.shown then m.global.toast = "Couldn't load these subtitles."
         return
     end if
     m.subsReadyIds[p.trackId] = true
     sel = Subs_selectedTrack()
     if action = "reload" and stillSelected and m.plan <> invalid and sel <> invalid and not Str_isEmpty(sel.url) then
-        print "[siku-playback] subtitle ready track=" + p.trackId + " after " + secs + "s; reloading at the position"
+        Diag_log("[siku-playback] subtitle ready track=" + p.trackId + " after " + secs + "s; reloading at the position")
         remountSubtitles()
     else
-        print "[siku-playback] subtitle ready track=" + p.trackId + " after " + secs + "s"
+        Diag_log("[siku-playback] subtitle ready track=" + p.trackId + " after " + secs + "s")
     end if
 end sub
 
