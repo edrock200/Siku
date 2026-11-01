@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings › Diagnostics › View Log: the on-device diagnostics log (DiagTask), newest at the
+     bottom. Up / Down scroll a line, Rewind / Fast Forward a page, Back closes. Read-only; the log
+     never leaves the Roku. SPDX-License-Identifier: AGPL-3.0-or-later -->
+<component name="DiagnosticsScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/screens/settings/DiagnosticsScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Diag.brs" />
+  <children>
+    <Rectangle width="1920" height="1080" color="0x000000FF" />
+    <Label id="title" text="Diagnostics Log" translation="[100, 80]" color="0xEDEDEDFF" />
+    <Label id="hint" translation="[100, 146]" width="1720" color="0xEDEDED99"
+      text="What Siku did on this Roku, without addresses, names or sign-in details. It stays on this Roku. Up/Down scroll, Rewind/Fast Forward page." />
+    <Group id="lines" translation="[100, 210]" />
+    <Label id="position" translation="[100, 1000]" width="1720" horizAlign="right" color="0xEDEDED80" />
+    <Label id="empty" translation="[100, 230]" width="1720" color="0xEDEDED99" visible="false" text="The log is empty." />
+  </children>
+</component>

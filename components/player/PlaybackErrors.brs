@@ -135,7 +135,7 @@ sub PlaybackError_show(number as string, opts = invalid as dynamic)
         attempts = m.rec.count
     end if
     sending = PlaybackError_reportable(number, opts)
-    print "[siku-playback] error #" + number + " reason=" + reason + " roku=" + rokuText + " delivery=" + delivery + " recoveries=" + attempts.ToStr() + " plan_keys=" + keys.ToStr() + " report=" + PlaybackCaps_str(sending)
+    Diag_log("[siku-playback] error #" + number + " reason=" + reason + " roku=" + rokuText + " delivery=" + delivery + " recoveries=" + attempts.ToStr() + " plan_keys=" + keys.ToStr() + " report=" + PlaybackCaps_str(sending))
     if sending then PlaybackError_report(number, reason, roku, opts.decision)
 end sub
 
@@ -190,7 +190,7 @@ sub PlaybackError_onReported(event as object)
     if sent = invalid then return
     accepted = resp.status >= 200 and resp.status < 300 and Type(resp.data) = "roAssociativeArray"
     if accepted then accepted = Str_orEmpty(resp.data.outcome) = "accepted" and Str_orEmpty(resp.data.event_id) = sent.eventId
-    print "[siku-playback] error report #" + sent.number + " status=" + Str_orEmpty(resp.status) + " accepted=" + PlaybackCaps_str(accepted)
+    Diag_log("[siku-playback] error report #" + sent.number + " status=" + Str_orEmpty(resp.status) + " accepted=" + PlaybackCaps_str(accepted))
     if not accepted or m.closing then return
     ' The dialog may have been dismissed or replaced by another error meanwhile.
     if sent.ticket <> m.errTicket or not m.errorGroup.visible then return

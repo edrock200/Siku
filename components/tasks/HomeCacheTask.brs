@@ -28,7 +28,7 @@ sub runHomeCache()
         result.ok = false
         result.status = "miss"
         result.reason = "error"
-        print "[siku-home] cache error action="; action; " "; e.message
+        Diag_log(Diag_join(["[siku-home] cache error action=", action, " ", e.message]))
     end try
     m.hcFs = invalid
     m.top.result = result
@@ -83,7 +83,7 @@ function homeCachePurge(job as object, result as object) as object
     result.status = "purged"
     result.reason = Str_orEmpty(job.reason)
     result.files = n
-    if keep = "" or n > 0 then print "[siku-home] cache purge reason="; result.reason; " files="; n
+    if keep = "" or n > 0 then Diag_log(Diag_join(["[siku-home] cache purge reason=", result.reason, " files=", n]))
     return result
 end function
 
@@ -97,7 +97,7 @@ function homeCacheRead(result as object) as object
     h = homeCacheHash(owner)
     if h = "" then
         result.reason = "unsupported"
-        print "[siku-home] cache miss reason=unsupported"
+        Diag_log("[siku-home] cache miss reason=unsupported")
         return result
     end if
     ' A profile switch leaves the previous owner's file behind: one owner is kept at a time.
@@ -105,7 +105,7 @@ function homeCacheRead(result as object) as object
     path = homeCachePath(h)
     if not m.hcFs.Exists(path) then
         result.reason = "none"
-        print "[siku-home] cache miss reason=none"
+        Diag_log("[siku-home] cache miss reason=none")
         return result
     end if
     lim = HomeCache_limits()
@@ -115,13 +115,13 @@ function homeCacheRead(result as object) as object
     if size <= 0 or size > lim.bytes then
         m.hcFs.Delete(path)
         result.reason = "size"
-        print "[siku-home] cache miss reason=size"
+        Diag_log("[siku-home] cache miss reason=size")
         return result
     end if
     bytes = CreateObject("roByteArray")
     if not bytes.ReadFile(path) then
         result.reason = "unreadable"
-        print "[siku-home] cache miss reason=unreadable"
+        Diag_log("[siku-home] cache miss reason=unreadable")
         return result
     end if
     snapshot = ParseJson(bytes.ToAsciiString())
@@ -131,7 +131,7 @@ function homeCacheRead(result as object) as object
         m.hcFs.Delete(path)
         result.status = chk.status
         result.reason = chk.reason
-        print "[siku-home] cache "; chk.status; " reason="; chk.reason
+        Diag_log(Diag_join(["[siku-home] cache ", chk.status, " reason=", chk.reason]))
         return result
     end if
     ' The session may have changed while the file was read and parsed.
@@ -144,7 +144,7 @@ function homeCacheRead(result as object) as object
     result.status = "hit"
     result.age = chk.age
     result.sections = chk.sections
-    print "[siku-home] cache hit age="; chk.age; "s sections="; chk.sections.Count(); " bytes="; size
+    Diag_log(Diag_join(["[siku-home] cache hit age=", chk.age, "s sections=", chk.sections.Count(), " bytes=", size]))
     return result
 end function
 
@@ -159,7 +159,7 @@ function homeCacheWrite(job as object, result as object) as object
     h = homeCacheHash(owner)
     if h = "" then
         result.reason = "unsupported"
-        print "[siku-home] cache write skipped reason=unsupported"
+        Diag_log("[siku-home] cache write skipped reason=unsupported")
         return result
     end if
     homeCacheDeleteAll(HomeCache_fileName(h))
@@ -172,7 +172,7 @@ function homeCacheWrite(job as object, result as object) as object
     if text <> "" then bytes.FromAsciiString(text)
     if bytes.Count() = 0 or bytes.Count() > lim.bytes then
         result.reason = "size"
-        print "[siku-home] cache write skipped reason=size bytes="; bytes.Count()
+        Diag_log(Diag_join(["[siku-home] cache write skipped reason=size bytes=", bytes.Count()]))
         return result
     end if
     path = homeCachePath(h)
@@ -182,7 +182,7 @@ function homeCacheWrite(job as object, result as object) as object
     if not bytes.WriteFile(part) then
         m.hcFs.Delete(part)
         result.reason = "storage"
-        print "[siku-home] cache write failed reason=storage"
+        Diag_log("[siku-home] cache write failed reason=storage")
         return result
     end if
     if not homeCacheCurrent(owner) then
@@ -201,12 +201,12 @@ function homeCacheWrite(job as object, result as object) as object
     if not renamed then
         m.hcFs.Delete(part)
         result.reason = "storage"
-        print "[siku-home] cache write failed reason=rename"
+        Diag_log("[siku-home] cache write failed reason=rename")
         return result
     end if
     result.ok = true
     result.status = "written"
     result.bytes = bytes.Count()
-    print "[siku-home] cache write sections="; snapshot.sections.Count(); " bytes="; bytes.Count()
+    Diag_log(Diag_join(["[siku-home] cache write sections=", snapshot.sections.Count(), " bytes=", bytes.Count()]))
     return result
 end function

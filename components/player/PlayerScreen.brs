@@ -220,7 +220,7 @@ sub onScreenShown()
         ' Covered while playing (onScreenHidden stopped the video and closed the server session):
         ' there is nothing left to resume, so the player leaves instead of showing a dead screen
         ' whose keys are all swallowed.
-        print "[siku-playback] player shown again after it was closed; leaving"
+        Diag_log("[siku-playback] player shown again after it was closed; leaving")
         m.stopTimeout.control = "stop"
         m.focusSink.setFocus(true)
         Nav_close()
@@ -303,7 +303,7 @@ sub onWatch(event as object)
     if resp.ok and Type(resp.data) = "roAssociativeArray" then w = resp.data
     if w = invalid and m.isExtra and not Str_isEmpty(p.fileId) then
         ' An extra may have no watch detail of its own; the start needs only its file id.
-        print "[siku-trailer] watch detail unavailable for extra (status " + Str_orEmpty(resp.status) + "); starting file " + Str_orEmpty(p.fileId)
+        Diag_log("[siku-trailer] watch detail unavailable for extra (status " + Str_orEmpty(resp.status) + "); starting file " + Str_orEmpty(p.fileId))
         w = { content_id: m.itemId, "type": "extra", title: Str_orEmpty(p.title), versions: [] }
     end if
     if w = invalid then
@@ -469,7 +469,7 @@ sub onMarkersReconciled(event as object)
     end for
     if version = invalid then return
     applyMarkers(markersOf(version, resp.data))
-    print "[siku-playback] markers file=" + c.fileId + " count=" + m.markers.Count().ToStr()
+    Diag_log("[siku-playback] markers file=" + c.fileId + " count=" + m.markers.Count().ToStr())
 end sub
 
 ' A replan that lands on another file takes that file's markers from the watch detail, then
@@ -606,7 +606,7 @@ sub onStart(event as object)
     ' An answer for an earlier attempt (Up Next moved on, or a 409 restarted the attempt) never
     ' mounts on this one.
     if resp.context = invalid or Str_orEmpty(resp.context.attemptId) <> m.attemptId then
-        print "[siku-playback] start answer dropped: it belongs to an earlier attempt"
+        Diag_log("[siku-playback] start answer dropped: it belongs to an earlier attempt")
         return
     end if
     if resp.status = 409 and not m.retriedInstall then
@@ -659,7 +659,7 @@ sub onStart(event as object)
     ' that is never released starts a hold-seek session as a held key would.
     if m.top.params <> invalid and PlaybackCaps_truthy(m.top.params.debugHoldSeek) and not m.hsDebugDone then
         m.hsDebugDone = true
-        print "[siku-trickplay] debugHoldSeek: holding Right"
+        Diag_log("[siku-trickplay] debugHoldSeek: holding Right")
         HoldSeek_press(1)
     end if
     ' Simulator aid (deep link debugVoice=<command>[:<seconds>]): a voice transport event, once.
@@ -702,7 +702,7 @@ sub maybeRecoverSilentRemux(plan as object)
         return
     end if
     m.remuxRecoveryTried = true
-    print "[siku-playback] server_remux_hls is fMP4 with muxed audio, which Roku plays silent; asking for another route"
+    Diag_log("[siku-playback] server_remux_hls is fMP4 with muxed audio, which Roku plays silent; asking for another route")
     failure = { classification: "unsupported_container", message: "Roku cannot play audio muxed into fMP4 HLS segments" }
     sendReplan("failure_recovery", "recovery", failure)
 end sub
@@ -828,7 +828,7 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
         m.pendingSubtitleTrackId = keep
         if keep = "" then
             m.carriedSubtitle = invalid
-            print "[siku-playback] subtitle off: file " + planFileId(plan) + " has no " + Str_orEmpty(opts.subtitleFrom.language) + " track like the one playing"
+            Diag_log("[siku-playback] subtitle off: file " + planFileId(plan) + " has no " + Str_orEmpty(opts.subtitleFrom.language) + " track like the one playing")
         end if
     else if opts.subtitleTrackId <> invalid then
         m.pendingSubtitleTrackId = Str_orEmpty(opts.subtitleTrackId)
@@ -844,7 +844,7 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
         if autoPick >= 0 then
             m.pendingSubtitleTrackId = m.subtitleTracks[autoPick].trackId
             picked = m.subtitleTracks[autoPick]
-            print "[siku-playback] subtitle auto: " + picked.trackId + " source=" + picked.source + " codec=" + picked.codec + " of " + m.subtitleTracks.Count().ToStr() + " renderable"
+            Diag_log("[siku-playback] subtitle auto: " + picked.trackId + " source=" + picked.source + " codec=" + picked.codec + " of " + m.subtitleTracks.Count().ToStr() + " renderable")
         else if autoPick = -2 then
             m.pendingSubtitleTrackId = planSubId
         end if
@@ -1071,7 +1071,7 @@ end function
 ' the server, so no DELETE is sent for it.
 sub leaveServerEndedSession()
     if m.closing then return
-    print "[siku-playback] the server ended this playback session; leaving playback"
+    Diag_log("[siku-playback] the server ended this playback session; leaving playback")
     m.sessionId = ""
     m.progressTimer.control = "stop"
     m.global.toast = "An administrator ended this playback session."
@@ -2682,7 +2682,7 @@ sub selectRendition()
         m.renditionTimerArmed = false
         m.renditionTimer.control = "stop"
         m.video.subtitleTrack = name
-        print "[siku-playback] hls subtitle rendition " + t.renditionGroup + ":" + t.rendition + " selected as " + name
+        Diag_log("[siku-playback] hls subtitle rendition " + t.renditionGroup + ":" + t.rendition + " selected as " + name)
         return
     end if
     if m.video.state = "playing" and not m.renditionTimerArmed then
@@ -2740,7 +2740,7 @@ sub failHlsRendition()
             listed.Push(tn + "|" + Str_orEmpty(a.Description))
         end if
     end for
-    print "[siku-playback] hls subtitle rendition not found; listed=" + PlaybackCaps_join(listed, ";")
+    Diag_log("[siku-playback] hls subtitle rendition not found; listed=" + PlaybackCaps_join(listed, ";"))
     if m.renditionRecoveryTried or m.plan = invalid or m.sessionId = "" then
         m.global.toast = "Couldn't show these subtitles"
         return
@@ -2808,7 +2808,7 @@ end sub
 ' for it, as a refused answer would (the quality pick, the buffering controller's pending pick,
 ' the audio row's "Applying…").
 sub replanNotSent(kind as string)
-    print "[siku-playback] replan not sent kind=" + kind + ": no installation or session"
+    Diag_log("[siku-playback] replan not sent kind=" + kind + ": no installation or session")
     if (kind = "quality" or kind = "bq") and m.prevQualityPref <> invalid then m.qualityPref = m.prevQualityPref
     Bufq_onReplanFailed(kind)
     m.pendingAudioIndex = -1
@@ -2821,7 +2821,7 @@ sub onReplan(event as object)
     ' An answer for an earlier attempt or session (the next episode started meanwhile) is stale:
     ' the bookkeeping below belongs to the current one.
     if resp.context = invalid or Str_orEmpty(resp.context.attemptId) <> m.attemptId or Str_orEmpty(resp.context.sessionId) <> m.sessionId then
-        print "[siku-playback] replan answer dropped: it belongs to an earlier attempt or session"
+        Diag_log("[siku-playback] replan answer dropped: it belongs to an earlier attempt or session")
         return
     end if
     m.replanPending = false
@@ -2900,7 +2900,7 @@ end function
 
 ' Makes another version of the title the playing file (its tracks, subtitle tools and sync state).
 sub adoptVersion(fileId as string)
-    print "[siku-playback] replan moved to file " + fileId + " from " + m.fileId
+    Diag_log("[siku-playback] replan moved to file " + fileId + " from " + m.fileId)
     m.fileId = fileId
     m.version = invalid
     if m.watch <> invalid then
@@ -3039,7 +3039,7 @@ end sub
 sub Voice_debugFire()
     scene = m.top.getScene()
     if scene = invalid or m.closing then return
-    print "[siku-voice] debugVoice: injecting " + Str_orEmpty(m.top.params.debugVoice)
+    Diag_log("[siku-voice] debugVoice: injecting " + Str_orEmpty(m.top.params.debugVoice))
     scene.callFunc("handleTransport", Voice_debugInfo(Str_orEmpty(m.top.params.debugVoice)))
 end sub
 
@@ -3061,7 +3061,7 @@ end sub
 sub DeepLink_debugFire()
     scene = m.top.getScene()
     if scene = invalid or m.closing then return
-    print "[siku-playback] debugDeepLink: a content deep link arrives for " + m.itemId
+    Diag_log("[siku-playback] debugDeepLink: a content deep link arrives for " + m.itemId)
     scene.inputArgs = { contentId: m.itemId, mediaType: "movie" }
 end sub
 

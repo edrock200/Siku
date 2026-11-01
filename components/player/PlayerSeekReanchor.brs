@@ -57,7 +57,7 @@ function SeekReanchor_intercept(target as float) as boolean
         ' One request at a time; the newest target follows when the answer lands.
         m.reanchorQueued = target
         m.scrubber.position = target
-        print "[siku-playback] seek reanchor queued target=" + PlaybackCaps_str(Int(target))
+        Diag_log("[siku-playback] seek reanchor queued target=" + PlaybackCaps_str(Int(target)))
         return true
     end if
     mountedEnd = m.bufferedEnd
@@ -86,7 +86,7 @@ function SeekReanchor_send(target as float, reason as string) as boolean
     m.reanchorFromPlan = Str_orEmpty(m.plan.plan_id)
     m.reanchorWasPaused = m.isPaused
     m.reanchorBody = body
-    print "[siku-playback] seek reanchor target=" + PlaybackCaps_str(Int(target)) + " reason=" + reason + " from=" + PlaybackCaps_str(Int(m.position)) + " offset=" + PlaybackCaps_str(Int(m.timelineOffset)) + " buffered_to=" + PlaybackCaps_str(Int(m.bufferedEnd)) + " plan=" + m.reanchorFromPlan
+    Diag_log("[siku-playback] seek reanchor target=" + PlaybackCaps_str(Int(target)) + " reason=" + reason + " from=" + PlaybackCaps_str(Int(m.position)) + " offset=" + PlaybackCaps_str(Int(m.timelineOffset)) + " buffered_to=" + PlaybackCaps_str(Int(m.bufferedEnd)) + " plan=" + m.reanchorFromPlan)
     if not m.isPaused then m.video.control = "pause"
     m.scrubber.position = target
     resetBuffered()
@@ -104,7 +104,7 @@ sub onSeekReanchor(event as object)
     ' Another replan (a track or quality change) replaced the plan meanwhile: it already mounted
     ' its own stream, so this answer is stale.
     if m.plan = invalid or Str_orEmpty(m.plan.plan_id) <> m.reanchorFromPlan then
-        print "[siku-playback] seek reanchor answer dropped: the plan changed meanwhile"
+        Diag_log("[siku-playback] seek reanchor answer dropped: the plan changed meanwhile")
         SeekReanchor_next()
         return
     end if
@@ -123,7 +123,7 @@ sub onSeekReanchor(event as object)
     end if
     if problem <> "" then
         ' The current stream is still mounted where it was: carry on from there.
-        print "[siku-playback] seek reanchor failed target=" + PlaybackCaps_str(Int(target)) + " " + problem
+        Diag_log("[siku-playback] seek reanchor failed target=" + PlaybackCaps_str(Int(target)) + " " + problem)
         setBuffering(false)
         m.scrubber.position = m.position
         if not m.reanchorWasPaused then m.video.control = "resume"
@@ -141,7 +141,7 @@ sub onSeekReanchor(event as object)
     tl = plan.timeline
     origin = 0.0
     if tl <> invalid and Type(tl) = "roAssociativeArray" then origin = Num_or(tl.timeline_offset_seconds, 0)
-    print "[siku-playback] seek reanchored target=" + PlaybackCaps_str(Int(target)) + " origin=" + PlaybackCaps_str(Int(origin)) + " same_route=" + PlaybackCaps_str(sameRoute)
+    Diag_log("[siku-playback] seek reanchored target=" + PlaybackCaps_str(Int(target)) + " origin=" + PlaybackCaps_str(Int(origin)) + " same_route=" + PlaybackCaps_str(sameRoute))
     m.video.control = "stop"
     ' "remount": the playing recipe again, only the source reloads (buffering quality keeps its plan).
     applyPlan(plan, { resumeAt: target, subtitleTrackId: Subs_selectedTrackId(), mountKind: "remount" })
@@ -160,5 +160,5 @@ sub SeekReanchor_next()
     if m.reanchorQueued < 0 then return
     q = m.reanchorQueued
     m.reanchorQueued = -1.0
-    if not SeekReanchor_send(q, "queued") then print "[siku-playback] seek reanchor queued target dropped: no session"
+    if not SeekReanchor_send(q, "queued") then Diag_log("[siku-playback] seek reanchor queued target dropped: no session")
 end sub

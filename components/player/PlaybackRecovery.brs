@@ -63,7 +63,7 @@ sub Recovery_notePlan(plan as object)
     m.rec.everPlayed = false
     if m.rec.nativePending then
         m.rec.nativePending = false
-        print "[siku-playback] recovery " + m.rec.native.ToStr() + " mounted delivery=" + Str_orEmpty(plan.delivery) + " quality=" + PlaybackCaps_videoQuality(m.qualityPref)
+        Diag_log("[siku-playback] recovery " + m.rec.native.ToStr() + " mounted delivery=" + Str_orEmpty(plan.delivery) + " quality=" + PlaybackCaps_videoQuality(m.qualityPref))
     end if
     if m.recDebugTimer <> invalid and m.top.params <> invalid and PlaybackError_rokuCode(m.top.params.debugVideoError) <> invalid then
         m.recDebugTimer.control = "stop"
@@ -98,7 +98,7 @@ sub Recovery_onVideoError(code as dynamic, msg as string, detail as string)
     delivery = ""
     if m.plan <> invalid then delivery = Str_orEmpty(m.plan.delivery)
     ' To the debug console too: the code matters for a bug report. Only the code leaves the device.
-    print "[siku-playback] video error delivery=" + delivery + " code=" + Str_orEmpty(code) + " msg=" + Recovery_scrub(msg) + " str=" + Recovery_scrub(detail)
+    Diag_log("[siku-playback] video error delivery=" + delivery + " code=" + Str_orEmpty(code) + " msg=" + Recovery_scrub(msg) + " str=" + Recovery_scrub(detail))
     Recovery_fail(Recovery_classify(code), code)
 end sub
 
@@ -144,7 +144,7 @@ sub Recovery_fail(classification as string, rokuCode as dynamic)
         m.rec.rungHeight = ladderStep.height
     end if
     nextCount = m.rec.count + 1
-    print "[siku-playback] recovery " + m.rec.native.ToStr() + " classification=" + classification + " quality=" + PlaybackCaps_videoQuality(m.qualityPref) + " attempt_count=" + nextCount.ToStr()
+    Diag_log("[siku-playback] recovery " + m.rec.native.ToStr() + " classification=" + classification + " quality=" + PlaybackCaps_videoQuality(m.qualityPref) + " attempt_count=" + nextCount.ToStr())
     m.video.control = "stop"
     msg = "Roku Video node failure"
     roku = PlaybackError_rokuCode(rokuCode)
@@ -229,7 +229,7 @@ function Recovery_takeFailedReplan(resp as object) as boolean
     if resp.ok and Type(d) = "roAssociativeArray" and Str_orEmpty(d.outcome) <> "playable" then
         reason = ""
         if d.terminal <> invalid and Type(d.terminal) = "roAssociativeArray" then reason = Str_orEmpty(d.terminal.reason)
-        print "[siku-playback] recovery " + m.rec.native.ToStr() + " answered outcome=" + Str_orEmpty(d.outcome) + " reason=" + reason
+        Diag_log("[siku-playback] recovery " + m.rec.native.ToStr() + " answered outcome=" + Str_orEmpty(d.outcome) + " reason=" + reason)
         if reason <> "" then m.rec.lastClassification = reason
         if Recovery_nextStep() <> invalid then
             Recovery_fail(cls, m.rec.lastRoku)
@@ -238,7 +238,7 @@ function Recovery_takeFailedReplan(resp as object) as boolean
         PlaybackError_show("3003", { rokuCode: m.rec.lastRoku, reason: m.rec.lastClassification })
         return true
     end if
-    print "[siku-playback] recovery " + m.rec.native.ToStr() + " replan failed status=" + Str_orEmpty(resp.status)
+    Diag_log("[siku-playback] recovery " + m.rec.native.ToStr() + " replan failed status=" + Str_orEmpty(resp.status))
     PlaybackError_show("3003", { rokuCode: m.rec.lastRoku, reason: cls })
     return true
 end function
@@ -276,7 +276,7 @@ sub Recovery_onTick()
     end if
     if m.rec.still < limit then return
     m.rec.still = 0
-    print "[siku-playback] no progress for " + limit.ToStr() + " s state=" + st + " played=" + PlaybackCaps_str(m.rec.everPlayed)
+    Diag_log("[siku-playback] no progress for " + limit.ToStr() + " s state=" + st + " played=" + PlaybackCaps_str(m.rec.everPlayed))
     Recovery_fail("buffering_timeout", invalid)
 end sub
 
@@ -286,7 +286,7 @@ sub Recovery_onDebugError()
     if m.closing or m.plan = invalid or m.errorGroup.visible then return
     code = PlaybackError_rokuCode(m.top.params.debugVideoError)
     if code = invalid then return
-    print "[siku-playback] debugVideoError: faking Roku error " + code.ToStr()
+    Diag_log("[siku-playback] debugVideoError: faking Roku error " + code.ToStr())
     Recovery_onVideoError(code, "debug", "debugVideoError")
 end sub
 
@@ -296,7 +296,7 @@ function Recovery_rereadInventory() as boolean
     if m.rec = invalid then Recovery_reset()
     if m.rec.inventoryRetried then return false
     m.rec.inventoryRetried = true
-    print "[siku-playback] no playable file in the item's inventory; reading it once more"
+    Diag_log("[siku-playback] no playable file in the item's inventory; reading it once more")
     p = m.top.params
     q = { image_size: "medium" }
     if p <> invalid and not Str_isEmpty(p.fileId) then q.file_id = Str_orEmpty(p.fileId)

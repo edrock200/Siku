@@ -64,7 +64,7 @@ sub ThemeMusic_show(item as dynamic)
     else if caps.available = true then
         ThemeMusic_requestGrant()
     else
-        print "[siku-theme] server reports theme music unavailable"
+        Diag_log("[siku-theme] server reports theme music unavailable")
     end if
 end sub
 
@@ -96,7 +96,7 @@ sub ThemeMusic_onCaps(event as object)
     ctx = resp.context
     if not resp.ok or Type(resp.data) <> "roAssociativeArray" then
         ' A failed read is not an answer (upstream keeps asking); stay silent for this page.
-        print "[siku-theme] capability read failed status=" + Str_orEmpty(resp.status)
+        Diag_log("[siku-theme] capability read failed status=" + Str_orEmpty(resp.status))
         return
     end if
     d = resp.data
@@ -105,7 +105,7 @@ sub ThemeMusic_onCaps(event as object)
     if ctx <> invalid then key = Str_orEmpty(ctx.key)
     entry = { key: key, available: available, fetchedAt: Time_nowSeconds() }
     if m.global.hasField("themeCaps") then m.global.themeCaps = entry else m.global.addFields({ themeCaps: entry })
-    print "[siku-theme] capability state=" + Str_orEmpty(d.state) + " allowed=" + Str_orEmpty(d.allowed) + " transcode=" + Str_orEmpty(d.transcode)
+    Diag_log("[siku-theme] capability state=" + Str_orEmpty(d.state) + " allowed=" + Str_orEmpty(d.allowed) + " transcode=" + Str_orEmpty(d.transcode))
     if ctx = invalid or ctx.gen <> m.themeGen or m.themeSel = invalid then return
     if available then ThemeMusic_requestGrant()
 end sub
@@ -125,7 +125,7 @@ function ThemeMusic_acceptedFormats() as object
             r = di.CanDecodeAudio({ "codec": pair[1] })
             ok = r <> invalid and r.result = true
         catch err
-            print "[siku-theme] CanDecodeAudio failed: "; err.message
+            Diag_log(Diag_join(["[siku-theme] CanDecodeAudio failed: ", err.message]))
         end try
         if ok then out.Push({ container: pair[0], audio_codec: pair[1] })
     end for
@@ -145,7 +145,7 @@ sub ThemeMusic_onGrant(event as object)
     if ctx = invalid or ctx.gen <> m.themeGen or m.themeSel = invalid then return
     if not resp.ok or Type(resp.data) <> "roAssociativeArray" or Str_isEmpty(resp.data.url) then
         ' 406: nothing this Roku decodes; 503: no route. Themes are optional, so stay silent.
-        print "[siku-theme] grant refused status=" + Str_orEmpty(resp.status)
+        Diag_log("[siku-theme] grant refused status=" + Str_orEmpty(resp.status))
         return
     end if
     g = resp.data
@@ -162,7 +162,7 @@ sub ThemeMusic_onGrant(event as object)
     m.themeAudio.content = content
     m.themeAudio.control = "play"
     m.themePlaying = true
-    print "[siku-theme] playing delivery=" + Str_orEmpty(g.delivery) + " type=" + Str_orEmpty(g.content_type) + " loop=" + Str_orEmpty(loopIt)
+    Diag_log("[siku-theme] playing delivery=" + Str_orEmpty(g.delivery) + " type=" + Str_orEmpty(g.content_type) + " loop=" + Str_orEmpty(loopIt))
 end sub
 
 function ThemeMusic_streamFormat(contentType as dynamic) as string
@@ -189,7 +189,7 @@ sub ThemeMusic_onState()
         end if
     else if st = "error" then
         ' The grant URL is signed: masked if the Audio node's text quotes it.
-        print "[siku-theme] audio error " + Str_orEmpty(m.themeAudio.errorCode) + " " + CreateObject("roRegex", "[a-z][a-z0-9+.-]*://[^\s]*", "i").ReplaceAll(Str_orEmpty(m.themeAudio.errorMsg), "<url>")
+        Diag_log("[siku-theme] audio error " + Str_orEmpty(m.themeAudio.errorCode) + " " + CreateObject("roRegex", "[a-z][a-z0-9+.-]*://[^\s]*", "i").ReplaceAll(Str_orEmpty(m.themeAudio.errorMsg), "<url>"))
         if m.themeRetry = 0 then
             m.themeRetry = 1
             ThemeMusic_requestGrant()

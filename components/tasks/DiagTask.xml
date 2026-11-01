@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-lived task that keeps the on-device diagnostics log and reads how the last launch ended
+     (components/common/Diag.brs). Started once by MainScene (DiagScene.brs).
+       m.global.diagLine (in)  every Diag_log line; scrubbed and appended to cachefs:/siku-diag.txt
+                               (48 KB, then it becomes siku-diag.1.txt: at most ~96 KB in all)
+       launchReason      (in)  Main's lastExitOrTerminationReason (or the debugExit deep link)
+       command           (in)  { action: "read" | "clear" }
+       logText           (out) the log's text after a "read" (oldest first)
+       m.global.diagExit (out) { code, kind, when, fresh, last } once the exit is read: fresh is
+                               true once per unexpected close; last is the latest unexpected
+                               close remembered on this Roku ({ code, kind, when } or {})
+     roFileSystem-style file calls and roAppManager stay off the render thread (skill pitfall 2).
+     The log never leaves the Roku.
+     SPDX-License-Identifier: AGPL-3.0-or-later -->
+<component name="DiagTask" extends="Task">
+  <interface>
+    <field id="launchReason" type="string" />
+    <field id="command" type="assocarray" alwaysNotify="true" />
+    <field id="logText" type="string" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/tasks/DiagTask.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Diag.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+</component>

@@ -17,7 +17,7 @@ sub loop()
                 ' A refresh for this token just failed after its retries: the requests queued behind
                 ' it (N parallel 401s) get the same answer at once instead of another round each.
                 if m.failed.token = req.token and Time_nowSeconds() - m.failed.at < AuthTask_failureHoldSeconds() then
-                    print "[siku-auth] refresh skipped: the last attempt for this token failed moments ago"
+                    Diag_log("[siku-auth] refresh skipped: the last attempt for this token failed moments ago")
                 else
                     doRefresh(session)
                 end if
@@ -39,7 +39,7 @@ sub doRefresh(session as object)
         if outcome = "ok" then
             saveTokens(session.refreshToken, r.data)
             m.failed = { token: "", at: 0 }
-            print "[siku-auth] refresh ok"
+            Diag_log("[siku-auth] refresh ok")
             return
         end if
         code = ""
@@ -47,18 +47,18 @@ sub doRefresh(session as object)
         if outcome = "rejected" then
             ' 400/401 (session_expired, invalid_grant): the refresh token is no longer valid, so
             ' the user must sign in again — unless the session moved on meanwhile (a new sign-in).
-            print "[siku-auth] refresh rejected status="; r.status; " code="; code
+            Diag_log(Diag_join(["[siku-auth] refresh rejected status=", r.status, " code=", code]))
             if m.global.session.refreshToken = session.refreshToken then m.global.authExpired = true
             return
         end if
         ' Anything else (no answer, 5xx, 429, 403, a 200 that is not a token): keep the session.
         attempt = attempt + 1
-        print "[siku-auth] refresh failed status="; r.status; " code="; code; " attempt="; attempt
+        Diag_log(Diag_join(["[siku-auth] refresh failed status=", r.status, " code=", code, " attempt=", attempt]))
         if attempt >= AuthTask_attempts() then exit while
         Sleep(AuthTask_backoffMs(attempt))
     end while
     ' Give up quietly: the caller sees its error; the next request tries again.
-    print "[siku-auth] refresh gave up, keeping the session"
+    Diag_log("[siku-auth] refresh gave up, keeping the session")
     m.failed = { token: session.accessToken, at: Time_nowSeconds() }
 end sub
 
@@ -68,7 +68,7 @@ end sub
 sub saveTokens(usedRefreshToken as string, data as object)
     current = m.global.session
     if current.refreshToken <> usedRefreshToken then
-        print "[siku-auth] refresh answer dropped: the session changed meanwhile"
+        Diag_log("[siku-auth] refresh answer dropped: the session changed meanwhile")
         return
     end if
     ' Only the token fields: a response carrying `user` would read as a new sign-in and drop the profile.

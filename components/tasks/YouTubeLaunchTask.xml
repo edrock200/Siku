@@ -17,4 +17,5 @@
     <field id="result" type="assocarray" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/tasks/YouTubeLaunchTask.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
 </component>

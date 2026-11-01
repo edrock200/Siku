@@ -136,6 +136,7 @@ function buildCategories() as object
         { id: "playback", title: "Playback", description: "Quality and episodes", blurb: "Streaming quality and episode behavior for this Roku.", icon: "play_circle" }
         { id: "subtitles", title: "Subtitles", description: "Language and appearance", blurb: "Language, behavior, and on-screen appearance.", icon: "subtitles" }
         { id: "server", title: "Server", description: "Connection and version", blurb: "The Silo server this Roku is connected to.", icon: "dns" }
+        { id: "diagnostics", title: "Diagnostics", description: "Log and last close", blurb: "What Siku recorded on this Roku, to describe a problem after it happened.", icon: "info" }
     ]
 end function
 
@@ -315,6 +316,19 @@ function buildPane(catId as string) as object
         out.Push({ kind: "row", row: rowDef("manageServers", "action", "Manage Servers") })
         out.Push({ kind: "header", text: "About" })
         out.Push({ kind: "row", row: rowDef("appVersion", "info", "App Version") })
+    else if catId = "diagnostics" then
+        ' The on-device log and Roku's record of how Siku last closed (Diag.brs, DiagTask).
+        out.Push({ kind: "header", text: "Last Close" })
+        out.Push({ kind: "row", row: rowDef("lastExit", "info", "Last Time") })
+        out.Push({ kind: "row", row: rowDef("lastProblem", "info", "Last Unexpected Close") })
+        out.Push({ kind: "footer", text: "As your Roku reported it when Siku started." })
+        out.Push({ kind: "header", text: "Log" })
+        out.Push({ kind: "row", row: rowDef("viewLog", "action", "View Log") })
+        out.Push({ kind: "row", row: { id: "clearLog", kind: "action", label: "Clear Log", destructive: true } })
+        out.Push({ kind: "footer", text: "Siku keeps a short log of what it did on this Roku (about 100 KB), without server addresses, names, ids or sign-in details, so a problem can be described after it happened. It stays on this Roku and is never sent anywhere." })
+        out.Push({ kind: "header", text: "Memory" })
+        out.Push({ kind: "row", row: rowDef("memoryMode", "info", "Memory Mode") })
+        out.Push({ kind: "footer", text: "On a Roku with little memory Siku keeps fewer pages of a library and fewer screens loaded, so it is less likely to be closed." })
     end if
     return out
 end function
@@ -430,6 +444,17 @@ function rowValue(row as object) as string
         return m.serverVersion
     else if id = "appVersion" then
         return App_version()
+    else if id = "lastExit" then
+        return Diag_exitLabel(m.global.diagExit)
+    else if id = "lastProblem" then
+        e = m.global.diagExit
+        if Type(e) = "roAssociativeArray" and Type(e.last) = "roAssociativeArray" then
+            if not Str_isEmpty(e.last.code) then return Diag_exitLabel(e.last)
+        end if
+        return "None"
+    else if id = "memoryMode" then
+        if Memory_isLowEnd() then return "Low-memory Roku"
+        return "Standard"
     end if
     return ""
 end function
@@ -1240,6 +1265,19 @@ sub performConfirmed(actionId as string)
         end for
     else if actionId = "resetAppearance" then
         writeAppearance(Settings_defaultAppearance())
+    else if actionId = "clearLog" then
+        task = m.global.diagTask
+        if task <> invalid then task.command = { action: "clear" }
+        ' The remembered unexpected close goes too (DiagTask deletes it from the registry).
+        ex = m.global.diagExit
+        if Type(ex) = "roAssociativeArray" then
+            ex = AA_copy(ex)
+            ex.fresh = false
+            ex.last = {}
+            m.global.diagExit = ex
+        end if
+        m.global.toast = "Diagnostics log cleared."
+        renderPane()
     end if
 end sub
 
@@ -1271,6 +1309,10 @@ sub activateRow(row as object)
         Conn_testSpeed()
     else if id = "resetOverrides" then
         openConfirm("resetOverrides", "Reset Playback Overrides?", "Playback choices for this Roku and profile go back to the server fallback.", "Reset")
+    else if id = "viewLog" then
+        Nav_push("DiagnosticsScreen", {})
+    else if id = "clearLog" then
+        openConfirm("clearLog", "Clear the Diagnostics Log?", "This deletes everything Siku has recorded on this Roku.", "Clear")
     else if id = "resetAppearance" then
         openConfirm("resetAppearance", "Reset Subtitle Appearance?", "This restores every subtitle appearance option to its default.", "Reset")
     else if id = "manageServers" then

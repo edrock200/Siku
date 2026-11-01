@@ -20,7 +20,7 @@ class MainEvents(unittest.TestCase):
             ("string ignored", p, [APP, {"memoryUsagePercent": "80"}], -1),
             ("missing ignored", p, [APP, {}], -1),
             ("not an object", p, [APP, None], -1),
-            ("device low", p, [DEV, {"generalMemoryLevel": "low"}], 80),
+            ("device low", p, [DEV, {"generalMemoryLevel": "low"}], 85),
             ("device critical", p, [DEV, {"generalMemoryLevel": "CRITICAL"}], 95),
             ("device normal", p, [DEV, {"generalMemoryLevel": "normal"}], 0),
             ("device focus event is not memory", p, [DEV, {"appFocused": False}], -1),

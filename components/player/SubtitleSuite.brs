@@ -661,7 +661,7 @@ sub Subs_onDelaySaved(event as object)
     if ctx = invalid then ctx = {}
     if not resp.ok then
         if ctx.isDelete = true and resp.status = 404 then return
-        print "[siku-playback] subtitle delay not saved: status=" + Str_orEmpty(resp.status)
+        Diag_log("[siku-playback] subtitle delay not saved: status=" + Str_orEmpty(resp.status))
         if ctx.isDelete <> true then m.global.toast = "Couldn't save the subtitle delay: " + Api_errorText(resp)
         return
     end if
@@ -1672,7 +1672,7 @@ sub Subs_onAiCreated(event as object)
     if m.closing or not Subs_sameFile(resp) or Str_orEmpty(resp.context.sessionId) <> m.sessionId then return
     ai = m.subs.ai
     if not resp.ok and Subs_aiResendWithoutSession(resp.status, resp.context.withSession, ai.phase) then
-        print "[siku-playback] ai subtitle session not found (404); sending again without it"
+        Diag_log("[siku-playback] ai subtitle session not found (404); sending again without it")
         Subs_aiSend("")
         return
     end if

@@ -2101,6 +2101,19 @@ class Handler(BaseHTTPRequestHandler):
                 items = all_series()
             if lib in OPTS["empty_libraries"]:
                 items = []
+            # --switch big_library=<n>: the Movies library (and the all-library grid) pads itself
+            # with numbered copies to n titles, for the bounded library grid (Siku memdiag).
+            big = int(STATE["switches"].get("big_library") or 0)
+            if big > len(items) and src == "query" and lib != "2" and items:
+                base = list(items)
+                for k in range(big - len(base)):
+                    c = dict(base[k % len(base)])
+                    c["content_id"] = "movie:filler-%d" % k
+                    c["id"] = c["content_id"]
+                    c["type"] = "movie"
+                    c["title"] = "Zz Filler %04d" % k
+                    items.append(c)
+                print("CATALOG big library=%s cursor=%s limit=%s" % (lib or "-", q.get("cursor", ["0"])[0], q.get("limit", ["50"])[0]), flush=True)
             if typ:
                 items = [i for i in items if i["type"] == typ]
             if src == "favorites":

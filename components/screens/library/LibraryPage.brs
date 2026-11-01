@@ -71,6 +71,7 @@ sub init()
     m.facets = invalid
     m.filterFacet = ""
     m.cards = []
+    m.win = invalid         ' GridWindow.brs: the pages held in the grid (Browse-style grids only)
     m.nextCursor = ""
     m.hasMore = false
     m.loading = false
@@ -388,6 +389,7 @@ end sub
 
 sub reload()
     m.cards = []
+    m.win = invalid
     m.nextCursor = ""
     m.hasMore = false
     m.moreFailures = 0
@@ -424,6 +426,7 @@ end function
 ' Sends page 1 (cursor "") or the next page. Same query every time, only the cursor changes.
 sub requestPage(cursor as string)
     ctx = { seq: m.requestSeq, cursor: cursor }
+    if m.refillIndex <> invalid then ctx.refill = m.refillIndex
     if m.mode = "history" then
         q = { limit: 40, image_size: "medium" }
         if cursor <> "" then q.cursor = cursor
@@ -550,6 +553,10 @@ sub onPage(event as object)
     resp = Api_result(event)
     ctx = resp.context
     if ctx = invalid or ctx.seq <> m.requestSeq then return
+    if ctx.refill <> invalid then
+        onRefill(ctx.refill, resp)
+        return
+    end if
     isMore = ctx.cursor <> ""
     m.loading = false
     m.loadingMore = false
@@ -590,11 +597,100 @@ sub onPage(event as object)
     ' would count cards a Movies / Series view hides).
     if not isMore and not inGroupDrill() and m.mode <> "section" then showCount(data, "title", "titles")
     if isMore then
+        start = m.cards.Count()
         appendCards(items)
+        if m.win <> invalid then
+            GridWindow_added(m.win, start, items.Count(), ctx.cursor)
+            trimGrid()
+        end if
     else
         m.loaded = true
         setCards(items)
+        ' A row's page filters cards client-side, so its pages cannot be read again one for one.
+        if m.mode <> "section" and items.Count() > 0 then
+            m.win = GridWindow_new()
+            GridWindow_added(m.win, 0, items.Count(), "")
+        end if
     end if
+end sub
+
+' ---------- Bounded grid (GridWindow.brs, MemoryPolicy.brs) ----------
+' The grid keeps a cell for every title read so far, but only Memory_gridPages() pages hold their
+' cards; the rest show default artwork until focus comes back within reach and the page is read
+' again with its own cursor.
+
+function gridReach() as integer
+    cols = Int(Num_or(m.grid.numColumns, 1))
+    if cols < 1 then cols = 1
+    return Memory_prefetchRows(Memory_currentLevel(), Memory_isLowEnd()) * cols
+end function
+
+sub trimGrid()
+    if m.win = invalid or m.grid.content = invalid then return
+    budget = Memory_gridPages(Memory_currentLevel(), Memory_isLowEnd())
+    dropped = GridWindow_toDrop(m.win, m.grid.itemFocused, gridReach(), budget)
+    if dropped.Count() = 0 then return
+    for each pidx in dropped
+        pg = m.win.pages[pidx]
+        for i = pg.start to pg.start + pg.size - 1
+            if i < m.cards.Count() then m.cards[i] = invalid
+            node = m.grid.content.getChild(i)
+            if node <> invalid then blankCard(node)
+        end for
+    end for
+    Diag_log(Diag_join(["[siku-memory] library pages dropped=", dropped.Count(), " kept=", GridWindow_loadedCount(m.win), " budget=", budget]))
+end sub
+
+' An emptied cell: no data, no artwork (MediaCardItem draws the default artwork).
+sub blankCard(node as object)
+    node.raw = {}
+    node.contentId = ""
+    node.title = ""
+    node.subtitle = ""
+    node.description = ""
+    node.HDPosterUrl = ""
+    node.backdropUrl = ""
+    node.logoUrl = ""
+    node.progress = 0.0
+    node.watched = false
+end sub
+
+' Reads an emptied page again with the cursor it was first read with.
+sub refillPage(index as integer)
+    pg = m.win.pages[index]
+    m.loadingMore = true
+    Diag_log(Diag_join(["[siku-memory] library page reread page=", index, " items=", pg.size]))
+    ' requestPage only ever reads with the query the grid was built with; the context marks the page.
+    m.refillIndex = index
+    requestPage(pg.cursor)
+    m.refillIndex = invalid
+end sub
+
+sub onRefill(index as integer, resp as object)
+    m.loadingMore = false
+    if m.win = invalid or index >= m.win.pages.Count() or m.grid.content = invalid then return
+    if not resp.ok then
+        ' Quietly wait before the next try; the cells keep their default artwork meanwhile.
+        m.moreFailures = m.moreFailures + 1
+        m.moreRetryAt = Time_nowSeconds() + Library_moreRetryDelay(m.moreFailures)
+        return
+    end if
+    m.moreFailures = 0
+    items = []
+    if Type(resp.data) = "roAssociativeArray" then items = Arr_or(resp.data.items)
+    pg = m.win.pages[index]
+    n = pg.size
+    if items.Count() < n then n = items.Count()
+    for i = 0 to n - 1
+        k = pg.start + i
+        node = m.grid.content.getChild(k)
+        if node <> invalid then
+            Content_fillCard(node, items[i], m.cardStyle)
+            if k < m.cards.Count() then m.cards[k] = items[i]
+        end if
+    end for
+    GridWindow_reloaded(m.win, index)
+    trimGrid()
 end sub
 
 sub setCards(items as object)
@@ -715,7 +811,7 @@ sub enterGroup(card as object)
 end sub
 
 sub saveParentGrid()
-    m.parent = { cards: m.cards, content: m.grid.content, index: m.grid.itemFocused, hasMore: m.hasMore, cursor: m.nextCursor, countText: m.countLabel.text, countVisible: m.countLabel.visible }
+    m.parent = { cards: m.cards, win: m.win, content: m.grid.content, index: m.grid.itemFocused, hasMore: m.hasMore, cursor: m.nextCursor, countText: m.countLabel.text, countVisible: m.countLabel.visible }
 end sub
 
 sub onBackPill()
@@ -740,6 +836,7 @@ function leaveDrill() as boolean
         return true
     end if
     m.cards = parent.cards
+    m.win = parent.win
     m.grid.content = parent.content
     m.grid.visible = true
     m.countLabel.text = Str_orEmpty(parent.countText)
@@ -923,8 +1020,19 @@ end function
 
 sub onGridFocused()
     idx = m.grid.itemFocused
+    trimGrid()
     if m.moreFailures > 0 and Time_nowSeconds() < m.moreRetryAt then return
-    if m.hasMore and not m.loadingMore and not m.loading and idx >= m.cards.Count() - 12 then
+    if m.loadingMore or m.loading then return
+    ' Pages emptied to save memory are read again as focus comes back within reach of them.
+    if m.win <> invalid then
+        again = GridWindow_toReload(m.win, idx, gridReach())
+        if again >= 0 then
+            refillPage(again)
+            return
+        end if
+    end if
+    ' The next page is asked for 8 rows before the end (5 on a low-memory Roku or under pressure).
+    if m.hasMore and idx >= m.cards.Count() - gridReach() then
         m.loadingMore = true
         if isGroupsMode() and m.drill = invalid then
             requestGroups(m.nextCursor)
@@ -941,6 +1049,7 @@ sub onGridSelected()
     idx = m.grid.itemSelected
     if idx < 0 or idx >= m.cards.Count() then return
     card = m.cards[idx]
+    if card = invalid then return ' an emptied cell whose page is being read again
     if m.mode = "collections" and m.drill = invalid then
         m.drill = { kind: "collection", collectionId: Str_orEmpty(card.collection_id), title: Str_orEmpty(card.title) }
         saveParentGrid()
@@ -972,7 +1081,9 @@ sub flushPendingSelect()
     m.pressTimer.control = "stop"
     idx = m.pendingSelect
     m.pendingSelect = invalid
-    if idx <> invalid and idx >= 0 and idx < m.cards.Count() then CardActions_openDetail(m.cards[idx])
+    if idx <> invalid and idx >= 0 and idx < m.cards.Count() then
+        if m.cards[idx] <> invalid then CardActions_openDetail(m.cards[idx])
+    end if
 end sub
 
 ' ---------- A–Z rail ----------
@@ -1400,6 +1511,7 @@ end sub
 sub openOptionsFor(idx as integer)
     if idx < 0 or idx >= m.cards.Count() then return
     card = m.cards[idx]
+    if card = invalid then return
     t = LCase(Str_orEmpty(card.type))
     if t = "collection" or t = "audiobook_group" then return
     m.optionsTarget = { index: idx, card: card }
@@ -1429,6 +1541,7 @@ sub applyCardPatch(index as dynamic, patch as object)
     if index = invalid or m.grid.content = invalid then return
     node = m.grid.content.getChild(index)
     if node = invalid then return
+    if Str_isEmpty(node.contentId) then return ' an emptied cell (trimGrid)
     if patch.contentId <> invalid and Str_orEmpty(node.raw.content_id) <> patch.contentId then return
     raw = AA_copy(node.raw)
     us = AA_copy(raw.user_state)

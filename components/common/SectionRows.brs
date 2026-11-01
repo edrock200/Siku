@@ -118,7 +118,7 @@ sub SectionRows_storeCaps(event as object)
     end if
     sending = "none"
     if limit > 0 then sending = limit.ToStr()
-    print "[siku-home] section item limit max="; advertised; " sending="; sending
+    Diag_log(Diag_join(["[siku-home] section item limit max=", advertised, " sending=", sending]))
     SectionRows_setLimit(serverUrl, limit)
 end sub
 

@@ -154,23 +154,23 @@ sub Trickplay_onManifest(event as object)
     if resp.ok then
         man = Trickplay_fromManifest(resp.data, c.fileId, m.global.session.serverOrigin)
         if man = invalid then
-            print "[siku-trickplay] file=" + c.fileId + " manifest unusable; time-only preview"
+            Diag_log("[siku-trickplay] file=" + c.fileId + " manifest unusable; time-only preview")
             Trickplay_refuse()
             return
         end if
         expiresIn = -1
         if man.expiresAt > 0 then expiresIn = man.expiresAt - Time_nowSeconds()
-        print "[siku-trickplay] file=" + c.fileId + " manifest renewal=" + Trickplay_yesNo(c.renewal) + " interval_ms=" + man.intervalMs.ToStr() + " tile=" + man.thumbW.ToStr() + "x" + man.thumbH.ToStr() + " grid=" + man.cols.ToStr() + "x" + man.rows.ToStr() + " count=" + man.count.ToStr() + " sheets=" + man.sheetUrls.Count().ToStr() + " expires_in=" + expiresIn.ToStr()
+        Diag_log("[siku-trickplay] file=" + c.fileId + " manifest renewal=" + Trickplay_yesNo(c.renewal) + " interval_ms=" + man.intervalMs.ToStr() + " tile=" + man.thumbW.ToStr() + "x" + man.thumbH.ToStr() + " grid=" + man.cols.ToStr() + "x" + man.rows.ToStr() + " count=" + man.count.ToStr() + " sheets=" + man.sheetUrls.Count().ToStr() + " expires_in=" + expiresIn.ToStr())
         Trickplay_install(man)
         return
     end if
     ' A dropped connection, rate limiting or a server error may pass; anything else is the answer.
     if status = 0 or status = 429 or status >= 500 then
-        print "[siku-trickplay] file=" + c.fileId + " manifest read failed status=" + status.ToStr() + "; asking again after " + TP_BACKOFF_S().ToStr() + " s"
+        Diag_log("[siku-trickplay] file=" + c.fileId + " manifest read failed status=" + status.ToStr() + "; asking again after " + TP_BACKOFF_S().ToStr() + " s")
         if not c.renewal then m.tp.failedAt = Time_nowSeconds()
         return
     end if
-    print "[siku-trickplay] file=" + c.fileId + " manifest refused status=" + status.ToStr() + "; time-only preview"
+    Diag_log("[siku-trickplay] file=" + c.fileId + " manifest refused status=" + status.ToStr() + "; time-only preview")
     Trickplay_refuse()
 end sub
 
@@ -347,7 +347,7 @@ sub Trickplay_onSheetStatus(event as object)
         e.status = "failed"
         sk = e.sheet.ToStr()
         m.tp.sheetFailedAt[sk] = Time_nowSeconds()
-        print "[siku-trickplay] sheet " + sk + " failed to load"
+        Diag_log("[siku-trickplay] sheet " + sk + " failed to load")
         w = m.tp.want
         wanted = w <> invalid and w.sheet = e.sheet and w.key = e.key
         ' The Poster does not say why; an expired or revoked signature is the likely cause, so the
