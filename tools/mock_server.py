@@ -690,6 +690,21 @@ def sort_title(t):
 FLAG_RULE_FIELDS = {"hdr", "dolby_vision", "watched", "in_progress", "favorited", "in_watchlist"}
 
 
+MOCK_STUDIOS = ["Lantern Films", "Mock Pictures", "Northwind"]
+MOCK_COUNTRIES = ["United States", "United Kingdom", "France"]
+MOCK_LANGS = ["en", "fr", "de"]
+
+
+def mock_facets(item):
+    """Facet values the mock derives for a title (studio, country, languages, resolution, HDR)."""
+    k = h(item.get("title", ""))
+    ov = item.get("overlay_summary") or {}
+    return {"studio": MOCK_STUDIOS[k % 3], "country": MOCK_COUNTRIES[(k // 3) % 3],
+            "original_language": MOCK_LANGS[(k // 5) % 3], "audio_language": ["en", MOCK_LANGS[(k // 7) % 3]],
+            "subtitle_language": ["en", "fr"] if k % 2 else ["de"], "resolution": ov.get("resolution") or "1080p",
+            "hdr": bool(ov.get("hdr")), "dolby_vision": ov.get("hdr") == "Dolby Vision"}
+
+
 def catalog_filter(items, q):
     """Shared GET /api/v2/catalog + POST /api/v2/catalog/query filters: name_prefix and rule groups
     (the client sends author / series "is" rules and genre "contains" rules), then sort."""
@@ -699,12 +714,25 @@ def catalog_filter(items, q):
             items = [i for i in items if not sort_title(i["title"])[:1].isalpha()]
         else:
             items = [i for i in items if sort_title(i["title"]).lower().startswith(prefix.lower())]
+    group_results = []
     for group in q.get("_groups", []):
         match_any = group.get("match") == "any"
         rules = group.get("rules") or []
 
         def rule_ok(item, rule):
             field, value = rule.get("field"), rule.get("value")
+            fx = mock_facets(item)
+            if field == "year" and rule.get("op") == "between":
+                lo, hi = (int(v) for v in rule.get("values") or [0, 9999])
+                return lo <= int(item.get("year") or 0) <= hi
+            if field == "content_rating":
+                return value == item.get("content_rating")
+            if field in ("hdr", "dolby_vision"):
+                return fx[field] == (str(value).lower() == "true")
+            if field in ("studio", "country", "original_language", "resolution"):
+                return value == fx[field]
+            if field in ("audio_language", "subtitle_language"):
+                return value in fx[field]
             if field == "author":
                 return value in item.get("authors", [])
             if field == "narrator":
@@ -724,7 +752,13 @@ def catalog_filter(items, q):
             return True
 
         if rules:
-            items = [i for i in items if (any if match_any else all)(rule_ok(i, r) for r in rules)]
+            group_results.append({i["content_id"] for i in items if (any if match_any else all)(rule_ok(i, r) for r in rules)})
+    if group_results:
+        # Top-level match (CatalogQuery.match): all groups (default) or any of them.
+        top_any = q.get("match", ["all"])[0] == "any"
+        keep = set.union(*group_results) if top_any else set.intersection(*group_results)
+        print("CATALOG QUERY groups=%d match=%s -> %d" % (len(group_results), "any" if top_any else "all", len(keep)), flush=True)
+        items = [i for i in items if i["content_id"] in keep]
     sort = q.get("sort", ["title"])[0]
     key = sort.lstrip("-")
     if key == "title":
@@ -2132,8 +2166,14 @@ class Handler(BaseHTTPRequestHandler):
                 authors = [g["name"] for g in audiobook_groups({"group_by": ["author"]})]
                 narrators = [g["name"] for g in audiobook_groups({"group_by": ["narrator"]})]
                 series = [g["name"] for g in audiobook_groups({"group_by": ["series"]})]
-            return self.send(200, {"genres": genres, "studios": [], "networks": [], "countries": [], "original_languages": [], "content_ratings": ["PG", "PG-13", "R"],
-                                   "authors": authors, "narrators": narrators, "series": series, "technical": {}})
+            video = lib not in ("3", "4")
+            technical = {}
+            if video and (q.get("skip_technical") or ["false"])[0] != "true":
+                technical = {"resolutions": ["4K", "1080p"], "audio_languages": MOCK_LANGS, "subtitle_languages": MOCK_LANGS}
+            print("CATALOG FILTERS library=%s skip_technical=%s" % (lib or "-", (q.get("skip_technical") or ["-"])[0]), flush=True)
+            return self.send(200, {"genres": genres, "studios": MOCK_STUDIOS if video else [], "networks": [], "countries": MOCK_COUNTRIES if video else [],
+                                   "original_languages": MOCK_LANGS if video else [], "content_ratings": ["PG", "PG-13", "R"],
+                                   "authors": authors, "narrators": narrators, "series": series, "technical": technical})
         if p == "/api/v2/catalog" and q.get("cursor", [""])[0] and STATE["switches"].get("more_fail"):
             return self.problem(500, "internal", "Page failed (more_fail)")
         if p == "/api/v2/catalog" and q.get("source", [""])[0] == "section" and q.get("library_id", [""])[0] == "5":

@@ -56,17 +56,13 @@ sub init()
         { id: "rating_imdb", label: "Rating", defaultDesc: true },
         { id: "runtime", label: "Runtime", defaultDesc: true }
     ]
-    m.watchStatusOptions = [
-        { id: "unwatched", label: "Unwatched" },
-        { id: "in_progress", label: "In Progress" },
-        { id: "watched", label: "Watched" },
-        { id: "favorited", label: "Favorited" },
-        { id: "watchlist", label: "Watchlist" }
-    ]
     m.sortField = "title"
     m.sortDesc = false
-    m.genre = ""
-    m.watchStatus = ""
+    m.genre = ""            ' the Genres view's chip (one genre; not the filter panel)
+    m.facetSel = {}         ' the filter panel's applied facets (LibraryFilters.brs)
+    m.matchAll = true
+    m.draftSel = {}         ' the panel's selection while it is open; applied when it closes
+    m.draftMatch = true
     m.namePrefix = ""
     m.facets = invalid
     m.filterFacet = ""
@@ -167,12 +163,11 @@ sub restoreBrowseState()
         m.sortField = field
         m.sortDesc = st.desc = true
     end if
-    m.genre = Str_orEmpty(st.genre)
-    ' Only watch statuses this panel offers come back.
-    m.watchStatus = ""
-    for each o in m.watchStatusOptions
-        if o.id = Str_orEmpty(st.watchStatus) then m.watchStatus = o.id
-    end for
+    ' Facets with several values and Match all / any; a save from before v0.1.31 ({genre,
+    ' watchStatus}) reads as the same filters. Only values the fixed facets offer come back.
+    r = LibF_restore(st)
+    m.facetSel = r.sel
+    m.matchAll = r.matchAll
 end sub
 
 ' Saves the Browse grid's own sort and filters (not the A–Z jump) while preserve is on.
@@ -181,7 +176,9 @@ sub saveBrowseState()
     if key = "" then return
     p = browsePrefs()
     if p.preserve <> true then return
-    Registry_write(key, { preserve: true, state: { sort: m.sortField, desc: m.sortDesc, genre: m.genre, watchStatus: m.watchStatus } })
+    matchMode = "all"
+    if not m.matchAll then matchMode = "any"
+    Registry_write(key, { preserve: true, state: { sort: m.sortField, desc: m.sortDesc, facets: LibF_copy(m.facetSel), match: matchMode } })
 end sub
 
 ' The toggle takes effect at once: off forgets the saved state, on saves the current one.
@@ -429,7 +426,7 @@ function sortWire() as string
 end function
 
 function filtersActive() as boolean
-    return m.genre <> "" or m.watchStatus <> ""
+    return m.genre <> "" or LibF_activeCount(m.facetSel) > 0
 end function
 
 ' Sends page 1 (cursor "") or the next page. Same query every time, only the cursor changes.
@@ -491,10 +488,14 @@ sub requestPage(cursor as string)
     groups = []
     if inGroupDrill() then groups.Push({ match: "all", rules: [{ field: m.drill.field, op: "is", value: m.drill.name }] })
     if m.genre <> "" then groups.Push({ match: "any", rules: [{ field: "genre", op: "contains", value: m.genre }] })
-    if m.watchStatus <> "" then groups.Push({ match: "all", rules: [Library_watchRule(m.watchStatus)] })
+    facetGroups = LibF_groups(m.facetSel, isAudiobookLibrary())
+    groups.Append(facetGroups)
     if groups.Count() > 0 then
         body = q
         body.groups = groups
+        ' Match any combines the panel's facets with OR (one group per facet; values inside a facet
+        ' are always OR'd). A drill or chip group must hold too, so "any" is sent only without one.
+        if not m.matchAll and facetGroups.Count() > 1 and groups.Count() = facetGroups.Count() then body.match = "any"
         ' Artwork parameters ride the query string, not the CatalogQuery body.
         query = Artwork_query({ image_size: "medium" }, "browse", Theme_posterScale())
         for each k in query
@@ -509,11 +510,12 @@ end sub
 ' The watch-status filter as a catalog rule. Flag rules carry JSON booleans: the server answers
 ' 500 to "true"/"false" strings (Silo Android #702; the Apple clients send booleans too).
 function Library_watchRule(ws as string) as object
-    if ws = "unwatched" then return { field: "watched", op: "is", value: false }
-    if ws = "watched" then return { field: "watched", op: "is", value: true }
-    if ws = "in_progress" then return { field: "in_progress", op: "is", value: true }
-    if ws = "favorited" then return { field: "favorited", op: "is", value: true }
-    return { field: "in_watchlist", op: "is", value: true }
+    return LibF_watchRule(ws)
+end function
+
+' An audiobook library offers Author / Narrator / Series facets instead of the video ones.
+function isAudiobookLibrary() as boolean
+    return LCase(Str_orEmpty(prm("mode"))) = "audiobooks"
 end function
 
 sub checkLibraryHasItems()
@@ -1067,7 +1069,11 @@ end sub
 sub loadFacets()
     if m.facets <> invalid or m.facetsLoading = true then return
     m.facetsLoading = true
-    Api_get("/api/v2/catalog/filters", { library_id: Str_orEmpty(prm("libraryId")), skip_technical: "true" }, "onFacets")
+    ' Technical facets (resolution, audio and subtitle languages) are part of the panel (Android TV
+    ' reads them with includeTechnical = true); the Genres view needs genres only.
+    skip = "false"
+    if m.mode = "genres" or isAudiobookLibrary() then skip = "true"
+    Api_get("/api/v2/catalog/filters", { library_id: Str_orEmpty(prm("libraryId")), skip_technical: skip }, "onFacets")
 end sub
 
 sub buildChips()
@@ -1167,9 +1173,8 @@ sub updateSortPill()
     m.sortPill.text = "Sort · " + lbl + " · " + directionLabel()
     m.clearPill.visible = filtersActive() and m.mode = "browse"
     if filtersActive() then
-        n = 0
+        n = LibF_activeCount(m.facetSel)
         if m.genre <> "" then n = n + 1
-        if m.watchStatus <> "" then n = n + 1
         m.filterPill.text = "Filter · " + n.ToStr()
         m.filterPill.selectedState = true
     else
@@ -1229,35 +1234,56 @@ sub onSortChosen()
 end sub
 
 ' ---------- Filter ----------
+' Android TV's two-level panel (TvLibraryBrowseControls): the facets with their selection, Match
+' all / any, Preserve, Reset and Done; Right (or OK) opens a facet's values, where OK toggles a value
+' (several per facet; Watch Status one). Changes are a draft applied when the panel closes.
 
 sub openFilterPanel()
     loadFacets()
-    rows = [
-        { id: "genre", label: "Genre", trailing: "chevron", "sub": m.genre },
-        { id: "status", label: "Watch Status", trailing: "chevron", "sub": watchStatusLabel() },
-        { id: "-" },
-        { id: "preserve", label: "Preserve sort & filters", trailing: checkIf(preserveFilters()) },
-        { id: "reset", label: "Reset filters" },
-        { id: "done", label: "Done" }
-    ]
+    m.draftSel = LibF_copy(m.facetSel)
+    m.draftMatch = m.matchAll
     m.filterPanel.header = "FILTER BY"
-    m.filterPanel.footer = "→ picks a value · Menu closes"
-    m.filterPanel.rows = rows
+    m.filterPanel.footer = "→ picks values · Back applies"
+    m.filterPanel.maxRows = 10
     m.filterPanel.focusIndex = 0
+    renderFilterMain()
     m.filterPanel.translation = [80 + m.filterPill.translation[0], m.controls.translation[1] + 64]
     m.filterPanel.visible = true
     m.filterFly.visible = false
     m.flyActive = false
     m.filterPanel.setFocus(true)
-    showFlyFor("genre")
+    facets = filterFacets()
+    if facets.Count() > 0 then showFlyFor(facets[0].id)
 end sub
 
-function watchStatusLabel() as string
-    for each o in m.watchStatusOptions
-        if o.id = m.watchStatus then return o.label
-    end for
-    return ""
+function filterFacets() as object
+    return LibF_available(isAudiobookLibrary(), m.facets, m.draftSel)
 end function
+
+function filterFacetDef(id as string) as dynamic
+    for each d in LibF_facets(isAudiobookLibrary())
+        if d.id = id then return d
+    end for
+    return invalid
+end function
+
+sub renderFilterMain()
+    rows = []
+    for each d in filterFacets()
+        rows.Push({ id: "facet:" + d.id, label: d.label, trailing: "chevron", "sub": LibF_summary(d, m.draftSel, m.facets) })
+    end for
+    if m.facets = invalid and m.facetsLoading = true then rows.Push({ id: "", label: "Loading filters…" })
+    rows.Push({ id: "-" })
+    rows.Push({ id: "match_all", label: "Match all selected filters", trailing: checkIf(m.draftMatch) })
+    rows.Push({ id: "match_any", label: "Match any selected filter", trailing: checkIf(not m.draftMatch) })
+    rows.Push({ id: "-" })
+    rows.Push({ id: "preserve", label: "Preserve sort & filters", trailing: checkIf(preserveFilters()) })
+    rows.Push({ id: "reset", label: "Reset filters" })
+    rows.Push({ id: "done", label: "Done" })
+    idx = m.filterPanel.focusIndex
+    m.filterPanel.rows = rows
+    if idx >= 0 and idx < rows.Count() then m.filterPanel.focusIndex = idx
+end sub
 
 sub onFacets(event as object)
     resp = Api_result(event)
@@ -1267,7 +1293,10 @@ sub onFacets(event as object)
     else
         m.facets = { genres: [] }
     end if
-    if m.filterPanel.visible and m.filterFacet = "genre" then showFlyFor("genre")
+    if m.filterPanel.visible then
+        renderFilterMain()
+        if m.filterFacet <> "" then showFlyFor(m.filterFacet)
+    end if
     if m.mode = "genres" then
         hadFocus = focusedChipIndex() >= 0
         buildChips()
@@ -1276,24 +1305,8 @@ sub onFacets(event as object)
 end sub
 
 function genreValues() as object
-    out = []
-    if m.facets = invalid then return out
-    seen = {}
-    for each g in Arr_or(m.facets.genres)
-        v = ""
-        if Type(g) = "roString" or Type(g) = "String" then
-            v = g
-        else if g <> invalid then
-            v = Str_orEmpty(g.value)
-            if v = "" then v = Str_orEmpty(g.name)
-            if v = "" then v = Str_orEmpty(g.label)
-        end if
-        if v <> "" and not seen.DoesExist(v) then
-            seen[v] = true
-            out.Push(v)
-        end if
-    end for
-    return out
+    if m.facets = invalid then return []
+    return LibF_values(m.facets.genres)
 end function
 
 sub onFilterMainFocused()
@@ -1301,41 +1314,39 @@ sub onFilterMainFocused()
     rows = m.filterPanel.rows
     if i < 0 or i >= rows.Count() then return
     id = Str_orEmpty(rows[i].id)
-    if id = "genre" or id = "status" then
-        showFlyFor(id)
+    if Left(id, 6) = "facet:" then
+        showFlyFor(Mid(id, 7))
     else
         m.filterFly.visible = false
+        m.filterFacet = ""
     end if
 end sub
 
 sub showFlyFor(facet as string)
+    def = filterFacetDef(facet)
+    if def = invalid then return
+    keep = -1
+    if m.filterFacet = facet then keep = m.filterFly.focusIndex
     m.filterFacet = facet
     rows = []
-    if facet = "genre" then
-        vals = genreValues()
-        if vals.Count() = 0 then
-            if m.facetsLoading = true then
-                rows.Push({ id: "", label: "Loading…" })
-            else
-                rows.Push({ id: "", label: "No genres" })
-            end if
+    opts = LibF_options(def, m.facets)
+    if opts.Count() = 0 then
+        if m.facetsLoading = true then
+            rows.Push({ id: "", label: "Loading…" })
         else
-            rows.Push({ id: "__any", label: "Any genre", trailing: checkIf(m.genre = "") })
-            for each v in vals
-                rows.Push({ id: v, label: v, trailing: checkIf(m.genre = v) })
-            end for
+            rows.Push({ id: "", label: "No values" })
         end if
-        m.filterFly.header = "GENRE"
     else
-        rows.Push({ id: "__any", label: "Any", trailing: checkIf(m.watchStatus = "") })
-        for each o in m.watchStatusOptions
-            rows.Push({ id: o.id, label: o.label, trailing: checkIf(m.watchStatus = o.id) })
+        rows.Push({ id: "__clear", label: "Any", trailing: checkIf(LibF_selected(m.draftSel, facet).Count() = 0) })
+        for each o in opts
+            rows.Push({ id: "v:" + o.id, label: o.label, trailing: checkIf(LibF_isSelected(m.draftSel, facet, o.id)) })
         end for
-        m.filterFly.header = "WATCH STATUS"
     end if
+    m.filterFly.header = UCase(def.label)
     m.filterFly.footer = ""
+    m.filterFly.maxRows = 10
     m.filterFly.rows = rows
-    m.filterFly.focusIndex = 0
+    if keep >= 0 and keep < rows.Count() then m.filterFly.focusIndex = keep else m.filterFly.focusIndex = 0
     m.filterFly.translation = [m.filterPanel.translation[0] + 460 + 12, m.filterPanel.translation[1]]
     m.filterFly.visible = true
 end sub
@@ -1347,26 +1358,21 @@ end function
 
 sub onFilterMainChosen()
     id = m.filterPanel.rowSelected
-    if id = "genre" or id = "status" then
+    if Left(id, 6) = "facet:" then
         enterFilterFly()
+    else if id = "match_all" or id = "match_any" then
+        m.draftMatch = id = "match_all"
+        renderFilterMain()
     else if id = "preserve" then
         ' Takes effect at once rather than on Done (tvOS preserveRow).
         setPreserveFilters(not preserveFilters())
-        rows = m.filterPanel.rows
-        for each r in rows
-            if r.id = "preserve" then r.trailing = checkIf(preserveFilters())
-        end for
-        idx = m.filterPanel.focusIndex
-        m.filterPanel.rows = rows
-        m.filterPanel.focusIndex = idx
+        renderFilterMain()
     else if id = "reset" then
-        m.genre = ""
-        m.watchStatus = ""
-        saveBrowseState()
-        closePanels()
-        updateSortPill()
-        reload()
-    else
+        m.draftSel = {}
+        m.draftMatch = true
+        renderFilterMain()
+        if m.filterFacet <> "" then showFlyFor(m.filterFacet)
+    else if id = "done" then
         closePanels()
     end if
 end sub
@@ -1382,24 +1388,34 @@ sub leaveFilterFly()
     m.filterPanel.setFocus(true)
 end sub
 
+' OK on a value toggles it in the draft (Watch Status keeps one); the panel stays open.
 sub onFilterValueChosen()
     id = m.filterFly.rowSelected
-    if id = "" then return
-    if id = "__any" then id = ""
-    if m.filterFacet = "genre" then
-        m.genre = id
-    else
-        m.watchStatus = id
+    if id = "" or m.filterFacet = "" then return
+    if id = "__clear" then
+        m.draftSel = LibF_clear(m.draftSel, m.filterFacet)
+    else if Left(id, 2) = "v:" then
+        m.draftSel = LibF_toggle(m.draftSel, m.filterFacet, Mid(id, 3))
     end if
+    showFlyFor(m.filterFacet)
+    renderFilterMain()
+end sub
+
+' The panel closed: apply the draft when it differs from what the grid shows.
+sub commitFilterDraft()
+    if FormatJson(LibF_copy(m.draftSel)) = FormatJson(LibF_copy(m.facetSel)) and m.draftMatch = m.matchAll then return
+    m.facetSel = LibF_copy(m.draftSel)
+    m.matchAll = m.draftMatch
+    print "[siku-library] filters applied facets="; LibF_activeCount(m.facetSel); " match="; m.matchAll
     saveBrowseState()
-    closePanels()
     updateSortPill()
     reload()
 end sub
 
 sub clearFilters()
     m.genre = ""
-    m.watchStatus = ""
+    m.facetSel = {}
+    m.matchAll = true
     saveBrowseState()
     updateSortPill()
     m.sortPill.setFocus(true)
@@ -1408,11 +1424,16 @@ end sub
 
 sub closePanels()
     wasSort = m.sortPanel.visible
+    wasFilter = m.filterPanel.visible
     m.sortPanel.visible = false
     m.filterPanel.visible = false
     m.filterFly.visible = false
     m.flyActive = false
     if wasSort then m.sortPill.setFocus(true) else m.filterPill.setFocus(true)
+    if wasFilter then
+        m.filterFacet = ""
+        commitFilterDraft()
+    end if
 end sub
 
 function panelsOpen() as boolean

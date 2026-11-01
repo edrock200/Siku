@@ -484,6 +484,7 @@ sub handleDeepLink(args as dynamic)
         if not Str_isEmpty(args.debugUrl) then params.url = args.debugUrl ' StreamTestScreen: an extra stream to try
         if not Str_isEmpty(args.debugDeepLink) then params.debugDeepLink = Str_orEmpty(args.debugDeepLink) ' PlayerScreen: a content deep link for the playing item arrives after this many seconds (replaces the player)
         if not Str_isEmpty(args.debugVoice) then params.debugVoice = Str_orEmpty(args.debugVoice) ' PlayerScreen / AudioPlayerScreen: inject this voice transport command (<command>[:<seconds>]) once playback has started (the simulator sends none)
+        if not Str_isEmpty(args.debugLibrary) then params.libraryId = Str_orEmpty(args.debugLibrary) ' LibraryScreen: browse this library (mock: 1 = Movies)
         if not Str_isEmpty(args.debugLanSelf) then params.debugLanSelf = true ' ServerConnectScreen: Find servers also accepts this machine's own address (tools/silo_responder.py)
         resetTo(args.debugScreen, params)
         return
