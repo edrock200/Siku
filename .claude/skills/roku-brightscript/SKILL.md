@@ -470,6 +470,91 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
 - **Everything transcodes to 720p "at 6 Mbps":** a bandwidth cap reached the request; see
   pitfall 13 (nullable `playback.max_bitrate_kbps`).
 
+## Lessons from v0.1.31 (Silo's official Roku app's device findings and six parallel slices)
+
+Device facts from Silo-Server/silo-roku `docs/hardware-evidence.md` (TCL Roku TV OS 15.3.4, Roku Ultra
+OS 16.0.4), adopted in v0.1.31, plus tool quirks found while building it:
+
+- A Video error is not a route failure by code alone: Roku reports dropped connections as -3/-5 with
+  the cause only in errorStr/errorInfo.dbgmsg; classify by HTTP status first, then transport text
+  (silo-roku HE runs 8, 14, 15). failure_recovery excludes the route, so a few seconds of outage used
+  to exhaust every route.
+- The Video node reports "finished" right after "error": never treat it as the end without checking
+  the plan played and no error/replan is pending.
+- Anything that must outlive a screen (a stop DELETE) belongs to MainScene: a removed screen's
+  observers and ApiTask callbacks die with it. Reach MainScene with `getScene().callFunc` and wrap the
+  return in `PlaybackCaps_truthy` (callFunc can return invalid; pitfall 16).
+- Video/Audio `HttpHeaders` go to every origin a playlist or redirect names (silo-roku HE H1): put the
+  account token only on server-origin URLs.
+- brs-engine's roRegex accepts PCRE lookahead and `\b` (JS regex), so host tests cover the transport
+  patterns; Roku's PCRE does too.
+- With six simulators at once (load ~38 on 4 cores) the player needs several minutes before its
+  first plan; wait 300 s, not 45 s.
+- A sidecar's TrackName in `Video.availableSubtitleTracks` is Roku's own (it contains the URL given,
+  e.g. `/tmp/plugin/<dir>/…`); select by the listed name, match "contains", never only equality
+  (silo-roku hardware runs 17/18). Never write `subtitleTrack` before the content's first frame + ~3 s on
+  MKV originals (run 20: content stopped); one corrective write after that fixed run 21.
+- `Video.suppressCaptions` is the per-node way to keep captions off UI; Roku draws captions above
+  every SceneGraph node.
+- Server-side first extraction of an embedded text track takes 65-279 s; a Video-node sidecar URL just
+  shows nothing. Probe it from a Task with a long timeout.
+- `CanDecodeAudio({"codec":"aac","chcnt":6})` is false on some Rokus (Ultra) and true on others (TCL TV).
+- Simulator: `debugSubtitle=<combined index>` starts the player with that subtitle (handy for subtitle work).
+- Simulator: under heavy host load (load average 40), brs-cli runs so slowly that `snap:` steps fail and
+  the debug screen opens after ~1-2 min; give `wait:` steps 150 s+.
+- Simulator: a request a screen starts right before `Nav_reset` replaces it may never be sent (the
+  avatar menu's logout never reached the mock); wait for the answer (bounded) before navigating.
+- brs-engine keeps unquoted AA-literal keys' case in the registry JSON (`accessToken`), while dot
+  assignment lower-cases; read stored data with dot access, never `DoesExist("camelCase")`.
+- `simulate.py` snapshots fail ("snapshot failed") when the render thread is busy for >1.5 s (all
+  shots then land in `siku.png`); with six simulators running, trust `[siku-…]` lines.
+- In brs-engine the StandardMessageDialog's first Down seems to land on the first button only after
+  an extra press (two Downs from Cancel chose "Sign Out", three chose "& Remove Server"); on a Roku
+  focus starts on the first button — device check.
+- Pitfall 16 again: `m.flag = true` on a never-set `m.flag` (and `resp.context.prefetch = true`)
+  would throw on a Roku; use a typed helper. ProfileScreen's `m.offerVisible` is now initialised.
+- brs-cli honours `#if`/`bs_const` from the zip's manifest, in components and Tasks alike; the manifest
+  does not have to be the zip's first entry. So a simulator-only manifest is a cheap way to keep debug
+  aids out of release builds.
+- Under a load of ~35 on 4 cores (six agents' simulators), a Task's first HTTP answer took > 20 s and
+  60 s waits saw nothing at all: wait 150 s+ before judging, and drive interactive tests from console
+  lines (scratchpad `setupdrv/drive.py`: a pty driver that presses keys written to `<out>/keys.txt`)
+  rather than fixed `wait:` steps.
+- `m.exit` would be a reserved-word member (pitfall 4); used `m.leaving`.
+- Dot-assigning an AA key lower-cases it (pitfall 15) also bites host tests that compare dicts:
+  build returned AAs as literals.
+- brs-engine: an AA literal with an empty-string key `{ "": true }` did not match `DoesExist("")`;
+  test the empty case explicitly.
+- Roku OS 15.3.4 `roDateTime.FromISO8601String("YYYY-MM-DD")` gives the epoch (sroku hardware run
+  5); brs-engine parses it, so the simulator hides it. Append `T00:00:00Z` and format in UTC.
+- `Num_or` returns a single-precision float: never use it on epoch seconds (1.8e9 rounds to 128 s
+  steps). Use integer types (`Time_nowSeconds()`, `Fresh_secs`).
+- AA literal keys keep their case, dot assignment lower-cases (pitfall 15 again in a test:
+  `{ "matchAll": true }` vs `out.matchAll =`): keep one style per object.
+- `continue for` avoided (not sure of older Roku OS / brs-engine support); restructure with if/else.
+- simulate.py: under heavy load (load average 35 with six agents) the screenshot can take longer than
+  its 1.5 s wait, so snapshots report "failed" and only `siku.png` (the last one) remains; keys also
+  get lost. Use long waits and `[siku-a11y]` / mock logs as proof.
+- Unicode ▲▼ avoided in UI text (font may lack them → boxes); ↑↓ (Arrows block, like the existing →).
+- brs-engine's `roRegex.ReplaceAll` does not support `\1` back-references (Roku's PCRE does): it
+  inserts a literal `\1`. Scan words instead (`Diag_scrubKeys`).
+- brs-cli: `ReadAsciiFile` on a missing file prints `BRIGHTSCRIPT: ERROR: ReadAsciiFile: file open
+  for read failed` (not fatal); check `roFileSystem.Exists` first in a Task.
+- brs-cli reports `media_player_state: "stopped"` and an empty/`EXIT_UNKNOWN` exit code from
+  GetLastExitInfo; real exit codes only on a device (use `debugExit`).
+- Dot-assigning into an AA literal lower-cases the key in brs-cli results too (`appState` →
+  `appstate`); host tests compare such AAs case-insensitively (pitfall 15).
+- A `while` that cuts a string into pieces with an indent must check the width exceeds the
+  indent, or it never ends (brs-cli host test hung).
+- Roku OS 15.1 sends a single memory warning at 80 %: without polling `GetMemoryLimitPercent()`
+  a "low memory" state never clears. 15.2 sends rising and falling events at 80/85/90/95.
+- sroku device lessons worth listing (from sroku docs, not re-verified by Siku): setFocus on a
+  parent of a focused child is a no-op on TCL; clippingRect drew nothing on 15.3.4; MaskGroup
+  does not clip without OpenGL; a full-screen texture/shader under rows cost ~10 fps on an Ultra;
+  observe `focusPercent` in items, never `rowFocusPercent`; the memory check's own allocations do
+  not move GetMemoryLimitPercent; cachefs survives a relaunch; LaunchApp/ECP fail store Static
+  Analysis; render-thread rules now checked by `tests/test_thread_rules.py`.
+
 ## Release log
 
 One line per release: what that build taught about running on a real Roku. Add an entry for
@@ -506,3 +591,4 @@ released version is missing here.
 - **v0.1.28** Silo Android #716 (handoff at the Roku's own saved address for the phone's server identity, then the phone's, then offered endpoints; parallel identity probes with an 8 s budget) and #717 (record a missing server identity so it is advertised). Lessons: plain-HTTP consent is implied by a saved origin (Siku keeps no separate approval list); the debug session seeds two server addresses, so identity reads in the simulator can run twice with one failing. Device checks pending: probe budget vs the phone's 15 s wait on a real network, public/Tailscale phone handing off to a LAN Roku.
 - **v0.1.29** Silo Android #726 (AI subtitle jobs send the playback `session_id` so the server runs them in the foreground from the playhead; a 404 is resent once without it unless the user cancelled meanwhile). Lessons: the simulator reaches the AI dialog with `debugScreen=PlayerScreen,debugItem=movie:paper-moons,debugFile=42,debugA11y=1` and `options, right x3, down x3, ok, down x3, ok` (the a11y lines confirm each focus); a snapshot taken right after a fast mock answer can still show the previous frame ("Submitting..."), so prove state from the mock log. Device check pending: progress moving within seconds on a real server.
 - **v0.1.30** Silo Android #737 (More Like This chain: the first rail pick pushes, later picks replace, the start title goes back; a one-move-per-page latch reset in `onScreenShown`). Lessons: in the simulator a detail page's similar-titles answer lands about 30 s after the page opens (the row is missing before), so wait 45-50 s per page; a DetailScreen's first Back closes it only when focus is already at the top; and a snapshot can still show the previous screen right after Back, so trust the `[siku-a11y]` lines and take a second snapshot. Device check pending: a long chain and Back.
+- **v0.1.31** Twenty-five items from a comparison with Silo's official Roku app (reconnect, progress, subtitles, AAC ceilings, saved servers, sign-out, first-run sign-in choice, debug gating, deep links, phone idle timeout, dates, calendar, filters, Requests layout, diagnostics, memory). Lessons: date-only ISO strings parse to 1970 on Roku OS 15.3.4 (the simulator hides it); Roku reports dropped connections as -3/-5 with the cause only in the text; select subtitles by Roku's listed TrackName; `Num_or` must never carry epoch seconds; debug deep links belong behind `#if DEBUG`, enforced by package_check; with six simulators running, wait 150 s+ and trust console lines over snapshots. Device checks pending for nearly all of it.

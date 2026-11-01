@@ -3,6 +3,50 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.31
+
+A big update: ideas and device findings from Silo's own Roku app, plus seven changes from Silo's Android TV app (October 31, 2026).
+
+**Signing in and servers**
+- Sign-in now starts by asking how you want to sign in: with your phone (scan a code or approve it in the Silo app) or with your username and password. You can switch on the next screen.
+- Siku remembers your sign-in for every server you add. Switch Server / Manage Servers lists them (the current one is marked) and switches without signing in again; press * on a server to remove it.
+- Sign Out now asks whether to keep the server or remove it too; removing it switches to your next saved server, or back to setup.
+- The server address screen has Advanced options: choose HTTPS or HTTP and a port. Error messages are clearer and show the server's own message when it gives one.
+- Clearer sign-in messages: "Incorrect username or password." and "Sign-in was declined." with how to try again; the buttons under a declined code no longer get cut off.
+- "Open <profile> automatically?" is now a short question with Ask Every Time and Remember.
+
+**Phones**
+- Require Pairing is now optional and off unless you turn it on (Connect a Phone, or Settings › General › Phones). Any phone signed in to your server on the same network can control Siku.
+- Setting up or signing in with your phone uses Silo's new wording ("Allow this setup?", "Don't Allow", a note to only allow setups you started, and the code to compare with your phone); "You're all set" has a Continue button.
+- A phone that goes quiet during setup is let go after three minutes, so another phone can start; it is never dropped while a sign-in is under way.
+- Leaving Siku with Back tells phones right away and takes the Roku off their lists; if the Roku is switched off, phones drop it within two minutes rather than over an hour.
+
+**Watching**
+- A short Wi-Fi or network drop no longer ends playback or lowers the quality: Siku reconnects and picks up where it was, for up to two minutes.
+- After a playback error the player no longer closes by itself or jumps to Up Next.
+- Your place is kept more reliably: progress is saved while paused too, a playback the server forgot is picked up again, and the final position is sent again if the server couldn't be reached when you stopped.
+- Up Next waits for the last credits on episodes with two sets of credits, so you don't miss a mid-credits scene.
+- Subtitles switch more reliably (the language you pick is the one that shows, also on MKV files), no longer cover the progress bar while the controls are open, and an embedded subtitle the server hasn't prepared yet shows "Loading subtitles…" and appears once ready.
+- On Rokus that can't play 5.1 AAC, servers that support it now pick a Dolby Digital 5.1 track instead of converting to stereo.
+- Links from Roku search and the Roku home screen start the movie or episode straight away (a show or season plays its next episode), also before you've picked a profile.
+- Your account sign-in is no longer sent to other servers that stream for your Silo server.
+
+**Browsing**
+- Release dates, air dates and birthdays show again (they were blank on recent Roku software).
+- Calendar: episodes land on the right day outside the US, and each card shows its air time and every label.
+- Watchlist and Favorites on a title's page confirm only once the server has saved them; if it can't, the button goes back and you see why.
+- On a series page, More marks the season as watched or unwatched, and * on an episode marks that episode.
+- Posters no longer turn grey on a screen left open for a long time.
+- Requests shows every Discover row your server's admin set up, in their order, and "Notify me when available" on titles someone else requested.
+- Library filters: Decade, Content Rating, Resolution, HDR / Dolby Vision, Studio, Network, Country and languages, several values at once, with "Match all" or "Match any". Saved filters carry over.
+
+**Reliability**
+- If Siku closed unexpectedly last time, Home says so once. New Settings › Diagnostics shows how Siku last closed and Siku's own log (kept on your Roku, with addresses, names and sign-in details left out).
+- Large libraries and long browsing sessions use far less memory, especially on 512 MB Rokus.
+- Developer test links no longer do anything in release builds.
+
+**Needs testing on a real Roku:** almost everything above. Most of all: reconnecting after a Wi-Fi drop, subtitle switching, "Loading subtitles…", deep links from Roku search, sign-out and saved servers, phone sign-in with pairing off, dates and calendar days, and the crash notice. The debug log `telnet <roku-ip> 8085` has new `[siku-servers]`, `[siku-deeplink]`, `[siku-diag]`, `[siku-art]` and `[siku-calendar]` lines.
+
 ## v0.1.30
 
 One change from Silo's Android TV app (October 30, 2026).

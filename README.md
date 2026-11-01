@@ -16,7 +16,7 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 
 | Area | Feature | Status |
 |---|---|:---:|
-| Connect | Enter a server address, verify it, remember several servers | ✅ |
+| Connect | Enter a server address (Advanced: HTTPS/HTTP and port), remember several servers each with its own sign-in, Sign Out or Sign Out & Remove Server, choose phone or password sign-in at setup (new in 0.1.31) | 🟡 simulator-tested, needs device testing |
 | Connect | Find servers on this network (mDNS), with an identity check before connecting (new in 0.1.24) | 🟡 simulator-tested, needs device testing |
 | Sign in | Username and password | ✅ |
 | Sign in | Sign in with a code or QR from your phone (device sign-in) | ✅ |
@@ -34,6 +34,9 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Playback | Up Next with artwork and an On Deck row; Resolution / Maximum Bitrate settings; lower quality when buffering (automatically, ask first or never) and a connection speed test | 🟡 needs device testing |
 | Detail | Trailers & More row and a Trailer button next to Play: the server's trailers and extras play in Siku; YouTube trailers open the YouTube channel, or show a link and QR code | 🟡 needs device testing (YouTube hand-off) |
 | Detail | Optional theme music, "Translated by AI" marks | 🟡 needs device testing |
+| Playback | Reconnects after a network drop, keeps your place more reliably, Up Next after the last credits, steadier subtitle switching, "Loading subtitles…", 5.1 instead of stereo on more Rokus (new in 0.1.31) | 🟡 needs device testing |
+| Platform | Deep links from Roku search play at once; crash notice and Settings › Diagnostics; lower memory use; phone pairing optional (new in 0.1.31) | 🟡 needs device testing |
+| Browse | Dates on real Rokus, calendar time zones, more library filters, Requests follows the server's Discover layout (new in 0.1.31) | 🟡 needs device testing |
 | Detail | Back from a chain of "More Like This" picks returns to where the chain started in one press (new in 0.1.30) | 🟡 simulator-tested, needs device testing |
 | Phone | Control Siku from Silo's phone app (cast button or Profile › Connect a Phone QR code), and sign Siku in from the phone | 🟡 needs device testing |
 | Playback | Roku voice commands while watching or listening: pause, resume, stop, fast forward, rewind, skip by a spoken amount (new in 0.1.25) | 🟡 simulator-tested, needs device testing |

@@ -49,7 +49,12 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
 - Silo added `hls_copy_mpegts_v1` (2026-10-26): with it Siku declares H.264 + HEVC (Main 10 level
   5.1 from TS), AAC/AC3/E-AC3 probed with `"container": "ts"`, HDR10/HLG and no Dolby Vision on
   HLS, and keeps remux plans whose `segment_container` is `mpegts`. **Implemented, not verified on
-  a Roku**: whether TS copies play with sound (and HEVC/HDR10 from TS) is still to be tested.
+  a Roku** by Siku: whether TS copies play with sound (and HEVC/HDR10 from TS) is still to be heard.
+  Silo's official Roku app (Silo-Server/silo-roku, `docs/hardware-evidence.md`) reports a real
+  `audioFormat` (aac_adts, ac3, eac3, also with HEVC and E-AC-3 JOC) for every TS copy on a TCL Roku
+  TV and an Ultra, `none` for every fMP4 one, and an HDR10 TS copy PASS on the Ultra; its testers
+  could not listen either. Its DV 8.1 TS remux showed a green picture, and it now claims DV profile 5
+  only (Siku's direct-play profile 8 is untested on a DV TV; keep it until a device says otherwise).
   Copy remuxes have open-ended timelines, so far seeks are `seek_reanchor` replans
   (`PlayerSeekReanchor.brs`) when the server lists `seek_reanchor_v1`.
 - Dolby Vision is declared as profiles 5 and 8 only (never 7, whatever the Profile 7 fallback
@@ -106,6 +111,19 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   plan=…` (a lowering and each plan's stall summary), `speed test outcome=…`. `[siku-trickplay]`
   lines: the seek-preview manifest (geometry, sheet count, `expires_in`, renewals), a refused or
   unusable manifest, and sheets that failed to load (never the signed URLs).
+- **Debug deep-link parameters (`debug*`) exist only in builds with `bs_const=DEBUG=true`**
+  (v0.1.31): `tools/simulate.py` builds that way (`--release-flags` runs as a release build);
+  `npm run package` and releases ignore them, and `tools/package_check.py` fails a release zip whose
+  manifest is not `DEBUG=false` or that reads `args.debug*` outside `#if DEBUG`. Everything below
+  that names a `debug…` parameter or a debug screen needs a DEBUG build sideloaded.
+- v0.1.31's new console lines, mock switches and deep-link parameters (reconnect, sessions, stops,
+  subtitle selection and loading, saved servers and sign-out, `[siku-deeplink]`, phone idle timeout,
+  app exit, `[siku-calendar]`, `[siku-art]`, `[siku-requests]`, library filters, `[siku-diag]`, memory
+  levels) are listed in `docs/diagnostics-v031.md`. Settings › Diagnostics shows the on-device log
+  (`Diag_log`); after merging branches run `python3 tools/diag_log_convert.py` (tests/test_diag.py
+  checks that new `print "[siku-…]` lines were converted).
+- Require pairing (remote control) is **off by default** (the user's decision, v0.1.31); a saved
+  value counts only when the person pressed the toggle (`sealedChosen`).
 - Debug screens open with `curl -d '' "http://<roku-ip>:8060/launch/dev?debugScreen=<Name>"`
   (ECP needs POST): `StreamTestScreen` (plays reference HLS streams, the last Silo stream or
   `&debugUrl=`, logs `[siku-streamtest]` state and track counts), `FontTestScreen` (label and
