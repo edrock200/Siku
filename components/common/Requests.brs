@@ -509,3 +509,14 @@ function Req_card(kind as string, data as object, rowId as string) as object
     end if
     return card
 end function
+
+' Search's "Available to request" row leaves out titles the server marks availability "available":
+' they are already in the library results above it (Silo Android #773, withoutLibraryTitles).
+function Req_withoutLibraryTitles(results as object) as object
+    out = []
+    for each r in results
+        if Type(r) = "roAssociativeArray" and LCase(Str_orEmpty(r.availability)) <> "available" then out.Push(r)
+    end for
+    return out
+end function
+

@@ -3,6 +3,13 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.32
+
+One change from Silo's Android TV app (November 1, 2026).
+
+**Fixed**
+- **Search no longer lists a title twice.** A title already in your library shows only in the search results, not again under "Available to request". When every match is already in your library, the request row doesn't appear at all.
+
 ## v0.1.31
 
 A big update: ideas and device findings from Silo's own Roku app, plus seven changes from Silo's Android TV app (October 31, 2026).

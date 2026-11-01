@@ -50,6 +50,7 @@ sub init()
     m.reqQuery = ""
     m.reqResults = []
     m.reqState = ""        ' "" (hidden) | loading | ready | error
+    m.reqOnlyLibrary = false ' every requestable match is already in the library (row hidden)
     m.reqError = ""
     ' Opened before the shell's probe answered (or without the shell): ask the server ourselves.
     if Req_gate().resolved <> true then Api_get("/api/v2/requests/status", invalid, "onRequestsStatus")
@@ -551,6 +552,11 @@ sub onRequestSearch(event as object)
         rmt = Str_orEmpty(r.media_type)
         if Req_isSupportedType(rmt) and (mt = "all" or rmt = mt) then results.Push(r)
     end for
+    ' Every match already in the library: the row has nothing to say, so it hides (Silo Android #773).
+    m.reqOnlyLibrary = false
+    matching = results.Count()
+    results = Req_withoutLibraryTitles(results)
+    if matching > 0 and results.Count() = 0 then m.reqOnlyLibrary = true
     sig = FormatJson(results)
     changed = sig <> FormatJson(m.reqResults) or m.reqState <> "ready"
     m.reqResults = results
@@ -583,7 +589,7 @@ end function
 ' Places the section below whatever the page shows; while its row has focus it moves up to the
 ' results area and the results above it step aside (the page "scrolls" to the footer).
 sub layoutRequests()
-    shown = m.reqState <> ""
+    shown = m.reqState <> "" and not (m.reqState = "ready" and m.reqOnlyLibrary = true)
     m.reqSection.visible = shown
     if not shown then
         setResultsDimmed(false)

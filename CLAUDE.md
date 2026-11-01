@@ -223,6 +223,10 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   `[siku-detail] more like this pick action=push|replace|back|ignore`. A rail-opened DetailScreen carries
   `chainStartId`; the first pick pushes, later picks replace, the start title closes back to it, the title on
   screen (or a second OK while the page is leaving) does nothing.
+- Search's "Available to request" row leaves out titles the server marks `availability: "available"`
+  (Silo Android #773, `Req_withoutLibraryTitles`) and hides itself when every match is in the library.
+  Simulator: `debugScreen=SearchScreen,debugQuery=<text>` (mock: "Northern" is in the library,
+  "Starfall" is requestable).
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 
