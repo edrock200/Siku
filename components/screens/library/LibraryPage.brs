@@ -71,6 +71,9 @@ sub init()
     m.facets = invalid
     m.filterFacet = ""
     m.cards = []
+    m.loadedAt = 0
+    m.artReloadAt = 0
+    m.refresh = invalid
     m.nextCursor = ""
     m.hasMore = false
     m.loading = false
@@ -340,7 +343,13 @@ end sub
 ' ---------- Lifecycle ----------
 
 sub onPageShown()
-    if not m.loaded and not m.loading then reload()
+    if not m.loaded and not m.loading then
+        reload()
+    else if m.loaded and not m.loading and Fresh_isStale(m.loadedAt, Time_nowSeconds()) then
+        ' Signed artwork in an old answer may have expired (Freshness.brs): read again, back to the
+        ' card that had focus.
+        refreshInPlace("stale")
+    end if
     ' The Shuffle pill follows the server's capability (hidden until it says available).
     Shuffle_refreshCaps("onShuffleCaps")
     updateShufflePill()
@@ -387,6 +396,8 @@ end sub
 ' ---------- Loading ----------
 
 sub reload()
+    m.loadedAt = 0
+    m.refresh = invalid
     m.cards = []
     m.nextCursor = ""
     m.hasMore = false
@@ -595,10 +606,12 @@ sub onPage(event as object)
         m.loaded = true
         setCards(items)
     end if
+    continueRefresh()
 end sub
 
 sub setCards(items as object)
     m.cards = items
+    m.loadedAt = Time_nowSeconds()
     if items.Count() = 0 then
         ' Browse narrowed by a filter or a letter: one unfiltered item (within a mixed library's
         ' Movies / Series type) tells an empty library from filters that match nothing (#472).
@@ -613,8 +626,58 @@ sub setCards(items as object)
     end if
     m.status.visible = false
     m.grid.content = Content_grid(items, m.cardStyle, m.insetX, m.insetY)
+    Fresh_watchArt(m.grid.content, "onArtworkFailed")
     m.grid.visible = true
     if m.top.hasFocus() then m.grid.setFocus(true)
+end sub
+
+' ---------- Expired artwork (Freshness.brs) ----------
+
+' A card image failed: when the answer is old enough for its signatures to have run out, read the
+' grid again.
+sub onArtworkFailed()
+    now = Time_nowSeconds()
+    if m.loading or m.loadingMore or not Fresh_artReloadDue(m.loadedAt, m.artReloadAt, now) then return
+    m.artReloadAt = now
+    refreshInPlace("image-failed")
+end sub
+
+' Reads the grid again from its first page, then on (up to Library_refreshPageLimit() pages) until
+' the card that had focus is loaded again, and puts focus back on it.
+sub refreshInPlace(reason as string)
+    Fresh_log("library", reason, m.loadedAt)
+    target = m.grid.itemFocused
+    if target = invalid or target < 0 then target = 0
+    hadFocus = m.grid.hasFocus()
+    reload()
+    m.refresh = { target: target, pages: 1, focus: hadFocus }
+end sub
+
+function Library_refreshPageLimit() as integer
+    return 10
+end function
+
+' After a page lands during refreshInPlace: read the next page, or restore the focus.
+sub continueRefresh()
+    r = m.refresh
+    if r = invalid then return
+    if m.cards.Count() > r.target or not m.hasMore or r.pages >= Library_refreshPageLimit() or m.grid.content = invalid then
+        m.refresh = invalid
+        n = m.cards.Count()
+        if n = 0 or m.grid.content = invalid then return
+        idx = r.target
+        if idx > n - 1 then idx = n - 1
+        if idx > 0 then m.grid.jumpToItem = idx
+        if r.focus then m.grid.setFocus(true)
+        return
+    end if
+    r.pages = r.pages + 1
+    m.loadingMore = true
+    if isGroupsMode() and m.drill = invalid then
+        requestGroups(m.nextCursor)
+    else
+        requestPage(m.nextCursor)
+    end if
 end sub
 
 sub appendCards(items as object)
@@ -629,6 +692,7 @@ end sub
 ' A failed "load more": say so once per attempt and wait before the grid asks again, so moving
 ' along the last rows does not re-request and toast on every key press.
 sub moreFailed(resp as object)
+    m.refresh = invalid
     m.global.toast = "Couldn't load more. " + Api_errorText(resp)
     m.hasMore = true
     m.moreFailures = m.moreFailures + 1
@@ -695,6 +759,7 @@ sub onGroups(event as object)
         m.loaded = true
         setCards(cards)
     end if
+    continueRefresh()
 end sub
 
 ' OK on a group card: show the group's books (Back / "All Authors" returns to the groups).
@@ -812,6 +877,7 @@ end sub
 ' ---------- Status ----------
 
 sub showError(msg as string)
+    m.refresh = invalid
     m.grid.visible = false
     m.status.visible = true
     m.statusTitle.text = "Something went wrong"

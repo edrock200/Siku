@@ -7,6 +7,9 @@ sub init()
     m.feed.observeField("itemOptions", "onItemOptions")
     m.feed.observeField("actionSelected", "load")
     m.feed.observeField("exploreSelected", "onExploreSelected")
+    m.feed.observeField("artworkFailed", "onArtworkFailed")
+    m.loadedAt = 0
+    m.artReloadAt = 0
     m.menu.observeField("chosen", "onMenuChosen")
     m.menu.observeField("dismissed", "onMenuDismissed")
     m.loaded = false
@@ -37,7 +40,26 @@ sub onPageShown()
         load()
     else if not m.loaded and not m.loading then
         load()
+    else if m.loaded and not m.loading and Fresh_isStale(m.loadedAt, Time_nowSeconds()) then
+        ' Signed artwork in an old answer may have expired (Freshness.brs): read again quietly.
+        Fresh_log(pageName(), "stale", m.loadedAt)
+        load()
     end if
+end sub
+
+function pageName() as string
+    if libraryId() = "" then return "home"
+    return "library-home"
+end function
+
+' A card image failed: when the answer is old enough for its signatures to have run out, read it
+' again (the feed keeps the focused card).
+sub onArtworkFailed()
+    now = Time_nowSeconds()
+    if m.loading or not Fresh_artReloadDue(m.loadedAt, m.artReloadAt, now) then return
+    m.artReloadAt = now
+    Fresh_log(pageName(), "image-failed", m.loadedAt)
+    load()
 end sub
 
 sub focusContent()
@@ -426,6 +448,7 @@ sub buildRows(fromCache = false as boolean)
     else
         m.loading = false
         m.loaded = true
+        m.loadedAt = Time_nowSeconds()
         if libraryId() = "" then writeHomeCache()
     end if
     m.feed.rows = rows

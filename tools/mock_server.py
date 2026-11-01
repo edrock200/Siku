@@ -61,6 +61,8 @@ clears one); GET /mock/switch lists them.
   hide_episode_images=1          catalog.hide_unwatched_episode_images defaults to true (spoiler protection)
   watched_fail=<code>|bare       POST/DELETE /api/v2/watched/{id} answers that status (default 409) with a
                                  problem detail, or (bare) a 500 with no body; Siku rolls the card back
+  art_expire=<seconds>           artwork URLs carry ?exp=<now+seconds> and answer 404 once expired
+                                 (signed artwork); the log prints ART EXPIRED <kind>/<name>
   member_fail=<code>|bare        PUT/DELETE /api/v2/watchlist|favorites/{id} answers that status (default 409)
                                  with a problem detail, or (bare) a 500; the detail page rolls back
   refresh_status=<code>|html     POST /auth/refresh answers that status (400/401 session_expired, others
@@ -138,6 +140,19 @@ def h(s):
 
 def img(kind, key):
     return "/mock-img/%s/%s.jpg" % (kind, key.replace(":", "_"))
+
+
+def sign_artwork(body, seconds):
+    """switch art_expire=<seconds>: every /mock-img URL in an answer carries ?exp=<now+seconds> and
+    the image answers 404 after that, as Silo's signed artwork URLs expire."""
+    exp = int(time.time()) + seconds
+    if isinstance(body, dict):
+        return {k: sign_artwork(v, seconds) for k, v in body.items()}
+    if isinstance(body, list):
+        return [sign_artwork(v, seconds) for v in body]
+    if isinstance(body, str) and body.startswith("/mock-img/") and "?" not in body:
+        return "%s?exp=%d" % (body, exp)
+    return body
 
 
 def person(i):
@@ -1711,6 +1726,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def send(self, code, body=None, ctype="application/json", extra=None):
         data = b""
+        if body is not None and not isinstance(body, bytes) and STATE["switches"].get("art_expire"):
+            body = sign_artwork(body, int(str(STATE["switches"]["art_expire"]) or "60"))
         if body is not None:
             data = body if isinstance(body, bytes) else json.dumps(body).encode()
         self.send_response(code)
@@ -1806,6 +1823,10 @@ class Handler(BaseHTTPRequestHandler):
         if p.startswith("/mock-img/"):
             _, _, kind, name = p.split("/", 3)
             if kind == "missing":  # artwork that fails to load (default artwork test)
+                return self.send(404)
+            exp = (q.get("exp") or [""])[0]
+            if exp.isdigit() and time.time() > int(exp):
+                print("ART EXPIRED %s/%s" % (kind, name), flush=True)
                 return self.send(404)
             return self.send(200, make_image(kind, name.rsplit(".", 1)[0]), "image/png" if kind == "logo" else "image/jpeg")
         if p.startswith("/mock-media/"):
