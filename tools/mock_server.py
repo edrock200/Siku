@@ -71,6 +71,13 @@ clears one); GET /mock/switch lists them.
                                  The log prints IDENTITY port= answer= and HANDOFF <method> <path>
                                  port= (where a SiloCast handoff ran, Silo Android #716)
   no_identity=1                  /system/identity answers 404 on every port
+  channel_ceilings=1             /playback/capabilities lists codec_channel_ceilings_v1; the start log prints
+                                 ceilings=original:<max_channels_by_codec>,hls:<...> as the client sent them
+  subtitle_slow=<seconds>        an embedded sidecar (embedded_stream_index) answers only after that many
+                                 seconds the first time (a first extraction); later reads answer at once.
+                                 The log prints VTT slow key= waited=
+  credits_twice=1                every version's marker_segments carry two credits ranges (duration-600..-420
+                                 and duration-300..end; the singular credits field the first), Silo Android #694
 Options that emulate other servers:
   --also-port N           also serve this deployment on port N (another address of the same server)
   --settings-revision N   settings manifest revision (default 17: spoiler keys; 16 hides them)
@@ -1309,7 +1316,9 @@ def playback_summary(b):
                disp.get("hdr_evidence"), ",".join(sorted((ctx.get("deliveries") or {}).keys())),
                ",".join(hls.get("features") or []), ",".join(hls.get("video_codecs") or []), ",".join(hls.get("audio_decode_codecs") or []),
                ",".join(hls.get("audio_passthrough_codecs") or []), hls_hd.get("hdr10"), hls_hd.get("hlg"), hls_hd.get("dolby_vision_profiles"),
-               ",".join(b.get("client_features") or [])))
+               ",".join(b.get("client_features") or []))
+            + " ceilings=original:%s,hls:%s" % (json.dumps(((ctx.get("deliveries") or {}).get("original_http") or {}).get("max_channels_by_codec")),
+                                               json.dumps(hls.get("max_channels_by_codec"))))
 
 
 def wants_ts_copy(b):
@@ -1841,6 +1850,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, STATE["switches"])
         if re.match(r"^/api/v2/stream/[^/]+/subtitles/\d+\.vtt$", p):
             LOG.append("VTT " + self.path)
+            slow = STATE["switches"].get("subtitle_slow")
+            if slow and q.get("embedded_stream_index"):
+                key = "%s:%s" % ((q.get("file_id") or ["-"])[0], q["embedded_stream_index"][0])
+                with LOCK:
+                    ready = STATE.setdefault("sub_ready_at", {}).setdefault(key, time.time() + float(slow))
+                waited = max(0.0, ready - time.time())
+                print("VTT slow key=%s waited=%.1f range=%s" % (key, waited, self.headers.get("Range") or "-"), flush=True)
+                time.sleep(waited)
             return self.send(200, b"WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nMock subtitle line\n", "text/vtt")
 
         # POST /api/v2/catalog/query: the same query as GET /api/v2/catalog, as a JSON body plus
@@ -2227,6 +2244,16 @@ class Handler(BaseHTTPRequestHandler):
                 for kind in ("intro", "recap", "credits", "preview"):
                     v[kind] = ranges.get(kind)
                 v["marker_segments"] = [{"kind": k, "start_seconds": r["start_seconds"], "end_seconds": r["end_seconds"]} for k, r in ranges.items()]
+                if STATE["switches"].get("credits_twice") and ranges is not None:
+                    # Two credits ranges around a mid-credits scene (Silo Android #694); the singular
+                    # field keeps the first, as the server projects it.
+                    dur = float(v.get("duration") or d.get("duration_seconds") or 3000)
+                    first = {"start_seconds": dur - 600, "end_seconds": dur - 420}
+                    last = {"start_seconds": dur - 300, "end_seconds": dur}
+                    v["credits"] = first
+                    v["marker_segments"] = [sg for sg in v["marker_segments"] if sg["kind"] != "credits"] + [
+                        dict(first, kind="credits"), dict(last, kind="credits")]
+                    print("MARKERS file=%s credits_twice %d-%d %d-%d" % (fid, first["start_seconds"], first["end_seconds"], last["start_seconds"], last["end_seconds"]), flush=True)
                 # "refused" still reports previews, so the client's refusal path is exercised.
                 v["trickplay_available"] = fid in TRICKPLAY_FILES and OPTS["trickplay"] != "off"
                 vs.append(v)
@@ -2240,6 +2267,8 @@ class Handler(BaseHTTPRequestHandler):
                     "protocol_versions": [3], "features": ["playback_plan_v3", "sequenced_progress_v1", "trickplay_v1"], "deliveries": ["original_http", "server_transcode_hls"]}
             if STATE["switches"].get("route_events"):
                 caps["features"].append("playback_route_diagnostics")
+            if STATE["switches"].get("channel_ceilings"):
+                caps["features"].append("codec_channel_ceilings_v1")
             if OPTS["buffering_quality"]:
                 # Buffering quality and the connection speed test (Silo Android #636).
                 caps["features"] += ["buffering_quality_v1", "connection_speed_v1"]

@@ -141,5 +141,36 @@ class Declarations(unittest.TestCase):
         ])
 
 
+
+CEILING_SERVER = {"features": ["codec_channel_ceilings_v1"], "deliveries": ["original_http", "server_transcode_hls"]}
+
+
+def ceil_ctx(multichannel, server=CEILING_SERVER):
+    c = ctx(dict(PROBE_4K_DV, multichannelAac=multichannel))
+    if server is not None:
+        c["global"]["playbackCaps"] = server
+    return c
+
+
+class ChannelCeilings(unittest.TestCase):
+    """codec_channel_ceilings_v1: a Roku without multichannel AAC sends max_channels_by_codec {aac: 2}
+    on original_http and hls (adapted from silo-roku), never a plain max_channels."""
+
+    def test_cases(self):
+        d = "PlaybackCaps_delivery"
+        capped = lambda v: v.get("max_channels_by_codec") == {"aac": 2} and "max_channels" not in v
+        uncapped = lambda v: "max_channels_by_codec" not in v and "max_channels" not in v
+        check_cases(self, FILES, [
+            ("no multichannel AAC, server has it: original capped", d, [["mkv"], []], capped, ceil_ctx(False)),
+            ("no multichannel AAC, server has it: hls capped", d, [["m3u8", "hls"], ["hls"], "hls"], capped, ceil_ctx(False)),
+            ("progressive never capped", d, [["mp4"], [], "progressive"], uncapped, ceil_ctx(False)),
+            ("multichannel AAC decodes: nothing", d, [["mkv"], []], uncapped, ceil_ctx(True)),
+            ("server without the feature: nothing", d, [["mkv"], []], uncapped, ceil_ctx(False, {"features": []})),
+            ("no capability document: nothing", d, [["mkv"], []], uncapped, ceil_ctx(False, None)),
+            ("probe flag missing reads as no multichannel", "PlaybackCaps_aacStereoCeiling", [], True,
+             {"m": {"playbackProbe": PROBE_4K_DV}, "global": dict(glob(), playbackCaps=CEILING_SERVER)}),
+        ])
+
+
 if __name__ == "__main__":
     unittest.main()
