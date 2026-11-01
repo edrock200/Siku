@@ -24,6 +24,7 @@ sub init()
     m.eventsByDate = {}
     m.selectedDay = 0
     m.requestSeq = 0
+    m.loggedZone = "(unset)"
     m.loaded = false
     m.loading = false
     m.errored = false
@@ -83,11 +84,29 @@ function Cal_monthName(mo as integer) as string
     return names[mo - 1]
 end function
 
+' The IANA zone for the TV's time-zone setting (CalendarFormat.brs); "" sends none (UTC).
 function Cal_timezone() as string
     di = CreateObject("roDeviceInfo")
-    tz = di.GetTimeZone()
-    if Str_isEmpty(tz) then return "UTC"
-    return tz
+    rokuName = Str_orEmpty(di.GetTimeZone())
+    zone = CalFmt_ianaZone(rokuName, CalFmt_offsetMinutes())
+    if m.loggedZone <> rokuName then
+        m.loggedZone = rokuName
+        shown = zone
+        if shown = "" then shown = "none"
+        print "[siku-calendar] time zone roku=" + rokuName + " sent=" + shown
+    end if
+    return zone
+end function
+
+function Cal_clock24() as boolean
+    clock24 = false
+    try
+        di = CreateObject("roDeviceInfo")
+        clock24 = LCase(Str_orEmpty(di.GetClockFormat())) = "24h"
+    catch e
+        print "[siku-calendar] clock format unreadable: " + Str_orEmpty(e.message)
+    end try
+    return clock24
 end function
 
 sub computeWeek()
@@ -318,8 +337,9 @@ sub load()
         start: m.weekDates[0]
         "end": m.weekDates[6]
         filter: m.filters[m.filterIndex].id
-        timezone: Cal_timezone()
     }
+    zone = Cal_timezone()
+    if zone <> "" then q.timezone = zone
     Api_get("/api/v2/calendar", q, "onCalendar", { seq: m.requestSeq })
 end sub
 
@@ -360,15 +380,6 @@ sub onCalendar(event as object)
     buildShelves(total)
 end sub
 
-function badgeLabel(badges as dynamic) as string
-    for each b in Arr_or(badges)
-        s = LCase(Str_orEmpty(b))
-        if s = "series_premiere" then return "PREMIERE"
-        if s = "season_premiere" then return "NEW SEASON"
-        if s = "finale" or s = "season_finale" or s = "series_finale" then return "FINALE"
-    end for
-    return ""
-end function
 
 sub buildShelves(total as integer)
     if total = 0 then
@@ -399,6 +410,7 @@ sub buildShelves(total as integer)
     m.status.visible = false
     root = CreateObject("roSGNode", "ContentNode")
     todayYmd = Cal_ymd(m.today)
+    clock24 = Cal_clock24()
     for i = 0 to 6
         ymd = m.weekDates[i]
         dt = Cal_addDays(m.weekStart, i)
@@ -429,8 +441,15 @@ sub buildShelves(total as integer)
                 else if t = "movie" then
                     node.subtitle = "Movie"
                 end if
-                node.badge = badgeLabel(ev.badges)
-                node.description = node.subtitle ' read by the screen reader
+                ' Every badge the server sends (CalCardItem stacks them) and the air time pill.
+                labels = CalFmt_badgeLabels(ev.badges)
+                node.badge = labels.Join("|")
+                airTime = CalFmt_airTime(ev, clock24)
+                node.addFields({ timeTag: airTime })
+                spoken = [node.title, node.subtitle]
+                spoken.Append(labels)
+                spoken.Push(airTime)
+                node.description = Str_joinDots(spoken) ' read by the screen reader
                 row.appendChild(node)
             end for
         end if

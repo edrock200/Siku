@@ -952,12 +952,7 @@ sub loadEpisodes(n as integer)
 end sub
 
 function airDateText(d as dynamic) as string
-    dt = Time_parseIso(d)
-    if dt = invalid then return ""
-    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    mi = dt.GetMonth() - 1
-    if mi < 0 or mi > 11 then return ""
-    return months[mi] + " " + dt.GetDayOfMonth().ToStr() + ", " + dt.GetYear().ToStr()
+    return Time_longDate(d)
 end function
 
 sub onEpisodes(event as object)
@@ -1288,9 +1283,11 @@ sub renderDetails()
     if c.Count() > 0 then rows.Push(["Country", joinNames(c, 3)])
     g = namesOf(it.genres)
     if g.Count() > 0 then rows.Push(["Genres", joinNames(g, 6)])
-    if not Str_isEmpty(it.release_date) then rows.Push(["Released", airDateText(it.release_date)])
-    if not Str_isEmpty(it.first_air_date) then rows.Push(["First Aired", airDateText(it.first_air_date)])
-    if not Str_isEmpty(it.last_air_date) then rows.Push(["Last Aired", airDateText(it.last_air_date)])
+    ' A date that cannot be read leaves its row out instead of showing an empty value.
+    for each pair in [["Released", it.release_date], ["First Aired", it.first_air_date], ["Last Aired", it.last_air_date]]
+        dateText = airDateText(pair[1])
+        if dateText <> "" then rows.Push([pair[0], dateText])
+    end for
 
     m.factRows.removeChildrenIndex(m.factRows.getChildCount(), 0)
     if rows.Count() = 0 then

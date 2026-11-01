@@ -139,13 +139,47 @@ function Time_nowSeconds() as integer
     return d.AsSeconds()
 end function
 
-' Parses an ISO-8601 timestamp to roDateTime (UTC). Returns invalid on failure.
+' True for a date without a time ("2024-05-01"), as Silo sends release, air and birth dates.
+function Time_isDateOnly(s as dynamic) as boolean
+    if Type(s) <> "roString" and Type(s) <> "String" then return false
+    if Len(s) <> 10 then return false
+    if Mid(s, 5, 1) <> "-" or Mid(s, 8, 1) <> "-" then return false
+    digits = Left(s, 4) + Mid(s, 6, 2) + Right(s, 2)
+    for i = 1 to 8
+        c = Asc(Mid(digits, i, 1))
+        if c < 48 or c > 57 then return false
+    end for
+    return true
+end function
+
+' The string handed to FromISO8601String. Roku OS 15.3.4 reads a date-only string as the epoch
+' (1970), so a date gets midnight UTC appended; its day is then read in UTC (never ToLocalTime),
+' which keeps it the same calendar day in every time zone. Adapted from Silo-Server/silo-roku,
+' AGPL-3.0 (source/catalog/detail.bs, source/catalog/cards.bs).
+function Time_isoForParse(s as dynamic) as string
+    if Time_isDateOnly(s) then return s + "T00:00:00Z"
+    return Str_orEmpty(s)
+end function
+
+' Parses an ISO-8601 timestamp (or a YYYY-MM-DD date, as midnight UTC) to roDateTime (UTC).
+' Returns invalid on failure.
 function Time_parseIso(s as dynamic) as dynamic
     if Str_isEmpty(s) then return invalid
     d = CreateObject("roDateTime")
-    d.FromISO8601String(s)
+    d.FromISO8601String(Time_isoForParse(s))
     if d.AsSeconds() = 0 and Left(s, 4) <> "1970" then return invalid
     return d
+end function
+
+' "May 1, 2024" from a date or timestamp read in UTC (a date-only value never shifts a day);
+' "" when unreadable.
+function Time_longDate(s as dynamic) as string
+    dt = Time_parseIso(s)
+    if dt = invalid then return ""
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    mi = dt.GetMonth() - 1
+    if mi < 0 or mi > 11 then return ""
+    return months[mi] + " " + dt.GetDayOfMonth().ToStr() + ", " + dt.GetYear().ToStr()
 end function
 
 ' ---------- Numbers ----------

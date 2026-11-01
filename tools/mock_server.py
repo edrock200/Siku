@@ -2183,12 +2183,23 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/v2/calendar":
             start = q.get("start", ["2026-10-05"])[0]
             y, mo, d = (int(x) for x in start.split("-"))
+            print("CALENDAR start=%s timezone=%s filter=%s" % (start, (q.get("timezone") or ["-"])[0], (q.get("filter") or ["-"])[0]), flush=True)
             events = []
             for k in range(0, 7, 2):
                 day = "%04d-%02d-%02d" % (y, mo, min(28, d + k))
                 e = episode(k % len(SERIES), 1, k + 1)
+                # Air times: an absolute air_at (k=0, 4), a network wall clock (k=2) and a date-only
+                # entry reporting midnight (k=6, shows no time). Two badges on the first card.
+                extra = {}
+                if k in (0, 4):
+                    extra["air_at"] = "%sT01:30:00Z" % day if k == 0 else "%sT21:00:00-04:00" % day
+                elif k == 2:
+                    extra["air_time"] = "20:15"
+                else:
+                    extra["air_time"] = "00:00"
+                badges = ["season_premiere", "finale"] if k == 0 else (["series_premiere"] if k == 4 else [])
                 events.append({"date": day, "items": [dict(e, title=e["series_title"], episode_title=e["title"], air_date=day,
-                                                            local_air_date=day, watched=False, badges=["season_premiere"] if k == 0 else [])]})
+                                                            local_air_date=day, watched=False, badges=badges, **extra)]})
             return self.send(200, {"events": events})
         m = re.match(r"^/api/v2/watch/(.+)/trickplay$", p)
         if m:

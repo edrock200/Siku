@@ -249,7 +249,8 @@ end function
 function Req_day(ts as dynamic) as string
     d = Time_parseIso(ts)
     if d = invalid then return ""
-    d.ToLocalTime()
+    ' A date without a time is already a calendar day; shifting it to local time would move it.
+    if not Time_isDateOnly(ts) then d.ToLocalTime()
     months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     mo = d.GetMonth()
     if mo < 1 or mo > 12 then return ""

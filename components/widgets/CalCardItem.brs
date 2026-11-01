@@ -2,10 +2,20 @@
 
 sub init()
     m.inner = m.top.findNode("inner")
-    m.badge = m.top.findNode("badge")
-    m.badgeBg = m.top.findNode("badgeBg")
-    m.badgeRing = m.top.findNode("badgeRing")
-    m.badgeLabel = m.top.findNode("badgeLabel")
+    m.badges = m.top.findNode("badges")
+    m.pills = []
+    for i = 0 to 2
+        m.pills.Push({
+            group: m.top.findNode("badge" + i.ToStr())
+            bg: m.top.findNode("badgeBg" + i.ToStr())
+            ring: m.top.findNode("badgeRing" + i.ToStr())
+            label: m.top.findNode("badgeLabel" + i.ToStr())
+        })
+    end for
+    m.timeTag = m.top.findNode("timeTag")
+    m.timeBg = m.top.findNode("timeBg")
+    m.timeLabel = m.top.findNode("timeLabel")
+    m.timeW = 0
 end sub
 
 sub onContent()
@@ -13,17 +23,35 @@ sub onContent()
     m.inner.itemContent = c
     text = ""
     if c <> invalid and c.badge <> invalid then text = c.badge
-    if text = "" then
-        m.badge.visible = false
-    else
-        m.badge.visible = true
-        m.badgeLabel.text = text
-        m.badgeLabel.width = 0
-        w = Int(Label_width(m.badgeLabel)) + 24
-        m.badgeLabel.width = w
-        m.badgeBg.width = w
-        m.badgeRing.width = w
+    labels = []
+    if text <> "" then labels = text.Split("|")
+    for i = 0 to m.pills.Count() - 1
+        p = m.pills[i]
+        if i < labels.Count() and labels[i] <> "" then
+            p.group.visible = true
+            p.group.translation = [0, i * 40]
+            p.label.text = labels[i]
+            p.label.width = 0
+            w = Int(Label_width(p.label)) + 24
+            p.label.width = w
+            p.bg.width = w
+            p.ring.width = w
+        else
+            p.group.visible = false
+        end if
+    end for
+    t = ""
+    if c <> invalid and c.hasField("timeTag") and c.timeTag <> invalid then t = c.timeTag
+    m.timeTag.visible = t <> ""
+    m.timeW = 0
+    if t <> "" then
+        m.timeLabel.text = t
+        m.timeLabel.width = 0
+        m.timeW = Int(Label_width(m.timeLabel)) + 22
+        m.timeLabel.width = m.timeW
+        m.timeBg.width = m.timeW
     end if
+    forward()
 end sub
 
 sub forward()
@@ -33,12 +61,17 @@ sub forward()
     m.inner.itemHasFocus = m.top.itemHasFocus
     m.inner.rowHasFocus = m.top.rowHasFocus
     m.inner.gridHasFocus = m.top.gridHasFocus
-    ' Keep the badge over the (scaled) poster corner; the poster itself sits cardInsetY px down.
+    ' Keep the badges and the time over the (scaled) poster corners; the poster sits cardInsetY px down.
     p = m.top.focusPercent
     if not (m.top.rowHasFocus or m.top.gridHasFocus) then p = 0
-    off = 12 - Int(m.top.width * 0.05 * p)
+    w = m.top.width
+    grow = Int(w * 0.05 * p)
+    off = 12 - grow
     insetY = 0
     c = m.top.itemContent
     if c <> invalid and c.hasField("cardInsetY") and c.cardInsetY <> invalid then insetY = c.cardInsetY
-    m.badge.translation = [off, off + insetY]
+    m.badges.translation = [off, off + insetY]
+    ' Poster cards are 2:3; the scaled poster grows by grow px on each side (scale 1.10 about its centre).
+    h = Int(w * 3 / 2)
+    m.timeTag.translation = [w - m.timeW - 12 + grow, insetY + h - 32 - 12 + Int(h * 0.05 * p)]
 end sub
