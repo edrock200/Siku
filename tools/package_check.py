@@ -83,6 +83,34 @@ def image_size(data):
     return None
 
 
+DEBUG_ARG = re.compile(r"\bargs\.debug[A-Za-z]")
+
+
+def debug_lines(name, text):
+    """(line number, line) for each read of a debug* launch argument (`args.debugX`) that is not
+    inside an `#if DEBUG` block, in a .brs file."""
+    if not name.endswith(".brs"):
+        return []
+    out, stack = [], []
+    for i, line in enumerate(text.splitlines(), 1):
+        d = line.strip()
+        low = d.lower()
+        if low.startswith("#if"):
+            stack.append(low.split()[1:2] == ["debug"])
+            continue
+        if low.startswith("#else"):
+            if stack:
+                stack[-1] = False
+            continue
+        if low.startswith("#end if") or low.startswith("#endif"):
+            if stack:
+                stack.pop()
+            continue
+        if DEBUG_ARG.search(brs_code(line)) and not any(stack):
+            out.append((i, line))
+    return out
+
+
 def check(zip_path):
     problems = []
     if not os.path.isfile(zip_path):
@@ -101,6 +129,15 @@ def check(zip_path):
         if "=" in line and not line.lstrip().startswith("#"):
             k, v = line.split("=", 1)
             manifest[k.strip()] = v.strip()
+    # Release builds compile the developer aids out (MainScene's debug* deep-link parameters sit in
+    # `#if DEBUG`); only tools/simulate.py's own copy of the manifest turns them on.
+    consts = {}
+    for c in manifest.get("bs_const", "").split(";"):
+        if "=" in c:
+            k, v = c.split("=", 1)
+            consts[k.strip().upper()] = v.strip().lower()
+    if consts.get("DEBUG") != "false":
+        problems.append("manifest: bs_const must set DEBUG=false in a release package (got %r)" % manifest.get("bs_const", ""))
     for k in REQUIRED_KEYS:
         if not manifest.get(k):
             problems.append("manifest: %s is missing" % k)
@@ -142,6 +179,8 @@ def check(zip_path):
         head = "\n".join(text.splitlines()[:60])
         if SPDX not in head:
             problems.append("%s has no '%s' header" % (n, SPDX))
+        for i, line in debug_lines(n, text):
+            problems.append("%s:%d reads a debug deep-link parameter outside `#if DEBUG`: %s" % (n, i, line.strip()[:100]))
         for i, line in enumerate(text.splitlines(), 1):
             if LAN_URL.search(line) and not any(n == f and frag in line for (f, frag) in LAN_ALLOW):
                 problems.append("%s:%d has a LAN/loopback URL: %s" % (n, i, line.strip()[:100]))

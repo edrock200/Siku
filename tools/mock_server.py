@@ -303,8 +303,12 @@ def find(cid):
         _, seasons, eps = SERIES[i]
         for sn in range(1, seasons + 1):
             if cid == "season:%s-%d" % (s["content_id"], sn):
+                # play_content_id: the season's first episode not marked watched (deep links play it).
+                nxt = next((episode_id(s["content_id"], sn, en) for en in range(1, eps + 1)
+                            if episode_id(s["content_id"], sn, en) not in STATE["watched"]), episode_id(s["content_id"], sn, 1))
                 return {"content_id": cid, "type": "season", "title": "Season %d" % sn, "series_id": s["content_id"],
-                        "series_title": s["title"], "season_number": sn, "poster_url": s["poster_url"], "backdrop_url": s["backdrop_url"]}
+                        "series_title": s["title"], "season_number": sn, "poster_url": s["poster_url"], "backdrop_url": s["backdrop_url"],
+                        "play_content_id": nxt}
             for en in range(1, eps + 1):
                 if cid == episode_id(s["content_id"], sn, en):
                     return episode(i, sn, en)

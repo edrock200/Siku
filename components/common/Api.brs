@@ -25,6 +25,15 @@ function Api_call(request as object, callback as string) as object
     task.observeField("response", callback)
     m.apiTasks[task.id] = task
     task.control = "RUN"
+    ' Leaving the app (MainScene.beginExit): this request (a sign-in code withdrawn as the screen
+    ' hides) holds the exit until it answers, at most 2 s.
+    if m.global <> invalid and m.global.hasField("exiting") then
+        if m.global.exiting = true then
+            holds = m.global.exitHolds
+            holds.Push(task)
+            m.global.exitHolds = holds
+        end if
+    end if
     return task
 end function
 

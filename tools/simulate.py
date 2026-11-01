@@ -9,6 +9,9 @@ Steps (comma separated):
   up/down/left/right/ok/back/play/rev/fwd/options/home   press a remote key
   text:abc      type characters (for keyboards)
 Writes the app console log to out/sim/console.log.
+The package it runs is built with bs_const DEBUG=true (its own copy of the manifest), so the debug*
+deep-link parameters (--deep-link "debugSession=mock,...") work; release packages (npm run package)
+keep DEBUG=false and ignore them. --release-flags runs with the manifest's DEBUG=false instead.
 Requires: npm i brs-node (provides brs-cli). Remote mapping per brs-engine docs/remote-control.md.
 """
 import argparse
@@ -31,6 +34,21 @@ KEYS = {
 }
 
 
+def debug_manifest(text, debug=True):
+    """The manifest with bs_const DEBUG set to `debug` (other constants kept, the line added if missing)."""
+    value = "true" if debug else "false"
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith("bs_const="):
+            consts = [c for c in line[len("bs_const="):].split(";") if c.strip()]
+            consts = [c for c in consts if c.split("=")[0].strip().upper() != "DEBUG"]
+            lines[i] = "bs_const=" + ";".join(consts + ["DEBUG=" + value])
+            break
+    else:
+        lines.append("bs_const=DEBUG=" + value)
+    return "\n".join(lines) + "\n"
+
+
 def main():
     global OUT
     ap = argparse.ArgumentParser()
@@ -38,6 +56,8 @@ def main():
     ap.add_argument("--brs-cli", default=shutil.which("brs-cli") or "brs-cli")
     ap.add_argument("--out", default=OUT, help="snapshot/log folder (use your own when running in parallel)")
     ap.add_argument("--deep-link", default="", help="e.g. debugScreen=SettingsScreen")
+    ap.add_argument("--release-flags", action="store_true",
+                    help="keep the manifest's bs_const (DEBUG=false): run what a release build does, debug* links ignored")
     args = ap.parse_args()
     OUT = os.path.abspath(args.out)
     # The child chdirs into OUT before exec, so a relative --brs-cli path would no longer resolve.
@@ -47,7 +67,18 @@ def main():
     log = open(os.path.join(OUT, "console.log"), "wb")
     zip_path = os.path.join(OUT, "siku.zip")
 
-    subprocess.run(["sh", "-c", "cd '%s' && zip -qrD '%s' manifest source components images fonts -x '*.DS_Store'" % (ROOT, zip_path)], check=True)
+    if os.path.exists(zip_path):
+        os.remove(zip_path)
+    subprocess.run(["sh", "-c", "cd '%s' && zip -qrD '%s' source components images fonts -x '*.DS_Store'" % (ROOT, zip_path)], check=True)
+    # The simulator's copy of the manifest compiles the developer aids in (bs_const DEBUG=true: the
+    # debug* deep-link parameters in MainScene.handleDeepLink). The release package
+    # (npm run package) keeps the manifest's DEBUG=false; tools/package_check.py insists on it.
+    staged = os.path.join(OUT, "manifest")
+    with open(os.path.join(ROOT, "manifest"), encoding="utf-8") as f:
+        text = debug_manifest(f.read(), not args.release_flags)
+    with open(staged, "w", encoding="utf-8") as f:
+        f.write(text)
+    subprocess.run(["zip", "-qjD", zip_path, staged], check=True)
     args.app = zip_path
     pid, fd = pty.fork()
     if pid == 0:
