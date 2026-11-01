@@ -60,6 +60,8 @@ sub load()
     if not m.loaded then m.feed.state = "loading"
     m.pending = { discover: true, mine: true }
     m.hubError = invalid
+    m.discoverError = invalid
+    m.mineError = invalid
     m.newDiscover = invalid
     m.newMine = invalid
     Api_get("/api/v2/requests/discover", invalid, "onDiscover", { seq: m.loadSeq })
@@ -74,9 +76,10 @@ sub onDiscover(event as object)
     resp = Api_result(event)
     if resp.context = invalid or resp.context.seq <> m.loadSeq then return
     if resp.ok and resp.data <> invalid then
-        m.newDiscover = Req_mergeDiscover(Arr_or(resp.data.items))
+        ' The admin's Discover layout (row_order) in its order, else the two merged carousels.
+        m.newDiscover = Req_discoverCarousels(resp.data)
     else
-        m.hubError = resp
+        m.discoverError = resp
     end if
     readDone("discover")
 end sub
@@ -86,7 +89,7 @@ sub onRequestsListLoaded(tag as string, ok as boolean, items as object, resp as 
         if ok then
             m.newMine = Req_bucketMine(items)
         else
-            m.hubError = resp
+            m.mineError = resp
         end if
     end if
     readDone(tag)
@@ -98,11 +101,14 @@ sub readDone(tag as string)
     m.pending.Delete(tag)
     if m.pending.Count() > 0 then return
     m.loading = false
-    ' The hub keeps prior content on a failure; it shows the error only with nothing to show.
-    if m.hubError = invalid then
-        m.discover = m.newDiscover
-        m.mine = m.newMine
-    end if
+    ' Each read replaces its own rows; a failed one keeps its prior rows, so "Your requests" failing
+    ' never hides Discover (or the other way round). The error shows only with nothing to show.
+    if m.discoverError = invalid then m.discover = m.newDiscover
+    if m.mineError = invalid then m.mine = m.newMine
+    if m.discoverError <> invalid then print "[siku-requests] discover failed status="; Int(Num_or(m.discoverError.status, 0)); "; keeping "; m.discover.Count(); " row(s)"
+    if m.mineError <> invalid then print "[siku-requests] your requests failed status="; Int(Num_or(m.mineError.status, 0)); "; keeping "; m.mine.Count(); " item(s)"
+    m.hubError = m.discoverError
+    if m.hubError = invalid then m.hubError = m.mineError
     m.loaded = true
     render()
 end sub

@@ -29,6 +29,7 @@ sub init()
     m.actions = m.top.findNode("actions")
     m.primaryBtn = m.top.findNode("primaryBtn")
     m.cancelBtn = m.top.findNode("cancelBtn")
+    m.followBtn = m.top.findNode("followBtn")
     m.actionError = m.top.findNode("actionError")
     m.moreSection = m.top.findNode("moreSection")
     m.moreRow = m.top.findNode("moreRow")
@@ -41,6 +42,7 @@ sub init()
 
     m.primaryBtn.observeField("buttonSelected", "onPrimary")
     m.cancelBtn.observeField("buttonSelected", "onCancel")
+    m.followBtn.observeField("buttonSelected", "onFollow")
     m.errorRetry.observeField("buttonSelected", "load")
     m.moreRow.observeField("rowItemSelected", "onMoreSelected")
     m.backdrop.observeField("loadStatus", "onBackdropStatus")
@@ -49,6 +51,8 @@ sub init()
     m.record = invalid           ' the user's own current record for this title
     m.isSubmitting = false
     m.isCancelling = false
+    m.isFollowPending = false
+    m.followNotice = ""
     m.submissionUnconfirmed = false
     m.cancelUnconfirmed = false
     m.actionErrorText = ""
@@ -86,6 +90,11 @@ end sub
 ' ---------- Loading ----------
 
 sub load()
+    ' Opened before the shell read the requests status (a deep link): read it for follow_supported.
+    if Req_gate().resolved <> true and m.statusAsked <> true then
+        m.statusAsked = true
+        Api_get("/api/v2/requests/status", invalid, "onRequestsStatus")
+    end if
     m.errorGroup.visible = false
     if m.detail = invalid then
         m.spinner.visible = true
@@ -222,6 +231,31 @@ function currentProgress() as dynamic
     p = Req_progressOfAnnotation(m.detail.availability, m.detail.request)
     if p <> invalid and p.display.kind = "unavailable" then return invalid
     return p
+end function
+
+sub onRequestsStatus(event as object)
+    resp = Api_result(event)
+    if not resp.ok or Type(resp.data) <> "roAssociativeArray" then return
+    g = AA_copy(Req_gate())
+    g.followSupported = Req_flag(resp.data.follow_supported)
+    Req_setGate(g)
+    if m.detail <> invalid then render()
+end sub
+
+' Someone else's open request: the viewer can ask to hear when the title lands instead of
+' requesting it again (RequestDetailUiState.canFollow). Not for the requester, a title in the
+' library, or one that can be requested.
+function canFollow() as boolean
+    if m.detail = invalid or not Req_followSupported() then return false
+    rq = detailRequest()
+    if Req_flag(rq.requestable) or Req_flag(rq.requested_by_viewer) then return false
+    if Str_orEmpty(rq.reason) <> "already_requested" then return false
+    st = annotation()
+    return st <> invalid and st.kind <> "inlibrary" and st.kind <> "unavailable"
+end function
+
+function isFollowing() as boolean
+    return Req_flag(detailRequest().following)
 end function
 
 function canCancel() as boolean
@@ -398,6 +432,28 @@ sub renderActions(p as dynamic)
         x = x + m.cancelBtn.width + 18
         m.actionButtons.Push(m.cancelBtn)
     end if
+    ' The follow pill keeps its place and label while a change is in flight.
+    m.followBtn.visible = canFollow()
+    if m.followBtn.visible then
+        if isFollowing() then
+            m.followBtn.text = "Stop notifying me"
+            m.followBtn.iconUri = "pkg:/images/icons/notifications.png"
+        else
+            m.followBtn.text = "Notify me when available"
+            m.followBtn.iconUri = "pkg:/images/icons/notifications_none.png"
+        end if
+        m.followBtn.translation = [x, 0]
+        x = x + m.followBtn.width + 18
+        m.actionButtons.Push(m.followBtn)
+    end if
+    ' The follow confirmation uses the action error's slot when no error replaces it.
+    if m.actionErrorText = "" and m.followNotice <> "" and m.followBtn.visible then
+        m.actionError.text = m.followNotice
+        m.actionError.visible = true
+        m.actionError.translation = [x + 6, 4]
+        if m.actionIndex >= m.actionButtons.Count() then m.actionIndex = m.actionButtons.Count() - 1
+        return
+    end if
     m.actionError.text = m.actionErrorText
     m.actionError.visible = m.actionErrorText <> ""
     m.actionError.translation = [x + 6, 4]
@@ -544,6 +600,45 @@ sub onCancel()
     m.actionErrorText = ""
     render()
     Api_send("POST", "/api/v2/requests/" + Str_urlEncode(Str_orEmpty(m.record.id)) + "/cancel", {}, "onCancelled")
+end sub
+
+' Notify me / Stop notifying me (PUT / DELETE /api/v2/requests/follows/{media_type}/{tmdb_id}).
+' Both are idempotent; a failure says why in the action message slot.
+sub onFollow()
+    if not canFollow() or m.isFollowPending then return
+    follow = not isFollowing()
+    m.isFollowPending = true
+    m.actionErrorText = ""
+    m.followNotice = ""
+    method = "DELETE"
+    if follow then method = "PUT"
+    path = "/api/v2/requests/follows/" + Str_urlEncode(m.mediaType) + "/" + Str_urlEncode(m.tmdbId)
+    print "[siku-requests] follow "; method; " "; m.mediaType
+    Api_call({ method: method, path: path, context: { follow: follow } }, "onFollowed")
+end sub
+
+sub onFollowed(event as object)
+    resp = Api_result(event)
+    m.isFollowPending = false
+    follow = resp.context <> invalid and resp.context.follow = true
+    if resp.ok then
+        if m.detail <> invalid then
+            if Type(m.detail.request) <> "roAssociativeArray" then m.detail.request = {}
+            m.detail.request.following = follow
+            ' A PUT answers the title's request state; take it when it is one.
+            if follow and Type(resp.data) = "roAssociativeArray" and resp.data.DoesExist("following") then m.detail.request = resp.data
+        end if
+        if follow then
+            m.followNotice = "We'll let you know when it's available"
+        else
+            m.followNotice = "Notification turned off"
+        end if
+    else
+        print "[siku-requests] follow failed status="; Int(Num_or(resp.status, 0))
+        m.actionErrorText = Req_failureText(resp, "Failed to update notification")
+    end if
+    render()
+    restoreFocus()
 end sub
 
 sub onCancelled(event as object)

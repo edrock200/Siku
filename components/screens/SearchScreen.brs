@@ -570,6 +570,7 @@ sub onRequestsStatus(event as object)
     if Req_gate().resolved = true or not resp.ok then return
     g = AA_copy(Req_gate())
     g.enabled = Req_statusAvailable(resp.data)
+    if Type(resp.data) = "roAssociativeArray" then g.followSupported = Req_flag(resp.data.follow_supported)
     g.resolved = true
     Req_setGate(g)
     if g.enabled and m.query.Trim() <> "" then runRequestSearch(false)

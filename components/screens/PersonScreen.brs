@@ -89,12 +89,9 @@ sub showError(msg as string)
 end sub
 
 function prettyDate(d as dynamic) as string
-    dt = Time_parseIso(d)
-    if dt = invalid then return Str_orEmpty(d)
-    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    mi = dt.GetMonth() - 1
-    if mi < 0 or mi > 11 then return Str_orEmpty(d)
-    return months[mi] + " " + dt.GetDayOfMonth().ToStr() + ", " + dt.GetYear().ToStr()
+    t = Time_longDate(d)
+    if t = "" then return Str_orEmpty(d)
+    return t
 end function
 
 sub onPerson(event as object)

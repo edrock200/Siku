@@ -127,11 +127,13 @@ sub onRequestsStatus(event as object)
     m.gateLoading = false
     prev = Req_gate()
     enabled = prev.enabled = true
+    follow = Req_followSupported()
     if resp.ok then
         enabled = Req_statusAvailable(resp.data)
+        if Type(resp.data) = "roAssociativeArray" then follow = Req_flag(resp.data.follow_supported)
         m.gateLoadedAt = Time_nowSeconds()
     end if
-    applyRequestsGate({ enabled: enabled, resolved: true })
+    applyRequestsGate({ enabled: enabled, resolved: true, followSupported: follow })
 end sub
 
 sub applyRequestsGate(g as object)

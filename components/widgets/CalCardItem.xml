@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Calendar poster item: a MediaCardItem plus a "PREMIERE" / "NEW SEASON" / "FINALE" badge
-  (read from the ContentNode's `badge` field) in the poster's top-left corner.
+  Calendar poster item: a MediaCardItem plus up to three "PREMIERE" / "NEW SEASON" / "FINALE" badges
+  (the ContentNode's `badge` field, labels joined with "|") in the poster's top-left corner and the
+  air time (`timeTag`, "9:00 PM") in its bottom-right corner.
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="CalCardItem" extends="Group">
@@ -18,10 +19,34 @@
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
   <children>
     <MediaCardItem id="inner" />
-    <Group id="badge" visible="false" translation="[12, 12]">
-      <Poster id="badgeBg" uri="pkg:/images/ui/r8.9.png" blendColor="0x000000B3" height="34" />
-      <Poster id="badgeRing" uri="pkg:/images/ui/r8_ring2.9.png" blendColor="0xFFFFFF4D" height="34" />
-      <Label id="badgeLabel" height="34" vertAlign="center" horizAlign="center" color="0xEDEDEDFF">
+    <!-- Up to three badges stacked in the poster's top-left corner (Silo Android TV BadgePill). -->
+    <Group id="badges" translation="[12, 12]">
+      <Group id="badge0" visible="false">
+        <Poster id="badgeBg0" uri="pkg:/images/ui/r8.9.png" blendColor="0x000000B3" height="34" />
+        <Poster id="badgeRing0" uri="pkg:/images/ui/r8_ring2.9.png" blendColor="0xFFFFFF4D" height="34" />
+        <Label id="badgeLabel0" height="34" vertAlign="center" horizAlign="center" color="0xEDEDEDFF">
+          <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="19" />
+        </Label>
+      </Group>
+      <Group id="badge1" visible="false">
+        <Poster id="badgeBg1" uri="pkg:/images/ui/r8.9.png" blendColor="0x000000B3" height="34" />
+        <Poster id="badgeRing1" uri="pkg:/images/ui/r8_ring2.9.png" blendColor="0xFFFFFF4D" height="34" />
+        <Label id="badgeLabel1" height="34" vertAlign="center" horizAlign="center" color="0xEDEDEDFF">
+          <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="19" />
+        </Label>
+      </Group>
+      <Group id="badge2" visible="false">
+        <Poster id="badgeBg2" uri="pkg:/images/ui/r8.9.png" blendColor="0x000000B3" height="34" />
+        <Poster id="badgeRing2" uri="pkg:/images/ui/r8_ring2.9.png" blendColor="0xFFFFFF4D" height="34" />
+        <Label id="badgeLabel2" height="34" vertAlign="center" horizAlign="center" color="0xEDEDEDFF">
+          <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="19" />
+        </Label>
+      </Group>
+    </Group>
+    <!-- The air time in the poster's bottom-right corner (Android TV's air-time capsule). -->
+    <Group id="timeTag" visible="false">
+      <Poster id="timeBg" uri="pkg:/images/ui/r16.9.png" blendColor="0x0000009E" height="32" />
+      <Label id="timeLabel" height="32" vertAlign="center" horizAlign="center" color="0xFFFFFFFF">
         <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="19" />
       </Label>
     </Group>

@@ -77,6 +77,8 @@
         <Group id="actions">
           <PillButton id="primaryBtn" text="Request" variant="solid" iconUri="pkg:/images/icons/add.png" height="76" padX="40" fontSize="27" />
           <PillButton id="cancelBtn" text="Cancel Request" iconUri="pkg:/images/icons/close.png" height="76" padX="36" fontSize="27" visible="false" />
+          <!-- Someone else's open request: hear when it lands (Android TV "Notify me when available"). -->
+          <PillButton id="followBtn" text="Notify me when available" iconUri="pkg:/images/icons/notifications_none.png" height="76" padX="36" fontSize="27" visible="false" />
           <Label id="actionError" width="560" wrap="true" maxLines="2" color="0xEDEDEDB8" visible="false">
             <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
           </Label>

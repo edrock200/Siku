@@ -62,6 +62,10 @@ end sub
 
 ' ---------- Rows ----------
 
+sub onCardArtFailed()
+    m.top.artworkFailed = m.top.artworkFailed + 1
+end sub
+
 sub onRows()
     rows = m.top.rows
     if rows = invalid then rows = []
@@ -83,6 +87,7 @@ sub onRows()
     keep = focusKey()
     content = Content_rows(specs, m.cellPad)
     addExploreCards(content, specs)
+    Fresh_watchArt(content, "onCardArtFailed")
     m.rowList.content = content
     m.focusRow = 0
     target = findFocus(keep)

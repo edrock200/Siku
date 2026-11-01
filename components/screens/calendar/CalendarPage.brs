@@ -24,6 +24,11 @@ sub init()
     m.eventsByDate = {}
     m.selectedDay = 0
     m.requestSeq = 0
+    m.loggedZone = "(unset)"
+    m.loadedAt = 0
+    m.artReloadAt = 0
+    m.quietLoad = false
+    m.refreshing = false
     m.loaded = false
     m.loading = false
     m.errored = false
@@ -83,11 +88,29 @@ function Cal_monthName(mo as integer) as string
     return names[mo - 1]
 end function
 
+' The IANA zone for the TV's time-zone setting (CalendarFormat.brs); "" sends none (UTC).
 function Cal_timezone() as string
     di = CreateObject("roDeviceInfo")
-    tz = di.GetTimeZone()
-    if Str_isEmpty(tz) then return "UTC"
-    return tz
+    rokuName = Str_orEmpty(di.GetTimeZone())
+    zone = CalFmt_ianaZone(rokuName, CalFmt_offsetMinutes())
+    if m.loggedZone <> rokuName then
+        m.loggedZone = rokuName
+        shown = zone
+        if shown = "" then shown = "none"
+        print "[siku-calendar] time zone roku=" + rokuName + " sent=" + shown
+    end if
+    return zone
+end function
+
+function Cal_clock24() as boolean
+    clock24 = false
+    try
+        di = CreateObject("roDeviceInfo")
+        clock24 = LCase(Str_orEmpty(di.GetClockFormat())) = "24h"
+    catch e
+        print "[siku-calendar] clock format unreadable: " + Str_orEmpty(e.message)
+    end try
+    return clock24
 end function
 
 sub computeWeek()
@@ -289,7 +312,23 @@ end function
 ' ---------- Lifecycle ----------
 
 sub onPageShown()
-    if not m.loaded and not m.loading then load()
+    if not m.loaded and not m.loading then
+        load()
+    else if m.loaded and not m.loading and Fresh_isStale(m.loadedAt, Time_nowSeconds()) then
+        ' Signed artwork in an old answer may have expired (Freshness.brs): read the week again.
+        Fresh_log("calendar", "stale", m.loadedAt)
+        m.quietLoad = true
+        load()
+    end if
+end sub
+
+sub onArtworkFailed()
+    now = Time_nowSeconds()
+    if m.loading or not Fresh_artReloadDue(m.loadedAt, m.artReloadAt, now) then return
+    m.artReloadAt = now
+    Fresh_log("calendar", "image-failed", m.loadedAt)
+    m.quietLoad = true
+    load()
 end sub
 
 sub focusContent()
@@ -311,15 +350,20 @@ sub load()
     m.loaded = false
     m.errored = false
     m.requestSeq = m.requestSeq + 1
-    m.spinner.visible = true
+    ' A quiet re-read (expired artwork) keeps the shelves on screen until the answer replaces them.
+    quiet = m.quietLoad and m.shelves.visible
+    m.quietLoad = false
+    m.refreshing = quiet
+    m.spinner.visible = not quiet
     m.status.visible = false
-    m.shelves.visible = false
+    if not quiet then m.shelves.visible = false
     q = {
         start: m.weekDates[0]
         "end": m.weekDates[6]
         filter: m.filters[m.filterIndex].id
-        timezone: Cal_timezone()
     }
+    zone = Cal_timezone()
+    if zone <> "" then q.timezone = zone
     Api_get("/api/v2/calendar", q, "onCalendar", { seq: m.requestSeq })
 end sub
 
@@ -329,6 +373,13 @@ sub onCalendar(event as object)
     if ctx = invalid or ctx.seq <> m.requestSeq then return
     m.loading = false
     m.spinner.visible = false
+    if not resp.ok and m.refreshing = true then
+        ' A quiet re-read failed: keep the week on screen; the next visit tries again.
+        m.loaded = true
+        m.refreshing = false
+        print "[siku-art] reload failed page=calendar status="; Int(Num_or(resp.status, 0))
+        return
+    end if
     if not resp.ok then
         m.errored = true
         m.status.visible = true
@@ -343,6 +394,7 @@ sub onCalendar(event as object)
         return
     end if
     m.loaded = true
+    m.loadedAt = Time_nowSeconds()
     m.eventsByDate = {}
     total = 0
     if resp.data <> invalid then
@@ -360,15 +412,6 @@ sub onCalendar(event as object)
     buildShelves(total)
 end sub
 
-function badgeLabel(badges as dynamic) as string
-    for each b in Arr_or(badges)
-        s = LCase(Str_orEmpty(b))
-        if s = "series_premiere" then return "PREMIERE"
-        if s = "season_premiere" then return "NEW SEASON"
-        if s = "finale" or s = "season_finale" or s = "series_finale" then return "FINALE"
-    end for
-    return ""
-end function
 
 sub buildShelves(total as integer)
     if total = 0 then
@@ -399,6 +442,7 @@ sub buildShelves(total as integer)
     m.status.visible = false
     root = CreateObject("roSGNode", "ContentNode")
     todayYmd = Cal_ymd(m.today)
+    clock24 = Cal_clock24()
     for i = 0 to 6
         ymd = m.weekDates[i]
         dt = Cal_addDays(m.weekStart, i)
@@ -429,19 +473,38 @@ sub buildShelves(total as integer)
                 else if t = "movie" then
                     node.subtitle = "Movie"
                 end if
-                node.badge = badgeLabel(ev.badges)
-                node.description = node.subtitle ' read by the screen reader
+                ' Every badge the server sends (CalCardItem stacks them) and the air time pill.
+                labels = CalFmt_badgeLabels(ev.badges)
+                node.badge = labels.Join("|")
+                airTime = CalFmt_airTime(ev, clock24)
+                node.addFields({ timeTag: airTime })
+                spoken = [node.title, node.subtitle]
+                spoken.Append(labels)
+                spoken.Push(airTime)
+                node.description = Str_joinDots(spoken) ' read by the screen reader
                 row.appendChild(node)
             end for
         end if
     end for
+    Fresh_watchArt(root, "onArtworkFailed")
+    ' A re-read keeps the focused day and card.
+    keep = m.shelves.rowItemFocused
     m.shelves.content = root
     m.shelves.visible = true
     if m.focusArea = "rows" or m.focusArea = "retry" then
         m.focusArea = "rows"
         m.shelves.setFocus(true)
     end if
-    jumpToDay(m.selectedDay)
+    restored = false
+    if m.refreshing = true and keep <> invalid and keep.Count() >= 2 then
+        r = root.getChild(keep[0])
+        if r <> invalid and keep[1] < r.getChildCount() then
+            m.shelves.jumpToRowItem = keep
+            restored = true
+        end if
+    end if
+    m.refreshing = false
+    if not restored then jumpToDay(m.selectedDay)
 end sub
 
 sub jumpToDay(day as integer)

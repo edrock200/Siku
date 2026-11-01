@@ -9,6 +9,8 @@
     width     panel width (460 default; 300 for a flyout; 480 for the profile menu)
     profile   optional {name, sub, avatar} header block (profile dropdown)
     focusIndex  (in/out) focused row index
+    maxRows   when > 0, at most this many rows are drawn; the window follows the focus and the
+              header shows "↑" / "↓" when rows are hidden above / below (long filter lists)
   Outputs (alwaysNotify):
     rowSelected  id of the row chosen with OK
     rowFocused   index of the row that gained focus
@@ -24,6 +26,7 @@
     <field id="width" type="integer" value="460" onChange="rebuild" />
     <field id="profile" type="assocarray" onChange="rebuild" />
     <field id="focusIndex" type="integer" value="0" onChange="applyFocus" />
+    <field id="maxRows" type="integer" value="0" onChange="rebuild" />
     <field id="panelHeight" type="integer" value="0" />
     <field id="rowSelected" type="string" alwaysNotify="true" />
     <field id="rowFocused" type="integer" alwaysNotify="true" />

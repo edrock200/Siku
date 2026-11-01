@@ -6,6 +6,7 @@
 -->
 <component name="CalendarPage" extends="ShellPage">
   <script type="text/brightscript" uri="pkg:/components/screens/calendar/CalendarPage.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/CalendarFormat.brs" />
   <children>
     <Group id="segments" translation="[88, 188]">
       <Poster id="segBg" uri="pkg:/images/ui/r28.9.png" blendColor="0xFFFFFF14" width="540" height="56" />

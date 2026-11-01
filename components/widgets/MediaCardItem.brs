@@ -24,6 +24,7 @@ sub init()
     m.exploreIcon = m.top.findNode("exploreIcon")
     m.exploreLabel = m.top.findNode("exploreLabel")
     m.isExplore = false
+    m.reportedUri = ""
     m.title = m.top.findNode("title")
     m.subtitle = m.top.findNode("subtitle")
     m.style = "poster"
@@ -101,6 +102,27 @@ end function
 
 sub onImageStatus()
     updateDefaultArt()
+    if m.image.loadStatus = "failed" then reportArtFailure()
+end sub
+
+' A server image that fails may be a signed URL that expired: tell the page (the nearest ancestor
+' content node with an `artFailed` counter, see components/common/Freshness.brs) once per URI, so it
+' can read its data again.
+sub reportArtFailure()
+    uri = LCase(m.image.uri)
+    if Left(uri, 7) <> "http://" and Left(uri, 8) <> "https://" then return
+    if m.reportedUri = m.image.uri then return
+    m.reportedUri = m.image.uri
+    n = m.top.itemContent
+    hops = 0
+    while n <> invalid and hops < 4
+        n = n.getParent()
+        hops = hops + 1
+        if n <> invalid and n.hasField("artFailed") then
+            n.artFailed = n.artFailed + 1
+            return
+        end if
+    end while
 end sub
 
 ' Shows the default artwork while the card has no image to draw: no URL, or a failed load.

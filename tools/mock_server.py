@@ -66,6 +66,14 @@ clears one); GET /mock/switch lists them.
   hide_episode_images=1          catalog.hide_unwatched_episode_images defaults to true (spoiler protection)
   watched_fail=<code>|bare       POST/DELETE /api/v2/watched/{id} answers that status (default 409) with a
                                  problem detail, or (bare) a 500 with no body; Siku rolls the card back
+  art_expire=<seconds>           artwork URLs carry ?exp=<now+seconds> and answer 404 once expired
+                                 (signed artwork); the log prints ART EXPIRED <kind>/<name>
+  discover_layout=1              GET /requests/discover sends an admin layout (row_order: mixed rows, a
+                                 studios brand row, an empty row); log REQUESTS DISCOVER layout=
+  mine_fail=1                    GET /requests/mine answers 500 (the hub still shows Discover)
+  follow_fail=1                  PUT/DELETE /requests/follows/... answer 409 (log REQUESTS FOLLOW)
+  member_fail=<code>|bare        PUT/DELETE /api/v2/watchlist|favorites/{id} answers that status (default 409)
+                                 with a problem detail, or (bare) a 500; the detail page rolls back
   refresh_status=<code>|html     POST /auth/refresh answers that status (400/401 session_expired, others
                                  a bad_gateway problem) or, with html, a 200 HTML page (a captive portal).
                                  Siku must sign out only on 400/401 (look for [siku-auth] lines)
@@ -149,6 +157,19 @@ def h(s):
 
 def img(kind, key):
     return "/mock-img/%s/%s.jpg" % (kind, key.replace(":", "_"))
+
+
+def sign_artwork(body, seconds):
+    """switch art_expire=<seconds>: every /mock-img URL in an answer carries ?exp=<now+seconds> and
+    the image answers 404 after that, as Silo's signed artwork URLs expire."""
+    exp = int(time.time()) + seconds
+    if isinstance(body, dict):
+        return {k: sign_artwork(v, seconds) for k, v in body.items()}
+    if isinstance(body, list):
+        return [sign_artwork(v, seconds) for v in body]
+    if isinstance(body, str) and body.startswith("/mock-img/") and "?" not in body:
+        return "%s?exp=%d" % (body, exp)
+    return body
 
 
 def person(i):
@@ -682,6 +703,21 @@ def sort_title(t):
 FLAG_RULE_FIELDS = {"hdr", "dolby_vision", "watched", "in_progress", "favorited", "in_watchlist"}
 
 
+MOCK_STUDIOS = ["Lantern Films", "Mock Pictures", "Northwind"]
+MOCK_COUNTRIES = ["United States", "United Kingdom", "France"]
+MOCK_LANGS = ["en", "fr", "de"]
+
+
+def mock_facets(item):
+    """Facet values the mock derives for a title (studio, country, languages, resolution, HDR)."""
+    k = h(item.get("title", ""))
+    ov = item.get("overlay_summary") or {}
+    return {"studio": MOCK_STUDIOS[k % 3], "country": MOCK_COUNTRIES[(k // 3) % 3],
+            "original_language": MOCK_LANGS[(k // 5) % 3], "audio_language": ["en", MOCK_LANGS[(k // 7) % 3]],
+            "subtitle_language": ["en", "fr"] if k % 2 else ["de"], "resolution": ov.get("resolution") or "1080p",
+            "hdr": bool(ov.get("hdr")), "dolby_vision": ov.get("hdr") == "Dolby Vision"}
+
+
 def catalog_filter(items, q):
     """Shared GET /api/v2/catalog + POST /api/v2/catalog/query filters: name_prefix and rule groups
     (the client sends author / series "is" rules and genre "contains" rules), then sort."""
@@ -691,12 +727,25 @@ def catalog_filter(items, q):
             items = [i for i in items if not sort_title(i["title"])[:1].isalpha()]
         else:
             items = [i for i in items if sort_title(i["title"]).lower().startswith(prefix.lower())]
+    group_results = []
     for group in q.get("_groups", []):
         match_any = group.get("match") == "any"
         rules = group.get("rules") or []
 
         def rule_ok(item, rule):
             field, value = rule.get("field"), rule.get("value")
+            fx = mock_facets(item)
+            if field == "year" and rule.get("op") == "between":
+                lo, hi = (int(v) for v in rule.get("values") or [0, 9999])
+                return lo <= int(item.get("year") or 0) <= hi
+            if field == "content_rating":
+                return value == item.get("content_rating")
+            if field in ("hdr", "dolby_vision"):
+                return fx[field] == (str(value).lower() == "true")
+            if field in ("studio", "country", "original_language", "resolution"):
+                return value == fx[field]
+            if field in ("audio_language", "subtitle_language"):
+                return value in fx[field]
             if field == "author":
                 return value in item.get("authors", [])
             if field == "narrator":
@@ -716,7 +765,13 @@ def catalog_filter(items, q):
             return True
 
         if rules:
-            items = [i for i in items if (any if match_any else all)(rule_ok(i, r) for r in rules)]
+            group_results.append({i["content_id"] for i in items if (any if match_any else all)(rule_ok(i, r) for r in rules)})
+    if group_results:
+        # Top-level match (CatalogQuery.match): all groups (default) or any of them.
+        top_any = q.get("match", ["all"])[0] == "any"
+        keep = set.union(*group_results) if top_any else set.intersection(*group_results)
+        print("CATALOG QUERY groups=%d match=%s -> %d" % (len(group_results), "any" if top_any else "all", len(keep)), flush=True)
+        items = [i for i in items if i["content_id"] in keep]
     sort = q.get("sort", ["title"])[0]
     key = sort.lstrip("-")
     if key == "title":
@@ -928,7 +983,7 @@ REQ_TITLES = [
     ("series", 9104, "Orbital", 2016, "Science Fiction", "series:orbital"),
     ("series", 9105, "Signal & Noise", 2026, "Drama", None),
 ]
-REQ_STATE = {"requests": [], "seq": 10}
+REQ_STATE = {"requests": [], "seq": 10, "follows": set()}
 
 
 def req_ts(days_ago):
@@ -1004,6 +1059,10 @@ def req_annotation(t):
         state.update({"status": r["status"], "state": r["state"], "request_id": r["id"],
                       "requested_by_viewer": r["requested_by_user_id"] == "1"})
         state["requestable"] = r["outcome"] in ("declined", "failed")
+        if r["outcome"] == "active" and r["requested_by_user_id"] != "1":
+            # Someone else's open request: the viewer may follow it (Notify me when available).
+            state["reason"] = "already_requested"
+            state["following"] = "%s/%d" % (mt, tid) in REQ_STATE["follows"]
     if lib and (r is None or r["outcome"] != "active" or r["state"] == "available"):
         state["requestable"] = False
         state["reason"] = "already_available"
@@ -1085,12 +1144,43 @@ def requests_route(handler, method, p, q, b):
         sections = [("trending_movies", "Trending Movies", movies[:6]), ("trending_series", "Trending Series", series_[:4]),
                     ("popular_movies", "Popular Movies", movies[3:]), ("popular_series", "Popular Series", series_[1:]),
                     ("upcoming_movies", "Upcoming Movies", [t for t in movies if t[3] >= 2026])]
+        layout = bool(STATE["switches"].get("discover_layout"))
+        if layout:
+            # An admin-defined Discover layout (row_order): mixed rows in the admin's order, a brand
+            # row the TV apps do not draw, and a row with no titles.
+            sections = [("staff_picks", "Staff Picks", [movies[4], series_[0], movies[1], series_[4]]),
+                        ("trending_movies", "Trending Movies", movies[:6]),
+                        ("anime_list", "Anime List", []),
+                        ("crime_series", "Crime & Mystery", [t for t in series_ if t[4] in ("Crime", "Drama", "Documentary")])]
         items = []
         for key, title, ts in sections:
             sec = req_page(handler, ts)
             sec.update({"key": key, "title": title})
             items.append(sec)
-        handler.send(200, {"items": items})
+        out = {"items": items}
+        if layout:
+            out["row_order"] = [{"key": "staff_picks", "type": "tmdb_list", "title": "Staff Picks"},
+                                {"key": "studios", "type": "studios", "title": "Studios"},
+                                {"key": "trending_movies", "type": "tmdb_chart", "title": "Trending Movies"},
+                                {"key": "anime_list", "type": "mdblist", "title": "Anime List"},
+                                {"key": "crime_series", "type": "tmdb_discover", "title": "Crime & Mystery"}]
+        print("REQUESTS DISCOVER layout=%s" % ("row_order" if layout else "legacy"), flush=True)
+        handler.send(200, out)
+        return True
+    m = re.match(r"^/api/v2/requests/follows/(movie|series)/(\d+)$", p)
+    if m and method in ("PUT", "DELETE"):
+        key = "%s/%s" % (m.group(1), m.group(2))
+        print("REQUESTS FOLLOW %s %s" % (method, key), flush=True)
+        if STATE["switches"].get("follow_fail"):
+            handler.problem(409, "conflict", "Notifications are turned off for this profile.")
+            return True
+        if method == "PUT":
+            REQ_STATE["follows"].add(key)
+            t = req_title(m.group(1), int(m.group(2)))
+            handler.send(200, req_annotation(t) if t else {"following": True})
+        else:
+            REQ_STATE["follows"].discard(key)
+            handler.send(204)
         return True
     m = re.match(r"^/api/v2/requests/discover/([a-z_]+)$", p)
     if m:
@@ -1148,6 +1238,10 @@ def requests_route(handler, method, p, q, b):
         rec = req_record("r-%d" % REQ_STATE["seq"], mt, tid, "1", "pending", "active", "pending", 0)
         REQ_STATE["requests"].append(rec)
         handler.send(201, req_images(handler, dict(rec)))
+        return True
+    if p == "/api/v2/requests/mine" and STATE["switches"].get("mine_fail"):
+        print("REQUESTS MINE refused (switch mine_fail)", flush=True)
+        handler.problem(500, "internal", "Your requests failed (mine_fail)")
         return True
     if p == "/api/v2/requests/mine":
         mine = req_filter([r for r in REQ_STATE["requests"] if r["requested_by_user_id"] == "1"], q)
@@ -1730,6 +1824,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def send(self, code, body=None, ctype="application/json", extra=None):
         data = b""
+        if body is not None and not isinstance(body, bytes) and STATE["switches"].get("art_expire"):
+            body = sign_artwork(body, int(str(STATE["switches"]["art_expire"]) or "60"))
         if body is not None:
             data = body if isinstance(body, bytes) else json.dumps(body).encode()
         self.send_response(code)
@@ -1825,6 +1921,10 @@ class Handler(BaseHTTPRequestHandler):
         if p.startswith("/mock-img/"):
             _, _, kind, name = p.split("/", 3)
             if kind == "missing":  # artwork that fails to load (default artwork test)
+                return self.send(404)
+            exp = (q.get("exp") or [""])[0]
+            if exp.isdigit() and time.time() > int(exp):
+                print("ART EXPIRED %s/%s" % (kind, name), flush=True)
                 return self.send(404)
             return self.send(200, make_image(kind, name.rsplit(".", 1)[0]), "image/png" if kind == "logo" else "image/jpeg")
         if p.startswith("/mock-media/"):
@@ -2095,8 +2195,14 @@ class Handler(BaseHTTPRequestHandler):
                 authors = [g["name"] for g in audiobook_groups({"group_by": ["author"]})]
                 narrators = [g["name"] for g in audiobook_groups({"group_by": ["narrator"]})]
                 series = [g["name"] for g in audiobook_groups({"group_by": ["series"]})]
-            return self.send(200, {"genres": genres, "studios": [], "networks": [], "countries": [], "original_languages": [], "content_ratings": ["PG", "PG-13", "R"],
-                                   "authors": authors, "narrators": narrators, "series": series, "technical": {}})
+            video = lib not in ("3", "4")
+            technical = {}
+            if video and (q.get("skip_technical") or ["false"])[0] != "true":
+                technical = {"resolutions": ["4K", "1080p"], "audio_languages": MOCK_LANGS, "subtitle_languages": MOCK_LANGS}
+            print("CATALOG FILTERS library=%s skip_technical=%s" % (lib or "-", (q.get("skip_technical") or ["-"])[0]), flush=True)
+            return self.send(200, {"genres": genres, "studios": MOCK_STUDIOS if video else [], "networks": [], "countries": MOCK_COUNTRIES if video else [],
+                                   "original_languages": MOCK_LANGS if video else [], "content_ratings": ["PG", "PG-13", "R"],
+                                   "authors": authors, "narrators": narrators, "series": series, "technical": technical})
         if p == "/api/v2/catalog" and q.get("cursor", [""])[0] and STATE["switches"].get("more_fail"):
             return self.problem(500, "internal", "Page failed (more_fail)")
         if p == "/api/v2/catalog" and q.get("source", [""])[0] == "section" and q.get("library_id", [""])[0] == "5":
@@ -2176,6 +2282,7 @@ class Handler(BaseHTTPRequestHandler):
                     _, seasons, eps = SERIES[i]
                     return self.send(200, {"items": [{"content_id": "season:%s-%d" % (s["content_id"], n), "season_number": n,
                                                        "title": "Season %d" % n, "episode_count": eps, "is_specials": False,
+                                                       "user_data": {"played": all(episode_id(s["content_id"], n, e) in STATE["watched"] for e in range(1, eps + 1))},
                                                        "poster_url": s["poster_url"]} for n in range(1, seasons + 1)]})
             return self.problem(404, "not_found", "Not found")
         m = re.match(r"^/api/v2/catalog/series/([^/]+)/seasons/(\d+)/episodes$", p)
@@ -2212,12 +2319,23 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/v2/calendar":
             start = q.get("start", ["2026-10-05"])[0]
             y, mo, d = (int(x) for x in start.split("-"))
+            print("CALENDAR start=%s timezone=%s filter=%s" % (start, (q.get("timezone") or ["-"])[0], (q.get("filter") or ["-"])[0]), flush=True)
             events = []
             for k in range(0, 7, 2):
                 day = "%04d-%02d-%02d" % (y, mo, min(28, d + k))
                 e = episode(k % len(SERIES), 1, k + 1)
+                # Air times: an absolute air_at (k=0, 4), a network wall clock (k=2) and a date-only
+                # entry reporting midnight (k=6, shows no time). Two badges on the first card.
+                extra = {}
+                if k in (0, 4):
+                    extra["air_at"] = "%sT01:30:00Z" % day if k == 0 else "%sT21:00:00-04:00" % day
+                elif k == 2:
+                    extra["air_time"] = "20:15"
+                else:
+                    extra["air_time"] = "00:00"
+                badges = ["season_premiere", "finale"] if k == 0 else (["series_premiere"] if k == 4 else [])
                 events.append({"date": day, "items": [dict(e, title=e["series_title"], episode_title=e["title"], air_date=day,
-                                                            local_air_date=day, watched=False, badges=["season_premiere"] if k == 0 else [])]})
+                                                            local_air_date=day, watched=False, badges=badges, **extra)]})
             return self.send(200, {"events": events})
         m = re.match(r"^/api/v2/watch/(.+)/trickplay$", p)
         if m:
@@ -2460,12 +2578,30 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(code, {"type": "https://siloserver.org/docs/api/v2/problems/conflict", "title": "Conflict",
                                     "status": code, "detail": "Watched state is managed by your administrator."},
                              "application/problem+json")
+        if m and m.group(1) in ("watchlist", "favorites") and STATE["switches"].get("member_fail"):
+            fail = str(STATE["switches"]["member_fail"])
+            print("MEMBERSHIP %s %s refused (switch member_fail=%s)" % (method, m.group(1), fail), flush=True)
+            if fail == "bare":
+                return self.send(500)
+            code = int(fail) if fail.isdigit() else 409
+            return self.send(code, {"type": "https://siloserver.org/docs/api/v2/problems/conflict", "title": "Conflict",
+                                    "status": code, "detail": "Lists are read-only for this profile."},
+                             "application/problem+json")
         if m:
             key = {"watchlist": "watchlist", "favorites": "favorites", "watched": "watched"}[m.group(1)]
-            if method in ("PUT", "POST"):
-                STATE[key].add(m.group(2))
-            elif method == "DELETE":
-                STATE[key].discard(m.group(2))
+            ids = [m.group(2)]
+            # A season's watched mark covers its episodes, as the real server applies it.
+            sm = re.match(r"^season:(.+)-(\d+)$", m.group(2))
+            if key == "watched" and sm:
+                for i, srs in enumerate(all_series()):
+                    if srs["content_id"] == sm.group(1):
+                        ids += [episode_id(srs["content_id"], int(sm.group(2)), e) for e in range(1, SERIES[i][2] + 1)]
+            print("%s %s %s (%d id%s)" % (key.upper(), method, m.group(2), len(ids), "" if len(ids) == 1 else "s"), flush=True)
+            for one in ids:
+                if method in ("PUT", "POST"):
+                    STATE[key].add(one)
+                elif method == "DELETE":
+                    STATE[key].discard(one)
             return self.send(204)
         m = re.match(r"^/api/v2/home/dismissals/(continue_watching|next_up)/(.+)$", p)
         if m and method in ("PUT", "DELETE"):

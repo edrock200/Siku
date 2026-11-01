@@ -19,6 +19,8 @@ sub init()
     m.footerLabel = m.top.findNode("footerLabel")
     m.rowNodes = []
     m.rowMeta = []
+    m.winStart = 0
+    m.winEnd = 0
     m.padX = 32
     m.rowH = 64
     m.top.focusable = true
@@ -102,10 +104,33 @@ sub rebuild()
         m.profileHead.visible = false
     end if
 
+    ' The drawn window of rows (maxRows): it always holds the focused row.
+    n = rows.Count()
+    maxRows = m.top.maxRows
+    m.winStart = 0
+    m.winEnd = n
+    if maxRows > 0 and n > maxRows then
+        fi = m.top.focusIndex
+        if fi < 0 then fi = 0
+        if fi >= n then fi = n - 1
+        start = m.prevWinStart
+        if start = invalid then start = 0
+        if fi < start then start = fi
+        if fi > start + maxRows - 1 then start = fi - maxRows + 1
+        if start > n - maxRows then start = n - maxRows
+        if start < 0 then start = 0
+        m.winStart = start
+        m.winEnd = start + maxRows
+    end if
+    m.prevWinStart = m.winStart
+
     ' Header.
     if not Str_isEmpty(m.top.header) then
         m.headerLabel.visible = true
-        m.headerLabel.text = m.top.header
+        hint = ""
+        if m.winStart > 0 then hint = "  ↑"
+        if m.winEnd < n then hint = hint + "  ↓"
+        m.headerLabel.text = m.top.header + hint
         m.headerLabel.translation = [m.padX + 12, y]
         m.headerLabel.width = w - m.padX * 2
         y = y + 44
@@ -117,66 +142,14 @@ sub rebuild()
     m.rowMeta = []
     for i = 0 to rows.Count() - 1
         r = rows[i]
-        g = rowNode(i)
-        g.visible = true
-        bg = Node_find(g, "bg")
-        divider = Node_find(g, "divider")
-        icon = Node_find(g, "icon")
-        lbl = Node_find(g, "label")
-        sub1 = Node_find(g, "sub")
-        trailing = Node_find(g, "trailing")
-        if Str_orEmpty(r.id) = "-" then
-            g.translation = [m.padX, y]
-            divider.visible = true
-            divider.translation = [0, 11]
-            divider.width = w - m.padX * 2
-            bg.visible = false
-            icon.visible = false
-            lbl.visible = false
-            sub1.visible = false
-            trailing.visible = false
-            m.rowMeta.Push({ divider: true })
-            y = y + 24
+        if i < m.winStart or i >= m.winEnd then
+            ' Outside the drawn window: kept for focus moves, no node.
+            m.rowMeta.Push({ divider: Str_orEmpty(r.id) = "-", id: Str_orEmpty(r.id), hidden: true })
         else
-            g.translation = [m.padX, y]
-            divider.visible = false
-            bg.width = w - m.padX * 2
-            bg.height = m.rowH
-            x = 16
-            iconName = Str_orEmpty(r.icon)
-            if iconName <> "" then
-                icon.visible = true
-                icon.uri = "pkg:/images/icons/" + iconName + ".png"
-                icon.translation = [x, (m.rowH - 36) / 2]
-                x = x + 36 + 18
-            else
-                icon.visible = false
-            end if
-            lbl.visible = true
-            lbl.text = Str_orEmpty(r.label)
-            lbl.translation = [x, 0]
-            lbl.width = w - m.padX * 2 - x - 60
-            subText = Str_orEmpty(r["sub"])
-            sub1.visible = subText <> ""
-            sub1.text = subText
-            sub1.width = 200
-            sub1.translation = [w - m.padX * 2 - 16 - 200 - 36, 0]
-            tr = Str_orEmpty(r.trailing)
-            if tr = "check" then
-                trailing.visible = true
-                trailing.uri = "pkg:/images/icons/check.png"
-            else if tr = "chevron" then
-                trailing.visible = true
-                trailing.uri = "pkg:/images/icons/chevron_right.png"
-            else
-                trailing.visible = false
-            end if
-            trailing.translation = [w - m.padX * 2 - 16 - 28, (m.rowH - 28) / 2]
-            m.rowMeta.Push({ divider: false, id: Str_orEmpty(r.id) })
-            y = y + m.rowH + 4
+            y = drawRow(rowNode(i - m.winStart), r, y, w)
         end if
     end for
-    for i = rows.Count() to m.rowNodes.Count() - 1
+    for i = m.winEnd - m.winStart to m.rowNodes.Count() - 1
         m.rowNodes[i].visible = false
     end for
 
@@ -214,6 +187,68 @@ sub rebuild()
     applyFocus()
 end sub
 
+' Draws one visible row at y in node g; returns the y below it.
+function drawRow(g as object, r as object, y as integer, w as integer) as integer
+    g.visible = true
+    bg = Node_find(g, "bg")
+    divider = Node_find(g, "divider")
+    icon = Node_find(g, "icon")
+    lbl = Node_find(g, "label")
+    sub1 = Node_find(g, "sub")
+    trailing = Node_find(g, "trailing")
+    if Str_orEmpty(r.id) = "-" then
+        g.translation = [m.padX, y]
+        divider.visible = true
+        divider.translation = [0, 11]
+        divider.width = w - m.padX * 2
+        bg.visible = false
+        icon.visible = false
+        lbl.visible = false
+        sub1.visible = false
+        trailing.visible = false
+        m.rowMeta.Push({ divider: true })
+        y = y + 24
+    else
+        g.translation = [m.padX, y]
+        divider.visible = false
+        bg.width = w - m.padX * 2
+        bg.height = m.rowH
+        x = 16
+        iconName = Str_orEmpty(r.icon)
+        if iconName <> "" then
+            icon.visible = true
+            icon.uri = "pkg:/images/icons/" + iconName + ".png"
+            icon.translation = [x, (m.rowH - 36) / 2]
+            x = x + 36 + 18
+        else
+            icon.visible = false
+        end if
+        lbl.visible = true
+        lbl.text = Str_orEmpty(r.label)
+        lbl.translation = [x, 0]
+        lbl.width = w - m.padX * 2 - x - 60
+        subText = Str_orEmpty(r["sub"])
+        sub1.visible = subText <> ""
+        sub1.text = subText
+        sub1.width = 200
+        sub1.translation = [w - m.padX * 2 - 16 - 200 - 36, 0]
+        tr = Str_orEmpty(r.trailing)
+        if tr = "check" then
+            trailing.visible = true
+            trailing.uri = "pkg:/images/icons/check.png"
+        else if tr = "chevron" then
+            trailing.visible = true
+            trailing.uri = "pkg:/images/icons/chevron_right.png"
+        else
+            trailing.visible = false
+        end if
+        trailing.translation = [w - m.padX * 2 - 16 - 28, (m.rowH - 28) / 2]
+        m.rowMeta.Push({ divider: false, id: Str_orEmpty(r.id) })
+        y = y + m.rowH + 4
+    end if
+    return y
+end function
+
 function firstSelectable() as integer
     for i = 0 to m.rowMeta.Count() - 1
         if not m.rowMeta[i].divider then return i
@@ -225,8 +260,13 @@ sub applyFocus()
     if m.rowMeta = invalid then return
     focused = m.top.hasFocus()
     fi = m.top.focusIndex
-    for i = 0 to m.rowMeta.Count() - 1
-        g = m.rowNodes[i]
+    ' A focus outside the drawn window moves the window (rebuild calls back here).
+    if m.top.maxRows > 0 and fi >= 0 and fi < m.rowMeta.Count() and (fi < m.winStart or fi >= m.winEnd) then
+        rebuild()
+        return
+    end if
+    for i = m.winStart to m.winEnd - 1
+        g = m.rowNodes[i - m.winStart]
         if m.rowMeta[i].divider then
             ' nothing
         else

@@ -8,14 +8,32 @@ sub init()
     m.feed.observeField("actionSelected", "load")
     m.menu.observeField("chosen", "onMenuChosen")
     m.menu.observeField("dismissed", "onMenuDismissed")
+    m.feed.observeField("artworkFailed", "onArtworkFailed")
     m.loaded = false
     m.loading = false
+    m.loadedAt = 0
+    m.artReloadAt = 0
+    m.hasRows = false
     m.optionsTarget = invalid
     m.top.focusable = true
 end sub
 
 sub onPageShown()
-    if m.global.homeDirty = true or (not m.loaded and not m.loading) then load()
+    if m.global.homeDirty = true or (not m.loaded and not m.loading) then
+        load()
+    else if not m.loading and Fresh_isStale(m.loadedAt, Time_nowSeconds()) then
+        ' Signed artwork in an old answer may have expired (Freshness.brs): read again quietly.
+        Fresh_log("foryou", "stale", m.loadedAt)
+        load()
+    end if
+end sub
+
+sub onArtworkFailed()
+    now = Time_nowSeconds()
+    if m.loading or not Fresh_artReloadDue(m.loadedAt, m.artReloadAt, now) then return
+    m.artReloadAt = now
+    Fresh_log("foryou", "image-failed", m.loadedAt)
+    load()
 end sub
 
 sub focusContent()
@@ -28,7 +46,8 @@ end sub
 
 sub load()
     m.loading = true
-    m.feed.state = "loading"
+    ' A re-read keeps the drawn rows (the feed keeps the focused card) instead of a spinner.
+    if not m.hasRows then m.feed.state = "loading"
     Api_get("/api/v2/recommendations/discover", Artwork_query({ image_size: "medium" }, "discover", Theme_posterScale()), "onDiscover")
 end sub
 
@@ -36,6 +55,11 @@ sub onDiscover(event as object)
     resp = Api_result(event)
     m.loading = false
     if not resp.ok then
+        if m.hasRows then
+            ' Keep what is drawn; the next visit tries again.
+            m.loaded = false
+            return
+        end if
         m.feed.errorText = Api_errorText(resp)
         m.feed.state = "error"
         return
@@ -54,6 +78,8 @@ sub onDiscover(event as object)
         end for
     end if
     m.loaded = true
+    m.loadedAt = Time_nowSeconds()
+    m.hasRows = rows.Count() > 0
     m.feed.rows = rows
     if rows.Count() = 0 then
         m.feed.state = "empty"
