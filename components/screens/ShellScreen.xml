@@ -12,6 +12,8 @@
   </interface>
   <script type="text/brightscript" uri="pkg:/components/screens/ShellScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Requests.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/SignOutFlow.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/ProfileLaunch.brs" />
   <children>
     <Group id="content" />
     <ShellTopBar id="bar" />

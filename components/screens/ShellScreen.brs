@@ -563,13 +563,15 @@ sub onProfileAction(id as string)
         focusBar(avatarIndex)
         Nav_push("ConnectPhoneScreen", {})
     else if id = "switch_server" then
+        ' Manage Servers over the shell: the current server keeps its sign-in, Back comes here.
         closePanel()
-        Session_clearServer()
-        Nav_reset("ServerConnectScreen", {})
+        focusBar(avatarIndex)
+        Nav_push("ServerConnectScreen", { manage: true })
     else if id = "sign_out" then
+        ' Cancel / Sign Out / Sign Out & Remove Server (SignOutFlow.brs, Silo Android TV #764).
         closePanel()
-        Api_signOut()
-        Nav_reset("@start", {})
+        focusBar(avatarIndex)
+        SignOut_ask("Sign Out")
     else
         closePanel()
         focusBar(avatarIndex)
@@ -663,3 +665,8 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
     return false
 end function
+
+' SignOutFlow.brs: Cancel (or Back) on the Sign Out question leaves focus on the avatar.
+sub SignOut_afterCancel()
+    focusBar(m.tabs.Count())
+end sub

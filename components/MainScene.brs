@@ -563,7 +563,7 @@ sub handleDeepLink(args as dynamic)
         if args.debugNoServerId = "1" then s.serverId = ""
         ' debugServers=reset: forget the remembered servers first (the simulator's registry is shared
         ' by every worktree's runs), so a handoff's saved addresses are only this mock's.
-        if args.debugServers = "reset" then Registry_write("servers", [])
+        if args.debugServers = "reset" or args.debugServers = "two" then Registry_write("servers", [])
         s.accessToken = "acc-debug"
         s.refreshToken = "ref-debug"
         s.expiresAt = Time_nowSeconds() + 3600
@@ -572,6 +572,17 @@ sub handleDeepLink(args as dynamic)
         s.profileName = "Laura"
         s.profileAvatar = "/mock-img/avatar/laura.jpg"
         Session_save(s)
+        ' debugServers=two: also save a second, distinct server signed in on its own (Manage Servers;
+        ' tools/mock_server.py --port <debugPort2, default debugPort+1> --server-id mock-server-2
+        ' --server-name "Den Silo").
+        if args.debugServers = "two" then
+            port2 = Int(Val(port)) + 1
+            if not Str_isEmpty(args.debugPort2) then port2 = Int(Val(Str_orEmpty(args.debugPort2)))
+            url2 = Left(s.serverUrl, Len(s.serverUrl) - Len(port)) + port2.ToStr() ' the same loopback host, another port
+            list = Session_serversWithout(Session_savedServers(), url2)
+            list.Push({ url: url2, name: "Den Silo", id: "mock-server-2", session: { serverOrigin: url2, accessToken: "acc-debug2", refreshToken: "ref-debug2", expiresAt: Time_nowSeconds() + 3600, user: { id: "7", username: "sam", role: "user" }, profileId: "p-sam", profileName: "Sam", profileToken: "", profileAvatar: "" } })
+            Registry_write("servers", list)
+        end if
         ' debugProfileLaunch=<automatic|askEveryLaunch|afterOneHour|afterTwelveHours|new>[&debugAwaySeconds=N]
         ' replays the launch rule against the seeded profile ("new" = a Roku with no saved choice).
         if not Str_isEmpty(args.debugProfileLaunch) then
@@ -602,6 +613,7 @@ sub handleDeepLink(args as dynamic)
         if not Str_isEmpty(args.debugDeepLink) then params.debugDeepLink = Str_orEmpty(args.debugDeepLink) ' PlayerScreen: a content deep link for the playing item arrives after this many seconds (replaces the player)
         if not Str_isEmpty(args.debugVoice) then params.debugVoice = Str_orEmpty(args.debugVoice) ' PlayerScreen / AudioPlayerScreen: inject this voice transport command (<command>[:<seconds>]) once playback has started (the simulator sends none)
         if not Str_isEmpty(args.debugLibrary) then params.libraryId = Str_orEmpty(args.debugLibrary) ' LibraryScreen: browse this library (mock: 1 = Movies)
+        if not Str_isEmpty(args.debugManage) then params.manage = true ' ServerConnectScreen: open as Manage Servers (pushed over the shell in the app)
         if not Str_isEmpty(args.debugLanSelf) then params.debugLanSelf = true ' ServerConnectScreen: Find servers also accepts this machine's own address (tools/silo_responder.py)
         resetTo(args.debugScreen, params)
         return

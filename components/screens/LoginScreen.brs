@@ -25,6 +25,18 @@ sub init()
     m.scPillRing = m.top.findNode("scPillRing")
     m.scPillLabel = m.top.findNode("scPillLabel")
 
+    ' Choose state
+    m.chooseCopy = m.top.findNode("chooseCopy")
+    m.chooseHeadline = m.top.findNode("chooseHeadline")
+    m.chooseBody = m.top.findNode("chooseBody")
+    m.optPhone = m.top.findNode("optPhone")
+    m.optPassword = m.top.findNode("optPassword")
+    m.chooseChangeServerButton = m.top.findNode("chooseChangeServerButton")
+    m.options = {
+        optPhone: { group: m.optPhone, bg: m.top.findNode("optPhoneBg"), ring: m.top.findNode("optPhoneRing"), icon: m.top.findNode("optPhoneIcon"), title: m.top.findNode("optPhoneTitle"), desc: m.top.findNode("optPhoneDesc") }
+        optPassword: { group: m.optPassword, bg: m.top.findNode("optPasswordBg"), ring: m.top.findNode("optPasswordRing"), icon: m.top.findNode("optPasswordIcon"), title: m.top.findNode("optPasswordTitle"), desc: m.top.findNode("optPasswordDesc") }
+    }
+
     ' Code state
     m.codeCopy = m.top.findNode("codeCopy")
     m.codeHeadline = m.top.findNode("codeHeadline")
@@ -72,13 +84,14 @@ sub init()
     m.changeServerButton.observeField("buttonSelected", "onChangeServerPressed")
     m.pwChangeServerButton.observeField("buttonSelected", "onChangeServerPressed")
     m.usePhoneButton.observeField("buttonSelected", "onUsePhonePressed")
+    m.chooseChangeServerButton.observeField("buttonSelected", "onChangeServerPressed")
     m.signInButton.observeField("buttonSelected", "onSignInPressed")
     m.revealButton.observeField("buttonSelected", "onRevealPressed")
     m.usernameField.observeField("submitted", "onUsernameSubmitted")
     m.passwordField.observeField("submitted", "onPasswordSubmitted")
     m.usernameField.observeField("text", "onCredentialsChanged")
     m.passwordField.observeField("text", "onCredentialsChanged")
-    for each b in [m.actionButton, m.passwordButton, m.changeServerButton, m.signInButton, m.usePhoneButton, m.pwChangeServerButton]
+    for each b in [m.actionButton, m.passwordButton, m.changeServerButton, m.signInButton, m.usePhoneButton, m.pwChangeServerButton, m.chooseChangeServerButton]
         b.observeField("width", "layoutRows")
     end for
 
@@ -90,8 +103,9 @@ sub init()
     if m.serverName = "" then m.serverName = m.host
     m.secure = LCase(Left(m.serverUrl, 8)) = "https://"
 
-    ' Device-flow state
-    m.mode = "code"
+    ' Device-flow state. The screen opens on the choice (phone or password).
+    m.mode = "choose"
+    m.codeRowWrapped = false
     m.passwordOnly = false
     m.capability = invalid     ' invalid = not read yet; {} = read failed (unknown)
     m.gen = 0
@@ -113,12 +127,16 @@ sub init()
 
     renderServerCard()
     m.codeHeadline.text = "Sign in to " + m.serverName
+    m.chooseHeadline.text = "Sign in to " + m.serverName
     m.pwBody.text = "Use your " + m.serverName + " username and password."
     renderCode()
     renderMode()
 
     ' Branding: friendlier name and the server's mark (best-effort, public).
     Api_call({ method: "GET", path: "/api/v2/theme/branding", auth: false, profile: false, timeout: 6 }, "onBranding")
+    ' Whether code sign-in is offered at all: a password-only server skips the choice.
+    Api_call({ method: "GET", path: "/api/v2/auth/device/capability", auth: false, profile: false, timeout: 8, context: { gen: m.gen, prefetch: true } }, "onCapability")
+    print "[siku-signin] choose how to sign in"
 end sub
 
 sub onScreenShown()
@@ -127,7 +145,8 @@ sub onScreenShown()
     srv = Str_orEmpty(m.global.session.serverId)
     if srv <> "" then Pair_start("login", srv)
     if m.mode = "code" and not m.routed then
-        if m.code = invalid and (m.dStatus = "getting" or m.dStatus = "newcode") then
+        if m.code = invalid and not isProblem(m.dStatus) and m.dStatus <> "paused" and m.dStatus <> "signedin" then
+            ' First show, or back from a screen that covered this one (its code was withdrawn).
             startDevice(false)
         else if m.code <> invalid then
             ' Back from the background: poll at once.
@@ -144,8 +163,20 @@ sub onScreenHidden()
     m.pollTimer.control = "stop"
 end sub
 
+function pairPanelUp() as boolean
+    if m.pair = invalid or Type(m.pair) <> "roAssociativeArray" then return false
+    return Str_orEmpty(m.pair.view) <> "" and Str_orEmpty(m.pair.view) <> "idle"
+end function
+
 ' Phone sign-in (PhonePairing.brs): the code this screen shows, while it shows one.
 function Pair_screenCode() as dynamic
+    if m.mode = "choose" and m.active and not m.routed then
+        ' A nearby phone asks to sign this TV in while the choice is up: show the code it needs
+        ' (PhonePairing waits a few seconds for it).
+        print "[siku-signin] a phone asked to sign in; showing the code"
+        showPhone()
+        return invalid
+    end if
     if m.mode <> "code" or m.code = invalid then return invalid
     return m.code
 end function
@@ -197,6 +228,7 @@ sub onBranding(event as object)
     if name <> "" and name <> m.serverName then
         m.serverName = name
         m.codeHeadline.text = "Sign in to " + name
+        m.chooseHeadline.text = "Sign in to " + name
         m.pwBody.text = "Use your " + name + " username and password."
     end if
     markUrl = Str_orEmpty(resp.data.mark_url)
@@ -220,12 +252,20 @@ end sub
 
 ' ---------- Layout ----------
 
+' The code state's actions wrap Change server onto a second line when all three would not fit
+' beside the card (Silo Android TV #754: "Show a new code" made it cut off).
 sub layoutRows()
     x = 0
+    m.codeRowWrapped = false
     for each b in [m.actionButton, m.passwordButton, m.changeServerButton]
         if b.visible then
-            b.translation = [x, 0]
-            x = x + b.width + 22
+            if x > 0 and x + b.width > Login_rowMaxWidth() then
+                m.codeRowWrapped = true
+                b.translation = [0, 76 + 16]
+            else
+                b.translation = [x, 0]
+                x = x + b.width + 22
+            end if
         end if
     end for
     x = 0
@@ -237,10 +277,28 @@ sub layoutRows()
     end for
 end sub
 
+function Login_rowMaxWidth() as integer
+    ' The copy column starts at x 90 and the card at 1190; keep 40 px clear of the card.
+    return 1060
+end function
+
 sub layout()
     layoutRows()
     y = 128 + 44
-    if m.mode = "code" then
+    if m.mode = "choose" then
+        m.chooseCopy.translation = [0, y]
+        cy = 0
+        m.chooseHeadline.translation = [0, cy]
+        cy = cy + Int(Label_height(m.chooseHeadline)) + 26
+        m.chooseBody.translation = [0, cy]
+        cy = cy + Int(Label_height(m.chooseBody)) + 40
+        m.optPhone.translation = [0, cy]
+        cy = cy + 124 + 18
+        m.optPassword.translation = [0, cy]
+        cy = cy + 124 + 34
+        m.chooseChangeServerButton.translation = [0, cy]
+        total = y + cy + 76
+    else if m.mode = "code" then
         m.codeCopy.translation = [0, y]
         cy = 0
         m.codeHeadline.translation = [0, cy]
@@ -249,6 +307,7 @@ sub layout()
         cy = cy + Int(Label_height(m.codeBody)) + 48
         m.codeActions.translation = [0, cy]
         total = y + cy + 76
+        if m.codeRowWrapped then total = total + 76 + 16
     else
         m.passwordCopy.translation = [0, y]
         cy = 0
@@ -270,8 +329,8 @@ sub layout()
         m.pwActions.translation = [0, cy]
         total = y + cy + 76
     end if
-    ' The password form is top-anchored (as on Android); the code copy is centered.
-    if m.mode = "code" then
+    ' The password form is top-anchored (as on Android); the code copy and the choice are centered.
+    if m.mode <> "password" then
         top = 124 + (896 - total) \ 2
     else
         top = 160
@@ -422,7 +481,8 @@ function statusText(st as string) as string
         return "Signed in"
     end if
     if st = "couldntfinish" then return "Couldn't finish signing in on this TV."
-    if st = "denied" then return "Sign-in was declined on your phone."
+    ' The TV cannot tell a phone's decline from a browser's (Silo Android TV #754).
+    if st = "denied" then return "Sign-in was declined."
     if st = "paused" then return "Sign-in paused."
     if st = "failed" then return "Couldn't get a sign-in code."
     if st = "update" then return "This server needs an update before this TV can sign in."
@@ -484,7 +544,16 @@ sub renderCode()
     ' Body copy names the activate page.
     act = activateText()
     if act = "" then act = "your server's /activate page"
-    m.codeBody.text = "Scan the code with your phone's camera, or go to " + act + " and enter it. Approve on your phone and this TV signs in by itself."
+    if st = "denied" or st = "paused" then
+        ' The code is gone: nothing left to scan (Silo Android TV #754; silo-roku's wording).
+        if st <> "update" and not m.passwordOnly then
+            m.codeBody.text = "Show a new code to try again, or sign in with a password."
+        else
+            m.codeBody.text = "Show a new code to try again."
+        end if
+    else
+        m.codeBody.text = "Scan the code with your phone's camera, or go to " + act + " and enter it. Approve on your phone and this TV signs in by itself."
+    end if
 
     ' Action row: the state's action; no password button when an update is required.
     label = actionLabel(st)
@@ -566,15 +635,20 @@ end sub
 sub onCapability(event as object)
     resp = Api_result(event)
     if resp.context.gen <> m.gen then return
+    prefetch = isTrue(resp.context.prefetch)
+    if prefetch and m.capability <> invalid then return ' the code flow read it meanwhile
     if resp.ok and resp.data <> invalid and Type(resp.data) = "roAssociativeArray" then
         m.capability = resp.data
         if Str_orEmpty(resp.data.state) <> "available" then
+            print "[siku-signin] code sign-in unavailable; password only"
             goPasswordOnly()
             return
         end if
     else
+        if prefetch then return ' read again when the code is asked for
         m.capability = {} ' unknown: try the flow anyway
     end if
+    if prefetch then return
     requestCode()
 end sub
 
@@ -867,9 +941,11 @@ end sub
 
 sub renderMode()
     isCode = (m.mode = "code")
+    isChoose = (m.mode = "choose")
+    m.chooseCopy.visible = isChoose
     m.codeCopy.visible = isCode
     m.codeCard.visible = isCode
-    m.passwordCopy.visible = not isCode
+    m.passwordCopy.visible = m.mode = "password"
     m.phoneCard.visible = not isCode
     m.usePhoneButton.visible = not m.passwordOnly
     if m.passwordOnly then
@@ -877,6 +953,11 @@ sub renderMode()
         m.phoneIcon.uri = "pkg:/images/icons/lock.png"
         m.phoneTitle.text = "Sign in to " + m.serverName
         m.phoneBody.text = "Siku sends your username and password only to " + m.host + "."
+    else if isChoose then
+        m.phoneIcon.uri = "pkg:/images/icons/phone.png"
+        m.phoneTitle.text = "Easier with a phone"
+        ' silo-roku's nearby-phone hint (AGPL-3.0, locale/en_US/strings.json).
+        m.phoneBody.text = "Have Silo on your phone? Open it on the same Wi-Fi to sign in this TV, or choose " + Chr(8220) + "Sign in with your phone" + Chr(8221) + " to scan a code."
     else
         m.pwBody.text = "Use your " + m.serverName + " username and password."
         m.phoneIcon.uri = "pkg:/images/icons/phone.png"
@@ -888,7 +969,53 @@ end sub
 
 sub onUsePasswordPressed()
     abandonCode()
+    print "[siku-signin] chose password"
     showPassword()
+end sub
+
+' "Sign in with your phone" on the choice: the code (Silo's phone app can approve it nearby).
+sub showPhone()
+    if m.signingIn then return
+    print "[siku-signin] chose phone"
+    m.mode = "code"
+    renderMode()
+    startDevice(true)
+    focusOn(defaultCodeFocus())
+end sub
+
+' Back to the choice from the code or the password form.
+sub showChoose()
+    if m.signingIn then return
+    abandonCode()
+    m.dStatus = "getting"
+    m.mode = "choose"
+    clearPwError()
+    renderMode()
+    renderCode()
+    focusOn("optPhone")
+    print "[siku-signin] choose how to sign in"
+end sub
+
+sub renderOptions()
+    keys = ["optPhone", "optPassword"]
+    for i = 0 to keys.Count() - 1
+        k = keys[i]
+        o = m.options[k]
+        if m.focusKey = k then
+            if m.active and not pairPanelUp() then A11y_say("login-" + k, o.title.text, "button", i + 1, 2, o.group)
+            o.bg.blendColor = "0xEDEDEDFF"
+            o.ring.visible = false
+            o.title.color = "0x000000FF"
+            o.desc.color = "0x000000A0"
+            o.icon.blendColor = "0x000000FF"
+        else
+            o.bg.blendColor = "0xFFFFFF14"
+            o.ring.visible = true
+            o.title.color = "0xEDEDEDFF"
+            o.desc.color = "0xEDEDED9E"
+            o.icon.blendColor = "0xEDEDEDCC"
+        end if
+    end for
 end sub
 
 sub onUsePhonePressed()
@@ -905,11 +1032,10 @@ sub onRestartPressed()
     focusOn(defaultCodeFocus())
 end sub
 
+' Manage Servers over this screen: this server stays saved; Back comes back here (with a new code).
 sub onChangeServerPressed()
-    abandonCode()
-    m.routed = true
-    Session_clearServer()
-    Nav_reset("ServerConnectScreen")
+    if m.signingIn then return
+    Nav_push("ServerConnectScreen", { manage: true })
 end sub
 
 ' ---------- Password sign-in ----------
@@ -996,7 +1122,7 @@ function loginErrorText(resp as object) as string
     if resp.error <> invalid then code = Str_orEmpty(resp.error.code)
     st = resp.status
     if st = 0 then return "Network error. Check your connection."
-    if st = 401 then return "Invalid username or password"
+    if st = 401 then return "Incorrect username or password."
     if code = "local_login_disabled" then return "Password sign-in is turned off on this server. Use your phone instead."
     if code = "not_permitted" then return "Your account isn't allowed to use this server."
     if code = "password_expired" then return "Your password has expired. Change it, then sign in again."
@@ -1008,6 +1134,10 @@ end function
 
 ' ---------- Focus ----------
 
+function defaultChooseFocus() as string
+    return "optPhone"
+end function
+
 function defaultCodeFocus() as string
     st = m.dStatus
     if st = "couldntfinish" or st = "denied" or st = "paused" or st = "failed" then return "action"
@@ -1016,6 +1146,9 @@ function defaultCodeFocus() as string
 end function
 
 function nodeFor(key as string) as dynamic
+    if key = "optPhone" then return m.optPhone
+    if key = "optPassword" then return m.optPassword
+    if key = "chooseChange" then return m.chooseChangeServerButton
     if key = "action" then return m.actionButton
     if key = "usePassword" then return m.passwordButton
     if key = "changeServer" then return m.changeServerButton
@@ -1031,13 +1164,18 @@ end function
 function isFocusable(key as string) as boolean
     n = nodeFor(key)
     if n = invalid or not n.visible then return false
-    if m.mode = "code" then return key = "action" or key = "usePassword" or key = "changeServer"
-    return not (key = "action" or key = "usePassword" or key = "changeServer")
+    isChooseKey = key = "optPhone" or key = "optPassword" or key = "chooseChange"
+    isCodeKey = key = "action" or key = "usePassword" or key = "changeServer"
+    if m.mode = "choose" then return isChooseKey
+    if m.mode = "code" then return isCodeKey
+    return not (isCodeKey or isChooseKey)
 end function
 
 sub focusOn(key as string)
     if not isFocusable(key) then
-        if m.mode = "code" then
+        if m.mode = "choose" then
+            key = defaultChooseFocus()
+        else if m.mode = "code" then
             key = defaultCodeFocus()
             if not isFocusable(key) then key = "changeServer"
         else
@@ -1045,12 +1183,25 @@ sub focusOn(key as string)
         end if
     end if
     m.focusKey = key
-    if m.active then nodeFor(key).setFocus(true)
+    ' While the phone's panel (PairingPanel: consent, code match) is up it keeps the focus: a code
+    ' arriving behind it must not move focus to a button OK would then press. Pair_show calls
+    ' applyFocus when the panel closes, which restores m.focusKey.
+    if m.active and not pairPanelUp() then
+        n = nodeFor(key)
+        n.setFocus(true)
+    end if
+    if m.mode = "choose" then renderOptions()
 end sub
 
 sub applyFocus()
     if m.focusKey = "" or not isFocusable(m.focusKey) then
-        if m.mode = "code" then focusOn(defaultCodeFocus()) else focusOn("username")
+        if m.mode = "choose" then
+            focusOn(defaultChooseFocus())
+        else if m.mode = "code" then
+            focusOn(defaultCodeFocus())
+        else
+            focusOn("username")
+        end if
     else
         focusOn(m.focusKey)
     end if
@@ -1079,15 +1230,43 @@ end sub
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
     if key = "back" then
-        if m.mode = "password" and not m.passwordOnly then
-            onUsePhonePressed()
+        if m.mode <> "choose" and not m.passwordOnly then
+            showChoose()
             return true
         end if
         return false
     end if
     f = m.focusKey
+    if m.mode = "choose" then
+        if key = "down" then
+            if f = "optPhone" then
+                focusOn("optPassword")
+            else if f = "optPassword" then
+                focusOn("chooseChange")
+            end if
+        else if key = "up" then
+            if f = "chooseChange" then
+                focusOn("optPassword")
+            else if f = "optPassword" then
+                focusOn("optPhone")
+            end if
+        else if key = "OK" then
+            if f = "optPhone" then
+                showPhone()
+            else if f = "optPassword" then
+                onUsePasswordPressed()
+            end if
+        end if
+        return true
+    end if
     if m.mode = "code" then
-        if key = "left" then
+        if m.codeRowWrapped and key = "down" and f <> "changeServer" then
+            focusOn("changeServer")
+        else if m.codeRowWrapped and key = "up" and f = "changeServer" then
+            focusOn(defaultCodeFocus())
+        else if m.codeRowWrapped and f = "changeServer" then
+            ' Alone on its line: Left and Right have nowhere to go.
+        else if key = "left" then
             moveInRow(["action", "usePassword", "changeServer"], -1)
         else if key = "right" then
             moveInRow(["action", "usePassword", "changeServer"], 1)

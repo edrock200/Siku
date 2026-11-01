@@ -1006,6 +1006,8 @@ sub choosePicker()
     if m.pickerMode = "confirm" then
         closePicker()
         if o.value = "ok" then performConfirmed(m.confirmAction)
+        if o.value = "remove" then performConfirmed(m.confirmAction + "Remove")
+        if o.value = "cancel" and m.confirmAction = "signOut" then print "[siku-servers] sign out cancelled"
         return
     end if
     row = m.pickerRow
@@ -1249,10 +1251,10 @@ end sub
 
 ' A confirmed destructive action.
 sub performConfirmed(actionId as string)
-    if actionId = "signOut" then
-        Api_signOut()
+    if actionId = "signOut" or actionId = "signOutRemove" then
+        ' The one sign-out (SignOutFlow.brs, Silo Android TV #764).
         Settings_clear()
-        Nav_reset("@start")
+        SignOut_run(actionId = "signOutRemove")
     else if actionId = "resetOverrides" then
         ' Clear every server-side device override for this profile on this Roku, and the
         ' device-local playback keys that have no server row.
@@ -1324,8 +1326,8 @@ sub activateRow(row as object)
     else if id = "resetAppearance" then
         openConfirm("resetAppearance", "Reset Subtitle Appearance?", "This restores every subtitle appearance option to its default.", "Reset")
     else if id = "manageServers" then
-        Session_clearServer()
-        Nav_reset("ServerConnectScreen")
+        ' The server list over Settings: the current server keeps its sign-in, Back comes here.
+        Nav_push("ServerConnectScreen", { manage: true })
     else if id = "retry" then
         showStatus("Loading…")
         Settings_load()
@@ -1391,7 +1393,11 @@ function onKeyEvent(key as string, press as boolean) as boolean
         if m.railFocus = -1 then
             Nav_push("ProfileScreen", { switching: true })
         else if m.railFocus = last then
-            openConfirm("signOut", "Sign Out", "You will be returned to the login screen.", "Sign Out")
+            if SignOut_isRunning() then return true
+            print "[siku-servers] sign out asked"
+            openConfirm("signOut", "Sign Out", SignOut_message(), "Sign Out")
+            m.pickerOptions.Push({ value: "remove", label: "Sign Out & Remove Server", destructive: true })
+            layoutPicker("Sign Out", "", SignOut_message())
         else
             enterPane()
         end if
@@ -1410,3 +1416,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
     updateFocus()
     return true
 end function
+
+' SignOutFlow.brs hook (Settings draws its own question, so nothing to refocus here).
+sub SignOut_afterCancel()
+end sub

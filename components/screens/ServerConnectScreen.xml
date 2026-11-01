@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  First-run server address entry (Android TvServerSetupScreen, "address" page). While it is up,
+  First-run server address entry (Android TvServerSetupScreen, "address" page), and Manage Servers
+  (params.manage = true, pushed from the profile menu, Who's watching and Settings: "Choose a
+  server", the current server marked, Back returns). Saved servers keep their own sign-in
+  (Session.brs): picking one that is signed in checks it answers and switches without a new
+  sign-in; the Options key (*) on a saved row asks to remove it (signing out of it). While it is up,
   Silo's phone app can set Siku up instead (PhonePairing.brs, state "setup": the phone pushes one
   server, Siku checks it and signs in with a code the phone approves; PairingPanel shows each step). Left: headline, the address
   field (OK opens the keyboard), shortcut chips, the HTTPS/HTTP note and Connect. Right:
@@ -18,6 +22,9 @@
 -->
 <component name="ServerConnectScreen" extends="BaseScreen">
   <script type="text/brightscript" uri="pkg:/components/screens/ServerConnectScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/ServerAddress.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/ProfileLaunch.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/SignOutFlow.brs" />
   <script type="text/brightscript" uri="pkg:/components/remote/PhonePairing.brs" />
   <script type="text/brightscript" uri="pkg:/components/remote/RemotePrefs.brs" />
   <script type="text/brightscript" uri="pkg:/components/lan/LanBytes.brs" />
@@ -43,6 +50,14 @@
       <Label id="note" width="760" wrap="true" color="0xEDEDED66" text="Secure HTTPS is tried automatically.">
         <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
       </Label>
+      <!-- Advanced options (Silo Android TV #758, Apple TV): protocol Auto / HTTPS / HTTP and a port. -->
+      <PillButton id="advToggle" text="Advanced options" variant="plain" height="61" fontSize="21" padX="28" />
+      <Group id="advRow" visible="false">
+        <PillButton id="schemeAuto" text="Auto" variant="glass" height="61" fontSize="21" padX="28" minWidth="120" />
+        <PillButton id="schemeHttps" text="HTTPS" variant="glass" height="61" fontSize="21" padX="28" minWidth="120" />
+        <PillButton id="schemeHttp" text="HTTP" variant="glass" height="61" fontSize="21" padX="28" minWidth="120" />
+        <AuthTextField id="portField" fieldWidth="260" placeholder="Port: auto" a11yLabel="Port" />
+      </Group>
       <PillButton id="connect" text="Connect" variant="glass" />
       <PillButton id="find" text="Find servers on this network" variant="glass" />
     </Group>

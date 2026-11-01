@@ -1,13 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Sign-in (Android TvLoginScreen). Two states on one screen:
+  Sign-in (Android TvLoginScreen). Three states on one screen:
+    choose    first: "Sign in with your phone" (the code below, which Silo's phone app can also
+              approve nearby) or "Username and password", and "Change server". Skipped when the
+              server only allows passwords. Back from the other two states returns here.
     code      device-code sign-in (default): server card, "Sign in to <server>", how-to copy and an
               action row; the right card shows the QR of verification_uri_complete, the user code
               as tiles, <host>/activate and a live status line. Implements the api-spec §2.7 flow
               (capability, start, poll with interval/poll_after, backoff, renew, cancel).
     password  "Sign in with a password": Username / Password fields (Roku keyboard), Sign in,
               "Use your phone instead", "Change server".
-  Back in password mode returns to the code (unless the server only supports passwords).
+  Back in code or password mode returns to the choice (unless the server only supports passwords).
+  A nearby phone that asks to sign this TV in while the choice is up switches to the code.
   While it is up, Silo's phone app can approve the code on screen (PhonePairing.brs, state "login",
   advertised with the server's deployment identity so only phones signed in to it offer it).
   SPDX-License-Identifier: AGPL-3.0-or-later
@@ -46,6 +50,39 @@
             <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="16" />
           </Label>
         </Group>
+      </Group>
+
+      <!-- Choose state (first): how to sign in, with your phone or with a username and password. -->
+      <Group id="chooseCopy" visible="false">
+        <Label id="chooseHeadline" width="900" wrap="true" maxLines="3" color="0xEDEDEDFF">
+          <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="76" />
+        </Label>
+        <Label id="chooseBody" width="900" wrap="true" color="0xEDEDED9E" text="How do you want to sign in? You can switch on the next screen.">
+          <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+        </Label>
+        <Group id="optPhone" focusable="true">
+          <Poster id="optPhoneBg" uri="pkg:/images/ui/r20.9.png" width="820" height="124" />
+          <Poster id="optPhoneRing" uri="pkg:/images/ui/r20_ring2.9.png" width="820" height="124" blendColor="0xFFFFFF24" />
+          <Poster id="optPhoneIcon" uri="pkg:/images/icons/phone.png" width="40" height="40" translation="[32, 42]" />
+          <Label id="optPhoneTitle" translation="[100, 20]" width="690" height="42" text="Sign in with your phone">
+            <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+          </Label>
+          <Label id="optPhoneDesc" translation="[100, 66]" width="690" height="36" text="Scan a code, or approve it in the Silo app. Nothing to type.">
+            <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="22" />
+          </Label>
+        </Group>
+        <Group id="optPassword" focusable="true">
+          <Poster id="optPasswordBg" uri="pkg:/images/ui/r20.9.png" width="820" height="124" />
+          <Poster id="optPasswordRing" uri="pkg:/images/ui/r20_ring2.9.png" width="820" height="124" blendColor="0xFFFFFF24" />
+          <Poster id="optPasswordIcon" uri="pkg:/images/icons/key.png" width="40" height="40" translation="[32, 42]" />
+          <Label id="optPasswordTitle" translation="[100, 20]" width="690" height="42" text="Username and password">
+            <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+          </Label>
+          <Label id="optPasswordDesc" translation="[100, 66]" width="690" height="36" text="Type them with the remote.">
+            <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="22" />
+          </Label>
+        </Group>
+        <PillButton id="chooseChangeServerButton" text="Change server" variant="plain" />
       </Group>
 
       <!-- Code state -->
