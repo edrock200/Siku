@@ -13,6 +13,7 @@
 <component name="ProfileScreen" extends="BaseScreen">
   <script type="text/brightscript" uri="pkg:/components/screens/ProfileScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/ProfileLaunch.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/DeepLink.brs" />
   <children>
     <AuthMarqueeChrome id="chrome" backdropUri="pkg:/images/marquee_profiles.jpg" showLogo="false" />
     <Group id="content" visible="false">

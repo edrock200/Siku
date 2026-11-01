@@ -96,6 +96,14 @@ sub onProfiles(event as object)
         chooseProfile(items[0], "")
         return
     end if
+    if params <> invalid and isTrue(params.deepLink) then
+        p = DeepLink_profileFor(items, "")
+        if p <> invalid then
+            print "[siku-deeplink] content link opens a profile without the picker"
+            chooseProfile(p, "")
+            return
+        end if
+    end if
 
     m.errorLabel.visible = false
     m.retryButton.visible = false

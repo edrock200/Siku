@@ -95,3 +95,19 @@ function DeepLink_playerParams(item as object) as object
     if r > 0 then params["startPosition"] = r
     return params
 end function
+
+' The profile a content link opens when none is open (adapted from Silo-Server/silo-roku,
+' AGPL-3.0, source/deeplink/route.bs profileOrder): the one last chosen on this device, else the
+' account's first in server order; never a child profile, and never one with a PIN (a link must
+' not ask for one). invalid when none qualifies, and the picker shows as usual.
+function DeepLink_profileFor(profiles as object, rememberedId as string) as dynamic
+    first = invalid
+    for each p in profiles
+        if Type(p) = "roAssociativeArray" and p.is_child <> true and p.has_pin <> true then
+            if rememberedId <> "" and Str_orEmpty(p.id) = rememberedId then return p
+            if first = invalid then first = p
+        end if
+    end for
+    return first
+end function
+

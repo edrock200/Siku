@@ -58,3 +58,17 @@ class Route(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProfileFor(unittest.TestCase):
+    def test_cases(self):
+        from brs import check_cases
+        kids = {"id": "k", "is_child": True}
+        pin = {"id": "p", "has_pin": True}
+        laura = {"id": "l"}
+        sam = {"id": "s"}
+        check_cases(self, ["components/common/DeepLink.brs", "components/common/Utils.brs"], [
+            ("first adult without a PIN", "DeepLink_profileFor", [[kids, pin, laura, sam], ""], lambda v: v and v.get("id") == "l"),
+            ("remembered wins", "DeepLink_profileFor", [[laura, sam], "s"], lambda v: v and v.get("id") == "s"),
+            ("none qualifies", "DeepLink_profileFor", [[kids, pin], ""], lambda v: v is None),
+        ])

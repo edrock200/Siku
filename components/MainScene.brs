@@ -122,6 +122,12 @@ sub routeToStart(params = {} as object)
             params = AA_copy(params)
             params.atLaunch = true
         end if
+        ' A content link waiting for a profile opens one by itself (DeepLink_profileFor), as
+        ' silo-roku does for Roku certification 5.1: no picker between the link and playback.
+        if m.pendingDeepLink <> invalid then
+            params = AA_copy(params)
+            params.deepLink = true
+        end if
         resetTo("ProfileScreen", params)
     else
         resetTo("ShellScreen", params)
