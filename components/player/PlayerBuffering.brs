@@ -289,7 +289,7 @@ function Bufq_probeReading() as dynamic
     r = m.global.bandwidthProbe
     if r = invalid or Type(r) <> "roAssociativeArray" or r.kbps = invalid then return invalid
     if Str_orEmpty(r.serverUrl) <> Str_orEmpty(m.global.session.serverUrl) then return invalid
-    age = CreateObject("roDateTime").AsSeconds() - Int(Num_or(r.at, 0))
+    age = CreateObject("roDateTime").AsSeconds() - Num_seconds(r.at)
     if age < 0 or age > Int(Num_or(r.maxAge, 604800)) then return invalid
     return r
 end function

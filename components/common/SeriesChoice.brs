@@ -144,7 +144,7 @@ sub SeriesChoice_save(kind as string, key as string, body as dynamic)
     ne = { identity: ident, kind: kind, key: key, body: body, isDelete: body = invalid, seq: seq, at: Time_nowSeconds(), sentSeq: 0, sentAt: 0 }
     if e <> invalid then
         ne.sentSeq = Int(Num_or(e.sentSeq, 0))
-        ne.sentAt = Int(Num_or(e.sentAt, 0))
+        ne.sentAt = Num_seconds(e.sentAt)
     end if
     st[id] = ne
     SeriesChoice_store(st)
@@ -170,12 +170,12 @@ sub SeriesChoice_send(id as string)
     if e = invalid then return
     if e.identity <> SeriesChoice_identity() then return
     now = Time_nowSeconds()
-    if now - Int(Num_or(e.at, 0)) > 600 then
+    if now - Num_seconds(e.at) > 600 then
         st.Delete(id)
         SeriesChoice_store(st)
         return
     end if
-    if Int(Num_or(e.sentSeq, 0)) > 0 and now - Int(Num_or(e.sentAt, 0)) < 30 then return
+    if Int(Num_or(e.sentSeq, 0)) > 0 and now - Num_seconds(e.sentAt) < 30 then return
     e = AA_copy(e)
     e.sentSeq = e.seq
     e.sentAt = now
@@ -236,7 +236,7 @@ function SeriesChoice_pending(kind as string, key as string) as dynamic
     st = SeriesChoice_state()
     e = st[ident + "|" + kind + "|" + key]
     if e = invalid then return invalid
-    if Time_nowSeconds() - Int(Num_or(e.at, 0)) > 600 then return invalid
+    if Time_nowSeconds() - Num_seconds(e.at) > 600 then return invalid
     return { body: e.body }
 end function
 

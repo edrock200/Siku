@@ -184,6 +184,16 @@ end function
 
 ' ---------- Numbers ----------
 
+' Whole seconds (an epoch time) from a JSON number or numeric string, exactly: Num_or's single-
+' precision float rounds today's epoch seconds to steps of 128 s. 0 for anything else.
+function Num_seconds(v as dynamic) as integer
+    t = Type(v)
+    if t = "roInt" or t = "roInteger" or t = "Integer" or t = "roLongInteger" or t = "LongInteger" then return v
+    if t = "roFloat" or t = "Float" or t = "roDouble" or t = "Double" then return Int(v)
+    if t = "roString" or t = "String" then return v.Trim().ToInt()
+    return 0
+end function
+
 ' A JSON number as a float. Real servers may send numbers as strings ("12"), which crash
 ' arithmetic and comparisons (pitfall 6), so numeric strings are parsed; anything else is `fallback`.
 function Num_or(v as dynamic, fallback = 0.0 as float) as float

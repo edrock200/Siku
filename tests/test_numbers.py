@@ -38,3 +38,13 @@ class Numbers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Seconds(unittest.TestCase):
+    def test_epoch_exact(self):
+        from brs import check_cases
+        check_cases(self, ["components/common/Utils.brs"], [
+            ("integer", "Num_seconds", [1761955201], 1761955201),
+            ("numeric string", "Num_seconds", ["1761955201"], 1761955201),
+            ("invalid", "Num_seconds", [None], 0),
+        ])

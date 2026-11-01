@@ -87,7 +87,7 @@ function ThemeMusic_cachedCaps() as dynamic
     if not m.global.hasField("themeCaps") then return invalid
     c = m.global.themeCaps
     if c = invalid or Type(c) <> "roAssociativeArray" or c.key <> ThemeMusic_capsKey() then return invalid
-    if Time_nowSeconds() - Int(Num_or(c.fetchedAt, 0)) >= 60 then return invalid
+    if Time_nowSeconds() - Num_seconds(c.fetchedAt) >= 60 then return invalid
     return c
 end function
 
