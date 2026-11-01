@@ -75,6 +75,7 @@ clears one); GET /mock/switch lists them.
                                  ceilings=original:<max_channels_by_codec>,hls:<...> as the client sent them
   subtitle_slow=<seconds>        an embedded sidecar (embedded_stream_index) answers only after that many
                                  seconds the first time (a first extraction); later reads answer at once.
+                                 The 1080p files then list an embedded English track too (file:<id>:subtitle:1).
                                  The log prints VTT slow key= waited=
   credits_twice=1                every version's marker_segments carry two credits ranges (duration-600..-420
                                  and duration-300..end; the singular credits field the first), Silo Android #694
@@ -1494,6 +1495,12 @@ def playback_decision(sid, position, fid, body=None):
     inventory = [{"track_id": "file:%s:subtitle:0" % fid, "combined_index": 0, "source": "external", "codec": "srt", "language": "eng",
                   "label": "English", "forced": False, "default": False, "hearing_impaired": False, "delivery": "sidecar",
                   "url": "/api/v2/stream/%s/subtitles/0.vtt?file_id=%s&external_subtitle_key=f903" % (sid, fid), "sync_key": EXTERNAL_SYNC_KEY}]
+    if fid not in FOUR_K_FILES and STATE["switches"].get("subtitle_slow"):
+        # subtitle_slow: the 1080p files carry an embedded English text track too, so a direct-played
+        # original exercises the slow first extraction (a transcode would carry it as a rendition).
+        inventory.append({"track_id": "file:%s:subtitle:1" % fid, "combined_index": 1, "source": "embedded", "codec": "subrip", "language": "eng",
+                          "label": "English", "forced": False, "default": False, "hearing_impaired": False, "delivery": "sidecar",
+                          "url": "/api/v2/stream/%s/subtitles/1.vtt?file_id=%s&embedded_stream_index=0" % (sid, fid)})
     if fid in FOUR_K_FILES:
         # The 4K MKV also carries embedded tracks: an English SubRip (served as a WebVTT sidecar, so a
         # Roku can show it; auto-selection prefers it over the external file, Silo Android #529) and
