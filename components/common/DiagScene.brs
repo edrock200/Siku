@@ -20,7 +20,9 @@ end sub
 sub Diag_launchArgs(args as dynamic)
     if Type(args) <> "roAssociativeArray" then return
     reason = Str_orEmpty(args.lastExitOrTerminationReason)
-    if not Str_isEmpty(args.debugExit) then reason = Str_orEmpty(args.debugExit)
+    #if DEBUG
+        if not Str_isEmpty(args.debugExit) then reason = Str_orEmpty(args.debugExit)
+    #end if
     m.global.diagTask.launchReason = reason
 end sub
 
