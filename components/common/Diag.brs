@@ -22,7 +22,7 @@ function Diag_scrub(line as dynamic) as string
     s = CreateObject("roRegex", "\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", "i").ReplaceAll(s, "<id>")
     s = Diag_scrubKeys(s)
     s = CreateObject("roRegex", "\b[0-9a-f]{20,}\b", "i").ReplaceAll(s, "<id>")
-    s = CreateObject("roRegex", "(?=[A-Za-z0-9_\-]*[A-Z])(?=[A-Za-z0-9_\-]*[0-9])[A-Za-z0-9_\-]{20,}", "").ReplaceAll(s, "<token>")
+    s = CreateObject("roRegex", "(?=[A-Za-z0-9_\-]*[A-Z])(?=[A-Za-z0-9_\-]*[0-9])" + "[A-Za-z0-9_\-]{20,}", "").ReplaceAll(s, "<token>")
     s = CreateObject("roRegex", "[\x00-\x1F]", "").ReplaceAll(s, " ")
     if Len(s) > Diag_maxLine() then s = Left(s, Diag_maxLine()) + "…"
     return s
