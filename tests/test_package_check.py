@@ -25,7 +25,7 @@ MANIFEST = "\n".join([
     "title=Siku", "major_version=0", "minor_version=1", "build_version=1",
     "mm_icon_focus_fhd=pkg:/images/p_fhd.png", "mm_icon_focus_hd=pkg:/images/p_hd.png",
     "mm_icon_focus_sd=pkg:/images/p_sd.png", "splash_screen_fhd=pkg:/images/s_fhd.png",
-    "splash_screen_hd=pkg:/images/s_hd.png", "splash_screen_sd=pkg:/images/s_sd.png"]) + "\n"
+    "splash_screen_hd=pkg:/images/s_hd.png", "splash_screen_sd=pkg:/images/s_sd.png", "bs_const=DEBUG=false"]) + "\n"
 
 
 def good_files():
@@ -95,6 +95,17 @@ class PackageCheck(unittest.TestCase):
         self.assertEqual(self.problems(**{"components/i.brs": HDR + 'print "f()[i]" \' never f()[i]\nREM g()[0]\n'}), [])
         # XML is not BrightScript code.
         self.assertEqual(self.problems(**{"components/A.xml": '<?xml version="1.0"?>\n<!-- ' + package_check.SPDX + ' f()[i] -->\n<component name="A" />\n'}), [])
+
+    def test_debug_flags(self):
+        # The release package compiles the debug* deep-link parameters out.
+        self.assertFinds("DEBUG=false", self.problems(manifest=MANIFEST.replace("bs_const=DEBUG=false", "bs_const=DEBUG=true")))
+        self.assertFinds("DEBUG=false", self.problems(manifest=MANIFEST.replace("bs_const=DEBUG=false\n", "")))
+        loose = HDR + "sub h(args)\n    if args.debugSession = \"mock\" then x = 1\nend sub\n"
+        self.assertFinds("outside `#if DEBUG`", self.problems(**{"components/M.brs": loose}))
+        gated = HDR + "sub h(args)\n#if DEBUG\n    if args.debugSession = \"mock\" then x = 1\n#end if\nend sub\n"
+        self.assertEqual(self.problems(**{"components/M.brs": gated}), [])
+        other = HDR + "sub h(args)\n#if DEBUG\n    y = 1\n#else\n    if args.debugScreen <> \"\" then x = 1\n#end if\nend sub\n"
+        self.assertFinds("outside `#if DEBUG`", self.problems(**{"components/M.brs": other}))
 
 
 if __name__ == "__main__":

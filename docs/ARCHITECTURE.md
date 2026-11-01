@@ -79,6 +79,8 @@ components/remote/
 components/widgets/             reusable UI: MediaCardItem, PillButton, Toast, LoadingSpinner, PairingPanel, …
 components/screens/             one folder or file pair per screen
 components/screens/debug/       developer diagnostics opened by deep link: StreamTestScreen, FontTestScreen
+                                (every debug* deep-link parameter is compiled only with bs_const
+                                DEBUG=true: tools/simulate.py builds that way, release packages don't)
 components/player/
   PlayerScreen.*   the video player: start/replan pipeline, HUD, pickers, recovery, progress
   PlaybackCaps.brs what this Roku can play, as the v3 capability payload; the [siku-playback] line
@@ -346,7 +348,9 @@ Tokens never cross the LAN; the server gives them to the Roku over HTTPS after t
 **Remote control (`_silocast-roku._tcp`, port 52817..52821, protocol v2).** TXT: `v=2`, `id`,
 `deviceId`, `name`, `server` (base64url of the server URL, the phone's registry key), `serverName`,
 `serverIdentity`, `playing=0|1`, `sec=plain|sealed`, `kid` (sealed). Up to six controllers.
-- Level `sealed` (Remote Control › Require pairing, default on): the phone's first frame is a
+- Level `sealed` (Remote Control › Require pairing; optional and off by default since v0.1.31, as in
+  Silo's own Roku app; a value saved before then counts only if the person chose it,
+  `sealedChosen`): the phone's first frame is a
   plain `sealed_hello {keyId, nonce}`; a wrong key gets a plain `close {reason: unauthorized}`.
   Siku answers its own `sealed_hello`, both derive enc/mac/iv keys (HKDF-SHA256 over phone nonce
   || TV nonce), and every later frame is `seq(8) || iv(16) || AES-128-CBC || HMAC-SHA256 tag`.
@@ -360,7 +364,10 @@ Tokens never cross the LAN; the server gives them to the Roku over HTTPS after t
   matches (same URL-derived id, or same deployment identity) and Siku is signed in; ping every
   3 s, more than three misses drops it; 5 s to say hello. A sign-out closes every controller
   (`unauthorized`). Frames before the hello may be at most 4 KiB (phone sign-in frames 64 KiB),
-  and a phone sign-in connection that sends nothing for 30 s is closed. At six controllers a new
+  and a phone sign-in connection that sends nothing for 30 s is closed; once it has spoken, 180 s
+  without a frame closes it with `cancel {reason: idle_timeout}`, except while a sign-in attempt
+  is in flight (checking the address, the viewer choosing one, the code on screen; the screen
+  reports it with `pairBusy`). Silo Android #748. At six controllers a new
   one gets `hello`, `error {too_many_controllers}` and `close {reason: too_many_controllers}`
   written straight to its socket (sealed level: closed without an answer).
 - `handoff_offer`: the profile Siku plays as gets `handoff_ready {reused: true}` at once; another
@@ -386,6 +393,10 @@ Tokens never cross the LAN; the server gives them to the Roku over HTTPS after t
 **What a Roku may or may not allow** (researched; to be confirmed on a device):
 - Listening TCP sockets: `roStreamSocket` `SetAddress`/`Listen`/`Accept` are public API in a
   Task. Expected to work on a sideloaded channel.
+- mDNS records: PTR, SRV and A live 120 s, TXT 4500 s (as Silo's Roku app), so a Roku switched
+  off without goodbyes leaves phones' lists within two minutes. Back out of the app sends the
+  goodbyes (TTL 0) and closes every phone (`receiver_cancelled` / `tv_disconnected`) first
+  (LanTask `shutdown`; MainScene waits at most 2 s, also for a sign-in code being withdrawn).
 - mDNS: a channel can only be found by phones if it may bind UDP 5353 and join 224.0.0.251.
   Roku OS runs its own responder on models with AirPlay, so the bind may be refused or shared.
   Siku sets SO_REUSEADDR, tries, and logs `[siku-lan] mdns bind 5353 reuse= bound= joined=`.

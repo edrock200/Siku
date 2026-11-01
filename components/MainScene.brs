@@ -18,6 +18,8 @@ sub init()
         sessionChanged: 0           ' bumped whenever the session is saved
         homeDirty: false            ' set after playback or state changes so Home refreshes
         settings: { ready: false, available: false, identity: "", revision: 0, manifestRevision: 0, items: {}, error: "" } ' server-synced settings snapshot (Settings.brs)
+        exiting: false              ' Back left the app: requests started now hold the exit (beginExit)
+        exitHolds: []               ' those requests' ApiTasks
     })
     ' Screen reader (A11y.brs): the one roAudioGuide lives in A11yTask; a11yLast is the dedupe key;
     ' a11yForce (deep link debugA11y=1) speaks and logs even with the reader off, for the simulator.
@@ -74,6 +76,8 @@ sub applyLaunchProfileRule()
     s = m.global.session
     if Str_isEmpty(s.accessToken) or Str_isEmpty(s.profileId) then return
     if not ProfileLaunch_requiresSelectionAtLaunch() then return
+    ' Kept for a content deep link that launched the app: it skips Who's Watching (onLaunchArgs).
+    m.launchRuleProfile = { profileId: s.profileId, profileToken: s.profileToken, profileName: s.profileName, profileAvatar: s.profileAvatar, accessToken: s.accessToken }
     c = AA_copy(s)
     c.profileId = ""
     c.profileToken = ""
@@ -163,7 +167,7 @@ end sub
 sub popScreen()
     if m.stack.Count() <= 1 then
         ProfileLaunch_markActive(0)
-        m.top.exitApp = true
+        beginExit()
         return
     end if
     closing = m.stack.Pop()
@@ -181,6 +185,60 @@ sub popScreen()
     checkProfilePrompt()
 end sub
 
+' ---------- Leaving the app ----------
+' Back from the first screen. Before Main returns (which ends every Task at once), the top screen
+' is hidden so it withdraws a sign-in code it shows (LoginScreen, or a phone's setup attempt:
+' POST /api/v2/auth/device/cancel) and the LanTask says goodbye to phones and withdraws its mDNS
+' records (TTL 0). Requests started meanwhile are held in m.global.exitHolds (Api_call); the app
+' exits once they and the LanTask are done, or after 2 s whatever happened. Adapted from
+' Silo-Server/silo-roku, AGPL-3.0 (docs/spec.md "Leaving sign-in": exit once /device/cancel
+' answers or after 2 s).
+sub beginExit()
+    if m.leaving <> invalid then return
+    m.leaving = { clock: CreateObject("roTimespan"), lan: invalid }
+    m.global.exitHolds = []
+    m.global.exiting = true
+    top = topScreen()
+    if top <> invalid then top.active = false
+    lan = invalid
+    if m.global.hasField("lanTask") then lan = m.global.lanTask
+    if lan <> invalid then
+        m.leaving.lan = lan
+        lan.command = { kind: "shutdown" }
+    end if
+    print "[siku-launch] leaving: requests=" + m.global.exitHolds.Count().ToStr() + " lan=" + exitBool(lan <> invalid)
+    m.exitTimer = CreateObject("roSGNode", "Timer")
+    m.exitTimer.duration = 0.1
+    m.exitTimer.repeat = true
+    m.exitTimer.observeField("fire", "onExitTick")
+    m.exitTimer.control = "start"
+end sub
+
+sub onExitTick()
+    e = m.leaving
+    pending = 0
+    for each t in m.global.exitHolds
+        if t <> invalid then
+            r = t.response
+            answered = Type(r) = "roAssociativeArray" and r.Count() > 0
+            st = Str_orEmpty(t.state)
+            if not answered and st <> "stop" and st <> "done" then pending = pending + 1
+        end if
+    end for
+    lanDone = e.lan = invalid or e.lan.stopped = true
+    ms = e.clock.TotalMilliseconds()
+    if (pending = 0 and lanDone) or ms >= 2000 then
+        m.exitTimer.control = "stop"
+        print "[siku-launch] exit after " + ms.ToStr() + " ms (requests pending=" + pending.ToStr() + " lan done=" + exitBool(lanDone) + ")"
+        m.top.exitApp = true
+    end if
+end sub
+
+function exitBool(v as boolean) as string
+    if v then return "true"
+    return "false"
+end function
+
 sub resetTo(name as string, params = {} as object)
     for each s in m.stack
         s.active = false
@@ -194,7 +252,8 @@ sub resetTo(name as string, params = {} as object)
     if name = "ShellScreen" and m.pendingDeepLink <> invalid and not Str_isEmpty(m.global.session.profileId) then
         link = m.pendingDeepLink
         m.pendingDeepLink = invalid
-        handleDeepLink(link)
+        print "[siku-deeplink] opening the held link"
+        openDeepLink(link)
     end if
 end sub
 
@@ -411,7 +470,30 @@ end sub
 ' ---------- Deep links ----------
 
 sub onLaunchArgs()
-    handleDeepLink(m.top.launchArgs)
+    args = m.top.launchArgs
+    ' A content link at launch never shows Who's Watching for a profile this Roku already had open:
+    ' the launch rule (Profile Selection) asked for the picker, so the profile it put aside opens
+    ' again and the link plays over Home (Roku certification 5.1; silo-roku does the same).
+    link = DeepLink_parse(args)
+    keep = m.launchRuleProfile
+    m.launchRuleProfile = invalid
+    if link <> invalid and link.valid and keep <> invalid then
+        s = m.global.session
+        if Str_isEmpty(s.profileId) and not Str_isEmpty(s.accessToken) and s.accessToken = keep.accessToken then
+            c = AA_copy(s)
+            c.profileId = keep.profileId
+            c.profileToken = keep.profileToken
+            c.profileName = keep.profileName
+            c.profileAvatar = keep.profileAvatar
+            Session_save(c)
+            m.askedAtLaunch = false
+            m.pendingDeepLink = link
+            print "[siku-deeplink] launch link skips Who's Watching; reopening the last profile"
+            routeToStart()
+            return
+        end if
+    end if
+    handleDeepLink(args)
 end sub
 
 sub onInputArgs()
@@ -420,7 +502,12 @@ end sub
 
 sub handleDeepLink(args as dynamic)
     if args = invalid then return
-    ' Developer aids for the simulator (tools/simulate.py, tools/mock_server.py).
+#if DEBUG
+    ' Developer aids for the simulator (tools/simulate.py, tools/mock_server.py). Compiled only when
+    ' the manifest says bs_const=DEBUG=true, which tools/simulate.py sets in its own copy of the
+    ' package: the release package (npm run package, manifest DEBUG=false) has none of them, so no
+    ' device on the network can sign the viewer out, forget servers or play an arbitrary URL with
+    ' an ECP launch link.
     ' debugA11y=1: speak (and log "[siku-a11y] say:") as if Roku's screen reader were on.
     if not Str_isEmpty(args.debugA11y) then m.global.a11yForce = args.debugA11y = "1"
     ' debugMemory=<percent>: replay a memory warning once a second screen is open (the simulator
@@ -492,28 +579,97 @@ sub handleDeepLink(args as dynamic)
         resetTo(args.debugScreen, params)
         return
     end if
-    if Str_isEmpty(args.contentId) then return
-    if Str_isEmpty(m.global.session.profileId) then
-        ' Signed in but no profile yet (Who's Watching): hold the link until one is chosen.
-        if not Str_isEmpty(m.global.session.accessToken) then m.pendingDeepLink = args
+#end if
+    link = DeepLink_parse(args)
+    if link = invalid then return
+    if not link.valid then
+        print "[siku-deeplink] refused reason=" + link.reason
         return
     end if
-    mediaType = LCase(Str_orEmpty(args.mediaType))
-    ' A link that arrives while a player is on top replaces the player (as a phone launch does): a
-    ' player covered by another screen has stopped and closed its session, so it is never kept.
-    replacePlayer = false
-    top = topScreen()
-    if top <> invalid then replacePlayer = top.subtype() = "PlayerScreen" or top.subtype() = "AudioPlayerScreen"
-    screenName = ""
-    params = invalid
-    if mediaType = "album" or mediaType = "artist" or mediaType = "audiobook" or mediaType = "track" then
-        screenName = "AudioDetailScreen"
-        params = { itemId: args.contentId, itemType: mediaType }
-    else if mediaType = "movie" or mediaType = "episode" or mediaType = "series" or mediaType = "season" or mediaType = "" then
-        screenName = "DetailScreen"
-        params = { itemId: args.contentId }
+    openDeepLink(link)
+end sub
+
+' A valid content link (DeepLink.brs). Signed out, or signed in with no profile open: it waits and
+' opens once a profile is chosen (resetTo ShellScreen). Otherwise a video item is read under the
+' open profile and played at once (a series or season: its next episode), resuming where the
+' profile left off; music opens its page. The player replaces a player on top. Nothing that does
+' not resolve changes the screen.
+sub openDeepLink(link as object)
+    s = m.global.session
+    if Str_isEmpty(s.accessToken) or Str_isEmpty(s.profileId) then
+        m.pendingDeepLink = link
+        print "[siku-deeplink] held until " + deepLinkWaitsFor(s) + " type=" + deepLinkType(link)
+        return
     end if
-    if screenName = "" then return
+    if link.kind = "audio" then
+        showDeepLinkScreen("AudioDetailScreen", { itemId: link.contentId, itemType: link.mediaType })
+        return
+    end if
+    if m.deepLinkGen = invalid then m.deepLinkGen = 0
+    m.deepLinkGen = m.deepLinkGen + 1
+    print "[siku-deeplink] resolving type=" + deepLinkType(link)
+    Api_call({ method: "GET", path: "/api/v2/catalog/items/" + Str_urlEncode(link.contentId), query: { image_size: "small" }, timeout: 15, context: { gen: m.deepLinkGen, stage: "item" } }, "onDeepLinkItem")
+end sub
+
+function deepLinkWaitsFor(s as object) as string
+    if Str_isEmpty(s.serverUrl) then return "server setup"
+    if Str_isEmpty(s.accessToken) then return "sign-in"
+    return "profile"
+end function
+
+function deepLinkType(link as object) as string
+    if link.mediaType = "" then return "none"
+    return link.mediaType
+end function
+
+sub onDeepLinkItem(event as object)
+    resp = Api_result(event)
+    if resp.context = invalid or resp.context.gen <> m.deepLinkGen then
+        print "[siku-deeplink] answer dropped: a newer link arrived"
+        return
+    end if
+    if not resp.ok or Type(resp.data) <> "roAssociativeArray" then
+        print "[siku-deeplink] dropped reason=unavailable status=" + Str_orEmpty(resp.status)
+        m.global.toast = "That title isn't available."
+        return
+    end if
+    if resp.context.stage = "next" then
+        deepLinkPlay(resp.data)
+        return
+    end if
+    r = DeepLink_route(resp.data)
+    print "[siku-deeplink] item type=" + LCase(Str_orEmpty(resp.data["type"])) + " action=" + r.action
+    if r.action = "play" then
+        deepLinkPlay(resp.data)
+    else if r.action = "next" then
+        ' A series or season: read the episode it plays next, for its resume point.
+        Api_call({ method: "GET", path: "/api/v2/catalog/items/" + Str_urlEncode(r.itemId), query: { image_size: "small" }, timeout: 15, context: { gen: m.deepLinkGen, stage: "next" } }, "onDeepLinkItem")
+    else if r.action = "detail" then
+        showDeepLinkScreen("DetailScreen", { itemId: r.itemId })
+    else if r.action = "audio" then
+        showDeepLinkScreen("AudioDetailScreen", { itemId: r.itemId, itemType: r.itemType })
+    else
+        m.global.toast = "That title isn't available."
+    end if
+end sub
+
+sub deepLinkPlay(item as object)
+    params = DeepLink_playerParams(item)
+    if params.itemId = "" then return
+    resumeAt = 0
+    if params.startPosition <> invalid then resumeAt = Int(params.startPosition)
+    print "[siku-deeplink] play resume=" + resumeAt.ToStr()
+    showDeepLinkScreen("PlayerScreen", params)
+end sub
+
+' A link that arrives while a player is on top replaces the player (as a phone launch does): a
+' player covered by another screen has stopped and closed its session, so it is never kept.
+sub showDeepLinkScreen(screenName as string, params as object)
+    s = m.global.session
+    if Str_isEmpty(s.accessToken) or Str_isEmpty(s.profileId) then return
+    top = topScreen()
+    replacePlayer = false
+    if top <> invalid then replacePlayer = top.subtype() = "PlayerScreen" or top.subtype() = "AudioPlayerScreen"
     if replacePlayer then
         print "[MainScene] deep link replaces the player on top"
         replaceTop(screenName, params)

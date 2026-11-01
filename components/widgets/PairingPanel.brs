@@ -10,11 +10,22 @@ sub init()
     m.detail = m.top.findNode("detail")
     m.code = m.top.findNode("code")
     m.server = m.top.findNode("server")
+    m.cardNote = m.top.findNode("cardNote")
+    m.note = m.top.findNode("note")
     m.spinner = m.top.findNode("spinner")
     m.buttonsGroup = m.top.findNode("buttons")
     m.buttons = []
     m.focusIndex = 0
     m.top.visible = false
+    ' The panel is modal: a host screen that moves focus while it is up (LoginScreen focuses its
+    ' own controls when a new sign-in code arrives) must not leave OK pressing a button behind it.
+    m.top.observeField("focusedChild", "onFocusMoved")
+end sub
+
+sub onFocusMoved()
+    if not m.top.visible or m.top.isInFocusChain() then return
+    print "[siku-pair] panel took focus back"
+    applyFocus()
 end sub
 
 sub render()
@@ -29,6 +40,8 @@ sub render()
     m.detail.text = Str_orEmpty(v.detail)
     m.code.text = Str_orEmpty(v.code)
     m.server.text = Str_orEmpty(v.server)
+    m.cardNote.text = Str_orEmpty(v.cardNote)
+    m.note.text = Str_orEmpty(v.note)
 
     ' Rebuild the buttons; keep the focused one when the same ids come back.
     oldIds = ""
@@ -82,6 +95,11 @@ sub layout()
         m.server.translation = [60, y]
         y = y + Int(Label_height(m.server)) + 20
     end if
+    m.cardNote.visible = m.cardNote.text <> ""
+    if m.cardNote.visible then
+        m.cardNote.translation = [60, y]
+        y = y + Int(Label_height(m.cardNote)) + 20
+    end if
     if m.spinner.visible then
         m.spinner.translation = [60, y + 6]
         y = y + 64
@@ -94,6 +112,11 @@ sub layout()
         end for
         m.buttonsGroup.translation = [60, y + 10]
         y = y + 10 + 76
+    end if
+    m.note.visible = m.note.text <> ""
+    if m.note.visible then
+        m.note.translation = [60, y + 16]
+        y = y + 16 + Int(Label_height(m.note))
     end if
     h = y + 56
     m.cardBg.height = h
