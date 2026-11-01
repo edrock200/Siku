@@ -512,11 +512,24 @@ function PlaybackCaps_delivery(containers as object, features as object, kind = 
     }
 end function
 
-' deliveries.hls.features: hls_copy_mpegts_v1 when the server offers the MPEG-TS copy.
+' deliveries.hls.features: hls_copy_mpegts_v1 when the server offers the MPEG-TS copy, and
+' hls_variable_substitution_v1 when it offers playlist compaction.
 function PlaybackCaps_hlsFeatures() as object
     out = ["hls"]
     if PlaybackCaps_tsCopyNegotiable() then out.Push("hls_copy_mpegts_v1")
+    if PlaybackCaps_defineNegotiable() then out.Push("hls_variable_substitution_v1")
     return out
+end function
+
+' hls_variable_substitution_v1: the server may compact long media playlists with #EXT-X-DEFINE
+' (HLS v8, which Roku plays). Roku refuses a playlist over 4 MiB ("mpr playlist file is too
+' large"), which long titles' complete playlists with long signed segment URLs exceed (6.3 MB for
+' a 127-minute 4K transcode; 175-204 KB compacted). Asked for only when the server's capabilities
+' list it: a server without it rejects unknown delivery features. Adapted from
+' Silo-Server/silo-roku, AGPL-3.0 (source/playback/capabilities.bs DEFINE_FEATURE; hardware runs
+' 2 and 3, implementation assumption A-16).
+function PlaybackCaps_defineNegotiable() as boolean
+    return PlaybackCaps_serverHas("hls_variable_substitution_v1")
 end function
 
 ' client_playback_context block.
@@ -759,7 +772,7 @@ function PlaybackCaps_diagLine(body as object, plan as object) as string
     ' The MPEG-TS copy lane: offered by the server (tscopy=), and what the TS probes found.
     tsv = "h264"
     if p.ts.hevc then tsv = "h264,hevc"
-    caps = caps + " tscopy=" + PlaybackCaps_str(PlaybackCaps_tsCopyNegotiable()) + " tsvideo=" + tsv + " tsaudio=" + PlaybackCaps_join(p.ts.audio) + " tspassthru=" + PlaybackCaps_join(p.ts.passthrough)
+    caps = caps + " tscopy=" + PlaybackCaps_str(PlaybackCaps_tsCopyNegotiable()) + " tsvideo=" + tsv + " tsaudio=" + PlaybackCaps_join(p.ts.audio) + " tspassthru=" + PlaybackCaps_join(p.ts.passthrough) + " define=" + PlaybackCaps_str(PlaybackCaps_defineNegotiable())
     caps = caps + " display=" + PlaybackCaps_str(p.display.known) + " hdr10=" + PlaybackCaps_str(hd.hdr10) + " hdr10+=" + PlaybackCaps_str(hd.hdr10_plus) + " hlg=" + PlaybackCaps_str(hd.hlg) + " dv=" + PlaybackCaps_join(dvs)
     ' Raw display report and model, so a missing Dolby Vision or HDR flag can be traced on device.
     di = CreateObject("roDeviceInfo")

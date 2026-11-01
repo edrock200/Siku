@@ -44,6 +44,9 @@ sub init()
     m.top.appendChild(m.remote)
     m.remote.observeField("launchRequest", "onRemoteLaunch")
 
+    ' Playback stops outlive the player (PlaybackJobs.brs: retried after a failed delivery).
+    PlaybackJobs_init()
+
     m.global.observeField("toast", "onToast")
     m.global.observeField("authExpired", "onAuthExpired")
     m.global.observeField("staleProfile", "onStaleProfile")

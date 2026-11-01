@@ -22,6 +22,8 @@
   <interface>
     <!-- A SiloCast control from Silo's phone app (RemoteControl.onControl; PlayerRemote.brs). -->
     <field id="remoteCommand" type="assocarray" alwaysNotify="true" />
+    <!-- From MainScene (PlaybackJobs.brs): the session id of a stop whose first try was answered. -->
+    <field id="stopAnswered" type="string" alwaysNotify="true" onChange="onStopAnswered" />
     <!-- A Roku voice transport command routed by MainScene.handleTransport; returns { status }. -->
     <function name="voiceTransport" />
   </interface>
@@ -42,6 +44,7 @@
   <script type="text/brightscript" uri="pkg:/components/player/PlaybackRecovery.brs" />
   <script type="text/brightscript" uri="pkg:/components/remote/RemotePrefs.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/VoiceTransport.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/PlaybackJobs.brs" />
   <children>
     <Rectangle id="bg" width="1920" height="1080" color="0x000000FF" />
     <!-- Up Next artwork. Drawn before the Video node so the video pane shows through it. -->

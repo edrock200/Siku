@@ -18,6 +18,11 @@ clears one); GET /mock/switch lists them.
   hidden_libraries=<JSON array>  the profile's ui.disabled_library_ids default, e.g. [2,"4"]
   mixed_library=1                add library 5 "Everything" (type "mixed": movies and series)
   progress_410=1                 POST /playback/{id}/progress answers 410 playback_session_ended
+  progress_404=<n>               the next n POST /playback/{id}/progress answer 404 playback_session_not_found
+                                 (the session is forgotten too, like a server restart); Siku starts a new
+                                 session at the position. Log: PROGRESS sid= seq= pos= paused= status=
+  stop_fail=<n>                  the next n DELETE /playback/{id} answer 503 (Siku resends the same stop
+                                 after 2, 4, 8 ... s). Log: STOP sid= stop_id= seq= pos= status=
   replan_410=1                   POST /playback/{id}/replan answers 410 playback_session_ended
   replan_version=<file id>       a quality_change replan moves to that version, subtitles Off (Silo Android #684)
   user_code=<code>               the device sign-in code to show (default 4821-7730)
@@ -2386,9 +2391,28 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, decision)
         m = re.match(r"^/api/v2/playback/([^/]+)/progress$", p)
         if m:
+            left = int(STATE["switches"].get("progress_404") or 0)
+            status = 404 if left > 0 or m.group(1) not in STATE["sessions"] else 200
+            if left > 0:
+                STATE["switches"]["progress_404"] = left - 1
+                STATE["sessions"].pop(m.group(1), None)
+            line = "PROGRESS sid=%s seq=%s pos=%s paused=%s status=%d" % (m.group(1)[:8], b.get("sequence"), b.get("position"), b.get("is_paused"), status)
+            print(line, flush=True)
+            LOG.append(line)
+            if status == 404:
+                return self.problem(404, "playback_session_not_found", "Playback session not found")
             return self.send(200, {"outcome": "applied", "accepted": b})
         m = re.match(r"^/api/v2/playback/([^/]+)$", p)
         if m and method == "DELETE":
+            left = int(STATE["switches"].get("stop_fail") or 0)
+            status = 503 if left > 0 else 200
+            if left > 0:
+                STATE["switches"]["stop_fail"] = left - 1
+            line = "STOP sid=%s stop_id=%s seq=%s pos=%s status=%d" % (m.group(1)[:8], str(b.get("stop_id"))[:8], b.get("sequence"), b.get("position"), status)
+            print(line, flush=True)
+            LOG.append(line)
+            if status == 503:
+                return self.problem(503, "service_unavailable", "Mock stop_fail")
             return self.send(200, {"outcome": "stopped", "stop_id": b.get("stop_id")})
         m = re.match(r"^/api/v2/(watchlist|favorites|watched)/(.+)$", p)
         if m and m.group(1) == "watched" and STATE["switches"].get("watched_fail"):

@@ -200,6 +200,8 @@ sub resetPlaybackState()
     m.pauseAfterStart = false   ' a re-anchored seek made while paused stays paused once the new plan plays
     m.watchBackTarget = invalid
     m.waitingForToken = false
+    m.renewals = 0        ' new sessions started for this playback after the server lost one
+    m.renew = invalid     ' the renewal being started: { at, audioId, subtitleTrackId, paused }
     SeekReanchor_reset()
     if m.subs <> invalid then Subs_resetPlayback()
     if m.bq <> invalid then Bufq_resetPlayback()
@@ -567,6 +569,14 @@ function installationId() as string
 end function
 
 sub startSession(installation as string)
+    if m.renew <> invalid then
+        ' A renewal (renewSession): the position and tracks playing now, no Rewind on Resume.
+        body = PlaybackCaps_startBody(installation, m.fileId, m.attemptId, m.renew.at, m.renew.audioId, m.renew.subtitleTrackId)
+        Bufq_decorateBody(body, invalid)
+        m.lastRequestBody = body
+        Api_send("POST", "/api/v2/playback/start", body, "onStart", { attemptId: m.attemptId })
+        return
+    end if
     p = m.top.params
     startPos = invalid
     if p.startPosition <> invalid then
@@ -617,6 +627,20 @@ sub onStart(event as object)
         fetchCapabilities()
         return
     end if
+    if m.renew <> invalid and resp.status <> 409 and not (resp.ok and Type(resp.data) = "roAssociativeArray" and Str_orEmpty(resp.data.outcome) = "playable") then
+        ' A renewal the server refused or never answered: the stream keeps playing; only the
+        ' position stops being recorded (as before renewals existed).
+        print "[siku-playback] session renewal failed status=" + Str_orEmpty(resp.status) + "; playing on without a session"
+        stopped = m.renew.stopped
+        m.renew = invalid
+        if stopped then
+            ' Renewed from a reconnect: nothing is playing any more.
+            PlaybackError_show("3004", { reason: "network_error" })
+            return
+        end if
+        if Str_orEmpty(m.video.state) = "playing" or Str_orEmpty(m.video.state) = "paused" then setBuffering(false)
+        return
+    end if
     if resp.status = 426 then
         PlaybackError_show("2007", { detail: "This server needs an update before it can stream to Roku." })
         return
@@ -652,7 +676,17 @@ sub onStart(event as object)
     Bufq_noteDecision(d)
     ' One line per start for the debug console (telnet 8085): declared caps, request, decision.
     print PlaybackCaps_diagLine(m.lastRequestBody, d.playback_plan)
-    applyPlan(d.playback_plan, { mountKind: "start" })
+    renew = m.renew
+    m.renew = invalid
+    if renew <> invalid then
+        ' The new session continues where the lost one was, with the viewer's subtitle and pause.
+        print "[siku-playback] session renewed at " + Int(renew.at).ToStr() + " s"
+        m.video.control = "stop"
+        applyPlan(d.playback_plan, { mountKind: "start", resumeAt: renew.at, subtitleTrackId: renew.subtitleTrackId })
+        if renew.paused then m.pauseAfterStart = true
+    else
+        applyPlan(d.playback_plan, { mountKind: "start" })
+    end if
     ' Seek-bar previews follow the streamed file.
     Trickplay_bind(m.itemId, planFileId(d.playback_plan))
     ' Simulator aid (deep link debugHoldSeek=1): the simulator cannot hold a key, so a Right press
@@ -747,7 +781,15 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
         fmt = container
     end if
     content.StreamFormat = fmt
-    headers = ["Authorization: Bearer " + s.accessToken]
+    ' The account token goes only to the user's own server: a proxy node's URL (or any other
+    ' origin) is signed and authorises itself, and a Video node sends HttpHeaders to every origin
+    ' a playlist or redirect names (silo-roku hardware evidence H1, decision D-1).
+    headers = []
+    if Url_sameOrigin(url, Str_orEmpty(s.serverOrigin)) then
+        headers.Push("Authorization: Bearer " + s.accessToken)
+    else
+        print "[siku-playback] stream on another origin (" + Url_host(url) + "): no account headers"
+    end if
     if stream.headers <> invalid then
         for each k in stream.headers
             headers.Push(k + ": " + Str_orEmpty(stream.headers[k]))
@@ -904,9 +946,10 @@ sub onVideoState()
         setBuffering(true)
     else if st = "playing" then
         setBuffering(false)
+        Recovery_notePlaying()
         Launch_ready("playing")
         applyPlannedAudioTrack()
-        m.bufferLabel.text = "Buffering"
+        if not Recovery_reconnecting() then m.bufferLabel.text = "Buffering"
         m.isPaused = false
         m.playPauseBtn.iconUri = "pkg:/images/icons/pause.png"
         if m.pauseAfterStart then
@@ -931,10 +974,20 @@ sub onVideoState()
         m.playPauseBtn.iconUri = "pkg:/images/icons/play.png"
         sendProgress()
     else if st = "finished" then
+        ' Roku also says "finished" right after an error, and for content a replan or reconnect is
+        ' replacing: only the end of a plan that played closes the player or opens Up Next.
+        refusal = Recovery_finishedRefusal()
+        if refusal <> "" then
+            print "[siku-playback] finished ignored reason=" + refusal
+            return
+        end if
         onFinished()
     else if st = "error" then
-        ' A failure_recovery replan first, the numbered error when nothing is left (PlaybackRecovery.brs).
-        Recovery_onVideoError(m.video.errorCode, Str_orEmpty(m.video.errorMsg), Str_orEmpty(m.video.errorStr))
+        ' A dropped connection reconnects; anything else gets a failure_recovery replan first, and
+        ' the numbered error when nothing is left (PlaybackRecovery.brs).
+        info = invalid
+        if m.video.hasField("errorInfo") then info = m.video.errorInfo
+        Recovery_onVideoError(m.video.errorCode, Str_orEmpty(m.video.errorMsg), Str_orEmpty(m.video.errorStr), info)
     end if
 end sub
 
@@ -943,9 +996,10 @@ end sub
 sub onBufferingStatus()
     st = m.video.bufferingStatus
     text = "Buffering"
+    if Recovery_reconnecting() then text = "Reconnecting"
     if st <> invalid and Type(st) = "roAssociativeArray" then
         pct = Int(Num_or(st.percentage, -1))
-        if pct >= 0 and pct <= 100 then text = "Buffering " + pct.ToStr() + "%"
+        if pct >= 0 and pct <= 100 then text = text + " " + pct.ToStr() + "%"
     end if
     m.bufferLabel.text = text
 end sub
@@ -1031,8 +1085,11 @@ end sub
 
 ' ---------- Progress and stop ----------
 
+' Every 10 s while playing or paused, with is_paused, as Android TV's reporter does
+' (PlaybackSessionLifecycle PROGRESS_REPORT_INTERVAL_MS): a long pause keeps the session alive and
+' its position current. A failed post needs no resend: the next tick carries a newer position.
 sub onProgressTick()
-    if m.isPaused then return
+    if m.finished or m.plan = invalid then return
     sendProgress()
 end sub
 
@@ -1055,10 +1112,47 @@ sub onProgressResult(event as object)
         return
     end if
     if resp.status = 404 or resp.status = 410 then
-        ' The session is gone on the server; stop reporting.
-        m.sessionId = ""
+        ' The session is gone on the server (expired after a long pause, a server restart): start a
+        ' new one at the position, so the rest of the viewing is still recorded. After 3 renewals
+        ' (or when nothing can be started) reporting stops, as before.
+        print "[siku-playback] progress answered status=" + Str_orEmpty(resp.status)
+        if not renewSession("progress " + Str_orEmpty(resp.status)) then m.sessionId = ""
     end if
 end sub
+
+' renew: { at, audioId, subtitleTrackId, paused, stopped (a reconnect's: the video is stopped) }.
+' The server no longer knows this playback session (404 to a progress post or a reconnect: an
+' expired session, a server restart): a new start at the position, with the tracks playing now,
+' at most 3 times per playback. Silo Android TV renews the same way (MissingSessionRenewal:
+' loadContent at the position, no Rewind on Resume), and Silo-Server/silo-roku (AGPL-3.0,
+' source/playback/session.bs restart, MAX_RESTARTS 3). There is no sessionless progress route in
+' v2. False when no renewal was started.
+function renewSession(reason as string) as boolean
+    if m.closing or m.finished or m.plan = invalid then return false
+    inst = installationId()
+    if inst = "" then return false
+    if m.renewals >= 3 then
+        print "[siku-playback] session lost again (" + reason + "); not renewing after 3 renewals"
+        return false
+    end if
+    m.renewals = m.renewals + 1
+    audioId = ""
+    sel = m.plan.selected_tracks
+    if sel <> invalid and Type(sel) = "roAssociativeArray" and sel.audio <> invalid and Type(sel.audio) = "roAssociativeArray" then
+        audioId = Str_orEmpty(sel.audio.id)
+        if audioId = "" and sel.audio.index <> invalid then audioId = Tracks_audioId(m.fileId, Int(Num_or(sel.audio.index, 0)))
+    end if
+    m.renew = { at: m.position, audioId: audioId, subtitleTrackId: Subs_selectedTrackId(), paused: m.isPaused, stopped: reason = "reconnect" }
+    print "[siku-playback] session not found on the server (" + reason + "); starting a new one at " + Int(m.position).ToStr() + " s (renewal " + m.renewals.ToStr() + ")"
+    ' Answers about the lost session (replans, progress) are dropped from here on.
+    m.sessionId = ""
+    m.attemptId = m.di.GetRandomUUID()
+    m.retriedInstall = false
+    m.replanPending = false
+    Recovery_reset()
+    startSession(inst)
+    return true
+end function
 
 ' 410 playback_session_ended: an administrator stopped this session while the server could not
 ' tell the player directly. Renewing would undo that stop (Android TV isPlaybackSessionEnded, #548).
@@ -1091,6 +1185,12 @@ function stopSession() as boolean
     m.sequence = m.sequence + 1
     body = { installation_id: inst, stop_id: m.stopId, sequence: m.sequence, position: m.position, is_paused: true }
     m.stopSid = sid
+    ' MainScene delivers it (PlaybackJobs.brs) and sends it again after a failure, after this
+    ' screen is gone too, so Continue Watching gets the final position; stopAnswered tells this
+    ' screen when the first try was answered.
+    scene = m.top.getScene()
+    job = { sid: sid, body: body, baseUrl: Str_orEmpty(m.global.session.serverUrl), identity: PlaybackJobs_identity(m.global.session), player: m.top }
+    if scene <> invalid and PlaybackCaps_truthy(scene.callFunc("playbackStop", job)) then return true
     Api_send("DELETE", "/api/v2/playback/" + Str_urlEncode(sid), body, "onStopped", { sid: sid })
     return true
 end function
@@ -1099,6 +1199,12 @@ sub onStopped(event as object)
     resp = Api_result(event)
     ' Only the DELETE sent for this close finishes it (not the previous episode's, sent by playInPlace).
     if resp.context = invalid or Str_orEmpty(resp.context.sid) <> Str_orEmpty(m.stopSid) then return
+    if m.closing then finishClose()
+end sub
+
+' MainScene's PlaybackJobs answered the first try of a stop this screen handed it.
+sub onStopAnswered()
+    if m.top.stopAnswered <> Str_orEmpty(m.stopSid) then return
     if m.closing then finishClose()
 end sub
 
@@ -2792,11 +2898,17 @@ sub sendReplan(operation as string, kind as string, failure = invalid as dynamic
     if selectedOverride <> invalid then selected = selectedOverride
     ' A viewer's own change (track, quality, output) starts a new route choice on the server, so a
     ' remux_hls answer to it gets one more recovery attempt.
-    if operation = "track_change" or operation = "quality_change" or operation = "output_change" then m.remuxRecoveryTried = false
+    if kind <> "reconnect" and (operation = "track_change" or operation = "quality_change" or operation = "output_change") then m.remuxRecoveryTried = false
     body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, operation, m.qualityPref, m.position, selected, failure)
     if extra <> invalid then body.Append(extra)
     Bufq_decorateBody(body, lowering)
     Recovery_decorateReplan(body, operation)
+    if kind = "reconnect" then
+        ' A reconnect after a dropped connection: nothing failed, so nothing is excluded
+        ' (silo-roku intentFields; device-proven in its hardware run 15).
+        body.attempted_plan_keys = []
+        body.attempt_count = 1
+    end if
     m.lastRequestBody = body
     m.replanKind = kind
     m.replanPending = true
@@ -2837,6 +2949,7 @@ sub onReplan(event as object)
     if m.replanKind = "subtitle" then failText = "Couldn't show these subtitles"
     if m.replanKind = "recovery" then failText = "No sound expected: the server has no other way to stream this file to a Roku"
     if m.replanKind = "bq" then failText = "" ' the buffering controller's own lowering: it re-arms by itself
+    if m.replanKind = "reconnect" then failText = ""
     if not resp.ok or resp.data = invalid or resp.data.outcome <> "playable" or resp.data.playback_plan = invalid then
         if Recovery_takeFailedReplan(resp) then return
         setBuffering(false)
@@ -2876,6 +2989,8 @@ sub onReplan(event as object)
     end if
     m.video.control = "stop"
     applyPlan(plan, opts)
+    ' A reconnect keeps the viewer's pause.
+    if m.replanKind = "reconnect" and m.rec.outagePaused then m.pauseAfterStart = true
     Trickplay_bind(m.itemId, planFileId(plan))
     if planFileId(plan) <> m.markersFileId then adoptFileMarkers(planFileId(plan))
     if m.replanKind = "audio" and m.pendingAudioIndex >= 0 then
@@ -3015,6 +3130,7 @@ function voiceRefusal() as string
     if m.reanchorBusy then return "reanchoring"
     if m.rec <> invalid then
         if m.rec.inFlight then return "recovering"
+        if m.rec.waiting then return "reconnecting"
     end if
     if m.subs <> invalid then
         if Str_orEmpty(m.subs.adoptId) <> "" then return "replanning"

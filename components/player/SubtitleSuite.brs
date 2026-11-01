@@ -151,7 +151,8 @@ function Subs_buildTrack(t as object) as dynamic
     if isVtt and Abs(shift) > 0.0005 then
         su = Subs_appendQuery(su, "timestamp_offset=" + Subs_formatSeconds(shift))
     end if
-    su = Subs_appendQuery(su, "token=" + s.accessToken)
+    ' Only the user's own server gets the token; a sidecar on another origin is signed.
+    if Url_sameOrigin(su, Str_orEmpty(s.serverOrigin)) then su = Subs_appendQuery(su, "token=" + s.accessToken)
     return {
         label: Subs_trackLabel(t)
         rawLabel: Str_orEmpty(t.label)

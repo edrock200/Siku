@@ -211,6 +211,44 @@ function Url_host(base as string) as string
     return Mid(o, i + 3)
 end function
 
+' Whether url is on origin (scheme://host[:port]): scheme and host compared case-insensitively,
+' a default port (80 for http, 443 for https) the same as none. The account token is sent only to
+' the user's own server origin (PlayerScreen, AudioPlayerScreen, subtitle sidecars).
+function Url_sameOrigin(url as dynamic, origin as dynamic) as boolean
+    a = Url_originKey(Str_orEmpty(url))
+    return a <> "" and a = Url_originKey(Str_orEmpty(origin))
+end function
+
+' "scheme://host:port" in lower case with the default port filled in, "" for a relative URL.
+function Url_originKey(u as string) as string
+    o = LCase(Url_origin(u.Trim()))
+    i = Instr(1, o, "://")
+    if i = 0 then return ""
+    scheme = Left(o, i - 1)
+    hostPort = Mid(o, i + 3)
+    q = Instr(1, hostPort, "?")
+    if q > 0 then hostPort = Left(hostPort, q - 1)
+    q = Instr(1, hostPort, "#")
+    if q > 0 then hostPort = Left(hostPort, q - 1)
+    at = Instr(1, hostPort, "@")
+    if at > 0 then hostPort = Mid(hostPort, at + 1)
+    if hostPort = "" then return ""
+    ' The port follows the last ':' after any IPv6 literal's closing bracket.
+    colon = 0
+    bracket = Instr(1, hostPort, "]")
+    for k = Len(hostPort) to bracket + 1 step -1
+        if Mid(hostPort, k, 1) = ":" then
+            colon = k
+            exit for
+        end if
+    end for
+    if colon = 0 then
+        if scheme = "https" then hostPort = hostPort + ":443"
+        if scheme = "http" then hostPort = hostPort + ":80"
+    end if
+    return scheme + "://" + hostPort
+end function
+
 ' Resolves an artwork/stream URL from the API: absolute stays, root-relative gets the origin.
 function Url_resolve(u as dynamic) as string
     if Str_isEmpty(u) then return ""

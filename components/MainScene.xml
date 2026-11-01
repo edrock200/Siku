@@ -12,6 +12,8 @@
     <field id="appFocused" type="boolean" value="true" onChange="onAppFocused" />
     <!-- From source/main.brs: a Roku voice transport event; returns { status } for EventResponse. -->
     <function name="handleTransport" />
+    <!-- From PlayerScreen: a playback stop to deliver, retried after a failure (PlaybackJobs.brs). -->
+    <function name="playbackStop" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/MainScene.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Theme.brs" />
@@ -21,6 +23,8 @@
   <script type="text/brightscript" uri="pkg:/components/common/ProfileLaunch.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/A11y.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/VoiceTransport.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Api.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/PlaybackJobs.brs" />
   <children>
     <Rectangle id="bg" width="1920" height="1080" color="0x000000FF" />
     <Group id="screens" />
