@@ -95,6 +95,9 @@ function PlaybackCaps_reprobe() as object
             if not PlaybackCaps_has(surround, c) then surround.Push(c)
         end for
     end if
+    ' Multichannel AAC: some Rokus decode AAC 5.1 (a TCL TV did), others not (an Ultra answered
+    ' no and then played 5.1 AAC plans as stereo or silence). Read by PlaybackCaps_aacStereoCeiling.
+    multichannelAac = PlaybackCaps_canDecodeAudio(di, { "codec": "aac", "chcnt": 6 })
     audioOutput = PlaybackCaps_str(di.GetAudioOutputChannel())
     ' jellyfin-roku (deviceCapabilities.bs): with the system output in "5.1 surround", AC3 plays even
     ' when CanDecodeAudio reports a false negative on some receivers; assume it, as Jellyfin does.
@@ -143,6 +146,7 @@ function PlaybackCaps_reprobe() as object
         codecsAudio: codecsAudio
         passthroughAudio: passthroughAudio
         surroundAudio: surround
+        multichannelAac: multichannelAac
         containers: ["mp4", "m4v", "mov", "mkv"]
         maxResolution: maxRes
         decodes4K: decodes4K
@@ -351,6 +355,19 @@ function PlaybackCaps_serverDelivers(delivery as string) as boolean
     return false
 end function
 
+' codec_channel_ceilings_v1: a server that lists it honours a delivery's max_channels_by_codec,
+' and under Auto (no audio_track_id in the start) prefers a same-language main track some delivery
+' carries unconverted with at least the channels a conversion would keep. A Roku that cannot decode
+' multichannel AAC then declares { aac: 2 }: a TrueHD/DTS default with an E-AC-3/AC-3 5.1 sibling
+' plays that track copied instead of a stereo AAC conversion, and no 5.1 AAC plan reaches it.
+' Adapted from Silo-Server/silo-roku, AGPL-3.0 (source/playback/capabilities.bs deliveries /
+' codecCeilings; its device run played AC-3 5.1 copied where the main build had played stereo AAC).
+function PlaybackCaps_aacStereoCeiling() as boolean
+    p = PlaybackCaps_probe()
+    if PlaybackCaps_truthy(p.multichannelAac) then return false
+    return PlaybackCaps_serverHas("codec_channel_ceilings_v1")
+end function
+
 ' hls_copy_mpegts_v1 (silo-server, 2026-10-26): a client that lists it in
 ' client_playback_context.deliveries.hls.features (not client_features) gets server_remux_hls
 ' copies of H.264/HEVC packaged as MPEG-TS, which Roku's HLS player reads audio from (pitfall 14).
@@ -496,7 +513,7 @@ function PlaybackCaps_delivery(containers as object, features as object, kind = 
         ' keeps original_http and names the track in selected_tracks; PlayerScreen applies it.
         claims.Push("client_selected_audio_track_v1")
     end if
-    return {
+    out = {
         enabled: true
         supported_on_device: true
         containers: containers
@@ -510,6 +527,10 @@ function PlaybackCaps_delivery(containers as object, features as object, kind = 
         validated_claims: claims
         auth_header_refresh: false
     }
+    ' Per-codec ceilings only (never max_channels: that would refuse a 5.1 E-AC-3 original on a
+    ' stereo TV), and only for the deliveries silo-roku sends them on.
+    if (kind = "original" or kind = "hls") and PlaybackCaps_aacStereoCeiling() then out.max_channels_by_codec = { "aac": 2 }
+    return out
 end function
 
 ' deliveries.hls.features: hls_copy_mpegts_v1 when the server offers the MPEG-TS copy, and
@@ -767,6 +788,8 @@ function PlaybackCaps_diagLine(body as object, plan as object) as string
     caps = "res=" + p.maxResolution + " 4kdec=" + PlaybackCaps_str(p.decodes4K) + " mode=" + p.videoMode + " fps=" + PlaybackCaps_str(p.outputFps) + " type=" + p.displayType + " ui=" + p.uiResolution
     caps = caps + " video=" + PlaybackCaps_join(p.codecsVideo) + " decoders=[" + PlaybackCaps_join(vdec, "; ") + "] audio=" + PlaybackCaps_join(p.codecsAudio)
     caps = caps + " passthru=" + PlaybackCaps_join(p.passthroughAudio) + " surround=" + PlaybackCaps_join(p.surroundAudio)
+    ' aac6: the box decodes 5.1 AAC; aaccap: max_channels_by_codec {aac: 2} sent (codec_channel_ceilings_v1).
+    caps = caps + " aac6=" + PlaybackCaps_str(PlaybackCaps_truthy(p.multichannelAac)) + " aaccap=" + PlaybackCaps_str(PlaybackCaps_aacStereoCeiling())
     caps = caps + " out=" + p.audioOutput + " decodeinfo=" + PlaybackCaps_join(decode)
     caps = caps + " forcedolby=" + PlaybackCaps_str(p.forcedDolby) + " forcehdr=" + PlaybackCaps_str(Settings_forceHdrPassthrough()) + " progressive=" + PlaybackCaps_str(Settings_progressiveRemux())
     ' The MPEG-TS copy lane: offered by the server (tscopy=), and what the TS probes found.

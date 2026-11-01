@@ -30,6 +30,8 @@
   <script type="text/brightscript" uri="pkg:/components/player/PlayerScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/PlaybackCaps.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/SubtitleSuite.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/MarkerTimeline.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/SubtitleSelect.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/BufferingQuality.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/PlayerBuffering.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/Trickplay.brs" />
@@ -146,6 +148,14 @@
       <PillButton id="bufqSecondary" text="Keep quality" variant="glass" height="64" padX="36" fontSize="25" scaleOnFocus="1.0" />
     </Group>
 
+    <!-- "Loading subtitles…" while the server prepares a chosen embedded track (SubtitleSelect.brs). -->
+    <Group id="subsLoading" visible="false" translation="[1496, 64]">
+      <Poster uri="pkg:/images/ui/r28.9.png" blendColor="0x0A0A0AD9" width="360" height="64" />
+      <Label text="Loading subtitles&#8230;" width="360" height="64" horizAlign="center" vertAlign="center" color="0xEDEDEDFF">
+        <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="26" />
+      </Label>
+    </Group>
+
     <Group id="hud" visible="false">
       <Group id="hudTabs" translation="[240, 100]" />
       <Poster id="hudBg" uri="pkg:/images/ui/r32.9.png" blendColor="0x0A0A0AF5" width="1440" height="400" translation="[240, 196]" />
@@ -229,6 +239,10 @@
     <Timer id="subsAiTimer" duration="2" repeat="true" />
     <!-- How long a playing stream may take to list the plan's HLS subtitle rendition. -->
     <Timer id="renditionTimer" duration="8" />
+    <!-- A subtitle selection is checked once this long after it (Roku settles; SubtitleSelect.brs). -->
+    <Timer id="subsCheckTimer" duration="3.5" />
+    <!-- How long a sidecar may take before "Loading subtitles…" shows. -->
+    <Timer id="subsLoadTimer" duration="2" />
     <!-- Drives the buffering-quality controller's timers and the pill countdown. -->
     <Timer id="bufqTimer" duration="0.25" repeat="true" />
     <!-- Seek previews: how long the previous thumbnail may stand in for the next one. -->

@@ -69,6 +69,9 @@ sub init()
     m.stopTimeout = m.top.findNode("stopTimeout")
     m.captionTimer = m.top.findNode("captionTimer")
     m.renditionTimer = m.top.findNode("renditionTimer")
+    m.subsCheckTimer = m.top.findNode("subsCheckTimer")
+    m.subsLoadTimer = m.top.findNode("subsLoadTimer")
+    m.subsLoading = m.top.findNode("subsLoading")
 
     m.di = CreateObject("roDeviceInfo")
     m.started = false
@@ -99,6 +102,15 @@ sub init()
     m.stopTimeout.observeField("fire", "finishClose")
     m.captionTimer.observeField("fire", "hideCaption")
     m.renditionTimer.observeField("fire", "onRenditionTimeout")
+    ' SubtitleSelect.brs: the settle check of a selection, "Loading subtitles…", and captions hidden
+    ' while the controls or the panel show (Video.suppressCaptions).
+    m.subsCheckTimer.observeField("fire", "Subs_onCheck")
+    m.subsLoadTimer.observeField("fire", "Subs_onLoadTimer")
+    m.subsSettled = false
+    m.subsSettleArmed = false
+    m.subsReselected = false
+    m.controls.observeField("visible", "Subs_updateCaptions")
+    m.hud.observeField("visible", "Subs_updateCaptions")
     ' In-manifest subtitle tracks (an HLS WebVTT rendition) appear here once the stream is parsed.
     if m.video.hasField("availableSubtitleTracks") then m.video.observeField("availableSubtitleTracks", "onAvailableSubtitles")
 
@@ -394,6 +406,14 @@ end sub
 ' markers at all (an older server).
 sub collectMarkers()
     m.markers = markersOf(m.version, m.watch)
+    logCreditsRanges()
+end sub
+
+' "[siku-playback] credits ranges=2 upnext_at=2650" when the file has credits (Silo Android #694).
+sub logCreditsRanges()
+    n = Markers_ranges(m.markers, "credits").Count()
+    if n = 0 then return
+    print "[siku-playback] credits ranges=" + n.ToStr() + " upnext_at=" + Int(Markers_upNextCreditsStart(m.markers)).ToStr()
 end sub
 
 function markersOf(version as dynamic, w as dynamic) as object
@@ -438,6 +458,7 @@ sub applyMarkers(markers as object)
     m.markerTicket = m.markerTicket + 1   ' a reconcile read sent before this is stale now
     m.markers = markers
     m.scrubber.markers = m.markers
+    logCreditsRanges()
 end sub
 
 ' The file the plan plays (a replan or recovery can land on another version of the title).
@@ -892,6 +913,15 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
         end if
     end if
 
+    ' A sidecar the server may still be extracting (a first-time embedded track) is fetched once to
+    ' learn when it is ready; the plan is remounted then (SubtitleSelect.brs).
+    Subs_onMount()
+    if m.pendingSubtitleTrackId <> "" then
+        for each st in m.subtitleTracks
+            if st.trackId = m.pendingSubtitleTrackId then Subs_probeIfNeeded(st)
+        end for
+    end if
+
     m.video.content = content
     m.video.control = "play"
     setBuffering(true)
@@ -968,6 +998,7 @@ sub onVideoState()
             end for
             m.pendingSubtitleTrackId = ""
         end if
+        Subs_onFirstPlaying()
         if m.renditionWanted then selectRendition()
     else if st = "paused" then
         m.isPaused = true
@@ -1218,6 +1249,9 @@ sub exitPlayer()
     m.hideTimer.control = "stop"
     m.subsSyncTimer.control = "stop"
     m.subsAiTimer.control = "stop"
+    m.subsCheckTimer.control = "stop"
+    m.subsLoadTimer.control = "stop"
+    m.subsLoading.visible = false
     HoldSeek_stop()
     Trickplay_reset()   ' empties the sheet Posters (texture memory)
     Bufq_onStopped()
@@ -1873,9 +1907,10 @@ sub checkUpNext()
     if m.picker.visible or m.subsDialog.visible then return
     ' playback.next_up_prompt_seconds: how long before the end the card appears (0 = at the end).
     trigger = m.duration - Settings_nextUpPromptSeconds()
-    for each mk in m.markers
-        if mk.kind = "credits" and mk.start < trigger and mk.start > m.duration * 0.5 then trigger = mk.start
-    end for
+    ' Credits: the start of the LAST credits range (Silo Android #694), so a scene between two
+    ' credits ranges still plays; each Skip Credits pill still ends at its own range.
+    creditsAt = Markers_upNextCreditsStart(m.markers)
+    if creditsAt >= 0 and creditsAt < trigger and creditsAt > m.duration * 0.5 then trigger = creditsAt
     if m.position >= trigger then showUpNext()
 end sub
 
@@ -2762,13 +2797,14 @@ sub setSubtitle(idx as integer)
             m.renditionWanted = false
             m.renditionTimerArmed = false
             m.renditionTimer.control = "stop"
-            m.video.subtitleTrack = m.subtitleTracks[idx].url
+            Subs_selectSidecar(idx)
         else
             m.renditionWanted = true
             selectRendition()
         end if
     end if
     if idx < 0 then
+        m.subsCheck = invalid
         m.renditionWanted = false
         m.renditionTimerArmed = false
         m.renditionTimer.control = "stop"
@@ -2812,7 +2848,8 @@ function findRenditionTrack(t as object) as string
         if a <> invalid and Type(a) = "roAssociativeArray" then
             tn = Str_orEmpty(a.TrackName)
             ltn = LCase(tn)
-            if tn <> "" and not ours.DoesExist(tn) and Left(ltn, 6) <> "eia608" and Left(ltn, 6) <> "eia708" then
+            ' Roku may list a sidecar under a name that contains its URL (Subs_trackIndexOf).
+            if tn <> "" and not ours.DoesExist(tn) and Subs_trackIndexOf(m.subtitleTracks, tn) < 0 and Left(ltn, 6) <> "eia608" and Left(ltn, 6) <> "eia708" then
                 if Str_orEmpty(a.Description).Trim() = t.rendition then exact.Push(tn) else others.Push(tn)
             end if
         end if
