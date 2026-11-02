@@ -173,8 +173,16 @@ sub CardActions_onWatchedAnswer(event as object)
     m.global.toast = CardActions_watchedFailureText(ctx.watched = true, resp)
 end sub
 
-' Opens the detail page for a card.
+' Opens the detail page for a card, or BoxSetScreen for a box set card (Silo Android #646; it has
+' no item menu, CardActions_hasMenu).
 sub CardActions_openDetail(card as object)
+    bs = BoxSet_of(card)
+    if bs <> invalid then
+        p = BoxSet_screenParams(bs, AA_get(m.top.params, "libraryId", ""))
+        Diag_log(Diag_join(["[siku-boxsets] open box set library=", p.libraryId]))
+        Nav_push("BoxSetScreen", p)
+        return
+    end if
     id = Str_orEmpty(card.content_id)
     if id = "" then return
     Nav_openItem(id, card.type)

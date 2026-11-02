@@ -5,7 +5,8 @@
 '   TITLE, HDPosterUrl (poster or still), FHDPosterUrl (backdrop), contentId, itemType,
 '   subtitle, progress (0..1), watched, cardStyle ("poster"|"landscape"|"circle"|"square"), raw (the API object),
 '   initials (placeholder text when there is no image; the title when empty),
-'   cardInsetX / cardInsetY (room inside a grid cell so the focused 1.10 card is not clipped at the grid's edge)
+'   cardInsetX / cardInsetY (room inside a grid cell so the focused 1.10 card is not clipped at the grid's edge),
+'   boxSet / cornerLabel (a box set card: sleeves, a "BOX SET" pill and the film count; BoxSets.brs)
 function Content_cardNode(card as object, style = "poster" as string) as object
     node = CreateObject("roSGNode", "ContentNode")
     Content_ensureFields(node)
@@ -27,6 +28,8 @@ sub Content_ensureFields(node as object)
         initials: ""
         cardInsetX: 0
         cardInsetY: 0
+        boxSet: false
+        cornerLabel: ""
         raw: {}
     })
 end sub
@@ -83,6 +86,21 @@ sub Content_fillCard(node as object, card as object, style as string)
 
     node.progress = Content_progressOf(card)
     node.watched = Content_watchedOf(card)
+    ' A box set card (Silo Android #646, BoxSets.brs): its own poster, "8 films" in the corner, the
+    ' watched share as its progress bar, and its caption ("3 / 8 watched", the years or the film
+    ' count) in place of the year. It has no watched mark of its own.
+    bs = BoxSet_of(card)
+    node.boxSet = bs <> invalid
+    node.cornerLabel = ""
+    if bs <> invalid then
+        if node.HDPosterUrl = "" then node.HDPosterUrl = Url_resolve(bs.poster_url)
+        if node.backdropUrl = "" then node.backdropUrl = Url_resolve(bs.backdrop_url)
+        node.cornerLabel = BoxSet_filmCount(bs.movie_count)
+        node.subtitle = BoxSet_cardCaption(bs)
+        node.description = "Box set, " + node.subtitle
+        node.progress = BoxSet_watchedFraction(bs)
+        node.watched = false
+    end if
 end sub
 
 ' A card's progress bar fraction (0..1) from position_seconds / duration_seconds.

@@ -36,9 +36,23 @@ sub init()
     m.pendingText = ""
     m.searchSeq = 0
     m.titles = []
+    m.gridCards = []         ' what the grid shows: matching box sets, then the titles
     m.peopleItems = []
     m.titlesDone = false
     m.peopleDone = false
+    m.boxSets = []
+    m.boxSetsPending = false
+    m.boxGrace = m.top.findNode("boxGrace")
+    m.boxGrace.observeField("fire", "onBoxSetGrace")
+    m.searchedQuery = ""      ' the query last sent (box sets re-run only that one)
+    ' Box sets are asked for only while some library has them on (the shell reads the library list;
+    ' opened without the shell, Search reads it itself).
+    if m.global.hasField("boxSetsAvailable") then
+        m.boxSetsAvailable = m.global.boxSetsAvailable = true
+    else
+        m.boxSetsAvailable = false
+        Api_get("/api/v2/user/libraries", invalid, "onLibrariesForBoxSets")
+    end if
     m.keyboard = invalid
     m.top.focusable = true
     m.top.observeField("focusedChild", "applyFocusVisuals")
@@ -229,6 +243,9 @@ end sub
 sub runSearch()
     q = m.query.Trim()
     m.searchSeq = m.searchSeq + 1
+    m.boxSets = []
+    m.boxSetsPending = false
+    m.boxGrace.control = "stop"
     if q = "" then
         showIdle()
         return
@@ -237,6 +254,7 @@ sub runSearch()
     m.peopleDone = false
     m.titles = []
     m.peopleItems = []
+    m.searchedQuery = q
     m.status.visible = false
     m.statusLine.text = "Searching…"
     m.spinner.visible = not m.grid.visible and not m.people.visible
@@ -246,6 +264,11 @@ sub runSearch()
     ctx = { seq: m.searchSeq }
     Api_get("/api/v2/catalog", params, "onTitles", ctx)
     Api_get("/api/v2/catalog/people", { q: q, limit: 20, media_scope: chip.scope }, "onPeople", ctx)
+    ' Box sets are movies: the Series and Audiobooks chips leave them out.
+    if m.boxSetsAvailable and (chip.id = "all" or chip.id = "movie") and Len(q) <= 200 then
+        m.boxSetsPending = true
+        Api_get("/api/v2/catalog/box-sets", { q: q, limit: 5 }, "onBoxSets", ctx)
+    end if
     runRequestSearch(false)
 end sub
 
@@ -271,7 +294,46 @@ sub onTitles(event as object)
             if resp.data.total_exact = false then m.titlesExact = false
         end if
     end if
+    ' Matching box sets lead the grid; they land with the first titles so the grid never shifts
+    ' under focus, but a slow answer holds the titles back at most 1.5 s.
+    if m.boxSetsPending then
+        m.boxGrace.control = "stop"
+        m.boxGrace.control = "start"
+        return
+    end if
     render()
+end sub
+
+sub onBoxSets(event as object)
+    resp = Api_result(event)
+    if resp.context = invalid or resp.context.seq <> m.searchSeq or not m.boxSetsPending then return
+    m.boxSetsPending = false
+    m.boxGrace.control = "stop"
+    ' A failed read answers none: it never fails the search it sits beside.
+    m.boxSets = []
+    if resp.ok then m.boxSets = BoxSet_searchCards(resp.data)
+    Diag_log(Diag_join(["[siku-boxsets] search box sets=", m.boxSets.Count(), " status=", Int(Num_or(resp.status, 0))]))
+    if m.titlesDone then render()
+end sub
+
+' The titles are in and the box sets are still out: this query shows none.
+sub onBoxSetGrace()
+    if not m.boxSetsPending or not m.titlesDone then return
+    m.boxSetsPending = false
+    m.boxSets = []
+    Diag_log("[siku-boxsets] search box sets late; showing the titles without them")
+    render()
+end sub
+
+' Opened without the shell: whether any library has box sets on. A list that says so re-runs a query
+' already searched (one still waiting out the debounce gets box sets when it runs).
+sub onLibrariesForBoxSets(event as object)
+    resp = Api_result(event)
+    if not resp.ok or Type(resp.data) <> "roAssociativeArray" then return
+    available = BoxSet_anyEnabled(resp.data.items)
+    changed = available <> m.boxSetsAvailable
+    m.boxSetsAvailable = available
+    if changed and m.searchedQuery <> "" and m.query.Trim() = m.searchedQuery then runSearch()
 end sub
 
 sub onPeople(event as object)
@@ -308,9 +370,12 @@ sub render()
 end sub
 
 sub renderResults()
-    if not m.titlesDone then return
+    if not m.titlesDone or m.boxSetsPending then return
     m.spinner.visible = false
-    if not Str_isEmpty(m.titlesError) and m.titles.Count() = 0 and m.peopleItems.Count() = 0 then
+    m.gridCards = []
+    m.gridCards.Append(m.boxSets)
+    m.gridCards.Append(m.titles)
+    if not Str_isEmpty(m.titlesError) and m.gridCards.Count() = 0 and m.peopleItems.Count() = 0 then
         m.people.visible = false
         m.grid.visible = false
         m.statusLine.text = ""
@@ -323,7 +388,7 @@ sub renderResults()
         return
     end if
     hasPeople = m.peopleItems.Count() > 0
-    hasTitles = m.titles.Count() > 0
+    hasTitles = m.gridCards.Count() > 0
     if not hasPeople and not hasTitles then
         m.people.visible = false
         m.grid.visible = false
@@ -339,6 +404,7 @@ sub renderResults()
     if hasTitles then
         n = m.titles.Count()
         if m.titlesTotal <> invalid then n = Int(Content_num(m.titlesTotal))
+        n = n + m.boxSets.Count()
         if m.titlesExact then
             m.statusLine.text = n.ToStr() + " results"
         else
@@ -358,7 +424,7 @@ sub renderResults()
     if hasTitles then
         ' Cells carry a 14 / 30 px inset so the focused card's zoom is not clipped at the grid's edge (pitfall 12).
         m.grid.translation = [74 - 14, gridY - 30]
-        m.grid.content = Content_grid(m.titles, "poster", 14, 30)
+        m.grid.content = Content_grid(m.gridCards, "poster", 14, 30)
         m.grid.visible = true
     else
         m.grid.visible = false
@@ -379,8 +445,14 @@ end sub
 
 sub onTitleSelected()
     idx = m.grid.itemSelected
-    if idx < 0 or idx >= m.titles.Count() then return
-    card = m.titles[idx]
+    if idx < 0 or idx >= m.gridCards.Count() then return
+    card = m.gridCards[idx]
+    bs = BoxSet_of(card)
+    if bs <> invalid then
+        Diag_log("[siku-boxsets] open box set from search")
+        Nav_push("BoxSetScreen", BoxSet_screenParams(bs, ""))
+        return
+    end if
     Nav_openItem(Str_orEmpty(card.content_id), card.type)
 end sub
 

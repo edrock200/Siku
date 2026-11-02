@@ -41,6 +41,14 @@ sub init()
     m.relatedSection = m.top.findNode("relatedSection")
     m.relatedHeader = m.top.findNode("relatedHeader")
     m.relatedRow = m.top.findNode("relatedRow")
+    m.boxSetSection = m.top.findNode("boxSetSection")
+    m.boxSetHeader = m.top.findNode("boxSetHeader")
+    m.boxSetRow = m.top.findNode("boxSetRow")
+    m.movieBoxSet = invalid
+    m.boxSetShown = []
+    m.boxSetMarked = -1
+    m.boxSetEntered = false
+    m.boxSetLibsAsked = false
     m.detailsSection = m.top.findNode("detailsSection")
     m.detailsBox = m.top.findNode("detailsBox")
     m.detailsBg = m.top.findNode("detailsBg")
@@ -99,6 +107,7 @@ sub init()
     m.episodeRow.observeField("rowItemSelected", "onEpisodeSelected")
     m.castRow.observeField("rowItemSelected", "onCastSelected")
     m.relatedRow.observeField("rowItemSelected", "onRelatedSelected")
+    m.boxSetRow.observeField("rowItemSelected", "onBoxSetRowSelected")
     m.trailersRow.observeField("rowItemSelected", "onTrailerSelected")
     m.ytDialog.observeField("dismissed", "onYouTubeDialogDismissed")
     m.detailsBox.observeField("focusedChild", "onDetailsFocus")
@@ -219,6 +228,7 @@ sub onItem(event as object)
     if m.itemType = "movie" or m.itemType = "series" then
         Api_get("/api/v2/recommendations/similar/" + Str_urlEncode(Str_orEmpty(m.item.content_id)), Artwork_query({ limit: 12, image_size: "medium" }, "similar", Theme_posterScale()), "onSimilar")
     end if
+    loadMovieBoxSet()
     ' Shuffle entry points in the More menu depend on the server's capability.
     Shuffle_refreshCaps("onShuffleCaps")
 end sub
@@ -230,6 +240,8 @@ end sub
 ' After playback or a state change elsewhere: refetch user state silently.
 sub refreshUserState()
     Api_get(itemPath(), Artwork_query({ image_size: "large" }, "detail"), "onItemRefreshed")
+    ' The box set row's watched marks follow too; a failed read keeps what it shows.
+    loadMovieBoxSet()
 end sub
 
 sub onItemRefreshed(event as object)
@@ -768,6 +780,10 @@ sub layoutBody()
         m.trailersSection.translation = [x, y]
         y = y + 60 + 338 + gap
     end if
+    if m.boxSetSection.visible then
+        m.boxSetSection.translation = [x, y]
+        y = y + 60 + 364 + gap
+    end if
     if m.relatedSection.visible then
         m.relatedSection.translation = [x, y]
         y = y + 60 + 364 + gap
@@ -789,6 +805,7 @@ sub buildZones()
     end if
     if m.castSection.visible then zones.Push({ name: "cast", y: m.castSection.translation[1] })
     if m.trailersSection.visible then zones.Push({ name: "trailers", y: m.trailersSection.translation[1] })
+    if m.boxSetSection.visible then zones.Push({ name: "boxset", y: m.boxSetSection.translation[1] })
     if m.relatedSection.visible then zones.Push({ name: "related", y: m.relatedSection.translation[1] })
     if m.detailsSection.visible then zones.Push({ name: "details", y: m.detailsSection.translation[1] })
     m.zones = zones
@@ -833,6 +850,11 @@ sub focusZone(i as integer)
             m.castRow.setFocus(true)
         else if z.name = "trailers" then
             m.trailersRow.setFocus(true)
+        else if z.name = "boxset" then
+            ' The first time in, the row lands on the film on screen.
+            if not m.boxSetEntered and m.boxSetMarked > 0 then m.boxSetRow.jumpToRowItem = [0, m.boxSetMarked]
+            m.boxSetEntered = true
+            m.boxSetRow.setFocus(true)
         else if z.name = "related" then
             m.relatedRow.setFocus(true)
         else if z.name = "details" then
@@ -1155,6 +1177,131 @@ sub onRelatedSelected()
     else
         Nav_push("DetailScreen", { itemId: picked, itemType: Str_orEmpty(card.type), chainStartId: currentId })
     end if
+end sub
+
+' ---------- Box set row (Silo Android #646, TvBoxSetRow / loadMovieBoxSet) ----------
+
+' Only a movie asks, and only while some library has box sets on (the shell's library list), so
+' servers without box sets are never asked. GET /api/v2/catalog/items/{id}/box-set answers
+' {"box_set": {...}} or {} for a movie in none.
+sub loadMovieBoxSet()
+    if m.item = invalid or m.itemType <> "movie" then return
+    if not m.global.hasField("boxSetsAvailable") then
+        ' Opened without the shell (a deep link): ask for the library list once.
+        if m.boxSetLibsAsked <> true then
+            m.boxSetLibsAsked = true
+            Api_get("/api/v2/user/libraries", invalid, "onBoxSetLibraries")
+        end if
+        return
+    end if
+    if m.global.boxSetsAvailable <> true then return
+    q = Artwork_query({ image_size: "medium" }, "similar", Theme_posterScale())
+    lib = Str_orEmpty(m.top.params.libraryId)
+    if lib <> "" then q.library_id = lib
+    id = Str_orEmpty(m.item.content_id)
+    Api_get("/api/v2/catalog/items/" + Str_urlEncode(id) + "/box-set", q, "onMovieBoxSet", { itemId: id })
+end sub
+
+sub onBoxSetLibraries(event as object)
+    resp = Api_result(event)
+    if not resp.ok or Type(resp.data) <> "roAssociativeArray" then return
+    if not m.global.hasField("boxSetsAvailable") then m.global.addFields({ boxSetsAvailable: false })
+    m.global.boxSetsAvailable = BoxSet_anyEnabled(resp.data.items)
+    loadMovieBoxSet()
+end sub
+
+sub onMovieBoxSet(event as object)
+    resp = Api_result(event)
+    if m.item = invalid or resp.context = invalid or resp.context.itemId <> Str_orEmpty(m.item.content_id) then return
+    if not resp.ok or Type(resp.data) <> "roAssociativeArray" then
+        Diag_log(Diag_join(["[siku-boxsets] movie box set read failed status=", Int(Num_or(resp.status, 0))]))
+        return
+    end if
+    bsd = resp.data.box_set
+    had = m.boxSetSection.visible
+    if Type(bsd) <> "roAssociativeArray" or Arr_or(bsd.items).Count() = 0 then
+        m.movieBoxSet = invalid
+        m.boxSetSection.visible = false
+    else
+        m.movieBoxSet = bsd
+        renderBoxSetRow()
+        m.boxSetSection.visible = true
+    end if
+    Diag_log(Diag_join(["[siku-boxsets] movie box set row shown=", m.boxSetSection.visible]))
+    if had <> m.boxSetSection.visible then
+        layoutBody()
+        current = zoneName()
+        buildZones()
+        ' Keep focus on the zone it was in; the row moving in or out shifts the indexes.
+        i = zoneIndexOf(current)
+        if i >= 0 then m.zoneIndex = i
+    end if
+end sub
+
+' As many films as fit across the screen at the row's poster size, less one slot for Explore all;
+' BoxSet_rowWindow picks which.
+sub renderBoxSetRow()
+    bsd = m.movieBoxSet
+    items = []
+    for each it in Arr_or(bsd.items)
+        if Type(it) = "roAssociativeArray" then items.Push(it)
+    end for
+    currentId = Str_orEmpty(m.item.content_id)
+    currentIndex = -1
+    for i = 0 to items.Count() - 1
+        if Str_orEmpty(items[i].content_id) = currentId then currentIndex = i
+    end for
+    w = Int(176 * Theme_posterScale())
+    slots = Int((1720 + 40) / (w + 40))
+    if slots < 2 then slots = 2
+    win = BoxSet_rowWindow(items.Count(), currentIndex, slots - 1)
+    m.boxSetHeader.text = Str_orEmpty(bsd.title)
+    root = CreateObject("roSGNode", "ContentNode")
+    row = root.createChild("ContentNode")
+    m.boxSetShown = []
+    m.boxSetMarked = -1
+    for i = win[0] to win[1] - 1
+        node = Content_cardNode(items[i], "poster")
+        node.cardInsetY = 32
+        if i = currentIndex then
+            node.addFields({ markedBadge: "THIS FILM" })
+            m.boxSetMarked = m.boxSetShown.Count()
+        end if
+        row.appendChild(node)
+        m.boxSetShown.Push(items[i])
+    end for
+    explore = row.createChild("ContentNode")
+    Content_ensureFields(explore)
+    explore.addFields({ exploreAll: true })
+    explore.contentId = "explore:box_set"
+    explore.itemType = "explore_all"
+    explore.cardStyle = "poster"
+    explore.cardInsetY = 32
+    explore.title = "Explore all"
+    explore.description = Str_orEmpty(bsd.title)
+    m.boxSetRow.rowItemSize = [[w, 396]]
+    focused = -1
+    rf = m.boxSetRow.rowItemFocused
+    if m.boxSetRow.content <> invalid and rf <> invalid and rf.Count() > 1 then focused = rf[1]
+    m.boxSetRow.content = root
+    if focused > 0 and focused <= m.boxSetShown.Count() then m.boxSetRow.jumpToRowItem = [0, focused]
+end sub
+
+sub onBoxSetRowSelected()
+    sel = m.boxSetRow.rowItemSelected
+    if sel = invalid or sel.Count() < 2 or m.movieBoxSet = invalid then return
+    idx = sel[1]
+    lib = Str_orEmpty(m.top.params.libraryId)
+    if idx >= m.boxSetShown.Count() then
+        Diag_log("[siku-boxsets] explore all from a movie page")
+        Nav_push("BoxSetScreen", BoxSet_screenParams(m.movieBoxSet, lib))
+        return
+    end if
+    movie = m.boxSetShown[idx]
+    id = Str_orEmpty(movie.content_id)
+    if id = "" or id = Str_orEmpty(m.item.content_id) then return
+    ThemeMusic_stop()
+    Nav_push("DetailScreen", { itemId: id, itemType: Str_orEmpty(movie["type"]), libraryId: lib })
 end sub
 
 ' ---------- Trailers & More (TvDetailTrailersSection, silo-android #640 / #641) ----------
