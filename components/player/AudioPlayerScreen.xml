@@ -36,6 +36,7 @@
   </interface>
   <script type="text/brightscript" uri="pkg:/components/player/AudioPlayerScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/PlaybackCaps.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioCaps.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioTimeline.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/VoiceTransport.brs" />

@@ -185,6 +185,9 @@ sub resetPlaybackState()
     m.remuxRecoveryTried = false
     m.renditionWanted = false          ' the selected track is an HLS rendition not yet found on the Video node
     m.renditionRecoveryTried = false   ' failure_recovery (subtitle_hls_rendition_failed) asked once per playback
+    m.renditionSidecars = false        ' every-track renditions given up for this playback: rows mount as sidecars
+    m.nativeSubsOff = false            ' an MKV's own tracks given up for this playback (Roku did not list one)
+    m.subsHold = false                 ' the mount draws no captions until its first selection is checked
     m.renditionTimerArmed = false
     if m.renditionTimer <> invalid then m.renditionTimer.control = "stop"
     m.pendingAudioIndex = -1
@@ -624,12 +627,32 @@ sub startSession(installation as string)
     prefix = "file:" + m.fileId + ":"
     if audioId <> "" and Left(audioId, Len(prefix)) <> prefix then audioId = ""
     if subId <> "" and Left(subId, Len(prefix)) <> prefix then subId = ""
+    ' A track the server has no way to show (Silo Android #776) never goes into the start request:
+    ' the server would refuse it with subtitle_codec_unsupported and playback would end.
+    if subId <> "" and unplayableCatalogSubtitle(subId) then
+        Diag_log("[siku-playback] subtitle request dropped: " + subId + " has no format the server can show")
+        subId = ""
+    end if
     m.explicitSubtitleId = subId
     body = PlaybackCaps_startBody(installation, m.fileId, m.attemptId, startPos, audioId, subId)
     Bufq_decorateBody(body, invalid)
     m.lastRequestBody = body
     Api_send("POST", "/api/v2/playback/start", body, "onStart", { attemptId: m.attemptId })
 end sub
+
+' Whether the subtitle id ("file:<id>:subtitle:<combined index>") names a catalog track of the
+' playing version that the server cannot show (Tracks_subtitleUnplayable).
+function unplayableCatalogSubtitle(subId as string) as boolean
+    if m.version = invalid then return false
+    marker = ":subtitle:"
+    at = Instr(1, subId, marker)
+    if at = 0 then return false
+    combined = Int(Val(Mid(subId, at + Len(marker))))
+    tracks = Arr_or(m.version.subtitle_tracks)
+    o = Tracks_subtitleOrdinal(tracks, combined)
+    if o < 0 then return false
+    return Tracks_subtitleUnplayable(tracks[o])
+end function
 
 sub onStart(event as object)
     resp = Api_result(event)
@@ -848,18 +871,52 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
     ' (hls_subtitle_renditions_v1, Silo Android #611). That row is not mounted as a sidecar (its URL
     ' is a slow whole-file extraction); it is selected on the Video node instead. A rendition in a
     ' shape the client must refuse is ignored, so the row stays an ordinary sidecar.
+    ' Under hls_subtitle_renditions_all_v1 every embedded text row of an HLS plan is a rendition of
+    ' the stream (its own hls_rendition), and on an MKV original each row the server marks
+    ' native_selectable (and the plan's own native embedded subtitle) is the file's own track Roku
+    ' draws (Silo Android #770): all are switched on the playing content, none is downloaded.
+    ' A row the server cannot show (`unplayable`, Silo Android #776) is never offered.
     rendition = PlaybackCaps_hlsRendition(plan)
     if rendition <> invalid and rendition.problem = true then rendition = invalid
-    for each t in subInv
+    planNative = ""
+    if not m.nativeSubsOff then planNative = PlaybackCaps_nativeSubtitleName(plan)
+    planSubTrackId = ""
+    if plan.subtitle <> invalid then planSubTrackId = Str_orEmpty(plan.subtitle.track_id)
+    counts = { sidecars: 0, renditions: 0, native: 0, unavailable: 0 }
+    ' An index loop: the helpers below walk the same inventory array, and nested for each loops over
+    ' one array share its iterator in brs-engine (the outer loop ended after one row).
+    for si = 0 to subInv.Count() - 1
+        t = subInv[si]
         track = invalid
-        if rendition <> invalid and Str_orEmpty(t.track_id) = rendition.trackId then
+        rowRend = invalid
+        if not m.renditionSidecars then rowRend = PlaybackCaps_rowRendition(plan, t)
+        nativeName = ""
+        if not m.nativeSubsOff then
+            if planNative <> "" and Str_orEmpty(t.track_id) = planSubTrackId then nativeName = planNative else nativeName = PlaybackCaps_nativeRowName(plan, t)
+        end if
+        if Tracks_subtitleUnplayable(t) then
+            counts.unavailable = counts.unavailable + 1
+        else if rowRend <> invalid then
+            track = Subs_renditionTrack(t, rowRend)
+            track.allRend = true
+            m.subtitleTracks.Push(track)
+            counts.renditions = counts.renditions + 1
+        else if rendition <> invalid and Str_orEmpty(t.track_id) = rendition.trackId then
             track = Subs_renditionTrack(t, rendition)
             m.subtitleTracks.Push(track)
+            counts.renditions = counts.renditions + 1
+        else if nativeName <> "" then
+            track = Subs_nativeTrack(t, nativeName)
+            m.subtitleTracks.Push(track)
+            counts.native = counts.native + 1
         else
             track = Subs_buildTrack(t)
             if track <> invalid then
                 m.subtitleTracks.Push(track)
                 tracks.Push({ Language: track.language, TrackName: track.url, Description: track.label })
+                counts.sidecars = counts.sidecars + 1
+            else
+                counts.unavailable = counts.unavailable + 1
             end if
         end if
     end for
@@ -911,6 +968,25 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
         else if autoPick = -2 then
             m.pendingSubtitleTrackId = planSubId
         end if
+    end if
+
+    ' The mount opens on its pick by the name Roku lists it under (an MKV's own track, an every-track
+    ' rendition by Roku's DEFAULT-first number), and draws nothing until the first check when it
+    ' cannot (a sidecar beside the stream's own renditions, which Roku showed by the caption
+    ' language until then).
+    pendingTrack = invalid
+    for each st in m.subtitleTracks
+        if m.pendingSubtitleTrackId <> "" and st.trackId = m.pendingSubtitleTrackId then pendingTrack = st
+    end for
+    streamRenditions = rendition <> invalid or counts.renditions > 0
+    preselect = Subs_preselectName(pendingTrack, PlaybackCaps_defaultRenditionIndex(plan))
+    if preselect <> "" then content.SubtitleConfig = { TrackName: preselect }
+    m.subsHold = Subs_holdsUntilChecked(pendingTrack, preselect, streamRenditions)
+    if counts.renditions + counts.native + counts.unavailable > 0 or preselect <> "" then
+        pickLog = "none"
+        if pendingTrack <> invalid then pickLog = pendingTrack.trackId
+        if preselect = "" then preselect = "none"
+        Diag_log("[siku-playback] subtitle mount: sidecars=" + counts.sidecars.ToStr() + " renditions=" + counts.renditions.ToStr() + " native=" + counts.native.ToStr() + " unavailable=" + counts.unavailable.ToStr() + " pick=" + pickLog + " preselect=" + preselect + " hold=" + Str_orEmpty(m.subsHold))
     end if
 
     ' A sidecar the server may still be extracting (a first-time embedded track) is fetched once to
@@ -2691,12 +2767,19 @@ sub openPicker(kind as string)
             acts.Push({ id: i.ToStr(), label: m.subtitleTracks[i].label, checked: i = m.subtitleIndex, detail: Str_joinDots([Subs_sourceLabel(m.subtitleTracks[i]), Subs_trackStatus(m.subtitleTracks[i])]) })
         end for
         ' The file's other subtitle tracks, so the viewer sees they exist and why they are not offered:
-        ' image formats (PGS, VobSub) and styled ASS have no Roku renderer.
+        ' image formats (PGS, VobSub) and styled ASS have no Roku renderer, and a track the server
+        ' cannot show at all (Silo Android #776) reads "Unsupported format".
         inv = m.subs.subtitleInventory
+        offered = {}
+        for each st in m.subtitleTracks
+            offered[st.trackId] = true
+        end for
         for i = 0 to inv.Count() - 1
             t = inv[i]
-            if Subs_buildTrack(t) = invalid then
-                acts.Push({ id: "na:" + i.ToStr(), label: Subs_inventoryLabel(t), detail: "Image or styled format: Roku can't show it", checked: false })
+            if t <> invalid and Type(t) = "roAssociativeArray" and not offered.DoesExist(Str_orEmpty(t.track_id)) then
+                detail = "Image or styled format: Roku can't show it"
+                if Tracks_subtitleUnplayable(t) then detail = "Unsupported format"
+                acts.Push({ id: "na:" + i.ToStr(), label: Subs_inventoryLabel(t), detail: detail, checked: false })
             end if
         end for
         m.picker.title = "Subtitles"
@@ -2752,7 +2835,13 @@ sub onPickerChosen()
         end if
     else if kind = "subtitle" then
         if Left(id, 3) = "na:" then
-            m.global.toast = "Roku can't display image-based or styled subtitles (PGS, VobSub, ASS). A text version (SRT) would work."
+            naIdx = Int(Val(Mid(id, 4)))
+            inv = m.subs.subtitleInventory
+            if naIdx >= 0 and naIdx < inv.Count() and Tracks_subtitleUnplayable(inv[naIdx]) then
+                m.global.toast = "This subtitle track's format isn't supported, so it can't be shown."
+            else
+                m.global.toast = "Roku can't display image-based or styled subtitles (PGS, VobSub, ASS). A text version (SRT) would work."
+            end if
         else
             setSubtitle(Int(Val(id)))
             rememberSubtitlePick()
@@ -2793,7 +2882,12 @@ sub setSubtitle(idx as integer)
     else
         m.subtitleIndex = idx
         m.video.globalCaptionMode = "On"
-        if Str_isEmpty(m.subtitleTracks[idx].rendition) then
+        if not Str_isEmpty(m.subtitleTracks[idx].native) then
+            m.renditionWanted = false
+            m.renditionTimerArmed = false
+            m.renditionTimer.control = "stop"
+            Subs_selectNative(idx)
+        else if Str_isEmpty(m.subtitleTracks[idx].rendition) then
             m.renditionWanted = false
             m.renditionTimerArmed = false
             m.renditionTimer.control = "stop"
@@ -2818,13 +2912,24 @@ end sub
 sub selectRendition()
     if not m.renditionWanted or m.subtitleIndex < 0 or m.subtitleIndex >= m.subtitleTracks.Count() then return
     t = m.subtitleTracks[m.subtitleIndex]
-    name = findRenditionTrack(t)
+    by = "name"
+    if PlaybackCaps_truthy(t.allRend) then
+        found = findAllRendition(t)
+        name = found.name
+        by = found.by
+    else
+        name = findRenditionTrack(t)
+    end if
     if name <> "" then
         m.renditionWanted = false
         m.renditionTimerArmed = false
         m.renditionTimer.control = "stop"
+        t.streamName = name
         m.video.subtitleTrack = name
-        Diag_log("[siku-playback] hls subtitle rendition " + t.renditionGroup + ":" + t.rendition + " selected as " + name)
+        Diag_log("[siku-playback] hls subtitle rendition " + t.renditionGroup + ":" + t.rendition + " selected as " + name + " (by=" + by + ")")
+        ' Checked once the content settles, as a sidecar is (an every-track stream may open on
+        ' another rendition of Roku's own).
+        if PlaybackCaps_truthy(t.allRend) then Subs_armCheck(m.subtitleIndex, "switch")
         return
     end if
     if m.video.state = "playing" and not m.renditionTimerArmed then
@@ -2859,12 +2964,49 @@ function findRenditionTrack(t as object) as string
     return ""
 end function
 
+' The TrackName Roku lists an every-track rendition under ({ name, by }, Subs_renditionName): by its
+' NAME, else by Roku's DEFAULT-first number in the row's language. A number whose language another
+' rendition shares is trusted only for the stream's DEFAULT (webvtt/1, the track it opened on).
+function findAllRendition(t as object) as object
+    names = {}
+    langs = {}
+    for each st in m.subtitleTracks
+        if PlaybackCaps_truthy(st.allRend) then
+            names[st.rendition] = true
+            k = Subs_autoLangKey(st.language)
+            if k <> "" then
+                if langs.DoesExist(k) then langs[k] = langs[k] + 1 else langs[k] = 1
+            end if
+        end if
+    end for
+    key = Subs_autoLangKey(t.language)
+    shared = key <> "" and langs.DoesExist(key) and langs[key] > 1
+    place = Subs_rokuPlace(Int(Num_or(t.renditionIndex, 0)), PlaybackCaps_defaultRenditionIndex(m.plan))
+    found = Subs_renditionName(m.video.availableSubtitleTracks, t.rendition, place, t.language, names, shared)
+    if found.by = "ambiguous" and place <> 1 then return { name: "", by: "ambiguous" }
+    return found
+end function
+
 sub onAvailableSubtitles()
     if m.renditionWanted then selectRendition()
 end sub
 
 sub onRenditionTimeout()
     if not m.renditionWanted or m.closing then return
+    ' A rendition the stream lists but Roku names neither way, picked locally (not the plan's own):
+    ' the every-track renditions are given up for this playback and the rows mount as sidecars.
+    if m.subtitleIndex >= 0 and m.subtitleIndex < m.subtitleTracks.Count() then
+        t = m.subtitleTracks[m.subtitleIndex]
+        if PlaybackCaps_truthy(t.allRend) and m.plan <> invalid and m.plan.subtitle <> invalid and t.trackId <> Str_orEmpty(m.plan.subtitle.track_id) and not m.renditionSidecars then
+            m.renditionWanted = false
+            m.renditionTimerArmed = false
+            m.renditionSidecars = true
+            Diag_log("[siku-playback] hls subtitle rendition " + t.renditionGroup + ":" + t.rendition + " not named by roku; using the server's sidecars at the position")
+            logListedSubtitles()
+            remountSubtitles()
+            return
+        end if
+    end if
     failHlsRendition()
 end sub
 
@@ -2874,22 +3016,31 @@ sub failHlsRendition()
     m.renditionWanted = false
     m.renditionTimerArmed = false
     m.renditionTimer.control = "stop"
-    listed = []
-    for each a in Arr_or(m.video.availableSubtitleTracks)
-        if a <> invalid and Type(a) = "roAssociativeArray" then
-            ' A sidecar's TrackName is its URL (with a token= fallback): never printed.
-            tn = Str_orEmpty(a.TrackName)
-            if Instr(1, tn, "://") > 0 or Instr(1, LCase(tn), "token") > 0 then tn = "(sidecar url)"
-            listed.Push(tn + "|" + Str_orEmpty(a.Description))
-        end if
-    end for
-    Diag_log("[siku-playback] hls subtitle rendition not found; listed=" + PlaybackCaps_join(listed, ";"))
+    Diag_log("[siku-playback] hls subtitle rendition not found; listed=" + listedSubtitlesForLog())
     if m.renditionRecoveryTried or m.plan = invalid or m.sessionId = "" then
         m.global.toast = "Couldn't show these subtitles"
         return
     end if
     m.renditionRecoveryTried = true
     sendReplan("failure_recovery", "subtitle", { classification: "subtitle_hls_rendition_failed", message: "The Roku Video node did not list the stream's WebVTT subtitle rendition" })
+end sub
+
+' Roku's subtitle listing as it may be printed: TrackName|Description|Language per track.
+function listedSubtitlesForLog() as string
+    listed = []
+    for each a in Arr_or(m.video.availableSubtitleTracks)
+        if a <> invalid and Type(a) = "roAssociativeArray" then
+            ' A sidecar's TrackName is its URL (with a token= fallback): never printed.
+            tn = Str_orEmpty(a.TrackName)
+            if Instr(1, tn, "://") > 0 or Instr(1, LCase(tn), "token") > 0 then tn = "(sidecar url)"
+            listed.Push(tn + "|" + Str_orEmpty(a.Description) + "|" + Str_orEmpty(a.Language))
+        end if
+    end for
+    return PlaybackCaps_join(listed, ";")
+end function
+
+sub logListedSubtitles()
+    Diag_log("[siku-playback] subtitle listing: " + listedSubtitlesForLog())
 end sub
 
 ' Quality change: replan and hand the new plan to the player at the current position.

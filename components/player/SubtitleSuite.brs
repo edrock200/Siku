@@ -140,6 +140,8 @@ end function
 ' timeline offset (so cues line up with a stream that starts mid-file) plus the viewer's delay.
 function Subs_buildTrack(t as object) as dynamic
     if Str_orEmpty(t.delivery) <> "sidecar" or Str_isEmpty(t.url) then return invalid
+    ' A track the server has no way to show (Silo Android #776) is never offered.
+    if Tracks_subtitleUnplayable(t) then return invalid
     path = LCase(t.url)
     q = Instr(1, path, "?")
     if q > 0 then path = Left(path, q - 1)
@@ -164,6 +166,7 @@ function Subs_buildTrack(t as object) as dynamic
         codec: Str_orEmpty(t.codec)
         combinedIndex: t.combined_index
         isVtt: isVtt
+        allRend: false
         storedId: Subs_storedIdOf(t)
         forced: t.forced = true
         hearingImpaired: t.hearing_impaired = true or Subs_labelIsSdh(Str_orEmpty(t.label))
@@ -190,7 +193,19 @@ function Subs_renditionTrack(t as object, rendition as object) as object
         hearingImpaired: t.hearing_impaired = true or Subs_labelIsSdh(Str_orEmpty(t.label))
         rendition: rendition.name
         renditionGroup: rendition.group_id
+        renditionIndex: Int(Num_or(rendition.index, 0))
+        allRend: false
     }
+end function
+
+' An inventory row the content plays from its own stream, never downloaded: an MKV original's
+' text track Roku lists as NAME ("mkv/<container_track_id>", native embedded, Silo Android #770).
+' No delay or timing tools (they work on a sidecar's URL).
+function Subs_nativeTrack(t as object, name as string) as object
+    out = Subs_renditionTrack(t, { name: "", group_id: "" })
+    out.native = name
+    out.streamName = name
+    return out
 end function
 
 ' "Embedded" / "External" / "Downloaded" ("In stream" for an HLS rendition), for the picker's detail.
@@ -233,9 +248,10 @@ end function
 ' full dialogue beats forced, plain beats SDH, then embedded beats external beats downloaded
 ' (external sidecars are the ones that drift out of sync); full ties keep the inventory order.
 ' Upstream's first tier, "a track the device renders itself beats one the server must burn in",
-' is settled before ranking on Roku: the candidates are m.subtitleTracks, which hold only the
-' WebVTT/SRT sidecars the Video node can show (an embedded text track is served as one), while
-' embedded PGS/VobSub/ASS tracks need a burn-in Siku never asks for, so they are not candidates.
+' is settled before ranking on Roku: the candidates are m.subtitleTracks, which hold only what the
+' Video node can show (WebVTT/SRT sidecars, an HLS stream's WebVTT renditions, an MKV's own SubRip
+' tracks), while embedded PGS/VobSub/ASS tracks need a burn-in Siku never asks for, so they are
+' not candidates, and neither is a track the server marks unplayable (Silo Android #776).
 ' "Prefer embedded" therefore applies only between tracks this Roku can actually display.
 '
 ' Silo Android #680 adds the series choice (the watch detail's effective_subtitle_track_signature,
@@ -389,7 +405,9 @@ function Subs_autoLangKey(code as dynamic) as string
     dash = Instr(1, c, "-")
     if dash > 0 then c = Left(c, dash - 1)
     if c = "" or c = "und" then return ""
-    folds = { eng: "en", spa: "es", fre: "fr", fra: "fr", ger: "de", deu: "de", dut: "nl", nld: "nl", jpn: "ja", dan: "da", ita: "it", por: "pt", rus: "ru", chi: "zh", zho: "zh", kor: "ko", swe: "sv", nor: "no", fin: "fi", pol: "pl" }
+    ' ISO 639-2 (bibliographic and terminology) to 639-1 for the languages libraries carry most
+    ' (silo-roku tracks.bs twoLetter): Roku reports a rendition's language either way.
+    folds = { ara: "ar", bul: "bg", cat: "ca", ces: "cs", cze: "cs", chi: "zh", zho: "zh", dan: "da", deu: "de", ger: "de", ell: "el", gre: "el", eng: "en", spa: "es", est: "et", fas: "fa", per: "fa", fin: "fi", fil: "tl", tgl: "tl", fra: "fr", fre: "fr", heb: "he", hin: "hi", hrv: "hr", hun: "hu", ind: "id", isl: "is", ice: "is", ita: "it", jpn: "ja", kor: "ko", lit: "lt", lav: "lv", msa: "ms", may: "ms", nld: "nl", dut: "nl", nor: "no", nob: "no", nno: "no", pol: "pl", por: "pt", ron: "ro", rum: "ro", rus: "ru", slk: "sk", slo: "sk", slv: "sl", srp: "sr", swe: "sv", tam: "ta", tel: "te", tha: "th", tur: "tr", ukr: "uk", vie: "vi" }
     if folds.DoesExist(c) then return folds[c]
     return c
 end function

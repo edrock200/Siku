@@ -642,7 +642,13 @@ sub onSubtitlesButton()
     comb = Tracks_subtitleCombined(tracks)
     for i = 0 to tracks.Count() - 1
         t = tracks[i]
-        acts.Push({ id: "s:" + comb[i].ToStr(), label: Tracks_subtitleTitle(t, i), detail: Tracks_subtitleDetail(t), checked: m.selSubtitle = comb[i] })
+        if Tracks_subtitleUnplayable(t) then
+            ' A track the server has no way to show (Silo Android #776): listed, never chosen, so
+            ' it never goes into the start request.
+            acts.Push({ id: "na:" + comb[i].ToStr(), label: Tracks_subtitleTitle(t, i), detail: "Unsupported format", checked: false })
+        else
+            acts.Push({ id: "s:" + comb[i].ToStr(), label: Tracks_subtitleTitle(t, i), detail: Tracks_subtitleDetail(t), checked: m.selSubtitle = comb[i] })
+        end if
     end for
     openSelectorMenu("subtitle", "Subtitles", acts)
 end sub
@@ -667,6 +673,9 @@ sub onSelectorChosen(kind as string, id as string)
             m.selSubtitle = -1
         else if Left(id, 2) = "s:" then
             m.selSubtitle = Int(Val(Mid(id, 3)))
+        else if Left(id, 3) = "na:" then
+            m.global.toast = "This subtitle track's format isn't supported, so it can't be shown."
+            return
         end if
         rememberSeriesSubtitle()
     end if
