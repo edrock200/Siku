@@ -823,15 +823,23 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
     if LCase(Left(url, 5)) = "https" then content.HttpCertificatesFile = "common:/certs/ca-bundle.crt"
     if m.duration > 0 then content.Length = Int(m.duration)
     m.resumeAfterStart = invalid
+    m.startSeek = invalid
+    ' A lead-in reanchor's load starts at its target, 10 s or more into the stream (PlayerSeekReanchor).
+    m.startLeadIn = PlaybackCaps_truthy(opts.leadIn)
     if opts.resumeAt <> invalid then
         ' Continue where we were (a replan or a subtitle remount); the server may already have
         ' anchored player_start_seconds there, and onVideoState seeks if it didn't.
         startAt = opts.resumeAt - m.timelineOffset
+        ' A float's 9.99998 must not truncate a lead-in's PlayStart below the 10 s Roku honours.
+        if m.startLeadIn then startAt = startAt + 0.01
         if startAt > 0 then content.PlayStart = Int(startAt)
         m.resumeAfterStart = opts.resumeAt
     else if Content_num(tl.player_start_seconds) > 0 then
         content.PlayStart = Int(Content_num(tl.player_start_seconds))
     end if
+    ' Roku can open a copy remux's growing playlist seconds past its start: the first "playing"
+    ' checks where it opened (SeekReanchor_checkStart).
+    if opts.resumeAt = invalid and SeekReanchor_isCopyRemux(plan) then m.resumeAfterStart = m.timelineOffset + Content_num(tl.player_start_seconds)
 
     ' Subtitles: only WebVTT/SRT sidecars can be rendered by the Video node (Subs_buildTrack adds
     ' the `token=` fallback and the timestamp_offset for the timeline offset and the viewer's delay).
@@ -972,6 +980,7 @@ end sub
 sub onVideoState()
     st = m.video.state
     Bufq_onVideoState(st)
+    SeekReanchor_onStartSeekState(st)
     if st = "buffering" then
         setBuffering(true)
     else if st = "playing" then
@@ -982,16 +991,14 @@ sub onVideoState()
         if not Recovery_reconnecting() then m.bufferLabel.text = "Buffering"
         m.isPaused = false
         m.playPauseBtn.iconUri = "pkg:/images/icons/pause.png"
+        pausing = m.pauseAfterStart
         if m.pauseAfterStart then
             ' A seek re-anchored while paused (PlayerSeekReanchor): the new plan stays paused there.
             m.pauseAfterStart = false
             m.video.control = "pause"
         end if
-        if m.resumeAfterStart <> invalid then
-            ' Only when PlayStart didn't land us there already.
-            if Abs(m.video.position + m.timelineOffset - m.resumeAfterStart) > 3 then seekToSource(m.resumeAfterStart)
-            m.resumeAfterStart = invalid
-        end if
+        ' Only when PlayStart didn't land us there already (a copy remux opened late reanchors).
+        if m.resumeAfterStart <> invalid then SeekReanchor_checkStart(pausing)
         if m.pendingSubtitleTrackId <> "" then
             for i = 0 to m.subtitleTracks.Count() - 1
                 if m.subtitleTracks[i].trackId = m.pendingSubtitleTrackId then setSubtitle(i)
@@ -1071,7 +1078,9 @@ sub onVideoDuration()
 end sub
 
 sub onVideoPosition()
-    if m.plan = invalid then return
+    ' A lead-in reanchor's hold: the stopped node's position is the old stream's.
+    if m.plan = invalid or m.reanchorHolding then return
+    SeekReanchor_checkStartSeek()
     m.position = m.video.position + m.timelineOffset
     if not m.scrubbing then m.scrubber.position = m.position
     checkMarkers()

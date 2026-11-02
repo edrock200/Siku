@@ -239,6 +239,8 @@
     <Timer id="subsAiTimer" duration="2" repeat="true" />
     <!-- How long a playing stream may take to list the plan's HLS subtitle rendition. -->
     <Timer id="renditionTimer" duration="8" />
+    <!-- PlayerSeekReanchor: a copy remux's lead-in reanchor is handed to the Video node this long after its answer. -->
+    <Timer id="reanchorHoldTimer" duration="1.5" />
     <!-- A subtitle selection is checked once this long after it (Roku settles; SubtitleSelect.brs). -->
     <Timer id="subsCheckTimer" duration="3.5" />
     <!-- How long a sidecar may take before "Loading subtitles…" shows. -->
