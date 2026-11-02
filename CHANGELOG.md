@@ -3,6 +3,13 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.34
+
+One change from Silo's Android TV app and Silo's own Roku app (November 2, 2026).
+
+**Changed**
+- **Requests moved to the profile menu.** The top bar is now Search, Home, your libraries, For You and Calendar, as in Silo's other TV apps. Requests is in the profile menu after History (when your server has requests turned on), and Up from the Requests page goes to the profile picture. If your server turns requests off, an open Requests page goes back to Home.
+
 ## v0.1.33
 
 Changes from Silo's Android TV app and Silo's own Roku app (November 1, 2026).

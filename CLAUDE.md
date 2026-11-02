@@ -233,6 +233,9 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   `start check` / `start seek` lines) is listed in `docs/diagnostics-v033.md`. On very large copy
   remuxes behind a proxy Silo's Roku app saw lead-in reanchors open at the stream's start (lands a few
   seconds early); Siku ships the lead-in like it does.
+- Requests is a profile-menu row after History while `/requests/status` enables it, not a top-bar tab
+  (Silo Android #782, silo-roku 5b296d7); Up from the Requests page focuses the avatar; a page left open
+  when requests turn off prints `[siku-requests] requests turned off; closing the page` and shows Home.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

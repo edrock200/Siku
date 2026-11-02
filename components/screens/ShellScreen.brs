@@ -164,8 +164,10 @@ end sub
 
 sub applyRequestsGate(g as object)
     Req_setGate(g)
-    if (tabIndex("requests") >= 0) <> (g.enabled = true) then buildTabs()
+    ' Requests lives in the profile menu (Silo Android #782); a Requests page closes to Home once
+    ' the server's status reads as off.
     if not g.enabled and m.currentKey = "requests" then
+        print "[siku-requests] requests turned off; closing the page"
         showHome()
         m.bar.selectedIndex = 0
     end if
@@ -206,7 +208,6 @@ sub buildTabs()
     end for
     tabs.Push({ id: "foryou", label: "For You", kind: "foryou", hasPanel: true })
     tabs.Push({ id: "calendar", label: "Calendar", kind: "calendar", hasPanel: false })
-    if Req_gate().enabled = true then tabs.Push({ id: "requests", label: "Requests", kind: "requests", hasPanel: false })
     ' Keep the selected tabDef by id across rebuilds.
     selectedId = "home"
     if m.tabs.Count() > 0 and m.bar.selectedIndex < m.tabs.Count() then selectedId = m.tabs[m.bar.selectedIndex].id
@@ -286,8 +287,6 @@ sub commitTab(index as integer)
         showHome()
     else if tabDef.kind = "calendar" then
         showPage("calendar", "CalendarPage", {})
-    else if tabDef.kind = "requests" then
-        showPage("requests", "RequestsPage", {})
     else if tabDef.kind = "foryou" then
         showPage("foryou", "ForYouPage", {})
     else if tabDef.kind = "library" then
@@ -483,6 +482,7 @@ sub openProfilePanel()
         { id: "watchlist", label: "Watchlist", icon: "bookmark" },
         { id: "favorites", label: "Favorites", icon: "heart" },
         { id: "history", label: "History", icon: "history" },
+        { id: "requests", label: "Requests", icon: "add" },
         { id: "notifications", label: "Notifications", icon: "notifications" },
         { id: "-" },
         { id: "settings", label: "Settings", icon: "settings" },
@@ -490,6 +490,14 @@ sub openProfilePanel()
         { id: "switch_server", label: "Switch Server", icon: "dns" },
         { id: "sign_out", label: "Sign Out", icon: "logout" }
     ]
+    ' Requests sits after History while the server enables it (Silo Android #782, silo-roku 5b296d7).
+    if Req_gate().enabled <> true then
+        rows = []
+        for each r in m.panelMain.rows
+            if r.id <> "requests" then rows.Push(r)
+        end for
+        m.panelMain.rows = rows
+    end if
     m.panelMain.focusIndex = 0
     m.panelMain.translation = [1920 - 88 - 480, 132]
     m.panelMain.visible = true
@@ -578,6 +586,11 @@ sub onProfileAction(id as string)
         closePanel()
         focusBar(avatarIndex)
         Nav_push("NotificationsScreen")
+    else if id = "requests" then
+        ' Opens like History opens its page; Up from it reaches the avatar.
+        closePanel()
+        showPage("requests", "RequestsPage", {})
+        focusContent()
     else if id = "watchlist" or id = "favorites" or id = "history" then
         closePanel()
         showPersonal(id)
@@ -690,6 +703,10 @@ function onKeyEvent(key as string, press as boolean) as boolean
         focusBar(m.bar.selectedIndex)
         return true
     else if key = "up" and not barFocused then
+        if m.currentKey = "requests" then
+            focusBar(m.tabs.Count())
+            return true
+        end if
         focusBar(m.bar.selectedIndex)
         return true
     end if
