@@ -3,6 +3,13 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.35
+
+One change from Silo's Android TV app and Silo's own Roku app (November 2, 2026).
+
+**Changed**
+- **A shorter profile menu.** Watchlist and Favorites are no longer in the profile menu; they are under For You, as in Silo's other TV apps. The profile menu now reads Switch Profile, History, Requests, Notifications, then Settings, Connect a Phone, Switch Server and Sign Out.
+
 ## v0.1.34
 
 One change from Silo's Android TV app and Silo's own Roku app (November 2, 2026).

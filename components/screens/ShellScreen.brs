@@ -478,9 +478,8 @@ sub openProfilePanel()
     m.panelMain.footer = ""
     m.panelMain.profile = { name: Str_orEmpty(s.profileName), "sub": role + " · " + server, avatar: Str_orEmpty(s.profileAvatar) }
     m.panelMain.rows = [
+        ' Watchlist and Favorites live under For You (Silo Android #786, silo-roku addf483).
         { id: "switch_profile", label: "Switch Profile", icon: "people" },
-        { id: "watchlist", label: "Watchlist", icon: "bookmark" },
-        { id: "favorites", label: "Favorites", icon: "heart" },
         { id: "history", label: "History", icon: "history" },
         { id: "requests", label: "Requests", icon: "add" },
         { id: "notifications", label: "Notifications", icon: "notifications" },
