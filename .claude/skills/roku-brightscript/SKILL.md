@@ -555,6 +555,137 @@ OS 16.0.4), adopted in v0.1.31, plus tool quirks found while building it:
   not move GetMemoryLimitPercent; cachefs survives a relaunch; LaunchApp/ECP fail store Static
   Analysis; render-thread rules now checked by `tests/test_thread_rules.py`.
 
+## Lessons from v0.1.33
+
+- brs-engine shares one for-each iterator per array: a helper that walks `plan.subtitle.inventory` called
+  inside a for-each over the same inventory ended the outer loop after one row (mount showed 2 of 5 rows).
+  Use index loops in any loop whose body calls helpers over the same array (now done in applyPlan and the
+  PlaybackCaps subtitle helpers).
+- Roku track names of the stream (`mkv/3`, `webvtt/1`) must be compared exactly; only sidecar URLs use
+  containment (Subs_isTrack / Subs_isFile).
+- Roku numbers HLS WebVTT renditions DEFAULT-first (silo-roku TCL run 2026-11-01); a SubtitleConfig naming the
+  plain playlist index opened the wrong language there.
+- Mock bug pattern: a Python local named like a module-level function (`detail`) anywhere in a function makes
+  every call to that function in it fail.
+- Focus look idiom changed: cards lift 1.05 by whole px per side about the top-left (CardFocus.brs) with
+  a 4 px white 70% outline and a black shadow 9-patch; replace "cards scale 1.10 with a ring" in
+  "Porting notes" / "Focus idiom".
+- Roku resamples a scaled Label's glyphs (blurred Inter on device, sroku d776b67). Never let a focus
+  Group's scale reach a Label: use `FocusText_place` (inverse scale about the same centre, whole-px
+  origin, box grown by the scale) with a Font of `Int(size * scale)` — rounded DOWN, since rounding to
+  nearest made text outgrow its box and ellipsize on a TCL (sroku 3fd96f1). Changing the Font per
+  animation frame is costly: place it when the scale settles.
+- Roku has no reduced-motion setting an app can read; Android's "no lift under reduced motion" cannot
+  be ported.
+- A Label's font size in single precision: `Int(25 * 1.04)` is 25, not 26; add a small epsilon.
+- `box` is also rejected by bsc as an AA key / local (pitfall 4 again, hit while porting).
+- Mock: never name a local `detail` (or any module helper) inside `route()`: Python makes it local for the
+  whole function and every catalog item request fails (second time this class of bug hit; v0.1.23 too).
+- A lifted card at a RowList's first visible slot is cut on the left by the list's own bounds; give the row
+  `focusXOffset` and move it left by the same amount (simulator shows this one).
+- Under host load brs-cli rendezvous timeouts crash the app (`EXIT_BRIGHTSCRIPT_CRASH`, "render thread
+  blocked"); not a code bug, rerun when `uptime` load is low.
+- Simulator: 8 parallel brs-cli runs on a loaded host made every snapshot fail ("snapshot failed");
+  run at most two at a time.
+- (mock) A local variable in a Python handler shadows a module helper for the whole function, even
+  in a branch that never runs: `code, _, detail = ...` in the info_status branch made every item
+  detail read fail. The v0.1.23 lesson again (loop variable shadowing a helper).
+- Never `ps | grep <pattern>` + kill in a command whose own text contains the pattern: it matched
+  the shell itself twice (exit 144). Print the pids in one command, kill them in the next.
+- brs-cli under load (load ~35-56) drops most keys sent by fixed `wait:` scripts; a reactive driver
+  that presses keys when a `[siku-…]` console line appears (scratchpad bsdrv/drive.py) worked first
+  time.
+- `m.top.findNode("titleLabel")` in BoxSetScreen returned ShellActionMenu's own internal
+  `titleLabel` (a child component's node; the screen's label sat deeper, inside page/hero groups), so
+  the title was set on the hidden menu and the hero showed none. Give screen nodes ids no child
+  widget uses (`boxSetTitle`); check new ids against the ids inside ShellActionMenu, PillButton etc.
+  Whether a Roku's findNode also descends into child components this way is unverified.
+- A one-row RowList whose items all fit should use `rowFocusAnimationStyle="floatingFocus"`: with
+  fixedFocus, jumping to (or coming Back to) the second card scrolls the first one off screen.
+- MediaCardItem has no Utils.brs in scope, so pill widths there are estimated from the text length
+  (~12 px a character at 19-21 px), not measured: check "BOX SET" / "THIS FILM" / "12 films" fit on a
+  device.
+
+## Simulator runs (scratchpad, driver bsdrv/drive.py)
+
+- sim33-boxsets-B: shell → Movies → Browse with box sets on: 21 cards, "BOX SET" cards with sleeves
+  (night_card.png, paper_card.png), OK opens The Paper Collection (paper_boxset.png).
+- sim33-boxsets-OFF / OFFS: `box_sets` switched off: 24 plain titles, no `group`, no box-set search.
+- sim33-boxsets-A / F: box set page, card menu Mark as Watched (POST /watched, facts "1 of 3 watched",
+  Play → "Continue · Midnight Garden"), title, Back from a film re-reads quietly and lands on its card.
+- sim33-boxsets-S: Search "night": Night Collection first, "4 results".
+- sim33-boxsets-D2 / T2: movie page row "The Paper Collection" / "Night Collection" with THIS FILM and
+  Explore all, first Down landing on the film on screen; library_id sent from a box set's film page.
+  Not exercised: OK on Explore all (the key run went past the row), the 1.5 s search grace, a refused
+  watched write on the box set page.
+### Playback (affect CLAUDE.md "Playback on Roku")
+1. ADDS (implemented here): Roku treats a growing copy-remux playlist (`EVENT`, no `ENDLIST`) as
+   live. A `PlayStart` near its start (0.2-1.6 s) is ignored: the load opens 4-8 s in, near the end
+   of the playlist as first read, and no seek in the first seconds goes below that (sroku runs 8-10;
+   W0-2 Streaming Stick 27/28). Roku honours `PlayStart` >= 10 s once the playlist reaches past it;
+   lead-in + 1.5 s hold: 14/14 within 1.06 s. Siku's old local "seek back" after a late start on a
+   copy remux therefore never landed on device.
+2. CONTRADICTS 1 on big streams (open item in sroku spec, Roku Ultra OS 16.0.4, 2026-11-01): on a
+   69 Mbps 4K Dolby Vision copy remux through a proxy origin (10-22 MB segments, slowly growing
+   playlist) Roku opened EVERY lead-in reanchor at the stream's origin (10.3-10.6 s short) because
+   the playlist had not grown past the target at its first read; the forward seek then landed 4.4
+   and 6.9 s in ("did not land"). Once the node also jumped back ~9 s by itself after a rebuffer.
+   sroku keeps the lead-in for ordinary seeks and resumes pending device runs (options: longer hold,
+   retried forward seek, or the server's `#EXT-X-START` / complete playlist). Siku's copy remuxes
+   are exactly the 4K HEVC/HDR case, so on big files a reanchor may now land ~4-6 s EARLY instead of
+   4-8 s late. FOR THE LEAD: decide whether to ship the lead-in as is (sroku does) and write the
+   upstream request for `#EXT-X-START`/complete playlists into docs/upstream/; I did not change
+   CLAUDE.md. The `start check` / `start seek ... landed=` lines will show which case a device hits.
+3. ADDS: a seek counts as landed only within 3 s of its target; "the position moved" is not landing
+   (W0-2: a seek back from 8.0 s to 0.2 s played on from 7.96 s).
+4. CONFIRMS: Roku reports position 0 while it rebuffers after a seek (run 10), so judge a seek at
+   the first position once it plays again or after 3 s.
+5. No finding in the diff touches audio over TS, HEVC/HDR10 from TS, Dolby Vision profiles,
+   passthrough, max bitrate, or `client_selected_audio_track_v1`: those CLAUDE.md facts stand.
+
+### Subtitles (for the subtitle-rendition slice; I did not touch SubtitleSelect/SubtitleSuite)
+6. ADDS: Roku draws an MKV original's own SubRip tracks natively, listed as `mkv/<Matroska
+   TrackNumber>` in `availableSubtitleTracks` 35-90 ms after `buffering`, before the first frame
+   (Ultra 16.0.4; TCL 15.3.4 PASS in-app). Content `SubtitleConfig: {TrackName: "mkv/N"}` preselects
+   before the first frame, also with `PlayStart`; `subtitleTrack = "mkv/N"` switches with a 150-250 ms
+   rebuffer. Not listed: Forced tracks, PGS, any MP4 (`mov_text`) track; SDH flag not reported.
+   ASS draws as plain text, `{\an8}` prints literally, `<i>` drawn upright. Contradicts nothing in
+   CLAUDE.md ("Roku renders only SRT/WebVTT sidecars" is Siku's choice, not a Roku limit) but would
+   change it if Siku adopted `native_embedded` (server feature `native_embedded_limitations_v1`).
+7. ADDS (important for any embedded/native work): a Forced track in the playing audio's language,
+   or a default-flagged PGS track, makes Roku draw THAT track instead of the selected embedded one,
+   while `subtitleTrack`/`currentSubtitleTrack` still report the selection. A side-loaded sidecar is
+   never overridden. Siku uses sidecars, so it is safe today.
+8. CONFIRMS Siku's Off handling: writing `subtitleTrack = ""` makes Roku fall back to its own pick
+   by caption language; caption mode Off draws nothing, Forced included. Siku sets
+   `globalCaptionMode = "Off"` with the empty track (PlayerScreen applyPlan / Off) - correct.
+9. ADDS: Roku numbers a stream's WebVTT renditions `webvtt/<n>` with the playlist's `DEFAULT` first,
+   then the others in playlist order (TCL 15.3.4, 2026-11-01). `Description` = the rendition `NAME`.
+   Preselecting `webvtt/<index>` by inventory index FAILED (played another language); `webvtt/1`
+   on a new stream whose `DEFAULT` is the plan's rendition PASSED. Before the playlist loads, Roku
+   lists the preselected `TrackName` alone (`Language` `eng`, no `Description`). Left alone, Roku
+   opened new content on its own rendition in the caption language (English) until the 3 s check
+   (Ultra, 2026-10-31), whatever `DEFAULT` said. -> subtitle slice should check Siku's rendition
+   selection against this numbering.
+10. ADDS: with `hls_subtitle_renditions_all_v1` the server lists every embedded text track as a
+    rendition (22 on a remux; switch in place reused the transport, answered in 25 ms, cues within
+    2 s; TCL). A copy remux's playlist there was a full VOD playlist (3,482 segments up front) - i.e.
+    a remux with renditions was NOT a growing EVENT playlist in that run.
+11. ADDS: first sidecar extraction of a 3.1 GB MKV on a CephFS server took 116 s cold, 1 s cached;
+    the server keeps extracting after a client timeout, so re-asking the same URL joins it; proxies
+    answer 502/504/524 meanwhile (sroku retries for 5 min, 120 s per try, backoff 2-30 s).
+
+### Skill (roku-brightscript) lessons
+12. Roku resamples a scaled Label's glyphs (blurs Inter's hinted stems): scale the art but set the
+    text at the scaled size rounded down to a whole px, on whole pixels (sroku `theme.placeUnscaled`).
+13. A Roku Ultra in its Suspend power mode fails loads with "Failed to create decoder"; ECP
+    `keypress/PowerOn` before a test run fixes it (not a stream problem).
+14. sroku moved card focus to tvOS's outlined lift (1.05 scale, 4 px white 70% outline inside the
+    edge); edges on whole px (a fractional edge drew a white line past the 9-patch frame) - UI, FYI
+    only (Siku follows Android TV).
+15. Tool note: `debugHoldSeek=1` did not open a hold session in my run; `debugVoice=seek:<s>` did
+    the far seek. The mock's route() `detail` shadowing (fixed here) broke every item/watch read.
+
 ## Release log
 
 One line per release: what that build taught about running on a real Roku. Add an entry for
@@ -593,3 +724,4 @@ released version is missing here.
 - **v0.1.30** Silo Android #737 (More Like This chain: the first rail pick pushes, later picks replace, the start title goes back; a one-move-per-page latch reset in `onScreenShown`). Lessons: in the simulator a detail page's similar-titles answer lands about 30 s after the page opens (the row is missing before), so wait 45-50 s per page; a DetailScreen's first Back closes it only when focus is already at the top; and a snapshot can still show the previous screen right after Back, so trust the `[siku-a11y]` lines and take a second snapshot. Device check pending: a long chain and Back.
 - **v0.1.31** Twenty-five items from a comparison with Silo's official Roku app (reconnect, progress, subtitles, AAC ceilings, saved servers, sign-out, first-run sign-in choice, debug gating, deep links, phone idle timeout, dates, calendar, filters, Requests layout, diagnostics, memory). Lessons: date-only ISO strings parse to 1970 on Roku OS 15.3.4 (the simulator hides it); Roku reports dropped connections as -3/-5 with the cause only in the text; select subtitles by Roku's listed TrackName; `Num_or` must never carry epoch seconds; debug deep links belong behind `#if DEBUG`, enforced by package_check; with six simulators running, wait 150 s+ and trust console lines over snapshots. Device checks pending for nearly all of it. The release workflow's `)[` grep also matches inside string literals (a regex in Diag.brs failed the first v0.1.31 release while package_check, which strips strings, passed): run the workflow's own grep `grep -rn ')\[' components source` before pushing a release.
 - **v0.1.32** Silo Android #773 (Search's request row drops in-library titles and hides when only those matched). Lessons: nothing new about devices; a new flag read in `layoutRequests` is initialised in `init` (pitfall 16), and `debugQuery` joins the DEBUG-only deep-link parameters.
+- **v0.1.33** Silo Android #646 (box sets), #770/#776 and Silo Roku's rendition work (subtitles from the stream, unplayable rows), #781 (focus outline), Silo Roku 01a0f42 (re-anchor lead-in). Lessons: brs-engine shares one for-each position per array, so nested helpers walking the same inventory cut loops short (use index loops); `m.top.findNode(id)` can return a child widget's node with the same id; Roku names an MKV's own text tracks `mkv/<TrackNumber>` and numbers HLS renditions DEFAULT first; a reanchored copy remux is an EVENT playlist Roku treats as live. Device checks pending for all of it.

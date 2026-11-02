@@ -3,6 +3,21 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.33
+
+Changes from Silo's Android TV app and Silo's own Roku app (November 1, 2026).
+
+**New**
+- **Movie box sets.** In a library with box sets turned on (on your server), Browse shows each film collection as one box set card with its film count and how many you have watched. A box set opens to its films in release order, with a Play button for the next film you haven't watched. Search lists matching box sets first, and a movie in a box set shows the set's other films on its page. Servers without box sets look the same as before.
+- **A new focus look.** A focused card lifts slightly with a thin white outline and a soft shadow, the same on every kind of card. On a series page the episode Play will start stays outlined while you are on the buttons. Focused buttons, sign-in fields and PIN keys draw their text crisply.
+
+**Better**
+- **Subtitles from the video itself.** On servers that support it, subtitles embedded in a video come straight from the stream: they show at once instead of waiting for the server to prepare a file, and switching between them or turning them off no longer restarts playback.
+- **Subtitles the server can't show** are listed as "Unsupported format" and can't be picked, so a title no longer fails to start because of one, and automatic subtitles skip them.
+- **Seeking far in a 4K or HDR video the server repackages** now lands where you asked instead of several seconds later (on very large streams it may land a few seconds early rather than late), and a resume that opens late moves back to where you left off.
+
+**Needs testing on a real Roku:** subtitles from the stream (switching, turning off), the new card look (nothing cut off at row edges), box sets against a real server, and seek accuracy on 4K copies.
+
 ## v0.1.32
 
 One change from Silo's Android TV app (November 1, 2026).

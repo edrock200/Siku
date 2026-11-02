@@ -227,6 +227,12 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   (Silo Android #773, `Req_withoutLibraryTitles`) and hides itself when every match is in the library.
   Simulator: `debugScreen=SearchScreen,debugQuery=<text>` (mock: "Northern" is in the library,
   "Starfall" is requestable).
+- v0.1.33 (subtitles from the stream: `hls_subtitle_renditions_all_v1`, `native_embedded_limitations_v1`
+  `mkv/<container_track_id>`, unplayable rows; the card focus look in `CardFocus.brs`/`FocusText.brs`;
+  movie box sets `[siku-boxsets]` and mock `--switch box_sets=1`; copy-remux re-anchor lead-in and the
+  `start check` / `start seek` lines) is listed in `docs/diagnostics-v033.md`. On very large copy
+  remuxes behind a proxy Silo's Roku app saw lead-in reanchors open at the stream's start (lands a few
+  seconds early); Siku ships the lead-in like it does.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 
