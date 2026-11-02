@@ -3,6 +3,9 @@
   Search (design-spec §4.5): big field at the top (OK opens the keyboard), filter chips
   All · Movies · Series (· Audiobooks), a People row, a poster grid and, when the server enables
   requests, an "Available to request" row. params: { query? }
+  While some library has box sets on (Silo Android #646), the All and Movies chips also ask
+  GET /api/v2/catalog/box-sets?q=&limit=5 and matching box sets lead the grid; the first titles wait
+  for them at most 1.5 s.
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="SearchScreen" extends="BaseScreen">
@@ -57,5 +60,7 @@
       <PillButton id="retryBtn" text="Try again" height="64" fontSize="24" translation="[0, 690]" visible="false" />
     </Group>
     <Timer id="debounce" duration="0.4" repeat="false" />
+    <!-- Box sets (Silo Android #646) hold the first titles back at most this long (BOX_SET_SEARCH_GRACE_MILLIS). -->
+    <Timer id="boxGrace" duration="1.5" repeat="false" />
   </children>
 </component>

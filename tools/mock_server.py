@@ -92,6 +92,16 @@ clears one); GET /mock/switch lists them.
                                  The log prints VTT slow key= waited=
   credits_twice=1                every version's marker_segments carry two credits ranges (duration-600..-420
                                  and duration-300..end; the singular credits field the first), Silo Android #694
+  box_sets=1                     movie box sets (Silo Android #646): library 1 lists box_sets_enabled true;
+                                 its browse with group=box_set answers one "box_set" card per collection
+                                 (BOX_SETS: "The Paper Collection" = Paper Moons + Paper Tigers, "Night
+                                 Collection" = Night Train + Midnight Garden + Small Hours) in place of
+                                 their movies; GET /catalog/box-sets/{id}?library_id=1 reads one
+                                 (404 elsewhere, or with the switch off) and GET /catalog/box-sets?q=&limit=
+                                 searches them (by name, or two or more film titles); GET /catalog/items/{id}/box-set
+                                 answers a member movie's box set ({} for others). Log: BOX SETS browse
+                                 library= group=, BOX SET <id> library= status=, BOX SET SEARCH q= n=,
+                                 BOX SET ITEM <id> library= found=
   info_status=<code>[:<detail>]  GET /system/info answers that status: a problem with that detail, or
                                  a bare text error without one (the address screen's "Could not reach
                                  server: <detail>" / "Could not reach a Silo server at that address.")
@@ -202,6 +212,49 @@ def movie(i):
         "overlay_summary": {"resolution": ["4K", "1080p", "1080p"][h(title) % 3], "hdr": ["HDR10", "", "Dolby Vision"][h(title) % 3], "audio": "EAC3"},
         "user_state": {"played": cid in STATE["watched"], "is_favorite": cid in STATE["favorites"], "in_watchlist": cid in STATE["watchlist"]},
     } | missing_artwork(title)
+
+
+# Movie box sets (switch box_sets=1, Silo Android #646): TMDB collections in library 1.
+BOX_SETS = [
+    {"id": "1241", "title": "The Paper Collection", "members": ["Paper Moons", "Paper Tigers"],
+     "overview": "Two films about paper promises, folded into one box set."},
+    {"id": "8650", "title": "Night Collection", "members": ["Night Train", "Midnight Garden", "Small Hours"],
+     "overview": "Three stories that start after dark."},
+]
+
+
+def box_sets_on():
+    return bool(STATE["switches"].get("box_sets"))
+
+
+def box_set_movies(bs):
+    """The box set's movies in collection (release) order."""
+    ms = [m for m in all_movies() if m["title"] in bs["members"]]
+    return sorted(ms, key=lambda m: (m["year"], m["title"]))
+
+
+def box_set_fields(bs, lib="1"):
+    ms = box_set_movies(bs)
+    years = [m["year"] for m in ms]
+    return {"id": bs["id"], "library_id": lib, "title": bs["title"], "overview": bs["overview"],
+            "poster_url": img("poster", "boxset-" + bs["id"]), "backdrop_url": img("backdrop", "boxset-" + bs["id"]),
+            "movie_count": len(ms), "played_count": sum(1 for m in ms if m["content_id"] in STATE["watched"]),
+            "first_year": min(years), "last_year": max(years)}
+
+
+def group_box_sets(items):
+    """group=box_set: each collection's movies collapse into one box set card where the first of them sat."""
+    out, seen = [], set()
+    for it in items:
+        bs = next((b for b in BOX_SETS if it.get("title") in b["members"] and it.get("type") == "movie"), None)
+        if bs is None:
+            out.append(it)
+        elif bs["id"] not in seen:
+            seen.add(bs["id"])
+            f = box_set_fields(bs)
+            out.append({"content_id": "box_set:" + bs["id"], "type": "box_set", "title": bs["title"],
+                        "poster_url": f["poster_url"], "backdrop_url": f["backdrop_url"], "box_set": f})
+    return out
 
 
 def missing_artwork(title):
@@ -2006,11 +2059,13 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/v2/system/info":
             info_fail = str(STATE["switches"].get("info_status") or "")
             if info_fail:
-                code, _, detail = info_fail.partition(":")
+                # (info_detail, not detail: a local named detail hid the detail() helper from the
+                # whole handler and every item read failed with UnboundLocalError.)
+                code, _, info_detail = info_fail.partition(":")
                 print("INFO answered %s (switch info_status)" % code, flush=True)
-                if detail:
+                if info_detail:
                     return self.send(int(code), {"type": "https://siloserver.org/docs/api/v2/problems/unavailable", "title": "Unavailable",
-                                                 "status": int(code), "detail": detail}, "application/problem+json")
+                                                 "status": int(code), "detail": info_detail}, "application/problem+json")
                 return self.send(int(code), b"error", "text/plain")
             return self.send(200, {"api_major": 2, "server_version": "mock", "contract_digest": "x", "links": {}})
         if p == "/api/v2/system/identity":
@@ -2177,6 +2232,10 @@ class Handler(BaseHTTPRequestHandler):
             if STATE["switches"].get("mixed_library"):
                 # A real server sends numeric ids; this one does, to exercise id normalisation.
                 libs.append({"id": 5, "name": "Everything", "type": "mixed", "sort_order": 4})
+            if box_sets_on():
+                # Servers without box sets send no box_sets_enabled at all.
+                for lib in libs:
+                    lib["box_sets_enabled"] = str(lib["id"]) == "1"
             return self.send(200, {"items": libs})
         if p == "/api/v2/home/sections":
             if OPTS["home_delay"] > 0:
@@ -2285,7 +2344,41 @@ class Handler(BaseHTTPRequestHandler):
                 items = items[h(str(time.time())) % len(items):][:1] or items[:1]
             else:
                 items = catalog_filter(items, q)
+            group = q.get("group", [""])[0]
+            if group and not q.get("cursor", [""])[0]:
+                print("BOX SETS browse library=%s group=%s" % (lib or "-", group), flush=True)
+                LOG.append("BOX SETS browse library=%s group=%s" % (lib or "-", group))
+            if group == "box_set" and lib == "1" and box_sets_on() and src == "query":
+                items = group_box_sets(items)
             return self.send(200, page(items, q))
+        if p == "/api/v2/catalog/box-sets":
+            text = q.get("q", [""])[0].strip().lower()
+            limit = int(q.get("limit", ["5"])[0] or 5)
+            if not box_sets_on():
+                return self.problem(404, "not_found", "Not found")
+            if not text or len(text) > 200 or not 1 <= limit <= 20:
+                return self.problem(422, "validation_failed", "q needs 1 to 200 characters and limit 1 to 20")
+            hits = [b for b in BOX_SETS if text in b["title"].lower() or sum(1 for t in b["members"] if text in t.lower()) >= 2]
+            print("BOX SET SEARCH q=%s n=%d" % (text, len(hits[:limit])), flush=True)
+            LOG.append("BOX SET SEARCH q=%s n=%d" % (text, len(hits[:limit])))
+            return self.send(200, {"items": [box_set_fields(b) for b in hits[:limit]]})
+        m = re.match(r"^/api/v2/catalog/box-sets/([^/]+)$", p)
+        if m:
+            lib = q.get("library_id", [""])[0]
+            bs = next((b for b in BOX_SETS if b["id"] == unquote(m.group(1))), None)
+            ok = box_sets_on() and bs is not None and lib == "1"
+            print("BOX SET %s library=%s status=%d" % (m.group(1), lib or "-", 200 if ok else 404), flush=True)
+            LOG.append("BOX SET %s library=%s" % (m.group(1), lib or "-"))
+            if not ok:
+                return self.problem(404, "not_found", "Box set not found")
+            ms = []
+            for mv in box_set_movies(bs):
+                mv = dict(mv)
+                pos = STATE["progress"].get(mv["content_id"], 0)
+                if pos:
+                    mv["position_seconds"] = pos
+                ms.append(mv)
+            return self.send(200, dict(box_set_fields(bs, lib), items=ms))
         if p == "/api/v2/catalog/themes/capabilities":
             return self.send(200, {"revision": "mock-1", "state": "available", "allowed": True, "delivery": "routed",
                                    "transcode": True, "cluster_routing": False, "grant_lifetime_seconds": 300})
@@ -2302,6 +2395,20 @@ class Handler(BaseHTTPRequestHandler):
         if m:
             LOG.append("THEME AUDIO %s %s" % (m.group(1), m.group(2)))
             return self.send(200, silent_wav(), "audio/wav")
+        m = re.match(r"^/api/v2/catalog/items/(.+)/box-set$", p)
+        if m:
+            # A movie's box set (getCatalogItemBoxSet): {"box_set": {...}} or {} for a movie in none.
+            cid = unquote(m.group(1))
+            lib = q.get("library_id", [""])[0]
+            bs = next((b for b in BOX_SETS for mv in box_set_movies(b) if mv["content_id"] == cid), None)
+            found = box_sets_on() and bs is not None and lib in ("", "1")
+            print("BOX SET ITEM %s library=%s found=%s" % (cid, lib or "-", found), flush=True)
+            LOG.append("BOX SET ITEM %s found=%s" % (cid, found))
+            if not box_sets_on():
+                return self.problem(404, "not_found", "Not found")
+            if not found:
+                return self.send(200, {})
+            return self.send(200, {"box_set": dict(box_set_fields(bs, "1"), items=box_set_movies(bs))})
         m = re.match(r"^/api/v2/catalog/items/(.+)$", p)
         if m:
             d = detail(m.group(1))

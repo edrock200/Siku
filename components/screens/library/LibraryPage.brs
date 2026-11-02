@@ -477,6 +477,12 @@ sub requestPage(cursor as string)
         if src = "" then src = "query"
         q.source = src
         if not Str_isEmpty(prm("libraryId")) then q.library_id = prm("libraryId")
+        ' A library with box sets on (Silo Android #646) browses each TMDB collection as one box set
+        ' card. The server groups before paging, so every page carries the same grouping.
+        if boxSetsGrouped() then
+            q.group = "box_set"
+            if cursor = "" then Diag_log(Diag_join(["[siku-boxsets] browse library=", prm("libraryId"), " view=", m.mode, " group=box_set"]))
+        end if
     end if
     mt = Str_orEmpty(prm("mediaType"))
     if mt <> "" then q["type"] = mt
@@ -509,6 +515,13 @@ sub requestPage(cursor as string)
         Api_get("/api/v2/catalog", q, "onPage", ctx)
     end if
 end sub
+
+' Browse, A-Z and Genres of a library whose GET /api/v2/user/libraries row has box_sets_enabled
+' (the shell passes it as params.boxSetsEnabled); everything else browses exactly as before.
+function boxSetsGrouped() as boolean
+    if m.drill <> invalid or not BoxSet_isTrue(prm("boxSetsEnabled", false)) then return false
+    return m.mode = "browse" or m.mode = "alphabet" or m.mode = "genres"
+end function
 
 ' The watch-status filter as a catalog rule. Flag rules carry JSON booleans: the server answers
 ' 500 to "true"/"false" strings (Silo Android #702; the Apple clients send booleans too).
@@ -1130,6 +1143,11 @@ sub onGridSelected()
         enterGroup(card)
         return
     end if
+    ' A box set card opens its box set at once: it has no card menu to hold OK for.
+    if BoxSet_of(card) <> invalid then
+        CardActions_openDetail(card)
+        return
+    end if
     if LongPress_enabled() then
         m.pendingSelect = idx
         m.pressTimer.control = "stop"
@@ -1600,7 +1618,7 @@ sub openOptionsFor(idx as integer)
     card = m.cards[idx]
     if card = invalid then return
     t = LCase(Str_orEmpty(card.type))
-    if t = "collection" or t = "audiobook_group" then return
+    if t = "collection" or t = "audiobook_group" or BoxSet_of(card) <> invalid then return
     m.optionsTarget = { index: idx, card: card }
     m.menu.title = Str_orEmpty(card.title)
     m.menu.actions = CardActions_build(card, "")

@@ -26,6 +26,7 @@ sub init()
     m.panelTab = -1
     m.panelLibs = []
     m.currentLibraryId = ""
+    m.currentLib = invalid   ' {tabId, libraryId, section} of the library page on screen
     m.profileId = Str_orEmpty(m.global.session.profileId)
     ' Fetch bookkeeping: the libraries and the requests gate load when the screen is shown
     ' (onScreenShown runs right after init) and again only when stale (see refreshData).
@@ -105,7 +106,32 @@ sub onLibraries(event as object)
     if not resp.ok or resp.data = invalid then return
     m.libsLoadedAt = Time_nowSeconds()
     m.libraries = Arr_or(resp.data.items)
+    ' Search asks for box sets only while some library has them on (Silo Android #646).
+    available = BoxSet_anyEnabled(m.libraries)
+    if not m.global.hasField("boxSetsAvailable") then m.global.addFields({ boxSetsAvailable: false })
+    m.global.boxSetsAvailable = available
     buildTabs()
+    refreshBoxSetBrowse()
+end sub
+
+' A library list that turns box sets on or off for the library on screen rebuilds its browse, which
+' groups differently (TvLibraryDetailScreen keys its view model on the flag).
+sub refreshBoxSetBrowse()
+    if m.currentLib = invalid or Left(m.currentKey, 4) <> "lib:" or m.currentPage = invalid then return
+    if m.currentLib.section = "recommended" then return
+    for each lib in Settings_withoutHiddenLibraries(m.libraries)
+        if Str_orEmpty(lib.id) = m.currentLib.libraryId then
+            if BoxSet_isTrue(lib.box_sets_enabled) <> BoxSet_isTrue(AA_get(m.currentPage.params, "boxSetsEnabled", false)) then
+                ti = tabIndex(m.currentLib.tabId)
+                if ti >= 0 then
+                    Diag_log(Diag_join(["[siku-boxsets] box sets turned ", BoxSet_isTrue(lib.box_sets_enabled), " for the library on screen; rebuilding its browse"]))
+                    commitLibrary(m.tabs[ti], lib, m.currentLib.section)
+                    if m.focusArea = "content" then focusContent()
+                end if
+            end if
+            return
+        end if
+    end for
 end sub
 
 ' Requests feature gate (RequestsFeatureStore): the tab and the search row appear only when the
@@ -277,11 +303,15 @@ sub commitLibrary(tabDef as object, lib as object, section as string)
     m.bar.selectedIndex = tabIndex(tabDef.id)
     mediaType = ""
     if Library_mode(lib.type) = "mixed" then mediaType = Str_orEmpty(tabDef.mediaType)
+    boxSets = BoxSet_isTrue(lib.box_sets_enabled)
     key = "lib:" + libId + ":" + section + ":" + mediaType
+    ' A box set library's browse groups differently, so it is another page (Silo Android #646).
+    if boxSets and section <> "recommended" then key = key + ":box_sets"
+    m.currentLib = { tabId: tabDef.id, libraryId: libId, section: section }
     if section = "recommended" then
         showPage(key, "HomePage", { libraryId: libId, libraryName: libName, mode: Library_mode(lib.type), mediaType: mediaType })
     else
-        showPage(key, "LibraryPage", { section: section, libraryId: libId, libraryName: libName, mode: Library_mode(lib.type), mediaType: mediaType })
+        showPage(key, "LibraryPage", { section: section, libraryId: libId, libraryName: libName, mode: Library_mode(lib.type), mediaType: mediaType, boxSetsEnabled: boxSets })
     end if
 end sub
 

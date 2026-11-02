@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  One movie box set (Silo Android #646, TvBoxSetScreen): the detail hero (backdrop, title, facts
+  "Box set · 8 films · 2001 – 2011 · 3 of 8 watched", synopsis) with Play on the next movie to watch
+  ("Play <title>" / "Continue · <title>"), then the box set's movies in release order on one row.
+  Focus starts on Play; Down reaches the row's first movie and Up returns to Play. OK on a movie opens
+  its page; a long OK or Options opens its card menu (Play, Mark as Watched, Favorites, Watchlist),
+  and a watched change moves the count and the play target at once. Coming back to the page re-reads
+  the box set. GET /api/v2/catalog/box-sets/{id}?library_id=; a 404 shows it as unavailable.
+  params: { boxSetId (or itemId), libraryId, title? }
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="BoxSetScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/screens/BoxSetScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/widgets/HomeCardActions.brs" />
+  <children>
+    <Rectangle id="bg" width="1920" height="1080" color="0x040D0FFF" />
+    <Group id="page" visible="false">
+      <Group id="hero">
+        <MaskGroup id="backdropMask" maskUri="pkg:/images/ui/mask_backdrop.png" maskSize="[1229, 756]" translation="[691, 0]">
+          <Poster id="backdrop" loadWidth="1229" loadHeight="756" width="1229" height="756" loadDisplayMode="scaleToZoom" />
+        </MaskGroup>
+        <!-- Not "titleLabel": ShellActionMenu below has one, and brs-engine's findNode found it first. -->
+        <Label id="boxSetTitle" width="1080" wrap="true" maxLines="2" color="0xEDEDEDFF" visible="false">
+          <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="72" />
+        </Label>
+        <Label id="facts" width="1080" maxLines="1" color="0xEDEDEDEB">
+          <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />
+        </Label>
+        <Label id="overview" width="1080" wrap="true" maxLines="3" lineSpacing="6" color="0xEDEDEDBF">
+          <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="28" />
+        </Label>
+        <PillButton id="playBtn" text="Play" variant="solid" iconUri="pkg:/images/icons/play.png" height="76" padX="54" fontSize="27" />
+      </Group>
+      <Group id="moviesSection">
+        <Label id="moviesHeader" text="Movies" color="0xEDEDEDFF">
+          <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+        </Label>
+        <!-- Cards sit 32 px down inside taller cells: a real Roku clips items to their cell (pitfall 12);
+             the box set's sleeves are not drawn on member cards, only the focus zoom needs the room. -->
+        <RowList id="movieRow" translation="[0, 28]" itemComponentName="MediaCardItem"
+                 itemSize="[1820, 418]" rowItemSize="[[176, 418]]" rowItemSpacing="[[40, 0]]" numRows="1"
+                 drawFocusFeedback="false" rowFocusAnimationStyle="floatingFocus" showRowLabel="[false]" />
+      </Group>
+    </Group>
+    <LoadingSpinner id="spinner" translation="[924, 504]" />
+    <Group id="messageGroup" visible="false">
+      <Poster id="messageIcon" uri="pkg:/images/icons/error.png" width="72" height="72" translation="[924, 400]" blendColor="0xEDEDED9E" />
+      <Label id="messageLabel" width="1200" translation="[360, 500]" horizAlign="center" wrap="true" color="0xEDEDEDBF">
+        <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="30" />
+      </Label>
+      <PillButton id="retryBtn" text="Retry" translation="[890, 620]" />
+    </Group>
+    <ShellActionMenu id="menu" />
+    <Timer id="pressTimer" duration="0.6" repeat="false" />
+    <Animation id="scrollAnim" duration="0.32" easeFunction="outCubic">
+      <Vector2DFieldInterpolator id="scrollInterp" key="[0.0, 1.0]" fieldToInterp="page.translation" />
+    </Animation>
+  </children>
+</component>

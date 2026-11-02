@@ -24,6 +24,19 @@ sub init()
     m.exploreIcon = m.top.findNode("exploreIcon")
     m.exploreLabel = m.top.findNode("exploreLabel")
     m.isExplore = false
+    m.sleeves = m.top.findNode("sleeves")
+    m.sleeveBack = m.top.findNode("sleeveBack")
+    m.sleeveFrontEdge = m.top.findNode("sleeveFrontEdge")
+    m.sleeveFront = m.top.findNode("sleeveFront")
+    m.boxPill = m.top.findNode("boxPill")
+    m.boxPillBg = m.top.findNode("boxPillBg")
+    m.boxPillRing = m.top.findNode("boxPillRing")
+    m.boxPillLabel = m.top.findNode("boxPillLabel")
+    m.cornerTag = m.top.findNode("cornerTag")
+    m.cornerTagBg = m.top.findNode("cornerTagBg")
+    m.cornerTagLabel = m.top.findNode("cornerTagLabel")
+    m.isBoxSet = false
+    m.isMarked = false
     m.reportedUri = ""
     m.title = m.top.findNode("title")
     m.subtitle = m.top.findNode("subtitle")
@@ -53,6 +66,21 @@ sub onContent()
     ' RowList reuses item components, so every state is set for every content.
     m.isExplore = c.hasField("exploreAll") and c.exploreAll = true
     m.explore.visible = m.isExplore
+    ' A box set card (Content.brs boxSet / cornerLabel); every other card resets it (reuse).
+    m.isBoxSet = (not m.isExplore) and c.hasField("boxSet") and c.boxSet = true
+    m.sleeves.visible = m.isBoxSet
+    ' markedBadge: the movie on screen in a movie page's box set row, outlined at rest and tagged
+    ' ("THIS FILM", TvMediaRow markedContentId / markedBadge).
+    marked = ""
+    if not m.isExplore and c.hasField("markedBadge") then marked = c.markedBadge
+    m.isMarked = marked <> ""
+    m.boxPill.visible = m.isBoxSet or m.isMarked
+    if m.isMarked then m.boxPillLabel.text = marked else m.boxPillLabel.text = "BOX SET"
+    m.cornerTag.visible = false
+    if m.isBoxSet and c.hasField("cornerLabel") then
+        m.cornerTagLabel.text = c.cornerLabel
+        m.cornerTag.visible = c.cornerLabel <> ""
+    end if
     if m.isExplore then
         m.image.uri = ""
         m.initialsText.visible = false
@@ -211,7 +239,8 @@ sub layout()
     c = m.top.itemContent
     progress = 0
     if c <> invalid and c.progress <> invalid then progress = c.progress
-    hasProgress = progress > 0.01 and progress < 0.995
+    ' A box set's bar is the share of its films watched, which may be all of them.
+    hasProgress = progress > 0.01 and (progress < 0.995 or m.isBoxSet)
     m.track.visible = hasProgress
     m.fill.visible = hasProgress
     m.shade.visible = hasProgress
@@ -243,12 +272,51 @@ sub layout()
     m.badgeIcon.height = bs * 0.7
     m.badgeIcon.translation = [bs * 0.15, bs * 0.15]
 
+    if m.isBoxSet then layoutBoxSet(w, h)
+    if m.isBoxSet or m.isMarked then layoutPill()
+
     m.title.width = w
     m.subtitle.width = w
     m.title.translation = [0, h + 22]
     m.subtitle.translation = [0, h + 56]
     m.title.visible = m.title.text <> ""
     m.subtitle.visible = m.subtitle.text <> ""
+end sub
+
+' The sleeves rise 6 and 3 dp above the poster at Android's 140 dp reference width (web BoxSetCard:
+' 6 px and 3 px over a 12 px radius), scaled with the card; the back one is inset 10% a side, the
+' front one 5% with a 1 px edge. Each runs 44 px down under the poster, which hides that part.
+' The cell's 30 px cardInsetY leaves room for them (pitfall 12).
+sub layoutBoxSet(w as float, h as float)
+    scale = w / 280.0
+    backRise = Int(12 * scale + 0.5)
+    frontRise = Int(6 * scale + 0.5)
+    bx = Int(w * 0.10)
+    m.sleeveBack.translation = [bx, -backRise]
+    m.sleeveBack.width = w - 2 * bx
+    m.sleeveBack.height = backRise + 44
+    fx = Int(w * 0.05)
+    m.sleeveFrontEdge.translation = [fx, -frontRise - 1]
+    m.sleeveFrontEdge.width = w - 2 * fx
+    m.sleeveFrontEdge.height = frontRise + 45
+    m.sleeveFront.translation = [fx + 1, -frontRise]
+    m.sleeveFront.width = w - 2 * fx - 2
+    m.sleeveFront.height = frontRise + 43
+    ' Estimated width: this item has no text measuring helper (Utils.brs is not in its scope), and
+    ' the label centres in it; the count at ~12 px a character.
+    tw = Len(m.cornerTagLabel.text) * 12 + 18
+    m.cornerTagBg.width = tw
+    m.cornerTagLabel.width = tw
+    m.cornerTag.translation = [w - tw - 12, h - 32 - 30]
+end sub
+
+' The "BOX SET" / "THIS FILM" pill in the top-left corner, ~12 px a character at 19 px semibold.
+sub layoutPill()
+    pw = Len(m.boxPillLabel.text) * 12 + 28
+    m.boxPillBg.width = pw
+    m.boxPillRing.width = pw
+    m.boxPillLabel.width = pw
+    m.boxPill.translation = [12, 12]
 end sub
 
 sub onFocus()
@@ -260,6 +328,7 @@ sub onFocus()
     s = 1.0 + 0.10 * p
     m.card.scale = [s, s]
     m.border.opacity = p
+    if m.isMarked and p < 0.7 then m.border.opacity = 0.7
     m.glow.opacity = p * 0.9
     if m.isExplore then
         ' White 8% at rest, 16% focused (over black; opaque, so the focus glow behind the tile
