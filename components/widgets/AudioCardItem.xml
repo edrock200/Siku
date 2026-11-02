@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Square media card for album / audiobook rails (RowList itemComponentName="AudioCardItem").
-  Same content fields and focus idiom as MediaCardItem (scale 1.10, 4 px #EDEDED ring, glow),
+  Same content fields and focus look as MediaCardItem (components/common/CardFocus.brs: a 5% lift,
+  a 4 px white outline at 70% and a black drop shadow; the caption only brightens),
   but with a 1:1 image: album covers and audiobook covers are square.
   Reads ContentNode fields set by Content_cardNode: title, subtitle, HDPosterUrl.
   SPDX-License-Identifier: AGPL-3.0-or-later
@@ -18,15 +19,16 @@
     <field id="gridHasFocus" type="boolean" onChange="onFocus" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/AudioCardItem.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/CardFocus.brs" />
   <children>
     <Group id="card">
-      <Poster id="glow" uri="pkg:/images/ui/r20.9.png" blendColor="0xFFFFFF47" opacity="0" />
+      <Poster id="glow" uri="pkg:/images/ui/card_shadow.9.png" blendColor="0x00000080" visible="false" />
       <Poster id="placeholder" uri="pkg:/images/ui/r16.9.png" blendColor="0x15171CFF" />
       <Poster id="placeholderIcon" uri="pkg:/images/icons/album.png" blendColor="0xEDEDED40" />
       <MaskGroup id="mask" maskUri="pkg:/images/ui/mask_square.png">
         <Poster id="image" loadDisplayMode="scaleToZoom" />
       </MaskGroup>
-      <Poster id="border" uri="pkg:/images/ui/r16_ring4.9.png" blendColor="0xEDEDEDFF" opacity="0" />
+      <Poster id="border" uri="pkg:/images/ui/r16_ring4.9.png" blendColor="0xFFFFFFB3" visible="false" />
     </Group>
     <Label id="title" color="0xEDEDEDC7" horizAlign="left" maxLines="1">
       <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="27" />

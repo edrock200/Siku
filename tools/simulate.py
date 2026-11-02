@@ -107,10 +107,19 @@ def main():
             pump(float(step[5:]))
         elif step.startswith("snap:"):
             name = step[5:]
-            before = set(os.listdir(OUT))
+            # brs-cli saves every snapshot as <zip name>.png; on a busy host it can take several
+            # seconds, and one that landed late used to fail every later snap (same file name).
+            # Compare modification times and wait up to 8 s.
+            before = {f: os.path.getmtime(os.path.join(OUT, f)) for f in os.listdir(OUT) if f.endswith(".png")}
             os.write(fd, b"\x13")  # Ctrl+S
-            pump(1.5)
-            new = [f for f in set(os.listdir(OUT)) - before if f.endswith(".png")]
+            new = []
+            for _ in range(16):
+                pump(0.5)
+                new = [f for f in os.listdir(OUT) if f.endswith(".png")
+                       and before.get(f) != os.path.getmtime(os.path.join(OUT, f))]
+                if new:
+                    pump(0.5)  # let the file finish writing
+                    break
             if new:
                 os.replace(os.path.join(OUT, new[0]), os.path.join(OUT, name + ".png"))
                 print("snapshot", name)

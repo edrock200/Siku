@@ -20,6 +20,7 @@ sub init()
     gridW = m.keySize * 3 + m.gapX * 2
     startX = (1920 - gridW) / 2
     m.keys = []
+    m.fonts = {}
     m.digitFont = CreateObject("roSGNode", "Font")
     m.digitFont.uri = "pkg:/fonts/Inter-regular.otf"
     m.digitFont.size = 38
@@ -45,7 +46,7 @@ sub init()
                 ico.width = 34
                 ico.height = 34
                 ico.translation = [33, 33]
-                m.keys.Push({ group: g, fill: fill, ring: ring, icon: ico, label: invalid })
+                m.keys.Push({ group: g, fill: fill, ring: ring, icon: ico, label: invalid, rest: invalid })
             else
                 lbl = g.createChild("Label")
                 Label_setFont(lbl, "regular", 38)
@@ -54,7 +55,7 @@ sub init()
                 lbl.height = m.keySize
                 lbl.horizAlign = "center"
                 lbl.vertAlign = "center"
-                m.keys.Push({ group: g, fill: fill, ring: ring, icon: invalid, label: lbl })
+                m.keys.Push({ group: g, fill: fill, ring: ring, icon: invalid, label: lbl, rest: FocusText_rest(lbl) })
             end if
         else
             m.keys.Push(invalid)
@@ -166,11 +167,14 @@ sub renderKeys()
                 k.fill.blendColor = "0xEDEDEDFF"
                 k.ring.visible = false
                 k.group.scale = [1.08, 1.08]
+                ' The digit is set at 1.08 its size, not resampled with the key (FocusText.brs).
+                if k.label <> invalid then FocusText_place(k.label, k.rest, k.group.scaleRotateCenter, 1.08, 1.08, m.fonts)
                 ink = "0x000000FF"
             else
                 k.fill.blendColor = "0xFFFFFF21"
                 k.ring.visible = true
                 k.group.scale = [1.0, 1.0]
+                if k.label <> invalid then FocusText_place(k.label, k.rest, k.group.scaleRotateCenter, 1.0, 1.0, m.fonts)
                 ink = "0xEDEDEDFF"
             end if
             if k.label <> invalid then k.label.color = ink

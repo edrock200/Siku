@@ -30,6 +30,12 @@ sub init()
     m.style = "poster"
     m.insetX = 0
     m.insetY = 0
+    ' Labels drawn over the art: their resting boxes (FocusText_rest), the Fonts made for the lifted
+    ' card, and whether they are placed for it now.
+    m.artLabels = [m.placeholderText, m.initialsText, m.exploreLabel]
+    m.artRest = []
+    m.fonts = {}
+    m.textLifted = false
     m.image.observeField("loadStatus", "onImageStatus")
 end sub
 
@@ -68,11 +74,11 @@ sub onContent()
         return
     end if
     m.placeholder.blendColor = "0x15171CFF"
-    ' Decode the artwork at the card's drawn size (with room for the 1.10 focus zoom) instead of the
+    ' Decode the artwork at the card's drawn size (with room for the 1.05 focus lift) instead of the
     ' server's full image; the load size must be set before the uri.
     sz = imageSize()
-    m.image.loadWidth = Int(sz[0] * 1.1)
-    m.image.loadHeight = Int(sz[1] * 1.1)
+    m.image.loadWidth = Int(sz[0] * CardFocus_scale() + 0.5)
+    m.image.loadHeight = Int(sz[1] * CardFocus_scale() + 0.5)
     m.image.uri = c.HDPosterUrl
     initials = ""
     if c.initials <> invalid then initials = c.initials
@@ -152,16 +158,17 @@ function artAspect() as string
 end function
 
 sub layout()
+    ' Back to the resting boxes before they are measured again below.
+    placeArtLabels(false)
     size = imageSize()
     w = size[0]
     h = size[1]
     m.inner.translation = [m.insetX, m.insetY]
-    m.card.scaleRotateCenter = [w / 2, h / 2]
     if m.style = "circle" then
         m.mask.maskUri = "pkg:/images/ui/mask_circle.png"
         m.placeholder.uri = "pkg:/images/ui/circle.png"
-        m.border.uri = "pkg:/images/ui/circle_ring.png"
-        m.glow.uri = "pkg:/images/ui/circle.png"
+        m.border.uri = "pkg:/images/ui/card_ring_circle.png"
+        m.glow.uri = "pkg:/images/ui/card_shadow_circle.png"
         m.title.horizAlign = "center"
         m.subtitle.horizAlign = "center"
     else if m.style = "landscape" then
@@ -192,9 +199,7 @@ sub layout()
     m.defaultMark.translation = [(w - ms) \ 2, (h - ms) \ 2]
     m.border.width = w
     m.border.height = h
-    m.glow.width = w + 24
-    m.glow.height = h + 24
-    m.glow.translation = [-12, -12]
+    CardFocus_layoutShadow(m.glow, w, h)
     m.playGlyph.translation = [(w - 60) / 2, (h - 60) / 2]
     if m.isExplore then
         ' Arrow circle over the label, centred as one block (88 + 16 + label height).
@@ -249,6 +254,14 @@ sub layout()
     m.subtitle.translation = [0, h + 56]
     m.title.visible = m.title.text <> ""
     m.subtitle.visible = m.subtitle.text <> ""
+
+    ' The art labels' resting boxes, for drawing them unscaled on the lifted card.
+    m.artRest = []
+    for each lbl in m.artLabels
+        lbl.setFields({ scale: [1.0, 1.0], scaleRotateCenter: [0.0, 0.0] })
+        m.artRest.Push(FocusText_rest(lbl))
+    end for
+    onFocus()
 end sub
 
 sub onFocus()
@@ -257,13 +270,14 @@ sub onFocus()
     ' focused; rowListHasFocus (also set by RowList) tells us whether it is.
     listFocused = (m.top.rowHasFocus and m.top.rowListHasFocus) or m.top.gridHasFocus
     if not listFocused then p = 0
-    s = 1.0 + 0.10 * p
-    m.card.scale = [s, s]
-    m.border.opacity = p
-    m.glow.opacity = p * 0.9
+    size = imageSize()
+    w = size[0]
+    h = size[1]
+    CardFocus_apply(m.card, m.border, m.glow, w, h, p, [0, 0], false)
+    placeArtLabels(p >= 1)
     if m.isExplore then
-        ' White 8% at rest, 16% focused (over black; opaque, so the focus glow behind the tile
-        ' does not show through it); the circle and label brighten with it.
+        ' White 8% at rest, 16% focused (over black; opaque, so the shadow behind the tile does not
+        ' show through it); the circle and label brighten with it.
         if p > 0.5 then
             m.placeholder.blendColor = "0x2E2F33FF"
             m.exploreCircle.blendColor = "0xFFFFFF3D"
@@ -274,15 +288,29 @@ sub onFocus()
             m.exploreLabel.color = "0xEDEDEDD9"
         end if
     end if
+    ' Only the caption's colour changes, so a cut-off title does not reflow; the lift reaches
+    ' less than the caption's gap below the card, so the caption stays put.
     if p > 0.5 then
         m.title.color = "0xEDEDEDFF"
     else
         m.title.color = "0xEDEDEDC7"
     end if
-    ' Keep the caption below the scaled image.
-    size = imageSize()
-    h = size[1]
-    grow = h * 0.05 * p
-    m.title.translation = [0, h + 22 + grow]
-    m.subtitle.translation = [0, h + 56 + grow]
+end sub
+
+' The labels on the art (Explore all, initials, a person's name) are set at the lifted size once
+' the lift settles, instead of being resampled with the card (FocusText.brs); at rest and while
+' the lift animates they sit in their resting boxes.
+sub placeArtLabels(lifted as boolean)
+    if lifted = m.textLifted then return
+    if m.artRest.Count() <> m.artLabels.Count() then return
+    m.textLifted = lifted
+    sx = 1.0
+    sy = 1.0
+    if lifted then
+        sx = m.card.scale[0]
+        sy = m.card.scale[1]
+    end if
+    for i = 0 to m.artLabels.Count() - 1
+        FocusText_place(m.artLabels[i], m.artRest[i], [0, 0], sx, sy, m.fonts)
+    end for
 end sub

@@ -8,7 +8,7 @@ Names: images/ui/r{radius}.9.png (fill), images/ui/r{radius}_ring{w}.9.png (outl
 Run: python3 scripts/make_ui.py
 """
 import os
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 OUT = os.path.join(os.path.dirname(__file__), "..", "images", "ui")
 SS = 4  # supersampling
@@ -96,6 +96,33 @@ def hgradient(w, h, stops, name):
     img.save(os.path.join(OUT, name))
 
 
+def card_shadow():
+    """A focused card's drop shadow (Silo Android TV #781, tvOS TVCardOutline): white, tinted black
+    by blendColor. A radius-16 card blurred 8 px, with 24 px around it for the blur; MediaCardItem
+    draws it 48 px larger than the card and 10 px lower (images/ui/card_shadow.9.png). The round
+    one, for people, is a 200 px circle in a 248 px image (images/ui/card_shadow_circle.png)."""
+    pad, r, blur = 24, 16, 8
+    # 24 px of flat middle keeps the blur off the stretched centre row and column.
+    s = 2 * (pad + r) + 24
+    big = Image.new("L", (s * SS, s * SS), 0)
+    ImageDraw.Draw(big).rounded_rectangle([pad * SS, pad * SS, (s - pad) * SS - 1, (s - pad) * SS - 1],
+                                          radius=r * SS, fill=255)
+    a = big.resize((s, s), Image.LANCZOS).filter(ImageFilter.GaussianBlur(blur))
+    img = Image.new("RGBA", (s, s), (255, 255, 255, 0))
+    img.putalpha(a)
+    ninepatch(img, "card_shadow")
+    d = 200
+    s = d + 2 * pad
+    big = Image.new("L", (s * SS, s * SS), 0)
+    ImageDraw.Draw(big).ellipse([pad * SS, pad * SS, (s - pad) * SS - 1, (s - pad) * SS - 1], fill=255)
+    a = big.resize((s, s), Image.LANCZOS).filter(ImageFilter.GaussianBlur(blur))
+    img = Image.new("RGBA", (s, s), (255, 255, 255, 0))
+    img.putalpha(a)
+    img.save(os.path.join(OUT, "card_shadow_circle.png"))
+    # The focus outline of a 200 px person circle: 4 px, as r16_ring4 on the other cards.
+    circle(200, ring=4).save(os.path.join(OUT, "card_ring_circle.png"))
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     for r in (6, 8, 12, 14, 16, 20, 22, 26, 28, 30, 32, 38, 40, 42):
@@ -125,6 +152,7 @@ def main():
             ha = min(1.0, tx / 0.68)
             px[x, y] = (255, 255, 255, int(255 * ha * va))
     img.save(os.path.join(OUT, "mask_backdrop.png"))
+    card_shadow()
 
 
 if __name__ == "__main__":

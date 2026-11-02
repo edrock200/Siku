@@ -2006,11 +2006,12 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/v2/system/info":
             info_fail = str(STATE["switches"].get("info_status") or "")
             if info_fail:
-                code, _, detail = info_fail.partition(":")
+                # Not `detail`: a local of that name shadows the module's detail() for all of route().
+                code, _, info_detail = info_fail.partition(":")
                 print("INFO answered %s (switch info_status)" % code, flush=True)
-                if detail:
+                if info_detail:
                     return self.send(int(code), {"type": "https://siloserver.org/docs/api/v2/problems/unavailable", "title": "Unavailable",
-                                                 "status": int(code), "detail": detail}, "application/problem+json")
+                                                 "status": int(code), "detail": info_detail}, "application/problem+json")
                 return self.send(int(code), b"error", "text/plain")
             return self.send(200, {"api_major": 2, "server_version": "mock", "contract_digest": "x", "links": {}})
         if p == "/api/v2/system/identity":

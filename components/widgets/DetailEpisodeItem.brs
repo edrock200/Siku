@@ -1,6 +1,9 @@
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
 sub init()
+    m.card = m.top.findNode("card")
+    m.shadow = m.top.findNode("shadow")
+    m.insetY = 0
     m.placeholder = m.top.findNode("placeholder")
     m.placeholderIcon = m.top.findNode("placeholderIcon")
     m.mask = m.top.findNode("mask")
@@ -8,7 +11,6 @@ sub init()
     m.track = m.top.findNode("progressTrack")
     m.fill = m.top.findNode("progressFill")
     m.badge = m.top.findNode("watchedBadge")
-    m.currentRing = m.top.findNode("currentRing")
     m.focusRing = m.top.findNode("focusRing")
     m.eyebrow = m.top.findNode("eyebrow")
     m.title = m.top.findNode("title")
@@ -28,13 +30,13 @@ end function
 sub onContent()
     c = m.top.itemContent
     if c = invalid then return
+    m.insetY = fieldOr(c, "cardInsetY", 0)
     m.image.uri = c.HDPosterUrl
     m.eyebrow.text = fieldOr(c, "eyebrow", "")
     m.title.text = c.title
     m.meta.text = fieldOr(c, "meta", "")
     m.synopsis.text = fieldOr(c, "synopsis", "")
     m.badge.visible = fieldOr(c, "watched", false) = true
-    m.currentRing.visible = fieldOr(c, "isCurrent", false) = true
     m.aiIcon.visible = fieldOr(c, "aiTranslated", false) = true
     layout()
 end sub
@@ -56,10 +58,9 @@ sub layout()
     m.mask.maskSize = [w, h]
     m.image.width = w
     m.image.height = h
-    m.currentRing.width = w
-    m.currentRing.height = h
     m.focusRing.width = w
     m.focusRing.height = h
+    CardFocus_layoutShadow(m.shadow, w, h)
     m.badge.translation = [w - 44 - 12, 12]
 
     c = m.top.itemContent
@@ -78,7 +79,7 @@ sub layout()
 
     ' Caption: "S01E02 · Title" over "Feb 18, 2026  ·  52m", then the description (#644). The
     ' meta line keeps its place when empty so every card in the rail lines up.
-    top = h + 14
+    top = m.insetY + h + 14
     if m.eyebrow.text <> "" then
         m.eyebrow.translation = [0, top]
         top = top + 24
@@ -93,19 +94,22 @@ sub layout()
     m.eyebrow.visible = m.eyebrow.text <> ""
     m.meta.visible = m.meta.text <> ""
     ' Compact AI marker at the right end of the meta line; the meta text stops short of it.
-    m.aiIcon.translation = [w - 24, h + 80]
+    m.aiIcon.translation = [w - 24, m.insetY + h + 80]
     if m.aiIcon.visible then m.meta.width = w - 36
+    onFocus()
 end sub
 
 sub onFocus()
     p = m.top.focusPercent
-    if not m.top.rowHasFocus then p = 0
-    m.focusRing.opacity = p
-    if p > 0.5 then
+    if not (m.top.rowHasFocus and m.top.rowListHasFocus) then p = 0
+    w = m.top.width
+    if w <= 0 then w = 360
+    h = Int(w * 9 / 16)
+    current = fieldOr(m.top.itemContent, "isCurrent", false) = true
+    CardFocus_apply(m.card, m.focusRing, m.shadow, w, h, p, [0, m.insetY], current)
+    if p > 0.5 or current then
         m.title.color = "0xEDEDEDFF"
-        m.currentRing.visible = false
     else
         m.title.color = "0xEDEDEDC7"
-        m.currentRing.visible = fieldOr(m.top.itemContent, "isCurrent", false) = true
     end if
 end sub
