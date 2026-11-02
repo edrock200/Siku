@@ -758,7 +758,7 @@ sub layoutBody()
     gap = 64
     if m.episodesSection.visible then
         m.episodesSection.translation = [x, y]
-        y = y + 130 + 420 + gap
+        y = y + 110 + 440 + gap
     end if
     if m.castSection.visible then
         m.castSection.translation = [x, y]
@@ -1030,6 +1030,7 @@ sub onEpisodes(event as object)
         ep = m.episodes[i]
         ' Spoiler protection drops an unwatched episode's still (Content_cardNode) and description.
         node = Content_cardNode(ep, "landscape")
+        node.cardInsetY = 20 ' headroom for the lifted still (DetailScreen.xml episodeRow)
         node.title = Content_episodeCaptionTitle(ep)
         node.description = Content_episodeCaptionMeta(airDateText(ep.air_date), toInt(ep.runtime)) ' read by the screen reader
         node.addFields({

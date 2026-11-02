@@ -14,9 +14,16 @@ sub init()
     m.timeLabel = m.top.findNode("time")
     m.dot = m.top.findNode("dot")
     m.ring = m.top.findNode("ring")
+    ' Labels drawn unscaled on the focused (1.02) card, their resting boxes and fonts (FocusText.brs).
+    m.texts = [m.titleLabel, m.subtitle, m.timeLabel]
+    m.textRest = []
+    m.fonts = {}
 end sub
 
 sub layout()
+    for each lbl in m.texts
+        lbl.setFields({ scale: [1.0, 1.0], scaleRotateCenter: [0.0, 0.0] })
+    end for
     c = m.top.card
     if c = invalid then return
     w = m.top.width
@@ -123,6 +130,10 @@ sub finish(w as float, h as float)
     m.ring.translation = [-2, -2]
     m.body.scaleRotateCenter = [w / 2, h / 2]
     m.top.rowHeight = h
+    m.textRest = []
+    for each lbl in m.texts
+        m.textRest.Push(FocusText_rest(lbl))
+    end for
     applyFocus()
 end sub
 
@@ -130,10 +141,14 @@ sub applyFocus()
     if m.bgIdle = invalid then return
     f = m.top.focused
     m.ring.visible = f
-    if f then
-        m.body.scale = [1.02, 1.02]
-    else
-        m.body.scale = [1.0, 1.0]
+    s = 1.0
+    if f then s = 1.02
+    m.body.scale = [s, s]
+    ' The text keeps its own size on the scaled card: Roku resamples scaled glyphs (blurred).
+    if m.textRest.Count() = m.texts.Count() then
+        for i = 0 to m.texts.Count() - 1
+            FocusText_place(m.texts[i], m.textRest[i], m.body.scaleRotateCenter, s, s, m.fonts)
+        end for
     end if
     m.bg.blendColor = m.bgIdle
 end sub

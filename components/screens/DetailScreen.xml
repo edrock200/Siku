@@ -88,16 +88,18 @@
           </Label>
           <!-- Shown when the first seasons/episodes request failed: the only focusable thing there. -->
           <PillButton id="episodesRetryBtn" text="Retry" translation="[0, 200]" visible="false" />
-          <RowList id="episodeRow" translation="[0, 130]" itemComponentName="DetailEpisodeItem"
-                   itemSize="[1820, 420]" rowItemSize="[[360, 420]]" rowItemSpacing="[[40, 0]]" numRows="1"
+          <!-- Stills sit 20 px down inside 440 px cells (cardInsetY), the row 20 px higher: a real Roku
+               clips items to their cell (pitfall 12), and a focused still lifts and casts a shadow. -->
+          <RowList id="episodeRow" translation="[-20, 110]" focusXOffset="[20]" itemComponentName="DetailEpisodeItem"
+                   itemSize="[1840, 440]" rowItemSize="[[360, 440]]" rowItemSpacing="[[40, 0]]" numRows="1"
                    drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" showRowLabel="[false]" />
         </Group>
         <Group id="castSection" visible="false">
           <Label id="castHeader" text="Cast &amp; Crew" color="0xEDEDEDFF">
             <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
           </Label>
-          <RowList id="castRow" translation="[0, 28]" itemComponentName="MediaCardItem"
-                   itemSize="[1820, 332]" rowItemSize="[[200, 332]]" rowItemSpacing="[[44, 0]]" numRows="1"
+          <RowList id="castRow" translation="[-20, 28]" focusXOffset="[20]" itemComponentName="MediaCardItem"
+                   itemSize="[1840, 332]" rowItemSize="[[200, 332]]" rowItemSpacing="[[44, 0]]" numRows="1"
                    drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" showRowLabel="[false]" />
         </Group>
         <Group id="trailersSection" visible="false">
@@ -105,16 +107,16 @@
             <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
           </Label>
           <!-- Cards sit 32 px down inside 370 px cells: a real Roku clips items to their cell (pitfall 12). -->
-          <RowList id="trailersRow" translation="[0, 28]" itemComponentName="MediaCardItem"
-                   itemSize="[1820, 370]" rowItemSize="[[440, 370]]" rowItemSpacing="[[40, 0]]" numRows="1"
+          <RowList id="trailersRow" translation="[-20, 28]" focusXOffset="[20]" itemComponentName="MediaCardItem"
+                   itemSize="[1840, 370]" rowItemSize="[[440, 370]]" rowItemSpacing="[[40, 0]]" numRows="1"
                    drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" showRowLabel="[false]" />
         </Group>
         <Group id="relatedSection" visible="false">
           <Label id="relatedHeader" text="Related Movies" color="0xEDEDEDFF">
             <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
           </Label>
-          <RowList id="relatedRow" translation="[0, 28]" itemComponentName="MediaCardItem"
-                   itemSize="[1820, 396]" rowItemSize="[[176, 396]]" rowItemSpacing="[[40, 0]]" numRows="1"
+          <RowList id="relatedRow" translation="[-20, 28]" focusXOffset="[20]" itemComponentName="MediaCardItem"
+                   itemSize="[1840, 396]" rowItemSize="[[176, 396]]" rowItemSpacing="[[40, 0]]" numRows="1"
                    drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" showRowLabel="[false]" />
         </Group>
         <Group id="detailsSection" visible="false">

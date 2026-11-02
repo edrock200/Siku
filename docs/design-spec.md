@@ -35,7 +35,7 @@ There is no chromatic accent. Every "accent" is white at some opacity.
 | ChromeSelectedFill / Border | white @ 14% / white @ 10% | selected-but-unfocused top tab capsule |
 | SubtleSurface / GlassFill | white @ 8% | |
 | DarkOutline / OutlineVariant | white @ 12% / 8% | |
-| Focus glow (SiloBlueGlow) | white @ 28% | card focus glow, 12 dp elevation |
+| Card focus shadow (CardOutline.shadowColor) | black @ 45% | focused card drop shadow, 12 dp elevation (was the white SiloBlueGlow before Silo Android #781) |
 | SiloBlueBorderIdle | white @ 16% | |
 | ProgressTrack / ProgressFill | white @ 20% / `#EDEDED` | resume bars (3 dp tall, i.e. 6 px) |
 | CardShadow | black @ 55% | |
@@ -127,7 +127,11 @@ because Roku has no blur or gradient brush. The mark is a white icon at 13% opac
 
 ### 1.5 Focus treatment (`UI/theme/FocusModifier.kt`)
 
-- **Cards** (`siloCardDefaults`): scale **1.10**, border **2 dp `#EDEDED`**, glow white @ 28% at 12 dp elevation.
+- **Cards** (`siloCardDefaults`, `CardOutline`, Silo Android #781, as tvOS): scale **1.05** (none under the system's
+  reduced motion; Roku has no such setting), outline **2 dp white @ 70%** (4 px on Roku), black drop shadow @ 45% at
+  12 dp elevation. Every card uses it: poster, landscape, episode, Explore all, cast, calendar, collection, audiobook
+  group. The series page's current episode (the one Play acts on) keeps the outline, without the lift, while focus is
+  elsewhere. Roku: `components/common/CardFocus.brs` (lift by whole px on each side, after Silo's Roku app).
 - **Generic focusables** (`siloFocus`): scale 1.06, 2 dp white border, 6 dp corners, 14 dp black-55% shadow, spring damping 0.72 / stiffness 380.
 - **Tabs, menu rows, pills and settings rows:** no scale. They **invert to a solid `#EDEDED` fill with black text**. This is the dominant focus idiom.
 - **Hero primary pill (Play):**
@@ -756,4 +760,4 @@ The full string list is in `ROOT/androidTvApp/src/androidMain/res/values/strings
 ## 6. Two things that are easy to miss
 
 1. **Text size:** remember the 0.86 font scale. Convert text at 1.72 px per sp; geometry stays at 2 px per dp.
-2. **Focus style:** almost every control signals focus by **inverting to `#EDEDED` with black content**. Only cards (scale 1.10, 2 dp white border, white glow) and avatar tiles (scale 1.12 plus a ring) scale up. Use this consistently on Roku for the same look.
+2. **Focus style:** almost every control signals focus by **inverting to `#EDEDED` with black content**. Only cards (scale 1.05, 2 dp white outline at 70%, black drop shadow; Silo Android #781) and avatar tiles (scale 1.12 plus a ring) scale up. Use this consistently on Roku for the same look.

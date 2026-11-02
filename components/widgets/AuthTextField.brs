@@ -8,6 +8,9 @@ sub init()
     m.icon = m.top.findNode("icon")
     m.value = m.top.findNode("value")
     m.dialog = invalid
+    ' The value's resting font and the larger ones made for the focused field (FocusText.brs).
+    m.valueFont = m.value.font
+    m.fonts = {}
     m.top.focusable = true
     m.top.observeField("focusedChild", "render")
     layout()
@@ -32,8 +35,7 @@ sub render()
     else
         m.icon.visible = false
     end if
-    m.value.translation = [textX, 0]
-    m.value.width = m.top.fieldWidth - textX - 30
+    rest = { rect: [textX, 0, m.top.fieldWidth - textX - 30, 84], font: m.valueFont }
 
     t = m.top.text
     empty = (t = "")
@@ -55,6 +57,8 @@ sub render()
         m.icon.blendColor = "0x00000073"       ' black 45%
         if empty then m.value.color = "0x00000066" else m.value.color = "0x000000FF"
         m.body.scale = [1.04, 1.04]
+        ' The text is set at 1.04 its size, not resampled with the field (blurred on device).
+        FocusText_place(m.value, rest, m.body.scaleRotateCenter, 1.04, 1.04, m.fonts)
     else
         if m.top.error then m.bg.blendColor = "0xFFFFFF0F" else m.bg.blendColor = "0xFFFFFF14"
         m.ring.visible = true
@@ -62,6 +66,7 @@ sub render()
         m.icon.blendColor = "0xEDEDED66"
         if empty then m.value.color = "0xEDEDED66" else m.value.color = "0xEDEDEDFF"
         m.body.scale = [1.0, 1.0]
+        FocusText_place(m.value, rest, m.body.scaleRotateCenter, 1.0, 1.0, m.fonts)
     end if
     if m.top.disabled then m.body.opacity = 0.5 else m.body.opacity = 1.0
     announce(focused)

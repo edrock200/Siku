@@ -9,6 +9,8 @@ sub init()
     m.font = CreateObject("roSGNode", "Font")
     m.font.uri = "pkg:/fonts/Inter-semibold.otf"
     m.label.font = m.font
+    m.labelRest = invalid
+    m.fonts = {}
     m.top.focusable = true
     m.top.observeField("focusedChild", "applyState")
     layout()
@@ -30,6 +32,9 @@ end function
 
 sub layout()
     h = m.top.height
+    ' Measure and place the label at rest (a focused one is drawn unscaled in a larger font).
+    m.label.setFields({ scale: [1.0, 1.0], scaleRotateCenter: [0.0, 0.0] })
+    m.label.font = m.font
     m.font.size = m.top.fontSize
     m.label.text = m.top.text
     m.label.width = 0
@@ -68,6 +73,7 @@ sub layout()
     end if
     m.label.height = h
     m.body.scaleRotateCenter = [w / 2, h / 2]
+    m.labelRest = FocusText_rest(m.label)
     m.top.width = Int(w + 0.5) ' `width` is an integer field; a float would be dropped on device (pitfall 5)
     applyState()
 end sub
@@ -83,8 +89,10 @@ sub applyState()
         m.icon.blendColor = "0x000000FF"
         s = m.top.scaleOnFocus
         m.body.scale = [s, s]
+        placeLabel(s)
     else
         m.body.scale = [1, 1]
+        placeLabel(1.0)
         m.label.color = "0xEDEDEDFF"
         m.icon.blendColor = "0xEDEDEDFF"
         if v = "plain" then
@@ -135,3 +143,10 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
     return false
 end function
+
+' Roku resamples a scaled Label's glyphs (blurred text): the label keeps scale 1 inside the scaled
+' capsule and is set at the scaled size, rounded down so it never outgrows its box (FocusText.brs).
+sub placeLabel(s as float)
+    if m.labelRest = invalid then return
+    FocusText_place(m.label, m.labelRest, m.body.scaleRotateCenter, s, s, m.fonts)
+end sub

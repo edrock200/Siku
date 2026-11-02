@@ -17,6 +17,7 @@
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/NotificationRow.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/FocusText.brs" />
   <children>
     <Group id="body">
       <Poster id="bg" uri="pkg:/images/ui/r28.9.png" blendColor="0x15171CCC" />

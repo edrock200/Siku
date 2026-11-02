@@ -25,7 +25,10 @@ Siku is a Roku SceneGraph channel written in BrightScript. It ports the Silo **A
 - **Scrims:** `images/ui/scrim_bottom.png`, `scrim_top.png`, `scrim_left.png`, `scrim_bottom_player.png` and `mask_backdrop.png`.
 - **Focus idiom:**
   - Buttons, tabs, menu rows and pills invert to a solid `#EDEDED` fill with black text and icons.
-  - Media cards scale to 1.10 and show a 4 px `#EDEDED` ring and glow. `MediaCardItem` does this for you.
+  - Focused cards lift 5% (whole px per side), with a 4 px white outline at 70% and a black drop shadow
+    (Silo Android #781). `components/common/CardFocus.brs` draws it for `MediaCardItem`, `AudioCardItem`,
+    `CalCardItem` and `DetailEpisodeItem`. A Label inside a scaled focus group is drawn at its own size in a
+    font rounded down (`components/common/FocusText.brs`), since Roku blurs scaled glyphs.
 
 ## Files
 

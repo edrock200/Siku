@@ -200,8 +200,8 @@
         <Label id="onDeckLabel" text="On Deck" color="0xEDEDEDDB">
           <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="29" />
         </Label>
-        <RowList id="onDeckRow" translation="[0, 12]" itemComponentName="MediaCardItem"
-                 itemSize="[1760, 300]" rowItemSize="[[272, 300]]" rowItemSpacing="[[32, 0]]" numRows="1"
+        <RowList id="onDeckRow" translation="[-20, 12]" focusXOffset="[20]" itemComponentName="MediaCardItem"
+                 itemSize="[1780, 300]" rowItemSize="[[272, 300]]" rowItemSpacing="[[32, 0]]" numRows="1"
                  drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" showRowLabel="[false]" />
       </Group>
     </Group>

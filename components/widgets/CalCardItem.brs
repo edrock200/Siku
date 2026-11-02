@@ -61,17 +61,18 @@ sub forward()
     m.inner.itemHasFocus = m.top.itemHasFocus
     m.inner.rowHasFocus = m.top.rowHasFocus
     m.inner.gridHasFocus = m.top.gridHasFocus
-    ' Keep the badges and the time over the (scaled) poster corners; the poster sits cardInsetY px down.
+    m.inner.rowListHasFocus = m.top.rowListHasFocus
+    ' Keep the badges and the time over the lifted poster's corners (CardFocus.brs: the poster
+    ' grows by whole px about its top-left, moved back by the lift); it sits cardInsetY px down.
     p = m.top.focusPercent
-    if not (m.top.rowHasFocus or m.top.gridHasFocus) then p = 0
+    if not ((m.top.rowHasFocus and m.top.rowListHasFocus) or m.top.gridHasFocus) then p = 0
     w = m.top.width
-    grow = Int(w * 0.05 * p)
-    off = 12 - grow
+    h = Int(w * 3 / 2)
     insetY = 0
     c = m.top.itemContent
     if c <> invalid and c.hasField("cardInsetY") and c.cardInsetY <> invalid then insetY = c.cardInsetY
-    m.badges.translation = [off, off + insetY]
-    ' Poster cards are 2:3; the scaled poster grows by grow px on each side (scale 1.10 about its centre).
-    h = Int(w * 3 / 2)
-    m.timeTag.translation = [w - m.timeW - 12 + grow, insetY + h - 32 - 12 + Int(h * 0.05 * p)]
+    tl = CardFocus_point(12, 12, w, h, p)
+    m.badges.translation = [Int(tl[0] + 0.5), Int(tl[1] + 0.5) + insetY]
+    br = CardFocus_point(w - 12, h - 12, w, h, p)
+    m.timeTag.translation = [Int(br[0] + 0.5) - m.timeW, Int(br[1] + 0.5) - 32 + insetY]
 end sub
