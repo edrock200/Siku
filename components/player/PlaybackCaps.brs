@@ -326,11 +326,161 @@ end function
 ' seek_reanchor_v1 is a server feature; like Silo's Android apps, Siku lists it too when the
 ' server advertises it, since it answers can_seek_anywhere:false plans with seek_reanchor replans
 ' (PlayerSeekReanchor.brs).
+' hls_subtitle_renditions_all_v1 (Silo Android #770, instant-subtitles contract C3; extends the
+' two above): every embedded text track of an HLS plan becomes a WebVTT rendition of its stream,
+' each inventory row naming its own (hls_rendition { group_id, name, index }), so the player
+' switches among them, or to Off, on the stream it plays. Listed only when the server advertises it.
+' embedded_subtitles_v1 asks for native embedded subtitles (PlaybackCaps_nativeEmbedded); it goes
+' only to a server that advertises native_embedded_limitations_v1, which honours the limitations
+' a Roku needs (one without it would plan native for files where Roku draws another track).
 function PlaybackCaps_clientFeatures() as object
     out = ["playback_plan_v3", "hls_subtitle_renditions_v1", "hls_remux_subtitle_renditions_v1"]
     if PlaybackCaps_serverHas("seek_reanchor_v1") then out.Push("seek_reanchor_v1")
+    if PlaybackCaps_allRenditionsNegotiable() then out.Push("hls_subtitle_renditions_all_v1")
+    if PlaybackCaps_nativeSubtitlesNegotiable() then out.Push("embedded_subtitles_v1")
     return out
 end function
+
+function PlaybackCaps_allRenditionsNegotiable() as boolean
+    return PlaybackCaps_serverHas("hls_subtitle_renditions_all_v1")
+end function
+
+function PlaybackCaps_nativeSubtitlesNegotiable() as boolean
+    return PlaybackCaps_serverHas("native_embedded_limitations_v1")
+end function
+
+' The original_http delivery's native_embedded entry (instant-subtitles contract C2). Roku's own
+' MKV demuxer lists an embedded text track as "mkv/<Matroska TrackNumber>", which the server sends
+' as container_track_id, and draws it in Roku's caption style: SubRip only (ASS draws as plain
+' text, MP4 lists no text track). The limitations tell the server what Roku cannot do: select a
+' Forced track (not listed), draw the selection on a file whose Forced track is in the playing
+' audio's language or whose bitmap track is flagged default (Roku draws that hidden track
+' instead, and reports the selection as playing), and hide ASS override tags such as {\an8}.
+' Adapted from Silo-Server/silo-roku, AGPL-3.0 (source/playback/capabilities.bs nativeEmbedded;
+' its 2026-10-29 native embedded spike on an Ultra, OS 16.0.4, and the 2026-10-30 TCL run).
+function PlaybackCaps_nativeEmbedded() as object
+    return {
+        container: "mkv"
+        codecs: ["subrip"]
+        track_identity: "container_track_id"
+        ass_styling: false
+        font_attachments: false
+        limitations: ["forced_unlisted", "hidden_track_preemption", "literal_override_tags"]
+    }
+end function
+
+' "mkv/<id>" for a container_track_id in canonical decimal above 0 (the only form the server
+' sends: "4", never "04"), else "".
+function PlaybackCaps_nativeName(containerTrackId as dynamic) as string
+    t = Type(containerTrackId)
+    id = ""
+    if t = "roString" or t = "String" or t = "roInt" or t = "roInteger" or t = "Integer" then id = PlaybackCaps_str(containerTrackId)
+    if id = "" or Len(id) > 10 or Left(id, 1) = "0" then return ""
+    for i = 1 to Len(id)
+        if Instr(1, "0123456789", Mid(id, i, 1)) = 0 then return ""
+    end for
+    return "mkv/" + id
+end function
+
+' Whether the plan plays an MKV original (the one stream whose own text tracks Roku lists).
+function PlaybackCaps_isMkvOriginal(plan as dynamic) as boolean
+    if plan = invalid or Type(plan) <> "roAssociativeArray" then return false
+    if LCase(Str_orEmpty(plan.delivery)) <> "original_http" then return false
+    st = plan.stream
+    if st = invalid or Type(st) <> "roAssociativeArray" then return false
+    if LCase(Str_orEmpty(st.protocol)) = "hls" then return false
+    c = LCase(Str_orEmpty(st.container))
+    return c = "mkv" or c = "matroska"
+end function
+
+' The TrackName of the plan's own native embedded subtitle ("mkv/4"), or "": a render decision
+' with an embedded selection, no artifact and no rendition, on an MKV original.
+function PlaybackCaps_nativeSubtitleName(plan as dynamic) as string
+    if not PlaybackCaps_isMkvOriginal(plan) then return ""
+    sub_ = plan.subtitle
+    if sub_ = invalid or Type(sub_) <> "roAssociativeArray" then return ""
+    if LCase(Str_orEmpty(sub_.mode)) <> "render" or sub_.artifact <> invalid or sub_.hls_rendition <> invalid then return ""
+    e = sub_.embedded
+    if e = invalid or Type(e) <> "roAssociativeArray" then return ""
+    return PlaybackCaps_nativeName(e.container_track_id)
+end function
+
+' The TrackName Roku lists an inventory row under when the content plays it natively, or "": an
+' embedded row the server marks native_selectable on an MKV original, whose container_track_id
+' no other row shares.
+function PlaybackCaps_nativeRowName(plan as dynamic, row as dynamic) as string
+    if row = invalid or Type(row) <> "roAssociativeArray" then return ""
+    if not PlaybackCaps_isMkvOriginal(plan) then return ""
+    if LCase(Str_orEmpty(row.source)) <> "embedded" or Tracks_subtitleUnplayable(row) then return ""
+    if not PlaybackCaps_truthy(row.native_selectable) then return ""
+    sub_ = plan.subtitle
+    if sub_ <> invalid and LCase(Str_orEmpty(sub_.mode)) = "burn_in" then return ""
+    name = PlaybackCaps_nativeName(row.container_track_id)
+    if name = "" then return ""
+    count = 0
+    ' Index loops: callers walk the same inventory array (nested for each shares its iterator).
+    inv = Arr_or(sub_.inventory)
+    for i = 0 to inv.Count() - 1
+        r = inv[i]
+        if r <> invalid and Type(r) = "roAssociativeArray" and PlaybackCaps_nativeName(r.container_track_id) = name then count = count + 1
+    end for
+    if count <> 1 then return ""
+    return name
+end function
+
+' An inventory row's rendition among the HLS stream's subtitle renditions
+' (hls_subtitle_renditions_all_v1), as { group_id, name, index }, or invalid: an HLS plan
+' (transcode or copy remux) that does not burn subtitles in, a row with a group, a name and a
+' 1-based index, and no other row with the same group and name (a duplicated entry is ignored,
+' so that row keeps its sidecar). Silo Android's switchableHlsRendition.
+function PlaybackCaps_rowRendition(plan as dynamic, row as dynamic) as dynamic
+    if plan = invalid or Type(plan) <> "roAssociativeArray" or row = invalid or Type(row) <> "roAssociativeArray" then return invalid
+    r = row.hls_rendition
+    if r = invalid or Type(r) <> "roAssociativeArray" then return invalid
+    if Tracks_subtitleUnplayable(row) then return invalid
+    delivery = LCase(Str_orEmpty(plan.delivery))
+    if delivery <> "server_transcode_hls" and delivery <> "server_remux_hls" then return invalid
+    if plan.stream = invalid or LCase(Str_orEmpty(plan.stream.protocol)) <> "hls" then return invalid
+    sub_ = plan.subtitle
+    if sub_ = invalid or Type(sub_) <> "roAssociativeArray" or LCase(Str_orEmpty(sub_.mode)) = "burn_in" then return invalid
+    group = Str_orEmpty(r.group_id).Trim()
+    name = Str_orEmpty(r.name).Trim()
+    index = Int(Num_or(r.index, 0))
+    if group = "" or name = "" or index < 1 then return invalid
+    same = 0
+    inv = Arr_or(sub_.inventory)
+    for i = 0 to inv.Count() - 1
+        other = inv[i]
+        if other <> invalid and Type(other) = "roAssociativeArray" then
+            o = other.hls_rendition
+            if o <> invalid and Type(o) = "roAssociativeArray" and Str_orEmpty(o.group_id).Trim() = group and Str_orEmpty(o.name).Trim() = name then same = same + 1
+        end if
+    end for
+    if same <> 1 then return invalid
+    return { group_id: group, name: name, index: index }
+end function
+
+' The 1-based index of the rendition the plan's stream marks DEFAULT=YES, or 0: the plan's own
+' (a render/convert decision with an hls_rendition), which the server marks DEFAULT; none under Off.
+function PlaybackCaps_defaultRenditionIndex(plan as dynamic) as integer
+    if plan = invalid or Type(plan) <> "roAssociativeArray" then return 0
+    sub_ = plan.subtitle
+    if sub_ = invalid or Type(sub_) <> "roAssociativeArray" then return 0
+    mode = LCase(Str_orEmpty(sub_.mode))
+    if mode <> "render" and mode <> "convert" then return 0
+    if sub_.hls_rendition = invalid or Type(sub_.hls_rendition) <> "roAssociativeArray" then return 0
+    selId = Str_orEmpty(sub_.track_id)
+    inv = Arr_or(sub_.inventory)
+    for i = 0 to inv.Count() - 1
+        row = inv[i]
+        if row <> invalid and Type(row) = "roAssociativeArray" and Str_orEmpty(row.track_id) = selId then
+            r = PlaybackCaps_rowRendition(plan, row)
+            if r <> invalid then return r.index
+        end if
+    end for
+    return Int(Num_or(sub_.hls_rendition.index, 0))
+end function
+
 
 ' The server's playback capability document (GET /api/v2/playback/capabilities, cached on
 ' m.global.playbackCaps by PlayerScreen) lists `feature` in features.
@@ -447,9 +597,11 @@ function PlaybackCaps_audioPassthrough() as object
     }
 end function
 
-function PlaybackCaps_subtitles() as object
+function PlaybackCaps_subtitles(kind = "" as string) as object
     ' The Roku Video node renders WebVTT/SRT sidecars only; bitmap and ASS styling need a burn-in.
-    return {
+    ' embedded_text stays false beside original_http's native_embedded entry, which is the whole
+    ' claim (one container, one codec; silo-roku spec 9.7).
+    out = {
         sidecar_text: true
         embedded_text: false
         ass_styling: false
@@ -457,6 +609,8 @@ function PlaybackCaps_subtitles() as object
         sidecar_bitmap: false
         font_attachments: false
     }
+    if kind = "original" and PlaybackCaps_nativeSubtitlesNegotiable() then out.native_embedded = [PlaybackCaps_nativeEmbedded()]
+    return out
 end function
 
 ' One delivery class. No max_channels: the Roku downmixes or passes through by itself, and a
@@ -521,7 +675,7 @@ function PlaybackCaps_delivery(containers as object, features as object, kind = 
         audio_decode_codecs: audioCodecs
         audio_passthrough_codecs: passthrough
         hdr_details: hdr
-        subtitles: PlaybackCaps_subtitles()
+        subtitles: PlaybackCaps_subtitles(kind)
         features: features
         transformations: []
         validated_claims: claims
@@ -796,6 +950,9 @@ function PlaybackCaps_diagLine(body as object, plan as object) as string
     tsv = "h264"
     if p.ts.hevc then tsv = "h264,hevc"
     caps = caps + " tscopy=" + PlaybackCaps_str(PlaybackCaps_tsCopyNegotiable()) + " tsvideo=" + tsv + " tsaudio=" + PlaybackCaps_join(p.ts.audio) + " tspassthru=" + PlaybackCaps_join(p.ts.passthrough) + " define=" + PlaybackCaps_str(PlaybackCaps_defineNegotiable())
+    ' Subtitles from the stream: every embedded text track as an HLS rendition (allrend=), and an
+    ' MKV original's own text tracks drawn by Roku (nativesubs=), each only when the server offers it.
+    caps = caps + " allrend=" + PlaybackCaps_str(PlaybackCaps_allRenditionsNegotiable()) + " nativesubs=" + PlaybackCaps_str(PlaybackCaps_nativeSubtitlesNegotiable())
     caps = caps + " display=" + PlaybackCaps_str(p.display.known) + " hdr10=" + PlaybackCaps_str(hd.hdr10) + " hdr10+=" + PlaybackCaps_str(hd.hdr10_plus) + " hlg=" + PlaybackCaps_str(hd.hlg) + " dv=" + PlaybackCaps_join(dvs)
     ' Raw display report and model, so a missing Dolby Vision or HDR flag can be traced on device.
     di = CreateObject("roDeviceInfo")
@@ -830,6 +987,23 @@ function PlaybackCaps_diagLine(body as object, plan as object) as string
         hr = PlaybackCaps_hlsRendition(plan)
         if hr <> invalid then
             if hr.problem = true then dec = dec + " sub_hls=invalid" else dec = dec + " sub_hls=" + hr.group_id + ":" + hr.name
+        end if
+        ' sub_native=: the plan's own subtitle as the MKV's track Roku draws (mkv/<id>); sub_rows=
+        ' the inventory as renditions / native-selectable rows / rows no route can show.
+        nat = PlaybackCaps_nativeSubtitleName(plan)
+        if nat <> "" then dec = dec + " sub_native=" + nat
+        if plan.subtitle <> invalid and Type(plan.subtitle) = "roAssociativeArray" then
+            nRend = 0
+            nNative = 0
+            nUnplayable = 0
+            subRows = Arr_or(plan.subtitle.inventory)
+            for ri = 0 to subRows.Count() - 1
+                row = subRows[ri]
+                if PlaybackCaps_rowRendition(plan, row) <> invalid then nRend = nRend + 1
+                if PlaybackCaps_nativeRowName(plan, row) <> "" then nNative = nNative + 1
+                if Tracks_subtitleUnplayable(row) then nUnplayable = nUnplayable + 1
+            end for
+            if nRend + nNative + nUnplayable > 0 then dec = dec + " sub_rows=rend:" + nRend.ToStr() + ",native:" + nNative.ToStr() + ",unplayable:" + nUnplayable.ToStr()
         end if
         ' active_q: the menu entry the server says the plan delivers ("none" = none, "?" = not reported).
         aq = "?"

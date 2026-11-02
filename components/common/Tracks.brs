@@ -315,6 +315,30 @@ function Tracks_aiSubtitleSourceLabel(label as dynamic) as string
     return re.ReplaceAll(Str_orEmpty(label), "").Trim()
 end function
 
+' A subtitle inventory row (or catalog track) the server has no way to show (Silo Android #776):
+' the server's `unplayable` flag, or, from an older server, an embedded row with no codec (an MKV
+' S_TEXT/WEBVTT track FFmpeg did not recognise; selecting it is refused with
+' subtitle_codec_unsupported). Only embedded rows: a downloaded track may arrive without a codec
+' and still play. A catalog track (no `source`) is embedded unless `external` is true.
+function Tracks_subtitleUnplayable(t as dynamic) as boolean
+    if t = invalid or Type(t) <> "roAssociativeArray" then return false
+    if Tracks_flag(t.unplayable) then return true
+    src = LCase(Str_orEmpty(t.source).Trim())
+    if src = "" and not t.DoesExist("track_id") then
+        ' A catalog track (no inventory track_id): embedded unless marked external.
+        src = "embedded"
+        if Tracks_flag(t.external) then src = "external"
+    end if
+    return src = "embedded" and Str_orEmpty(t.codec).Trim() = ""
+end function
+
+' A wire flag (true, "true", 1) as a boolean; never compares a possibly missing value with a
+' boolean (pitfall 16).
+function Tracks_flag(v as dynamic) as boolean
+    f = LCase(Str_orEmpty(v).Trim())
+    return f = "true" or f = "1"
+end function
+
 ' Combined selection index per catalog position: external tracks count first, embedded after.
 function Tracks_subtitleCombined(tracks as object) as object
     out = []

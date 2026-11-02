@@ -26,7 +26,17 @@
 function Subs_isTrack(name as dynamic, url as dynamic) as boolean
     n = Str_orEmpty(name)
     u = Str_orEmpty(url)
-    return u <> "" and n <> "" and Instr(1, n, u) > 0
+    if u = "" or n = "" then return false
+    ' A track of the stream (an MKV's mkv/3, an HLS rendition's webvtt/1) is that name alone:
+    ' mkv/3 is not mkv/30.
+    if not Subs_isFile(u) then return n = u
+    return Instr(1, n, u) > 0
+end function
+
+' Whether a track name is a sidecar the player gave Roku (a URL, or Roku's path holding one), not a
+' track Roku found in the stream.
+function Subs_isFile(name as dynamic) as boolean
+    return Instr(1, Str_orEmpty(name), ":/") > 0
 end function
 
 ' The TrackName Roku lists (Video.availableSubtitleTracks) for the sidecar at URL: the exact name,
@@ -60,7 +70,7 @@ function Subs_trackIndexOf(tracks as dynamic, name as dynamic) as integer
     list = Arr_or(tracks)
     for i = 0 to list.Count() - 1
         t = list[i]
-        if t <> invalid and Subs_isTrack(n, t.url) then return i
+        if t <> invalid and (Subs_isTrack(n, t.url) or Subs_isTrack(n, t.streamName)) then return i
     end for
     return -1
 end function
@@ -73,6 +83,7 @@ function Subs_nameForLog(tracks as dynamic, name as dynamic) as string
     idx = Subs_trackIndexOf(tracks, n)
     if idx >= 0 then
         list = Arr_or(tracks)
+        if Str_isEmpty(list[idx].url) then return n + "(" + Str_orEmpty(list[idx].trackId) + ")"
         return "sidecar:" + Str_orEmpty(list[idx].trackId)
     end if
     if Instr(1, n, "://") > 0 or Instr(1, LCase(n), "token") > 0 then return "url"
@@ -81,8 +92,104 @@ end function
 
 ' Video.suppressCaptions: captions hidden while the controls or the panel show, but only once the
 ' content has settled (no writes while Roku opens it).
-function Subs_captionsSuppressed(controlsShown as boolean, hudShown as boolean, settled as boolean) as boolean
+' HOLD: the content draws nothing at all until its first selection is checked (Subs_holdsUntilChecked).
+function Subs_captionsSuppressed(controlsShown as boolean, hudShown as boolean, settled as boolean, hold = false as boolean) as boolean
+    if hold and not settled then return true
     return settled and (controlsShown or hudShown)
+end function
+
+' ---------- Tracks of the stream (pure; tests/test_subtitle_stream.py) ----------
+' Adapted from Silo-Server/silo-roku, AGPL-3.0 (source/playback/sidecars.bs rokuPlace /
+' renditionName / preselectName / holdsUntilChecked, and its hardware evidence of 2026-10-29 to
+' 2026-11-01):
+' - An MKV original's own text tracks are listed as "mkv/<Matroska TrackNumber>" (the server's
+'   container_track_id) 35-90 ms after buffering starts, before the first frame. Content
+'   SubtitleConfig { TrackName: "mkv/N" } selects one before play; writing subtitleTrack switches
+'   mid-play with a 150-250 ms rebuffer and no reload.
+' - Roku names an HLS stream's WebVTT renditions "webvtt/<n>", the playlist's DEFAULT first and
+'   the others after it in playlist order, each with Description = its NAME (TCL, OS 15.3.4).
+' - Left alone, Roku opened such a stream on a rendition of its own (English, by the caption
+'   language), even beside a DEFAULT for another track or a selected sidecar, until the check
+'   3 s after the first frame; naming the plan's rendition by Roku's number in SubtitleConfig
+'   opened on it.
+
+' Roku's number for the INDEX-th rendition (1-based, playlist order) of a stream whose DEFAULT is
+' the DEFAULTINDEX-th (0 for none): the DEFAULT is 1, the ones before it move up by one.
+function Subs_rokuPlace(index as integer, defaultIndex as integer) as integer
+    if defaultIndex < 1 or index > defaultIndex then return index
+    if index = defaultIndex then return 1
+    return index + 1
+end function
+
+' The TrackName Roku lists a rendition under, as { name, by }: the one listed track whose
+' Description is the rendition's NAME (by "name"); else "webvtt/<place>" (Roku's number) when Roku
+' lists it in the row's LANGUAGE and not with a Description naming another of the stream's
+' renditions (NAMES, every rendition's NAME as keys) (by "index", or "ambiguous" when another
+' rendition shares the row's language: SHARED); else "" (by "unlisted"). A sidecar's name (a
+' URL) and closed captions never match.
+function Subs_renditionName(listed as dynamic, renditionName as dynamic, place as integer, language as dynamic, names as dynamic, shared as boolean) as object
+    unlisted = { name: "", by: "unlisted" }
+    if Type(listed) <> "roArray" or place < 1 then return unlisted
+    want = Str_orEmpty(renditionName).Trim()
+    fallback = "webvtt/" + place.ToStr()
+    rowKey = Subs_autoLangKey(language)
+    known = {}
+    if names <> invalid and Type(names) = "roAssociativeArray" then known = names
+    found = ""
+    matches = 0
+    indexed = false
+    for each a in listed
+        if a <> invalid and Type(a) = "roAssociativeArray" then
+            tn = Str_orEmpty(a.TrackName)
+            lt = LCase(tn)
+            if tn <> "" and not Subs_isFile(tn) and Left(lt, 6) <> "eia608" and Left(lt, 6) <> "eia708" then
+                desc = Str_orEmpty(a.Description).Trim()
+                if want <> "" and desc = want then
+                    matches = matches + 1
+                    found = tn
+                end if
+                another = desc <> "" and desc <> want and known.DoesExist(desc)
+                if tn = fallback and rowKey <> "" and Subs_autoLangKey(a.Language) = rowKey and not another then indexed = true
+            end if
+        end if
+    end for
+    if matches = 1 then return { name: found, by: "name" }
+    if indexed and shared then return { name: fallback, by: "ambiguous" }
+    if indexed then return { name: fallback, by: "index" }
+    return unlisted
+end function
+
+' Whether Roku lists the track NAME (an MKV's mkv/N) in LISTED.
+function Subs_listsName(listed as dynamic, name as dynamic) as boolean
+    n = Str_orEmpty(name)
+    if n = "" then return false
+    for each a in Arr_or(listed)
+        if a <> invalid and Type(a) = "roAssociativeArray" and Str_orEmpty(a.TrackName) = n then return true
+    end for
+    return false
+end function
+
+' The TrackName new content names in its SubtitleConfig so Roku opens it on TRACK (the player's
+' pick for the mount), or "": an MKV's own track by its fixed name, and an every-track rendition
+' by Roku's number for it from the stream's DEFAULT (DEFAULTINDEX). A sidecar or a single plan
+' rendition gets none (a sidecar's path did not keep Roku off a rendition of its own).
+function Subs_preselectName(track as dynamic, defaultIndex as integer) as string
+    if track = invalid or Type(track) <> "roAssociativeArray" then return ""
+    if not Str_isEmpty(track.native) then return track.native
+    if PlaybackCaps_truthy(track.allRend) then
+        idx = Int(Num_or(track.renditionIndex, 0))
+        if idx >= 1 then return "webvtt/" + Subs_rokuPlace(idx, defaultIndex).ToStr()
+    end if
+    return ""
+end function
+
+' Whether new content draws nothing until its first selection is checked: a sidecar pick on a
+' stream that carries subtitle renditions (STREAMRENDITIONS), which Roku showed by the caption
+' language until the check, or a stream track it cannot open on by name (no PRESELECT).
+function Subs_holdsUntilChecked(track as dynamic, preselect as string, streamRenditions as boolean) as boolean
+    if track = invalid or Type(track) <> "roAssociativeArray" or preselect <> "" then return false
+    if not Str_isEmpty(track.url) then return streamRenditions
+    return PlaybackCaps_truthy(track.allRend)
 end function
 
 ' Whether the selected sidecar must be fetched first to know it is ready: an embedded text track
@@ -123,6 +230,16 @@ sub Subs_selectSidecar(idx as integer)
     Subs_probeIfNeeded(t)
 end sub
 
+' An MKV original's own track (native embedded): Roku lists it as mkv/<container_track_id> and
+' switches to it on the playing content when subtitleTrack names it, with no reload.
+sub Subs_selectNative(idx as integer)
+    t = m.subtitleTracks[idx]
+    t.streamName = t.native
+    m.video.subtitleTrack = t.native
+    Diag_log("[siku-playback] subtitle native " + t.native + " selected (track=" + t.trackId + ")")
+    Subs_armCheck(idx, "switch")
+end sub
+
 sub Subs_armCheck(idx as integer, kind as string)
     m.subsCheck = { idx: idx, kind: kind, trackId: m.subtitleTracks[idx].trackId }
     m.subsCheckTimer.control = "stop"
@@ -139,17 +256,27 @@ sub Subs_onCheck()
     c = m.subsCheck
     m.subsCheck = invalid
     if not m.subsSettled then
+        ' Captions held for this check (Subs_holdsUntilChecked) show from now on, with the writes below.
         m.subsSettled = true
+        m.subsHold = false
         Subs_updateCaptions()
     end if
     if c = invalid or m.closing then return
     if c.idx <> m.subtitleIndex or c.idx < 0 or c.idx >= m.subtitleTracks.Count() then return
     t = m.subtitleTracks[c.idx]
-    if t.trackId <> c.trackId or Str_isEmpty(t.url) then return
+    if t.trackId <> c.trackId then return
+    ' A sidecar is known by its URL, a track of the stream by the name Roku lists it under.
+    want = Str_orEmpty(t.url)
+    if want = "" then want = Str_orEmpty(t.streamName)
+    if want = "" then return
+    if not Str_isEmpty(t.native) and not Subs_listsName(m.video.availableSubtitleTracks, t.native) then
+        Subs_nativeUnlisted(t)
+        return
+    end if
     selected = Str_orEmpty(m.video.subtitleTrack)
     playing = Str_orEmpty(m.video.currentSubtitleTrack)
     playingLabel = Subs_nameForLog(m.subtitleTracks, playing)
-    if Subs_drawn(t.url, selected, playing) then
+    if Subs_drawn(want, selected, playing) then
         Diag_log("[siku-playback] subtitle check " + c.kind + ": roku plays " + playingLabel + " (ok)")
         return
     end if
@@ -165,16 +292,28 @@ sub Subs_onCheck()
         return
     end if
     m.subsReselected = true
-    name = Subs_listedName(m.video.availableSubtitleTracks, t.url)
-    if name = "" then name = t.url
-    Diag_log("[siku-playback] subtitle check " + c.kind + ": roku plays " + playingLabel + "; selected again (listed=" + Str_orEmpty(name <> t.url) + ")")
+    name = want
+    if not Str_isEmpty(t.url) then name = Subs_listedName(m.video.availableSubtitleTracks, t.url)
+    if name = "" then name = want
+    listed = (name <> t.url)
+    if Str_isEmpty(t.url) then listed = Subs_listsName(m.video.availableSubtitleTracks, name)
+    Diag_log("[siku-playback] subtitle check " + c.kind + ": roku plays " + playingLabel + "; selected again (listed=" + Str_orEmpty(listed) + ")")
     m.video.subtitleTrack = name
+end sub
+
+' Roku does not list the MKV's own track the plan names (mkv/<id>): the native tracks are given up
+' for this playback and the plan is remounted with the server's sidecars instead, once.
+sub Subs_nativeUnlisted(t as object)
+    if PlaybackCaps_truthy(m.nativeSubsOff) then return
+    m.nativeSubsOff = true
+    Diag_log("[siku-playback] subtitle native " + t.native + " not listed by roku; using the server's sidecar at the position")
+    remountSubtitles()
 end sub
 
 ' ---------- Captions under the controls ----------
 
 sub Subs_updateCaptions()
-    want = Subs_captionsSuppressed(m.controls.visible, m.hud.visible, m.subsSettled = true)
+    want = Subs_captionsSuppressed(m.controls.visible, m.hud.visible, m.subsSettled = true, PlaybackCaps_truthy(m.subsHold))
     if m.video.suppressCaptions = want then return
     m.video.suppressCaptions = want
 end sub

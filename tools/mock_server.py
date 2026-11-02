@@ -90,6 +90,19 @@ clears one); GET /mock/switch lists them.
                                  seconds the first time (a first extraction); later reads answer at once.
                                  The 1080p files then list an embedded English track too (file:<id>:subtitle:1).
                                  The log prints VTT slow key= waited=
+  renditions_all=1               /playback/capabilities lists hls_subtitle_renditions_all_v1; for a client that
+                                 lists it, every embedded text row of an HLS plan carries hls_rendition
+                                 {group_id, name, index} (the 4K files add an embedded Spanish SubRip row), and
+                                 the selected one subtitle.hls_rendition with its index (Silo Android #770).
+                                 The log prints SUBTITLE renditions=
+  native_subs=1                  /playback/capabilities lists native_embedded_limitations_v1; the 1080p file
+                                 plays as an MKV original carrying embedded English (container_track_id 3) and
+                                 Spanish (4) SubRip rows, native_selectable for a client that sent the
+                                 original_http native_embedded entry; a start naming one is planned
+                                 subtitle.embedded. The log prints SUBTITLE native_entry=
+  unplayable_sub=1|legacy        every version and plan lists an embedded French track with no codec: flagged
+                                 unplayable (1) or, as an older server sends it, only codec-less (legacy).
+                                 A start or replan that names it logs SUBTITLE requested unplayable
   credits_twice=1                every version's marker_segments carry two credits ranges (duration-600..-420
                                  and duration-300..end; the singular credits field the first), Silo Android #694
   info_status=<code>[:<detail>]  GET /system/info answers that status: a problem with that detail, or
@@ -408,6 +421,11 @@ def detail(cid):
             v["file_id"] = str(50 + n)
             v["resolution"] = ["1080p", "720p", "2160p", "480p"][n % 4]
             d["versions"].append(v)
+    if STATE["switches"].get("unplayable_sub"):
+        # An MKV S_TEXT/WEBVTT track the server's probe did not recognise: no codec (Silo Android #776).
+        for v in d["versions"]:
+            v["subtitle_tracks"] = v["subtitle_tracks"] + [{"index": len(v["subtitle_tracks"]), "language": "fre", "codec": "", "forced": False,
+                                                            "default": False, "external": False, "title": "Français (WebVTT)"}]
     return d
 
 
@@ -1458,6 +1476,8 @@ def playback_route(fid, b):
             recipe = {"video_codec": "h264", "audio_codec": "aac", "width": height * 16 // 9, "height": height, "frame_rate": 23.976,
                       "bitrate_kbps": min(cap or 4000, 4000), "dynamic_range": "sdr", "audio_channels": 2, "audio_layout": "stereo"}
             return "server_transcode_hls", reason, recipe, {"video": {}, "audio": {"codec": "aac", "passthrough": False, "reason": "server_audio_adaptation"}}, source, qualities, warnings
+        if STATE["switches"].get("native_subs"):
+            source["container"] = "mkv"
         recipe = dict(source)
         recipe.pop("media_file_id"), recipe.pop("duration_seconds"), recipe.pop("container")
         return "original_http", "validated_original_playback", recipe, {"video": {}, "audio": {"codec": "aac", "passthrough": False, "reason": "client_decode_supported"}}, source, qualities, warnings
@@ -1621,6 +1641,51 @@ def playback_decision(sid, position, fid, body=None):
         inventory.append({"track_id": "file:%s:subtitle:2" % fid, "combined_index": 2, "source": "embedded", "codec": "hdmv_pgs_subtitle", "language": "eng",
                           "label": "English (PGS)", "forced": False, "default": False, "hearing_impaired": False, "delivery": "sidecar",
                           "url": "/api/v2/stream/%s/subtitles/2.sup?file_id=%s&embedded_stream_index=1" % (sid, fid)})
+    b0 = body or {}
+    cf0 = b0.get("client_features") or []
+    orig_subs = ((((b0.get("client_playback_context") or {}).get("deliveries") or {}).get("original_http") or {}).get("subtitles") or {})
+    native_entry = bool(orig_subs.get("native_embedded"))
+    if STATE["switches"].get("native_subs") and fid not in FOUR_K_FILES:
+        # The 1080p file as an MKV original with two embedded SubRip tracks Roku would list as mkv/3 and mkv/4.
+        for lang, label, ctid in (("eng", "English", "3"), ("spa", "Español", "4")):
+            idx = len(inventory)
+            row = {"track_id": "file:%s:subtitle:%d" % (fid, idx), "combined_index": idx, "source": "embedded", "codec": "subrip", "language": lang,
+                   "label": label, "forced": False, "default": False, "hearing_impaired": False, "delivery": "sidecar",
+                   "url": "/api/v2/stream/%s/subtitles/%d.vtt?file_id=%s&embedded_stream_index=%d" % (sid, idx, fid, int(ctid) - 1),
+                   "stream_index": int(ctid) - 1, "container_track_id": ctid}
+            if native_entry and "embedded_subtitles_v1" in cf0 and delivery == "original_http":
+                row["native_selectable"] = True
+            inventory.append(row)
+        print("SUBTITLE native_entry=%s embedded_subtitles_v1=%s delivery=%s" % (native_entry, "embedded_subtitles_v1" in cf0, delivery), flush=True)
+    if STATE["switches"].get("renditions_all") and fid in FOUR_K_FILES:
+        idx = len(inventory)
+        inventory.append({"track_id": "file:%s:subtitle:%d" % (fid, idx), "combined_index": idx, "source": "embedded", "codec": "subrip", "language": "spa",
+                          "label": "Español", "forced": False, "default": False, "hearing_impaired": False, "delivery": "sidecar",
+                          "url": "/api/v2/stream/%s/subtitles/%d.vtt?file_id=%s&embedded_stream_index=2" % (sid, idx, fid)})
+    if STATE["switches"].get("unplayable_sub"):
+        idx = len(inventory)
+        row = {"track_id": "file:%s:subtitle:%d" % (fid, idx), "combined_index": idx, "source": "embedded", "codec": "", "language": "fre",
+               "label": "Français (WebVTT)", "forced": False, "default": False, "hearing_impaired": False, "delivery": "sidecar",
+               "url": "/api/v2/stream/%s/subtitles/%d.vtt?file_id=%s&embedded_stream_index=9" % (sid, idx, fid)}
+        if STATE["switches"].get("unplayable_sub") != "legacy":
+            row["unplayable"] = True
+        inventory.append(row)
+    all_renditions = (STATE["switches"].get("renditions_all") and delivery in ("server_transcode_hls", "server_remux_hls")
+                      and "hls_subtitle_renditions_all_v1" in cf0 and "hls_subtitle_renditions_v1" in cf0)
+    if all_renditions:
+        n = 0
+        names = set()
+        for row in inventory:
+            if row["source"] == "embedded" and row["codec"] in ("subrip", "srt", "webvtt", "ass") and not row.get("unplayable"):
+                n += 1
+                name = row["label"]
+                k = 2
+                while name in names:  # the server keeps NAME unique in its group ("SUBRIP (2)")
+                    name = "%s (%d)" % (row["label"], k)
+                    k += 1
+                names.add(name)
+                row["hls_rendition"] = {"group_id": "subs", "name": name, "index": n}
+        print("SUBTITLE renditions=%d delivery=%s" % (n, delivery), flush=True)
     for rec in SUBS["stored"]:
         if rec["media_file_id"] != fid:
             continue
@@ -1646,20 +1711,32 @@ def playback_decision(sid, position, fid, body=None):
     subtitle = {"mode": "off", "inventory": inventory}
     selected_sub = None
     row = next((r for r in inventory if r["track_id"] == wanted), None) if wanted else None
+    if row is not None and (row.get("unplayable") or (row["source"] == "embedded" and not row["codec"])):
+        print("SUBTITLE requested unplayable track=%s" % row["track_id"], flush=True)
+        LOG.append("SUBTITLE requested unplayable")
     if row is not None:
         selected_sub = {"id": row["track_id"], "index": row["combined_index"]}
         failed_rendition = b.get("operation") == "failure_recovery" and (b.get("failure") or {}).get("classification") == "subtitle_hls_rendition_failed"
         cf = b.get("client_features") or []
         # A copy remux carries it too for a client that also lists hls_remux_subtitle_renditions_v1.
         rendition_route = delivery == "server_transcode_hls" or (delivery == "server_remux_hls" and OPTS["hls_copy_ts"] and "hls_remux_subtitle_renditions_v1" in cf)
-        if (rendition_route and row["source"] == "embedded" and row["codec"] in ("subrip", "srt", "webvtt")
+        if all_renditions and row.get("hls_rendition") and not failed_rendition:
+            r = row["hls_rendition"]
+            subtitle = {"mode": "render", "track_id": row["track_id"], "inventory": inventory,
+                        "hls_rendition": {"group_id": r["group_id"], "name": r["name"], "format": "vtt", "mime_type": "text/vtt", "index": r["index"]}}
+            features += ["hls_subtitle_renditions_v1", "hls_subtitle_renditions_all_v1"]
+        elif row.get("native_selectable") and not failed_rendition:
+            subtitle = {"mode": "render", "track_id": row["track_id"], "inventory": inventory,
+                        "embedded": {"stream_index": row["stream_index"], "container_track_id": row["container_track_id"]}}
+        elif (rendition_route and row["source"] == "embedded" and row["codec"] in ("subrip", "srt", "webvtt")
                 and "hls_subtitle_renditions_v1" in cf and not failed_rendition):
             subtitle = {"mode": "render", "track_id": row["track_id"], "inventory": inventory,
                         "hls_rendition": {"group_id": "subs", "name": "Subtitles", "format": "vtt", "mime_type": "text/vtt"}}
             features.append("hls_subtitle_renditions_v1")
         else:
             subtitle = {"mode": "convert" if row["delivery"] == "sidecar" else "burn_in", "track_id": row["track_id"], "inventory": inventory}
-        print("SUBTITLE decision track=%s mode=%s rendition=%s" % (row["track_id"], subtitle["mode"], "hls_rendition" in subtitle), flush=True)
+        print("SUBTITLE decision track=%s mode=%s rendition=%s native=%s" % (row["track_id"], subtitle["mode"], "hls_rendition" in subtitle,
+                                                                              (subtitle.get("embedded") or {}).get("container_track_id")), flush=True)
     selected = {"audio": {"id": "file:%s:audio:0" % fid, "index": 0}}
     if selected_sub:
         selected["subtitle"] = selected_sub
@@ -2433,6 +2510,10 @@ class Handler(BaseHTTPRequestHandler):
                 caps["features"].append("playback_route_diagnostics")
             if STATE["switches"].get("channel_ceilings"):
                 caps["features"].append("codec_channel_ceilings_v1")
+            if STATE["switches"].get("renditions_all"):
+                caps["features"] += ["hls_subtitle_renditions_v1", "hls_subtitle_renditions_all_v1"]
+            if STATE["switches"].get("native_subs"):
+                caps["features"].append("native_embedded_limitations_v1")
             if OPTS["buffering_quality"]:
                 # Buffering quality and the connection speed test (Silo Android #636).
                 caps["features"] += ["buffering_quality_v1", "connection_speed_v1"]
