@@ -3,6 +3,13 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.36
+
+One change from Silo's Android TV app (November 2, 2026).
+
+**Better**
+- **Temporary passwords.** If your server's admin gave your account a temporary password, signing in no longer stops at "Failed to load profiles". Siku now says your password needs to be reset and that you can set a new one in the Silo mobile app or on the website, with Sign out selected. Once you have changed it, choose Retry (or sign in again). Other screens that run into this say the same thing instead of a technical message. Siku does not change passwords itself, just like Silo's TV apps.
+
 ## v0.1.35
 
 One change from Silo's Android TV app and Silo's own Roku app (November 2, 2026).

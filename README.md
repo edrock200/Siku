@@ -46,7 +46,7 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Playback | Automatic recovery (another route, lower quality on Auto), numbered errors reported to the server (new in 0.1.24, [codes](docs/playback-errors.md)) | 🟡 simulator-tested, needs device testing |
 | Accessibility | Roku screen reader reads buttons, tabs, settings, PIN pad, profiles and the player panel (0.1.25); low-memory handling; launch timing beacons (new in 0.1.24) | 🟡 simulator-tested, needs device testing |
 | Playback | Seek-bar preview pictures, hold Left/Right to fast-scan, audio and subtitle choices remembered for the whole series | 🟡 needs device testing |
-| Profiles | "Who's watching?" at launch (Profile Selection setting), recovery when an administrator changes access | ✅ simulator, device pending |
+| Profiles | "Who's watching?" at launch (Profile Selection setting), recovery when an administrator changes access; an account with a temporary password is told where to change it (new in 0.1.36) | ✅ simulator, device pending |
 | Settings | Spoilers (hide unwatched episodes' pictures and descriptions), hidden libraries, remembered sort and filters | ✅ simulator, device pending |
 | Settings | Android TV's General, Playback, Subtitles and Server pages (quality and bandwidth, Dolby Vision, skip intro/credits, auto-play, home sections, cards), synced with your Silo profile | ✅ |
 | Audio | Audiobooks (chapters, parts, resume, sleep timer) and music albums/artists with a now-playing screen | 🟡 needs device testing; music waits on server support |

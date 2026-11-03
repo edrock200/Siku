@@ -107,6 +107,12 @@ function Http_problem(status as integer, data as dynamic, failure as dynamic) as
         if failure <> invalid then detail = failure
     end if
     if title = "" then title = "Something went wrong (" + status.ToStr() + ")"
+    ' A temporary password (Silo Android #790): the server's detail is a protocol instruction, so
+    ' every screen that shows the title or detail gets text a person can act on instead.
+    if code = PasswordChange_code() then
+        title = PasswordChange_message()
+        detail = title
+    end if
     return { code: code, title: title, detail: detail }
 end function
 

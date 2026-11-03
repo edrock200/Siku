@@ -8,6 +8,8 @@
   pick asks whether to open that profile automatically from now on (an alert: Ask Every Time |
   Remember, focus on Remember, Back = Ask Every Time; Silo Android TV #762).
   PIN profiles open AuthPinDialog and POST /api/v2/profiles/{id}/verify-pin.
+  An account with a temporary password (403 password_change_required, Silo Android #790) gets a
+  message saying where to change it, with Retry | Change server | Sign out and Sign out focused.
   Params: { switching: bool, atLaunch: bool }
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
@@ -16,6 +18,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/ProfileLaunch.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/DeepLink.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/SignOutFlow.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/PasswordChange.brs" />
   <children>
     <AuthMarqueeChrome id="chrome" backdropUri="pkg:/images/marquee_profiles.jpg" showLogo="false" />
     <Group id="content" visible="false">

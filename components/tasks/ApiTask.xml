@@ -26,6 +26,7 @@
   </interface>
   <script type="text/brightscript" uri="pkg:/components/tasks/ApiTask.brs" />
   <script type="text/brightscript" uri="pkg:/components/tasks/Http.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/PasswordChange.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
 </component>

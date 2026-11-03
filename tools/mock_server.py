@@ -58,6 +58,12 @@ clears one); GET /mock/switch lists them.
                                  profile_verification_required until GET /api/v2/profiles runs
   reject_access=1                every authenticated request answers 401 invalid_token (an expired
                                  access token) until a refresh succeeds
+  password_change_required=1     the account holds a temporary password (Silo Android #790): every
+                                 authenticated request answers 403 password_change_required except GET
+                                 /api/v2/account/me (which says "password_change_required": true), GET
+                                 /api/v2/account/password/capability, POST /api/v2/account/password (it
+                                 clears the switch, as changing it on a phone would) and sign-out. The log
+                                 prints PASSWORD_CHANGE_REQUIRED 403 <method> <path>
   parent_artwork=1               episode cards, episode lists and episode detail carry series_poster_url,
                                  series_backdrop_url and season_poster_url (+ *_thumbhash), as servers with
                                  episode_parent_artwork send them (Silo #711)
@@ -2266,6 +2272,23 @@ class Handler(BaseHTTPRequestHandler):
         if STATE["switches"].get("reject_access"):
             print("REJECT_ACCESS 401", method, p, flush=True)
             return self.problem(401, "invalid_token", "Access token expired")
+        if STATE["switches"].get("password_change_required"):
+            # Silo Android #790: a temporary password set by an admin. Only the account read, the
+            # password capability, the change and sign-out (answered above) are allowed.
+            if p == "/api/v2/account/me" and method == "GET":
+                return self.send(200, tokens()["user"] | {"password_change_required": True})
+            if p == "/api/v2/account/password/capability" and method == "GET":
+                return self.send(200, {"state": "available", "allowed": True,
+                                       "minimum_password_length": 8, "maximum_password_bytes": 72})
+            if p == "/api/v2/account/password" and method == "POST":
+                STATE["switches"].pop("password_change_required", None)
+                print("PASSWORD changed; switch password_change_required cleared", flush=True)
+                return self.send(204)
+            print("PASSWORD_CHANGE_REQUIRED 403", method, p, flush=True)
+            return self.send(403, {"type": "https://siloserver.org/docs/api/v2/problems/password_change_required",
+                                   "title": "Password change required", "status": 403,
+                                   "detail": "Change the temporary password with POST /api/v2/account/password, then refresh the session."},
+                             "application/problem+json")
         stale = STATE["switches"].get("stale_profile")
         if stale and p == "/api/v2/profiles" and method == "GET":
             # The viewer is back on the picker: the next profile pick is a fresh, valid proof.
@@ -2286,7 +2309,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if p == "/api/v2/account/me":
-            return self.send(200, tokens()["user"])
+            return self.send(200, tokens()["user"] | {"password_change_required": False})
         if p == "/api/v2/profiles":
             return self.send(200, {"items": [
                 {"id": "p-owner", "name": "Laura", "avatar_url": img("avatar", "laura"), "has_pin": False, "is_primary": True},

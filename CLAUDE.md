@@ -236,6 +236,14 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
 - Requests is a profile-menu row after History while `/requests/status` enables it, not a top-bar tab
   (Silo Android #782, silo-roku 5b296d7); Up from the Requests page focuses the avatar; a page left open
   when requests turn off prints `[siku-requests] requests turned off; closing the page` and shows Home.
+- Temporary passwords (Silo Android #790, `PasswordChange.brs`): a 403 `password_change_required` on the
+  profile list prints `[siku-auth] password change required: profiles refused (403); showing where to change it`
+  (the picker shows "Your password needs to be reset. Use the Silo mobile app or website …" with Retry,
+  Change server and Sign out, Sign out focused); `[siku-auth] account says password_change_required=true` when
+  the picker read `account/me`. Every other screen's error text for that problem comes from `Http_problem`.
+  Mock: `--switch password_change_required=1` (everything but `account/me`, the password capability, the
+  change and sign-out answers 403; log `PASSWORD_CHANGE_REQUIRED 403 <method> <path>`); clear it with
+  `curl -X POST -d '{"password_change_required": null}' localhost:<port>/mock/switch`, then Retry shows the profiles.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

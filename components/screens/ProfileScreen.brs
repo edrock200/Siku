@@ -64,6 +64,7 @@ sub onAccount(event as object)
     if resp.ok and resp.data <> invalid and Type(resp.data) = "roAssociativeArray" then
         m.accountName = Str_orEmpty(resp.data.username)
         renderSubtitle()
+        if isTrue(resp.data.password_change_required) then Diag_log("[siku-auth] account says password_change_required=true")
     end if
 end sub
 
@@ -77,6 +78,14 @@ end sub
 sub onProfiles(event as object)
     resp = Api_result(event)
     m.spinner.visible = false
+    if PasswordChange_isRequired(resp) then
+        ' Silo Android #790: the account holds a temporary password. The TV has no form for it;
+        ' say where to change it. The message follows each load's answer: Retry after the change
+        ' shows the profiles (or sign-in, since the change ends this session).
+        Diag_log("[siku-auth] password change required: profiles refused (403); showing where to change it")
+        showPasswordChange()
+        return
+    end if
     if not resp.ok or resp.data = invalid or Type(resp.data) <> "roAssociativeArray" then
         if m.profiles.Count() = 0 then
             showLoadError(Api_errorText(resp))
@@ -127,8 +136,24 @@ sub onProfiles(event as object)
     applyFocus()
 end sub
 
+' A temporary password: no profiles, the message, and Retry | Change server | Sign out with
+' Sign out focused (the way forward on this TV; Retry lands on sign-in once it was changed).
+sub showPasswordChange()
+    m.profiles = []
+    m.loaded = false
+    buildGrid()
+    showLoadError(PasswordChange_pickerMessage())
+    m.errorLabel.color = "0xEDEDEDFF" ' a way forward, not a failure
+    bs = visibleButtons()
+    for i = 0 to bs.Count() - 1
+        if bs[i].isSameNode(m.signOutButton) then m.buttonIndex = i
+    end for
+    applyFocus()
+end sub
+
 sub showLoadError(msg as string)
     m.content.visible = true
+    m.errorLabel.color = "0xFF6961FF"
     m.buttonsGroup.visible = true
     m.errorLabel.text = msg
     m.errorLabel.visible = true
