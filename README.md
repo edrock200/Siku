@@ -37,7 +37,7 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Playback | Reconnects after a network drop, keeps your place more reliably, Up Next after the last credits, steadier subtitle switching, "Loading subtitles…", 5.1 instead of stereo on more Rokus (new in 0.1.31) | 🟡 needs device testing |
 | Platform | Deep links from Roku search play at once; crash notice and Settings › Diagnostics; lower memory use; phone pairing optional (new in 0.1.31) | 🟡 needs device testing |
 | Browse | Dates on real Rokus, calendar time zones, more library filters, Requests follows the server's Discover layout (new in 0.1.31) | 🟡 needs device testing |
-| Browse | Movie box sets (Browse, box set page, Search, a movie's set row) and the new focus look (new in 0.1.33) | 🟡 simulator-tested, needs device testing |
+| Browse | Movie box sets (box set page, Search, a movie's set row; library grids list the movies again since 0.1.37, Silo #796) and the new focus look (new in 0.1.33) | 🟡 simulator-tested, needs device testing |
 | Playback | Embedded subtitles from the stream, switched without a restart; unsupported subtitles listed but not offered; accurate far seeks on copy remuxes (new in 0.1.33) | 🟡 needs device testing |
 | Detail | Back from a chain of "More Like This" picks returns to where the chain started in one press (new in 0.1.30) | 🟡 simulator-tested, needs device testing |
 | Phone | Control Siku from Silo's phone app (cast button or Profile › Connect a Phone QR code), and sign Siku in from the phone | 🟡 needs device testing |

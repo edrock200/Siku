@@ -111,8 +111,8 @@ clears one); GET /mock/switch lists them.
                                  A start or replan that names it logs SUBTITLE requested unplayable
   credits_twice=1                every version's marker_segments carry two credits ranges (duration-600..-420
                                  and duration-300..end; the singular credits field the first), Silo Android #694
-  box_sets=1                     movie box sets (Silo Android #646): library 1 lists box_sets_enabled true;
-                                 its browse with group=box_set answers one "box_set" card per collection
+  box_sets=1                     movie box sets (Silo Android #646): library 1 lists box_sets_enabled true
+                                 (group=box_set answers 422 since Silo Android #796, switch or not)
                                  (BOX_SETS: "The Paper Collection" = Paper Moons + Paper Tigers, "Night
                                  Collection" = Night Train + Midnight Garden + Small Hours) in place of
                                  their movies; GET /catalog/box-sets/{id}?library_id=1 reads one
@@ -259,21 +259,6 @@ def box_set_fields(bs, lib="1"):
             "poster_url": img("poster", "boxset-" + bs["id"]), "backdrop_url": img("backdrop", "boxset-" + bs["id"]),
             "movie_count": len(ms), "played_count": sum(1 for m in ms if m["content_id"] in STATE["watched"]),
             "first_year": min(years), "last_year": max(years)}
-
-
-def group_box_sets(items):
-    """group=box_set: each collection's movies collapse into one box set card where the first of them sat."""
-    out, seen = [], set()
-    for it in items:
-        bs = next((b for b in BOX_SETS if it.get("title") in b["members"] and it.get("type") == "movie"), None)
-        if bs is None:
-            out.append(it)
-        elif bs["id"] not in seen:
-            seen.add(bs["id"])
-            f = box_set_fields(bs)
-            out.append({"content_id": "box_set:" + bs["id"], "type": "box_set", "title": bs["title"],
-                        "poster_url": f["poster_url"], "backdrop_url": f["backdrop_url"], "box_set": f})
-    return out
 
 
 def missing_artwork(title):
@@ -2447,8 +2432,9 @@ class Handler(BaseHTTPRequestHandler):
             if group and not q.get("cursor", [""])[0]:
                 print("BOX SETS browse library=%s group=%s" % (lib or "-", group), flush=True)
                 LOG.append("BOX SETS browse library=%s group=%s" % (lib or "-", group))
-            if group == "box_set" and lib == "1" and box_sets_on() and src == "query":
-                items = group_box_sets(items)
+            if group == "box_set":
+                # Silo dropped box_set from the catalog group enum (Silo Android #796).
+                return self.problem(422, "validation_failed", "group must be one of the supported values")
             return self.send(200, page(items, q))
         if p == "/api/v2/catalog/box-sets":
             text = q.get("q", [""])[0].strip().lower()

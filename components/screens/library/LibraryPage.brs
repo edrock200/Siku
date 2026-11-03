@@ -477,12 +477,9 @@ sub requestPage(cursor as string)
         if src = "" then src = "query"
         q.source = src
         if not Str_isEmpty(prm("libraryId")) then q.library_id = prm("libraryId")
-        ' A library with box sets on (Silo Android #646) browses each TMDB collection as one box set
-        ' card. The server groups before paging, so every page carries the same grouping.
-        if boxSetsGrouped() then
-            q.group = "box_set"
-            if cursor = "" then Diag_log(Diag_join(["[siku-boxsets] browse library=", prm("libraryId"), " view=", m.mode, " group=box_set"]))
-        end if
+        ' No group=box_set (Silo Android #796): the server dropped box_set from the catalog group enum
+        ' and answers it with 422, so a library grid lists a collection's movies as titles. Box sets
+        ' stay reachable from Search and a movie page's box set row.
     end if
     mt = Str_orEmpty(prm("mediaType"))
     if mt <> "" then q["type"] = mt
@@ -515,13 +512,6 @@ sub requestPage(cursor as string)
         Api_get("/api/v2/catalog", q, "onPage", ctx)
     end if
 end sub
-
-' Browse, A-Z and Genres of a library whose GET /api/v2/user/libraries row has box_sets_enabled
-' (the shell passes it as params.boxSetsEnabled); everything else browses exactly as before.
-function boxSetsGrouped() as boolean
-    if m.drill <> invalid or not BoxSet_isTrue(prm("boxSetsEnabled", false)) then return false
-    return m.mode = "browse" or m.mode = "alphabet" or m.mode = "genres"
-end function
 
 ' The watch-status filter as a catalog rule. Flag rules carry JSON booleans: the server answers
 ' 500 to "true"/"false" strings (Silo Android #702; the Apple clients send booleans too).

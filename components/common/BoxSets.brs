@@ -1,9 +1,9 @@
 ' Movie box sets (Silo Android #646): the movies TMDB lists in one collection (a franchise such as
-' Harry Potter) that the viewer can see in one library. A library whose GET /api/v2/user/libraries
-' row says `box_sets_enabled: true` browses with `group=box_set`, and the server answers one card of
-' type "box_set" carrying `box_set` {id, library_id, title, overview, poster_url, backdrop_url,
-' movie_count, played_count, first_year, last_year} in place of the collection's movies. The card
-' opens BoxSetScreen (GET /api/v2/catalog/box-sets/{id}?library_id=), and Search lists the box sets
+' Harry Potter) that the viewer can see in one library (GET /api/v2/user/libraries
+' `box_sets_enabled: true`). Library grids no longer group them (Silo Android #796: the server
+' answers `group=box_set` with 422); a "box_set" card carrying `box_set` {id, library_id, title,
+' overview, poster_url, backdrop_url, movie_count, played_count, first_year, last_year} can still
+' arrive in other lists and opens BoxSetScreen (GET /api/v2/catalog/box-sets/{id}?library_id=), and Search lists the box sets
 ' of GET /api/v2/catalog/box-sets?q=&limit= ahead of the titles. Servers without box sets report
 ' no library with them on, so they are never asked. Port of shared BoxSetModels.kt; pure functions
 ' (host-tested in tests/test_box_sets.py).

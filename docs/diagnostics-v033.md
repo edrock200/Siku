@@ -24,14 +24,12 @@
 
 ## Movie box sets
 
-- Movie box sets (Silo Android #646, `BoxSets.brs`, `BoxSetScreen`): `[siku-boxsets] browse
-  library=<id> view=browse|alphabet|genres group=box_set` (a library with `box_sets_enabled`),
-  `open box set library=`, `box set read movies= played= quiet=` / `box set read failed status=
+- Movie box sets (Silo Android #646, `BoxSets.brs`, `BoxSetScreen`): `open box set library=`, `box set read movies= played= quiet=` / `box set read failed status=
   quiet=` (404/410: "isn't available"), `play movie index= of N resume=`, `search box sets=<n>
   status=` / `search box sets late; showing the titles without them` (1.5 s grace), `open box set
   from search`, `movie box set row shown=true|false` / `movie box set read failed status=`,
-  `explore all from a movie page`, `box sets turned true|false for the library on screen;
-  rebuilding its browse`. Mock: `--switch box_sets=1` (library 1; log `BOX SETS browse library=
+  `explore all from a movie page`. Since v0.1.37 (Silo Android #796) library grids never send
+  `group=box_set` (the server answers 422; so does the mock). Mock: `--switch box_sets=1` (library 1; log `BOX SETS browse library=
   group=`, `BOX SET <id> library= status=`, `BOX SET SEARCH q= n=`, `BOX SET ITEM <id> library=
   found=`). Simulator: `debugScreen=BoxSetScreen,debugItem=8650,debugLibrary=1` (Night Collection;
   1241 = The Paper Collection), `debugScreen=DetailScreen,debugItem=movie:paper-tigers` (the row),

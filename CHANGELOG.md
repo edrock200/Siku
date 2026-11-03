@@ -3,6 +3,13 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.37
+
+One change from Silo's Android TV app (November 3, 2026).
+
+**Fixed**
+- **Libraries with box sets keep loading.** Silo servers are dropping the option that showed a movie collection (such as all the Harry Potter films) as one box set card in a library grid, and newer servers refuse it, which would have left those libraries empty. Siku now lists a collection's movies as separate titles in the library grid, like Silo's own apps. Box sets are still there in Search and in the box set row on a movie's page.
+
 ## v0.1.36
 
 One change from Silo's Android TV app (November 2, 2026).
