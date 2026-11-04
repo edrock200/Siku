@@ -3,6 +3,14 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.38
+
+Two changes from Silo's Android TV app (November 4, 2026).
+
+**New**
+- **Digital and physical releases in the Calendar.** Newer Silo servers list movies in the Calendar on the day they come out for home viewing. Those posters now carry a DIGITAL or PHYSICAL tag, so you can tell a streaming or download release from a disc release at a glance.
+- **Clear the search in one press.** While the search box holds text, an X button sits to its right. Press Right from the search box to reach it and OK to empty the search: the results go away and the keyboard opens at once, ready for a new search. With the screen reader on it says "Clear search, button", and the search box now says "Search, text field".
+
 ## v0.1.37
 
 One change from Silo's Android TV app (November 3, 2026).

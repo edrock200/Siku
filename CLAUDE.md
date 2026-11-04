@@ -223,6 +223,11 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   `[siku-detail] more like this pick action=push|replace|back|ignore`. A rail-opened DetailScreen carries
   `chainStartId`; the first pick pushes, later picks replace, the start title closes back to it, the title on
   screen (or a second OK while the page is leaving) does nothing.
+- Calendar movie badges (Silo Android #722): `CalFmt_badgeLabels` names `digital` / `physical` DIGITAL and
+  PHYSICAL; the mock's `/api/v2/calendar` adds a movie with each (start day +1 and +3). Search's clear
+  button (Silo Android #798, `clearBtn`, focus area `clear`): Right from the field while it holds text, OK
+  prints `[siku-search] cleared; keyboard opened`; with `debugA11y=1` it says `Clear search, button` and the
+  field `Search, text field`.
 - Search's "Available to request" row leaves out titles the server marks `availability: "available"`
   (Silo Android #773, `Req_withoutLibraryTitles`) and hides itself when every match is in the library.
   Simulator: `debugScreen=SearchScreen,debugQuery=<text>` (mock: "Northern" is in the library,

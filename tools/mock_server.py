@@ -2561,6 +2561,12 @@ class Handler(BaseHTTPRequestHandler):
                 badges = ["season_premiere", "finale"] if k == 0 else (["series_premiere"] if k == 4 else [])
                 events.append({"date": day, "items": [dict(e, title=e["series_title"], episode_title=e["title"], air_date=day,
                                                             local_air_date=day, watched=False, badges=badges, **extra)]})
+            # Movies listed on their first home release (Silo Android #722): one digital, one physical.
+            for k, kind in ((1, "digital"), (3, "physical")):
+                day = "%04d-%02d-%02d" % (y, mo, min(28, d + k))
+                events.append({"date": day, "items": [dict(movie(k), air_date=day, local_air_date=day, watched=False,
+                                                            badges=[kind])]})
+            events.sort(key=lambda ev: ev["date"])
             return self.send(200, {"events": events})
         m = re.match(r"^/api/v2/watch/(.+)/trickplay$", p)
         if m:

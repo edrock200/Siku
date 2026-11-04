@@ -6,6 +6,8 @@ sub init()
     m.fieldRing = m.top.findNode("fieldRing")
     m.fieldIcon = m.top.findNode("fieldIcon")
     m.fieldText = m.top.findNode("fieldText")
+    m.clearBtn = m.top.findNode("clearBtn")
+    m.clearBtn.observeField("buttonSelected", "onClearSelected")
     m.chips = m.top.findNode("chips")
     m.statusLine = m.top.findNode("statusLine")
     m.people = m.top.findNode("people")
@@ -31,7 +33,7 @@ sub init()
     end if
     m.chipIndex = 0
     m.chipFocus = 0
-    m.focusArea = "field"      ' field | chips | people | grid | retry
+    m.focusArea = "field"      ' field | clear | chips | people | grid | retry | requests
     m.query = ""
     m.pendingText = ""
     m.searchSeq = 0
@@ -106,6 +108,23 @@ sub updateField()
         m.fieldText.text = m.query
         m.fieldText.color = Theme().colors.ink
     end if
+    ' The clear button exists only while there is something to clear.
+    m.clearBtn.visible = m.query <> ""
+    if m.focusArea = "clear" and not m.clearBtn.visible then focusArea("field")
+end sub
+
+' The X beside the field (Silo Android #798): clearing starts a new query, so focus goes back to the
+' field first (the button is about to disappear) and the keyboard opens at once.
+sub onClearSelected()
+    m.debounce.control = "stop"
+    focusArea("field")
+    m.query = ""
+    m.pendingText = ""
+    m.searchedQuery = ""
+    updateField()
+    runSearch() ' an empty query: results, status and the request row go back to idle
+    Diag_log("[siku-search] cleared; keyboard opened")
+    openKeyboard()
 end sub
 
 sub buildChips()
@@ -146,7 +165,9 @@ sub applyFocusVisuals()
         m.fieldBg.blendColor = "0x15171CCC"
         m.fieldRing.blendColor = "0xFFFFFFF0"
         m.fieldIcon.blendColor = c.ink
+        A11y_say("search:field", "Search", "text field", -1, 0, m.field)
     else
+        A11y_blur("search:field")
         m.fieldBg.blendColor = "0xFFFFFF0E"
         m.fieldRing.blendColor = "0xFFFFFF1F"
         m.fieldIcon.blendColor = c.inkMuted
@@ -182,6 +203,8 @@ sub focusArea(area as string)
         m.retryBtn.setFocus(true)
     else if area = "requests" and requestRowFocusable() then
         m.reqRow.setFocus(true)
+    else if area = "clear" and m.clearBtn.visible then
+        m.clearBtn.setFocus(true)
     else
         if area <> "field" and area <> "chips" then m.focusArea = "field"
         m.top.setFocus(true)
@@ -533,9 +556,25 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
         return false
     end if
+    if m.clearBtn.hasFocus() then
+        if key = "left" then
+            focusArea("field")
+            return true
+        else if key = "down" then
+            focusArea("chips")
+            return true
+        else if key = "up" then
+            leaveSearch()
+            return true
+        end if
+        return true ' Right: nothing past the button
+    end if
     if m.focusArea = "field" then
         if key = "OK" then
             openKeyboard()
+            return true
+        else if key = "right" then
+            if m.clearBtn.visible then focusArea("clear")
             return true
         else if key = "down" then
             focusArea("chips")

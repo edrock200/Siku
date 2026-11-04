@@ -51,8 +51,9 @@ function CalFmt_offsetMinutes() as integer
     return Int((dt.AsSeconds() - utc) / 60)
 end function
 
-' Every badge the server sends that the card can name, in the server's order (Silo Android TV
-' TvCalendarScreen badgeLabel: PREMIERE, NEW SEASON, FINALE; unknown ones are skipped).
+' Every badge the server sends that the card can name, in the server's order (Silo Android
+' calendarBadgeLabel, #722: PREMIERE, NEW SEASON, FINALE, and DIGITAL / PHYSICAL for a movie listed
+' on its first home release; unknown ones are skipped).
 function CalFmt_badgeLabels(badges as dynamic) as object
     out = []
     seen = {}
@@ -65,6 +66,10 @@ function CalFmt_badgeLabels(badges as dynamic) as object
             label = "NEW SEASON"
         else if s = "finale" or s = "season_finale" or s = "series_finale" then
             label = "FINALE"
+        else if s = "digital" then
+            label = "DIGITAL"
+        else if s = "physical" then
+            label = "PHYSICAL"
         end if
         if label <> "" and not seen.DoesExist(label) then
             seen[label] = true

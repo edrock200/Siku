@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Search (design-spec §4.5): big field at the top (OK opens the keyboard), filter chips
+  Search (design-spec §4.5): big field at the top (OK opens the keyboard; an X beside it clears
+  the query while it holds text, Silo Android #798), filter chips
   All · Movies · Series (· Audiobooks), a People row, a poster grid and, when the server enables
   requests, an "Available to request" row. params: { query? }
   While some library has box sets on (Silo Android #646), the All and Movies chips also ask
@@ -20,6 +21,10 @@
         <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="29" />
       </Label>
     </Group>
+    <!-- Clear button beside the field while it holds text (Silo Android #798, TvHeroToggleIconButton):
+         Right from the field reaches it, OK empties the query and reopens the keyboard. -->
+    <DetailCircleButton id="clearBtn" translation="[1152, 178]" iconUri="pkg:/images/icons/close.png"
+                        a11yLabel="Clear search" visible="false" />
     <Group id="chips" translation="[88, 292]" />
     <Label id="statusLine" translation="[88, 372]" width="1000" color="0xEDEDED9E">
       <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />

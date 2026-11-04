@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Calendar poster item: a MediaCardItem plus up to three "PREMIERE" / "NEW SEASON" / "FINALE" badges
+  Calendar poster item: a MediaCardItem plus up to three "PREMIERE" / "NEW SEASON" / "FINALE" /
+  "DIGITAL" / "PHYSICAL" badges
   (the ContentNode's `badge` field, labels joined with "|") in the poster's top-left corner and the
   air time (`timeTag`, "9:00 PM") in its bottom-right corner.
   SPDX-License-Identifier: AGPL-3.0-or-later
