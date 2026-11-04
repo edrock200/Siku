@@ -121,6 +121,13 @@ clears one); GET /mock/switch lists them.
                                  answers a member movie's box set ({} for others). Log: BOX SETS browse
                                  library= group=, BOX SET <id> library= status=, BOX SET SEARCH q= n=,
                                  BOX SET ITEM <id> library= found=
+  multi_user=1                   several server users (Silo Android #795, more than one account per server):
+                                 password sign-in gives each username its own user id (laura 1, sam 2,
+                                 others u-<name>), and tokens stay tied to their user, so /account/me and
+                                 /profiles answer per account (sam: Sam and Max). Debug tokens acc-debug-sam
+                                 are sam's. Log: SIGNIN user=<name> id=<id>, LOGOUT ... user=<name>
+  device_user=<name>             device-code sign-ins are approved as that user (implies multi_user for
+                                 the tokens it hands out); the simulator cannot type a password
   info_status=<code>[:<detail>]  GET /system/info answers that status: a problem with that detail, or
                                  a bare text error without one (the address screen's "Could not reach
                                  server: <detail>" / "Could not reach a Silo server at that address.")
@@ -2016,6 +2023,11 @@ class Handler(BaseHTTPRequestHandler):
         auth = self.headers.get("Authorization", "")
         return auth.startswith("Bearer acc-")
 
+    def user(self):
+        """The server user the bearer token belongs to (multi_user; laura otherwise)."""
+        auth = self.headers.get("Authorization", "")
+        return user_for_token(auth[len("Bearer "):] if auth.startswith("Bearer ") else "")
+
     def do_GET(self):
         self.route("GET")
 
@@ -2195,7 +2207,10 @@ class Handler(BaseHTTPRequestHandler):
             if STATE["devices"][code] < 3:
                 return self.send(200, {"status": "pending", "poll_after": 3, "opened": STATE["devices"][code] > 1})
             del STATE["devices"][code]
-            return self.send(200, {"status": "approved", "tokens": tokens(), "profile_id": "", "profile_token": ""})
+            name = str(STATE["switches"].get("device_user") or "laura")
+            t = tokens(name, distinct=bool(STATE["switches"].get("device_user")))
+            print("SIGNIN device user=%s id=%s" % (name, t["user"]["id"]), flush=True)
+            return self.send(200, {"status": "approved", "tokens": t, "profile_id": "", "profile_token": ""})
         if p == "/api/v2/auth/device" and method == "GET":
             # The phone's lookup of a code before it approves (match code, purpose).
             uc = q.get("user_code", [""])[0] if isinstance(q.get("user_code"), list) else q.get("user_code", "")
@@ -2222,7 +2237,10 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/v2/auth/login" and method == "POST":
             if b.get("password") != "silo":
                 return self.problem(401, "invalid_token", "Invalid username or password")
-            return self.send(200, tokens(b.get("username", "laura")))
+            name = b.get("username", "laura")
+            t = tokens(name, distinct=bool(STATE["switches"].get("multi_user")))
+            print("SIGNIN password user=%s id=%s" % (name, t["user"]["id"]), flush=True)
+            return self.send(200, t)
         if p == "/api/v2/auth/refresh":
             fail = str(STATE["switches"].get("refresh_status") or "")
             if fail:
@@ -2238,15 +2256,17 @@ class Handler(BaseHTTPRequestHandler):
             print("REFRESH ok", flush=True)
             LOG.append("REFRESH ok")
             # A refresh answer carries no user (docs/api-spec.md §2.4); a user means a new sign-in.
-            t = tokens()
+            # The new tokens stay with the refresh token's user (multi_user).
+            old = TOKEN_USERS.get(b.get("refresh_token") or "")
+            t = tokens(old["username"], distinct=True) if old else tokens()
             t.pop("user", None)
             return self.send(200, t)
         if p == "/api/v2/auth/logout":
             # Which session was revoked (never the token itself): a SiloCast handoff's, the
             # debugSession's, or another sign-in's.
             bearer = (self.headers.get("Authorization") or "")[len("Bearer "):]
-            kind = "handoff" if bearer in STATE.setdefault("handoff_tokens", set()) else "debug" if bearer == "acc-debug" else "login" if bearer else "none"
-            print("LOGOUT session=%s" % kind, flush=True)
+            kind = "handoff" if bearer in STATE.setdefault("handoff_tokens", set()) else "debug" if bearer.startswith("acc-debug") else "login" if bearer else "none"
+            print("LOGOUT session=%s user=%s" % (kind, user_for_token(bearer)["username"] if bearer else "-"), flush=True)
             return self.send(204)
 
         if re.match(r"^/api/v2/catalog/items/.+/themes/[^/]+/audio$", p) and "token=mock-theme-grant" in self.path:
@@ -2261,7 +2281,7 @@ class Handler(BaseHTTPRequestHandler):
             # Silo Android #790: a temporary password set by an admin. Only the account read, the
             # password capability, the change and sign-out (answered above) are allowed.
             if p == "/api/v2/account/me" and method == "GET":
-                return self.send(200, tokens()["user"] | {"password_change_required": True})
+                return self.send(200, self.user() | {"password_change_required": True})
             if p == "/api/v2/account/password/capability" and method == "GET":
                 return self.send(200, {"state": "available", "allowed": True,
                                        "minimum_password_length": 8, "maximum_password_bytes": 72})
@@ -2294,7 +2314,13 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if p == "/api/v2/account/me":
-            return self.send(200, tokens()["user"] | {"password_change_required": False})
+            return self.send(200, self.user() | {"password_change_required": False})
+        if p == "/api/v2/profiles" and self.user()["id"] != "1":
+            # multi_user: another account's household (Silo Android #795).
+            return self.send(200, {"items": [
+                {"id": "p-%s-main" % self.user()["id"], "name": self.user()["username"].title(), "avatar_url": "", "has_pin": False, "is_primary": True},
+                {"id": "p-%s-max" % self.user()["id"], "name": "Max", "avatar_url": "", "has_pin": False, "is_primary": False},
+            ]})
         if p == "/api/v2/profiles":
             return self.send(200, {"items": [
                 {"id": "p-owner", "name": "Laura", "avatar_url": img("avatar", "laura"), "has_pin": False, "is_primary": True},
@@ -3336,9 +3362,31 @@ def settings_route(handler, method, p, q, b):
             return handler.send(200, settings_row_view(key, ident, row)) or True
     return False
 
-def tokens(username="laura"):
-    return {"access_token": "acc-" + uuid.uuid4().hex[:12], "refresh_token": "ref-" + uuid.uuid4().hex[:12], "expires_in": 3600,
-            "user": {"id": "1", "username": username, "role": "admin", "permissions": []}}
+# multi_user / device_user (Silo Android #795): which user each token belongs to.
+TOKEN_USERS = {}
+KNOWN_USERS = {"laura": "1", "sam": "2"}
+
+
+def user_record(username, distinct):
+    uid = KNOWN_USERS.get(username, "u-" + username) if distinct else "1"
+    role = "admin" if uid == "1" else "user"
+    return {"id": uid, "username": username, "role": role, "permissions": []}
+
+
+def user_for_token(token):
+    if token in TOKEN_USERS:
+        return dict(TOKEN_USERS[token])
+    if token.startswith("acc-debug-sam") or token.startswith("ref-debug-sam"):
+        return user_record("sam", True)
+    return user_record("laura", True)
+
+
+def tokens(username="laura", distinct=False):
+    t = {"access_token": "acc-" + uuid.uuid4().hex[:12], "refresh_token": "ref-" + uuid.uuid4().hex[:12], "expires_in": 3600,
+         "user": user_record(username, distinct)}
+    TOKEN_USERS[t["access_token"]] = t["user"]
+    TOKEN_USERS[t["refresh_token"]] = t["user"]
+    return t
 
 
 def main():

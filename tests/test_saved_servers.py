@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Saved servers, each keeping its own sign-in (components/common/Session.brs): the list after a
-save, the registry budget, removal and the session a saved entry restores (Android TV's
-ServerRegistry; silo-roku source/storage/registry.bs)."""
+"""Saved servers (components/common/Session.brs): the list after a save, the registry budget,
+removal and the session a saved entry restores (Android TV's ServerRegistry; silo-roku
+source/storage/registry.bs). The sign-ins themselves are the accounts' since registry layout 2
+(tests/test_accounts.py)."""
 import json
 import unittest
 
@@ -44,18 +45,19 @@ class Next(unittest.TestCase):
         old = [{"url": A, "name": "A", "id": "a"}, {"url": B, "name": "B", "id": ""}]
         f = "Session_serversNext"
         check_cases(self, FILES, [
-            ("switching stashes the old server's sign-in", f, [old, session(A), session(B, token="acc-b")],
-             lambda v: urls(v) == [B, A] and stored(v, A)["accesstoken"] == "acc-1" and stored(v, A)["profileid"] == "p1"),
+            # Since registry layout 2 the sign-ins live in the accounts (tests/test_accounts.py).
+            ("switching keeps the old server without a sign-in", f, [old, session(A), session(B, token="acc-b")],
+             lambda v: urls(v) == [B, A] and stored(v, A) is None),
             ("the active server keeps no copy", f, [old, session(A), session(B, token="acc-b")], lambda v: stored(v, B) is None),
             ("a refresh on the same server stashes nothing", f, [old, session(A), session(A, token="acc-2")],
              lambda v: urls(v) == [A, B] and stored(v, A) is None),
             ("a signed-out server stores no sign-in", f, [old, session(A, token=""), session(B)], lambda v: stored(v, A) is None),
-            ("Change server (no server) keeps the old sign-in", f, [old, session(A), session("")],
-             lambda v: urls(v) == [A, B] and stored(v, A)["accesstoken"] == "acc-1"),
+            ("Change server (no server) keeps the old server", f, [old, session(A), session("")],
+             lambda v: urls(v) == [A, B] and stored(v, A) is None),
             ("a removed server is not added back", f, [[{"url": B}], session(A), session(B)], lambda v: urls(v) == [B]),
             ("a new server goes first", f, [old, session(A), session(C, name="C")], lambda v: urls(v) == [C, A, B] and v[0]["name"] == "C"),
             ("older entries read as signed out", f, [old, None, session(A)], lambda v: stored(v, B) is None),
-            ("keeps other stored sign-ins", f, [[{"url": A}, {"url": B, "session": {"accessToken": "acc-b"}}], session(A), session(C)],
+            ("carries a layout-1 stored sign-in until the migration", f, [[{"url": A}, {"url": B, "session": {"accessToken": "acc-b"}}], session(A), session(C)],
              lambda v: stored(v, B) is not None and stored(v, B) != "missing"),
             ("at most six", f, [[{"url": "https://s%d.example" % i} for i in range(9)], None, session(C)], lambda v: len(v) == 6 and v[0]["url"] == C),
             ("no tokens in names", f, [old, session(A), session(B)], lambda v: "acc" not in json.dumps([e.get("name") for e in v])),
