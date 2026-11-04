@@ -34,7 +34,7 @@ function HomeCache_limits() as object
     return { sections: 30, items: 24, overview: 150, text: 200, bytes: 1048576 }
 end function
 
-' The identity a cache belongs to: server, account and profile. "" means "do not cache" (signed
+' The identity a cache belongs to: server, account (user and local account id) and profile. "" means "do not cache" (signed
 ' out, no profile yet, or a phone's temporary profile borrowed for remote playback). HomeCacheTask
 ' hashes it (SHA-256) for the file name, so no id or address appears on storage.
 function HomeCache_ownerSource(s as dynamic) as string
@@ -49,7 +49,11 @@ function HomeCache_ownerSource(s as dynamic) as string
     if server = "" or token = "" or profile = "" then return ""
     userId = ""
     if s.user <> invalid and Type(s.user) = "roAssociativeArray" then userId = HomeCache_str(s.user.id)
-    return FormatJson(["siku-home", server, HomeCache_str(s.serverId), userId, profile])
+    owner = ["siku-home", server, HomeCache_str(s.serverId), userId, profile]
+    ' Several accounts per server (Silo Android #795): the local account id keys it too.
+    account = HomeCache_str(s.accountId)
+    if account <> "" then owner.Push(account)
+    return FormatJson(owner)
 end function
 
 ' The file name for an owner hash (64 lower-case hex digits).

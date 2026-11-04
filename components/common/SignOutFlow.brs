@@ -1,26 +1,63 @@
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 ' Sign Out's question and the one sign-out behind Who's watching, the profile menu and Settings
-' (Silo Android TV #764, Apple TV's AppRouter.requestSignOut): Cancel, Sign Out (keep the server
-' and open its sign-in screen) or Sign Out & Remove Server (forget it, then open the next saved
-' server with its own sign-in, or first-run setup). Wording adapted from Silo-Server/silo-roku,
-' AGPL-3.0 (components/screens/home/SignOutDialog.xml, locale/en_US/strings.json).
-' Include with Session.brs, Api.brs, Nav.brs and ProfileLaunch.brs. A screen that asks calls
-' SignOut_ask(title); SettingsScreen draws its own picker and calls SignOut_run(remove).
+' (Silo Android TV #764 and #795, Apple TV's AppRouter.requestSignOut). It signs out of the open
+' account only: "Sign out of alex on Home?" with Cancel and Sign Out (the server and its other
+' accounts stay; then Change Account when another account has a session, else this server's
+' sign-in), plus Sign Out & Remove Server while the server has no other account (forget it, then
+' open the next saved server with its own account, or first-run setup). Wording adapted from
+' Silo-Server/silo-roku, AGPL-3.0 (components/screens/home/SignOutDialog.xml,
+' locale/en_US/strings.json) and Android TV's TvSignOutDialog.
+' Include with Session.brs, Accounts.brs, Api.brs, Nav.brs and ProfileLaunch.brs. A screen that
+' asks calls SignOut_ask(); SettingsScreen draws its own picker and calls SignOut_run(remove).
 ' One sign-out at a time: a second request while one runs is ignored.
 ' A phone's borrowed profile (RemoteControl) is ended first, as today: the temporary session is
 ' signed out, RemoteControl hands it back and signs the TV's own account out (keeping its server);
 ' with "& Remove Server" the TV's own server is then removed once that has happened (at most 5 s).
 
+' The Roku's own session: a phone's borrowed profile signs the TV's own account out too.
+function SignOut_ownSession() as object
+    s = m.global.session
+    if Session_isTemporary(s) then
+        own = Registry_read("session")
+        if own <> invalid and Type(own) = "roAssociativeArray" then return own
+    end if
+    return s
+end function
+
+' Sign Out & Remove Server is offered only while the server has no other saved account.
+function SignOut_offersRemove() as boolean
+    return Accounts_countOn(Str_orEmpty(SignOut_ownSession().serverUrl)) <= 1
+end function
+
+' "Sign out of alex on Home?", dropping whichever part is unknown (Android TV's tvSignOutTitle).
+function SignOut_title() as string
+    s = SignOut_ownSession()
+    account = Accounts_username(s)
+    server = Str_orEmpty(s.serverName).Trim()
+    if server = "" then server = Url_host(Str_orEmpty(s.serverUrl))
+    return SignOut_titleFor(account, server)
+end function
+
+function SignOut_titleFor(account as string, server as string) as string
+    if account <> "" and server <> "" then return "Sign out of " + account + " on " + server + "?"
+    if account <> "" then return "Sign out of " + account + "?"
+    if server <> "" then return "Sign out of " + server + "?"
+    return "Sign Out?"
+end function
+
 function SignOut_message() as string
-    return "Choose whether to keep or remove this server from this Roku."
+    if SignOut_offersRemove() then return "This account's profiles and settings leave this Roku. Sign Out keeps the server saved, so you can sign in again; Sign Out & Remove Server removes it too."
+    return "This account's profiles and settings leave this Roku. The server and its other accounts stay saved, so you can sign in again."
 end function
 
 function SignOut_buttons() as object
-    return ["Cancel", "Sign Out", "Sign Out & Remove Server"]
+    if SignOut_offersRemove() then return ["Cancel", "Sign Out", "Sign Out & Remove Server"]
+    return ["Cancel", "Sign Out"]
 end function
 
-sub SignOut_ask(title = "Sign Out" as string)
+sub SignOut_ask()
     if SignOut_isRunning() or m.signOutDialog <> invalid then return
+    title = SignOut_title()
     dlg = CreateObject("roSGNode", "StandardMessageDialog")
     if dlg <> invalid then
         dlg.title = title
@@ -151,6 +188,8 @@ sub SignOut_removeActive()
     url = Str_orEmpty(s.serverUrl)
     if url = "" then return
     ' Its stored copy, if any, must not come back: drop the entry before anything saves again.
+    ' Its other accounts (none when Remove Server was offered) are signed out too.
+    SignOut_revokeServerAccounts(url, Str_orEmpty(s.accountId))
     Session_forgetServer(url)
     nxt = invalid
     list = Session_savedServers()
@@ -165,9 +204,21 @@ sub SignOut_removeActive()
 end sub
 
 function SignOut_entryState(e as object) as string
-    if Session_entrySignedIn(e) then return "signed_in"
+    if Session_serverSignedIn(Str_orEmpty(e.url)) then return "signed_in"
     return "signed_out"
 end function
+
+' Ends the stored sessions of the saved accounts on `url` (except `exceptId`) on the server, best
+' effort, before the server is forgotten.
+sub SignOut_revokeServerAccounts(url as string, exceptId as string)
+    list = Accounts_onServer(Accounts_list(), url)
+    for i = 0 to list.Count() - 1
+        e = list[i]
+        if Str_orEmpty(e.id) <> exceptId and Accounts_hasSignIn(e) and not Str_isEmpty(e.session.accessToken) then
+            Api_call({ method: "POST", path: "/api/v2/auth/logout", baseUrl: url, auth: false, profile: false, headers: { Authorization: "Bearer " + Str_orEmpty(e.session.accessToken) }, timeout: 5 }, "Api_onFired")
+        end if
+    end for
+end sub
 
 sub SignOut_finish()
     m.signOutRunning = false

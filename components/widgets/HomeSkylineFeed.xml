@@ -44,6 +44,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/Content.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/BoxSets.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Accounts.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Spoilers.brs" />
   <children>
     <!-- Ambient backdrop: top-right 64% x 70%, faded by mask_backdrop (two layers crossfade). -->

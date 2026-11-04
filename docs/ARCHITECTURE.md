@@ -42,6 +42,8 @@ components/common/
   Theme.brs     design tokens, ThemeFont(weight, px), Sp(sp)
   Utils.brs     Registry_*, Str_*, Num_or, Time_*, Arr_or, AA_get, AA_copy, Device_info, App_version, Node_find
   Session.brs   Session_* (tokens, profile, servers), Url_normalize/origin/host/resolve, Prefs_*
+  Accounts.brs  Accounts_* several accounts per saved server (registry layout 2, keyed by a local
+                account id; the layout-1 migration; server user id matching; Change Account's groups)
   Api.brs       Api_get / Api_send / Api_call / Api_result / Api_fire / Api_cancelAll / Api_errorText
   Content.brs   Content_cardNode / Content_rows / Content_grid / Content_metaLine / Library_mode
   Nav.brs       Nav_push / Nav_replace / Nav_reset / Nav_close / Nav_play
@@ -129,6 +131,7 @@ A screen is `<component name="XScreen" extends="BaseScreen">` (`components/BaseS
 - `Nav_reset("@start")` re-runs startup routing (at app launch, the Profile Selection rule in
   `ProfileLaunch.brs` may first clear the saved profile so Who's watching shows):
   - no server → `ServerConnectScreen`
+  - no token, while another saved account has a session → `ChangeAccountScreen` (`root: true`)
   - no token → `LoginScreen`
   - no profile → `ProfileScreen`
   - otherwise → `ShellScreen`
@@ -142,8 +145,9 @@ A screen is `<component name="XScreen" extends="BaseScreen">` (`components/BaseS
 | Screen | Params |
 |---|---|
 | `ServerConnectScreen` | none (`debugLanSelf: true` from the deep link `debugLanSelf=1`: Find servers also accepts this machine's own address, for `tools/silo_responder.py` in the simulator). Lists saved servers and the Silo servers found on this network; see "Phone features" › Find servers |
-| `LoginScreen` | none |
-| `ProfileScreen` | `{ switching: bool }` |
+| `LoginScreen` | none (`{ username }`: filled into the password form, for an account signing in again) |
+| `ProfileScreen` | `{ switching: bool }`. The open account's profiles only |
+| `ChangeAccountScreen` | `{ root: bool, signIn: bool, username }`. Saved servers on a rail, the focused server's accounts (CURRENT / SIGN IN AGAIN, profile count), Add an account, Add server (Silo Android #795). `signIn` pushes `LoginScreen` once (a switch that needs a sign-in rebuilds the stack with this screen at its root) |
 | `ShellScreen` | none. Top bar and root tabs: Home, Movies, Series, Music, Audiobooks, For You, Calendar, Requests (only when `GET /api/v2/requests/status` enables it; page `RequestsPage`). Libraries listed in the profile's `ui.disabled_library_ids` setting are left out of the tabs and panels (`Settings_withoutHiddenLibraries`), re-filtered whenever the settings snapshot lands. A mixed library appears under both Movies and Series; its pages get `mediaType` (`movie`/`series`): Recommended (`HomePage`) filters each shelf to that type and refills short shelves from `GET /api/v2/catalog?source=section`, Browse and collections send `type`, and Shuffle is not offered there (a shuffle request carries no media type) |
 | `LibraryScreen` | `{ libraryId, libraryName, mode, section: "browse"\|"collections"\|..., title, source?, collectionId? }` |
 | `LibraryPage` (shell page) | `{ section, libraryId, libraryName, mode, mediaType?, ... }`. Sections: `browse`, `collections`, `alphabet` (A‑Z), `genres` (Music), `authors` / `series` (audiobook groups via `GET /api/v2/catalog/audiobook-groups`, drill-in through `POST /api/v2/catalog/query` with an `author`/`series` `is` rule), plus the personal lists. Browse and A‑Z show the right-edge `AlphabetRail` (`name_prefix`) |
@@ -381,7 +385,7 @@ Tokens never cross the LAN; the server gives them to the Roku over HTTPS after t
   it is handed back (logout, own session restored) 5 s after the phone leaves with nothing
   playing, or after 10 minutes idle, or when its refresh fails. The logout always uses the
   borrowed session's own token. Sign Out while it is borrowed ends it and signs the Roku's own
-  account out too (its server is kept); Change server (any non-temporary save) ends it without
+  account out too (its server is kept); Change account or server (any non-temporary save) ends it without
   restoring the old session, as Android ends the identity when the active server changes.
 - `launch`: needs a ready handoff on that connection; opens PlayerScreen with the file id, the
   audio ordinal and the **combined subtitle ordinal** (a Roku launch carries the server's

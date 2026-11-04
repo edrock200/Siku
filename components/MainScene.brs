@@ -8,6 +8,10 @@ sub init()
     m.toast = m.top.findNode("toast")
     m.stack = []
 
+    ' Registry layout 2 (several accounts per server, Accounts.brs): an older Roku's sign-ins move
+    ' into accounts offline, before anything reads the session.
+    migration = Accounts_migrate()
+
     ' App-wide state shared with every component and Task.
     m.global.addFields({
         session: Session_load()     ' active server, tokens, user and profile
@@ -38,6 +42,7 @@ sub init()
     m.launch = { done: false, dialog: false }
     ' Diagnostics log and last-exit notice (DiagScene.brs).
     Diag_init()
+    if migration <> "" then Diag_log(migration)
 
     ' Single-flight token refresher used by every ApiTask.
     authTask = CreateObject("roSGNode", "AuthTask")
@@ -113,6 +118,12 @@ sub routeToStart(params = {} as object)
     s = m.global.session
     if Str_isEmpty(s.serverUrl) then
         resetTo("ServerConnectScreen", params)
+    else if Str_isEmpty(s.accessToken) and Accounts_anotherSignedIn(Accounts_list(), s) then
+        ' No account open (signed out, or the server refused it) while another account has a
+        ' session: Change Account is the start screen (Android TV, silo-roku).
+        params = AA_copy(params)
+        params.root = true
+        resetTo("ChangeAccountScreen", params)
     else if Str_isEmpty(s.accessToken) then
         resetTo("LoginScreen", params)
     else if Str_isEmpty(s.profileId) then
@@ -414,7 +425,10 @@ sub onAuthExpired()
         m.global.toast = "The phone profile session expired."
         return
     end if
-    Session_signOutLocal(s)
+    ' Not a sign-out (Silo Android #795): the account stays saved, needing to sign in again.
+    ' A second refusal for the same expiry (requests that were in flight) changes nothing.
+    if Str_isEmpty(s.accessToken) and Str_isEmpty(s.refreshToken) then return
+    Session_expireLocal(s)
     m.global.toast = "Your session expired. Please sign in again."
     routeToStart()
 end sub
@@ -564,6 +578,14 @@ sub handleDeepLink(args as dynamic)
         ' debugServers=reset: forget the remembered servers first (the simulator's registry is shared
         ' by every worktree's runs), so a handoff's saved addresses are only this mock's.
         if args.debugServers = "reset" or args.debugServers = "two" then Registry_write("servers", [])
+        ' debugAccounts=reset|two|legacy: start with no saved accounts (the registry is shared by every
+        ' worktree's runs); two also saves a second account on this server (user "sam", id 2; mock
+        ' tokens acc-debug-sam); legacy writes this session as an older Siku stored it (registry layout
+        ' 1, a second server's sign-in in its entry) and runs the migration (Accounts.brs) again.
+        if args.debugAccounts = "reset" or args.debugAccounts = "two" or args.debugAccounts = "legacy" then
+            Registry_write("accounts", [])
+            s.accountId = ""
+        end if
         s.accessToken = "acc-debug"
         s.refreshToken = "ref-debug"
         s.expiresAt = Time_nowSeconds() + 3600
@@ -580,8 +602,34 @@ sub handleDeepLink(args as dynamic)
             if not Str_isEmpty(args.debugPort2) then port2 = Int(Val(Str_orEmpty(args.debugPort2)))
             url2 = Left(s.serverUrl, Len(s.serverUrl) - Len(port)) + port2.ToStr() ' the same loopback host, another port
             list = Session_serversWithout(Session_savedServers(), url2)
-            list.Push({ url: url2, name: "Den Silo", id: "mock-server-2", session: { serverOrigin: url2, accessToken: "acc-debug2", refreshToken: "ref-debug2", expiresAt: Time_nowSeconds() + 3600, user: { id: "7", username: "sam", role: "user" }, profileId: "p-sam", profileName: "Sam", profileToken: "", profileAvatar: "" } })
+            list.Push({ url: url2, name: "Den Silo", id: "mock-server-2" })
             Registry_write("servers", list)
+            ' Its sign-in is an account of its own (registry layout 2, Accounts.brs).
+            accts = Accounts_without(Accounts_withoutServer(Accounts_list(), url2), "debug-account-den")
+            den = { "id": "debug-account-den", "url": url2, "userid": "7", "username": "sam", "profiles": -1, "added": Time_nowSeconds(), "used": Time_nowSeconds() - 120, "expired": false }
+            den.session = { serverOrigin: url2, accessToken: "acc-debug2", refreshToken: "ref-debug2", expiresAt: Time_nowSeconds() + 3600, user: { id: "7", username: "sam", role: "user" }, profileId: "p-sam", profileName: "Sam", profileToken: "", profileAvatar: "" }
+            accts.Push(den)
+            Registry_write("accounts", accts)
+        end if
+        if args.debugAccounts = "two" then
+            list = Accounts_list()
+            other = { "id": "debug-account-sam", "url": s.serverUrl, "userid": "2", "username": "sam", "profiles": -1, "added": Time_nowSeconds() + 1, "used": Time_nowSeconds() - 60, "expired": false }
+            other.session = { serverOrigin: s.serverUrl, accessToken: "acc-debug-sam", refreshToken: "ref-debug-sam", expiresAt: Time_nowSeconds() + 3600, user: { id: "2", username: "sam", role: "user" }, profileId: "", profileName: "", profileToken: "", profileAvatar: "" }
+            list = Accounts_without(list, "debug-account-sam")
+            list.Push(other)
+            Registry_write("accounts", list)
+        else if args.debugAccounts = "legacy" then
+            legacy = AA_copy(m.global.session)
+            legacy.Delete("accountId")
+            port2 = (Int(Val(port)) + 1).ToStr()
+            url2 = Left(s.serverUrl, Len(s.serverUrl) - Len(port)) + port2 ' the same loopback host, another port
+            Registry_write("session", legacy)
+            Registry_write("servers", [{ url: s.serverUrl, name: "Mock Silo", id: "mock-server-1" }, { url: url2, name: "Den Silo", id: "mock-server-2", session: { serverOrigin: url2, accessToken: "acc-debug2", refreshToken: "ref-debug2", expiresAt: Time_nowSeconds() + 3600, user: { id: "7", username: "sam", role: "user" }, profileId: "p-sam", profileName: "Sam", profileToken: "", profileAvatar: "" } }])
+            Registry_delete("accounts")
+            Registry_write("layout", 1)
+            line = Accounts_migrate()
+            if line <> "" then Diag_log(line)
+            m.global.session = Session_load()
         end if
         ' debugProfileLaunch=<automatic|askEveryLaunch|afterOneHour|afterTwelveHours|new>[&debugAwaySeconds=N]
         ' replays the launch rule against the seeded profile ("new" = a Roku with no saved choice).

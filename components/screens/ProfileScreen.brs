@@ -1,4 +1,5 @@
-' ProfileScreen: pick who's watching, unlock PIN profiles, or sign out / change server.
+' ProfileScreen: pick who's watching on the open account, unlock PIN profiles, or sign out / change
+' account (Silo Android #795: the open account's profiles only; other accounts are on Change Account).
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
 sub init()
@@ -8,14 +9,14 @@ sub init()
     m.errorLabel = m.top.findNode("error")
     m.buttonsGroup = m.top.findNode("buttons")
     m.retryButton = m.top.findNode("retryButton")
-    m.changeServerButton = m.top.findNode("changeServerButton")
+    m.changeAccountButton = m.top.findNode("changeAccountButton")
     m.signOutButton = m.top.findNode("signOutButton")
     m.spinner = m.top.findNode("spinner")
 
     m.retryButton.observeField("buttonSelected", "onRetry")
-    m.changeServerButton.observeField("buttonSelected", "onChangeServer")
+    m.changeAccountButton.observeField("buttonSelected", "onChangeAccount")
     m.signOutButton.observeField("buttonSelected", "onSignOut")
-    for each b in [m.retryButton, m.changeServerButton, m.signOutButton]
+    for each b in [m.retryButton, m.changeAccountButton, m.signOutButton]
         b.observeField("width", "layoutButtons")
     end for
 
@@ -98,6 +99,9 @@ sub onProfiles(event as object)
         if p <> invalid and Type(p) = "roAssociativeArray" then items.Push(p)
     end for
     m.profiles = items
+    ' Change Account's card shows how many profiles each account has.
+    s = m.global.session
+    if not Session_isTemporary(s) then Accounts_setProfiles(Str_orEmpty(s.accountId), items.Count())
 
     ' One profile and no PIN: nothing to pick (unless the person asked to switch).
     params = m.top.params
@@ -136,7 +140,7 @@ sub onProfiles(event as object)
     applyFocus()
 end sub
 
-' A temporary password: no profiles, the message, and Retry | Change server | Sign out with
+' A temporary password: no profiles, the message, and Retry | Change account | Sign out with
 ' Sign out focused (the way forward on this TV; Retry lands on sign-in once it was changed).
 sub showPasswordChange()
     m.profiles = []
@@ -250,7 +254,7 @@ end sub
 
 sub layoutButtons()
     x = 0
-    for each b in [m.retryButton, m.changeServerButton, m.signOutButton]
+    for each b in [m.retryButton, m.changeAccountButton, m.signOutButton]
         if b.visible then
             b.translation = [x, 0]
             x = x + b.width + 20
@@ -282,7 +286,7 @@ end sub
 
 function visibleButtons() as object
     out = []
-    for each b in [m.retryButton, m.changeServerButton, m.signOutButton]
+    for each b in [m.retryButton, m.changeAccountButton, m.signOutButton]
         if b.visible then out.Push(b)
     end for
     return out
@@ -532,15 +536,16 @@ end sub
 
 ' ---------- Account actions ----------
 
-sub onChangeServer()
+' Change Account (Silo Android #795, where Change server was): every saved server's accounts;
+' this account keeps its sign-in, Back returns here.
+sub onChangeAccount()
     if m.busy then return
-    ' Manage Servers: this server keeps its sign-in; Back returns here.
-    Nav_push("ServerConnectScreen", { manage: true })
+    Nav_push("ChangeAccountScreen", {})
 end sub
 
 sub onSignOut()
     if m.busy then return
-    SignOut_ask("Sign out?")
+    SignOut_ask()
 end sub
 
 ' SignOutFlow.brs: Cancel (or Back) leaves focus on Sign out.

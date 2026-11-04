@@ -86,6 +86,20 @@ sub Api_signOut()
     Session_signOutLocal(s)
 end sub
 
+' Saves a new sign-in (password, code or a phone's approval). When the same server user had a
+' saved sign-in on this Roku, that account is refreshed rather than added again (Accounts.brs), and
+' the session it replaces is ended on the server, best effort, as Silo Android #795 does.
+sub Api_saveSignIn(s as object)
+    c = AA_copy(s)
+    c.accountId = ""
+    old = Accounts_replacedToken(Accounts_list(), m.global.session, c)
+    Session_save(c)
+    if old <> "" then
+        Diag_log("[siku-accounts] signed in again as a saved account; ending the session it replaces")
+        Api_call({ method: "POST", path: "/api/v2/auth/logout", baseUrl: Str_orEmpty(c.serverUrl), auth: false, profile: false, headers: { Authorization: "Bearer " + old }, timeout: 5 }, "Api_onFired")
+    end if
+end sub
+
 ' Cancels all in-flight tasks this component started (call when leaving a screen).
 sub Api_cancelAll()
     if m.apiTasks = invalid then return

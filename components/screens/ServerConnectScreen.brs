@@ -305,7 +305,7 @@ function savedBadge(srv as object) as string
         if Str_isEmpty(s.accessToken) and Str_isEmpty(s.refreshToken) then return "Current · Signed out"
         return "Current"
     end if
-    if Session_entrySignedIn(srv) then return ""
+    if Session_serverSignedIn(Str_orEmpty(srv.url)) then return ""
     return "Signed out"
 end function
 
@@ -568,13 +568,15 @@ sub askRemove(i as integer)
         for each e in Session_savedServers()
             if nxt = invalid and Type(e) = "roAssociativeArray" and Str_orEmpty(e.url) <> Str_orEmpty(srv.url) then nxt = e
         end for
+        who = name
+        if Accounts_countOn(Str_orEmpty(srv.url)) > 1 then who = "every account on " + name
         if nxt <> invalid then
-            body = "You'll be signed out of " + name + ", and this Roku will switch to " + serverLabel(nxt) + "."
+            body = "You'll be signed out of " + who + ", and this Roku will switch to " + serverLabel(nxt) + "."
         else
-            body = "You'll be signed out of " + name + ", and you'll need to enter a server address again."
+            body = "You'll be signed out of " + who + ", and you'll need to enter a server address again."
         end if
     else
-        body = "Its sign-in will be forgotten on this Roku. You can add it again later."
+        body = "Its accounts will be signed out on this Roku. You can add it again later."
     end if
     m.removeTarget = srv
     openConfirm("Remove " + name + "?", [body], ["Cancel", "Remove"], "onRemoveButton", "onRemoveClosed")
@@ -602,11 +604,8 @@ sub onRemoveButton()
         SignOut_run(true)
         return
     end if
-    ' Another server: revoke its stored sign-in (best effort), then forget it.
-    st = srv.session
-    if st <> invalid and Type(st) = "roAssociativeArray" and not Str_isEmpty(st.accessToken) then
-        Api_call({ method: "POST", path: "/api/v2/auth/logout", baseUrl: Str_orEmpty(srv.url), auth: false, profile: false, headers: { Authorization: "Bearer " + Str_orEmpty(st.accessToken) }, timeout: 5 }, "Api_onFired")
-    end if
+    ' Another server: revoke its accounts' stored sign-ins (best effort), then forget it.
+    SignOut_revokeServerAccounts(Str_orEmpty(srv.url), "")
     Session_forgetServer(Str_orEmpty(srv.url))
     print "[siku-servers] removed current=false"
     m.global.toast = serverLabel(srv) + " was removed."
@@ -826,10 +825,10 @@ sub lookupDone()
         return
     end if
     e = Session_savedServer(base)
-    if Session_entrySignedIn(e) then
+    if e <> invalid and Session_serverSignedIn(base) then
         known = Str_orEmpty(e.id)
         if known = "" or m.serverId = "" or known = m.serverId then
-            ' Switch with its own sign-in. Profile Selection asks again when it would at launch.
+            ' Switch to its most recently used account. Profile Selection asks again when it would at launch.
             c = AA_copy(e)
             c.name = name
             if m.serverId <> "" then c.id = m.serverId
@@ -848,6 +847,7 @@ sub lookupDone()
     s.serverOrigin = Url_origin(base)
     s.serverId = m.serverId
     s.serverName = name
+    s.accountId = ""
     s.accessToken = ""
     s.refreshToken = ""
     s.expiresAt = 0

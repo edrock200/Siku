@@ -1,15 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  "Who's watching?" profile picker (Android TvProfileSelectionScreen). Centered header,
-  then up to six 220 px round avatars per row (focused: larger with an Ink ring, name
-  drops lower and brightens), then "Change server" and "Sign out" glass buttons.
+  "Who's watching?" profile picker (Android TvProfileSelectionScreen): the open account's profiles
+  only (Silo Android #795). Centered header, then up to six 220 px round avatars per row (focused:
+  larger with an Ink ring, name drops lower and brightens), then "Change account" (ChangeAccountScreen,
+  where "Change server" was) and "Sign out" (this account only) glass buttons.
   A single profile without a PIN is picked automatically unless params.switching = true or the
   Profile Selection launch rule opened the screen (params.atLaunch = true). On a new Roku the first
   pick asks whether to open that profile automatically from now on (an alert: Ask Every Time |
   Remember, focus on Remember, Back = Ask Every Time; Silo Android TV #762).
   PIN profiles open AuthPinDialog and POST /api/v2/profiles/{id}/verify-pin.
   An account with a temporary password (403 password_change_required, Silo Android #790) gets a
-  message saying where to change it, with Retry | Change server | Sign out and Sign out focused.
+  message saying where to change it, with Retry | Change account | Sign out and Sign out focused.
   Params: { switching: bool, atLaunch: bool }
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
@@ -35,7 +36,7 @@
     </Group>
     <Group id="buttons" visible="false">
       <PillButton id="retryButton" text="Retry" variant="glass" iconUri="pkg:/images/icons/refresh.png" height="61" fontSize="21" padX="28" visible="false" />
-      <PillButton id="changeServerButton" text="Change server" variant="glass" iconUri="pkg:/images/icons/dns.png" height="61" fontSize="21" padX="28" />
+      <PillButton id="changeAccountButton" text="Change account" variant="glass" iconUri="pkg:/images/icons/person.png" height="61" fontSize="21" padX="28" />
       <PillButton id="signOutButton" text="Sign out" variant="glass" iconUri="pkg:/images/icons/logout.png" height="61" fontSize="21" padX="28" />
     </Group>
     <LoadingSpinner id="spinner" size="72" translation="[924, 504]" visible="false" />

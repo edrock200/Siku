@@ -319,6 +319,7 @@ function buildPane(catId as string) as object
             out.Push({ kind: "row", row: rowDef("address", "info", "Address") })
         end if
         out.Push({ kind: "row", row: rowDef("serverVersion", "info", "Server Version") })
+        out.Push({ kind: "row", row: rowDef("changeAccount", "action", "Change Account") })
         out.Push({ kind: "row", row: rowDef("manageServers", "action", "Manage Servers") })
         out.Push({ kind: "header", text: "About" })
         out.Push({ kind: "row", row: rowDef("appVersion", "info", "App Version") })
@@ -1325,6 +1326,9 @@ sub activateRow(row as object)
         openConfirm("clearLog", "Clear the Diagnostics Log?", "This deletes everything Siku has recorded on this Roku.", "Clear")
     else if id = "resetAppearance" then
         openConfirm("resetAppearance", "Reset Subtitle Appearance?", "This restores every subtitle appearance option to its default.", "Reset")
+    else if id = "changeAccount" then
+        ' Every saved server's accounts (Silo Android #795); Back comes here.
+        Nav_push("ChangeAccountScreen", {})
     else if id = "manageServers" then
         ' The server list over Settings: the current server keeps its sign-in, Back comes here.
         Nav_push("ServerConnectScreen", { manage: true })
@@ -1395,9 +1399,12 @@ function onKeyEvent(key as string, press as boolean) as boolean
         else if m.railFocus = last then
             if SignOut_isRunning() then return true
             print "[siku-servers] sign out asked"
-            openConfirm("signOut", "Sign Out", SignOut_message(), "Sign Out")
-            m.pickerOptions.Push({ value: "remove", label: "Sign Out & Remove Server", destructive: true })
-            layoutPicker("Sign Out", "", SignOut_message())
+            ' The open account only (Silo Android #795); Remove Server while it is the server's last.
+            openConfirm("signOut", SignOut_title(), SignOut_message(), "Sign Out")
+            if SignOut_offersRemove() then
+                m.pickerOptions.Push({ value: "remove", label: "Sign Out & Remove Server", destructive: true })
+                layoutPicker(SignOut_title(), "", SignOut_message())
+            end if
         else
             enterPane()
         end if

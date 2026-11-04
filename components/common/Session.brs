@@ -18,6 +18,7 @@ function Session_empty() as object
         profileName: ""
         profileAvatar: ""
         deviceId: ""
+        accountId: ""        ' local id of the open account (Accounts.brs), "" with none open
     }
 end function
 
@@ -48,8 +49,13 @@ sub Session_save(s as object)
     prev = invalid
     if not temporary then
         prev = Registry_read("session")
+        ' Its account (Accounts.brs): the same one, a saved one this sign-in matches, or a new one.
+        s = Accounts_assign(s)
+        ' The account it replaces keeps its sign-in in its entry. Two writes around "session" when
+        ' the account changes, so a stop between any two of them never loses a sign-in.
+        Accounts_store(prev, s, true)
         Registry_write("session", s)
-        ' The server it replaces keeps its sign-in in the saved-servers list (Session_serversNext).
+        Accounts_store(prev, s, false)
         Session_storeServers(prev, s)
     end if
     m.global.session = s
@@ -82,6 +88,7 @@ function Session_homeCachePurgeReason(prev as dynamic, s as object) as string
     if prev.user <> invalid and Type(prev.user) = "roAssociativeArray" then prevUser = Str_orEmpty(prev.user.id)
     if s.user <> invalid and Type(s.user) = "roAssociativeArray" then newUser = Str_orEmpty(s.user.id)
     if prevUser <> newUser then return "account"
+    if Str_orEmpty(prev.accountId) <> Str_orEmpty(s.accountId) then return "account"
     if not Str_isEmpty(prev.profileId) and not Str_isEmpty(s.profileId) and Str_orEmpty(prev.profileId) <> Str_orEmpty(s.profileId) then return "profile"
     return ""
 end function
@@ -97,16 +104,15 @@ sub Session_homeCacheCheck(prev as dynamic)
     g.homeCachePurge = g.homeCachePurge + 1
 end sub
 
-' ---------- Saved servers, each with its own sign-in ----------
-' Registry "servers": [{url, name, id, session}], most recently used first. The active server's
-' sign-in stays in "session" (as before) and its entry carries none; when another server becomes
-' active, the one it replaces is stashed in its own entry with its tokens and profile, so
-' switching back needs no new sign-in. A refresh while a server is active is saved in "session",
-' so the stash always holds the newest tokens. Entries written by an older Siku ({url, name, id})
-' read as signed out. Bounded: Session_maxServers() entries and Session_serversBudget() bytes of
-' JSON; over the budget the least recently used servers lose their sign-in first.
-' Same model as Android TV's ServerRegistry + TokenManager; adapted from Silo-Server/silo-roku,
-' AGPL-3.0 (source/storage/registry.bs, source/onboarding/servers.bs).
+' ---------- Saved servers ----------
+' Registry "servers": [{url, name, id}], most recently used first. Since registry layout 2
+' (Accounts.brs) the sign-ins live in the accounts, several per server: the active account's in
+' "session", the others' in their "accounts" entries. Layout 1 kept one sign-in per server in its
+' entry (`session`); Accounts_migrate moves those, and until it has finished an entry's stored
+' sign-in is carried along untouched. Bounded: Session_maxServers() entries and
+' Session_serversBudget() bytes of JSON.
+' Same model as Android TV's ServerRegistry; adapted from Silo-Server/silo-roku, AGPL-3.0
+' (source/storage/registry.bs, source/onboarding/servers.bs).
 
 function Session_maxServers() as integer
     return 6
@@ -138,10 +144,10 @@ function Session_storedSignIn(s as dynamic) as dynamic
 end function
 
 ' The saved-servers list after `s` (being saved, never temporary) replaced `prev` (the registry
-' session before it). Pure (tests/test_saved_servers.py). `s`'s server moves to the front without
-' a stored sign-in (it lives in "session"); `prev`'s server, when it is another one, keeps its
-' sign-in in its entry. A server missing from the list is never added back for `prev` (it was
-' removed).
+' session before it). Pure (tests/test_saved_servers.py). `s`'s server moves to the front; `prev`'s
+' server name and identity are kept up to date. A server missing from the list is never added back
+' for `prev` (it was removed). Sign-ins are the accounts' (Accounts.brs); a layout-1 entry's stored
+' sign-in is kept as it is until the migration has moved it.
 function Session_serversNext(list as dynamic, prev as dynamic, s as object) as object
     url = Str_orEmpty(s.serverUrl)
     prevUrl = ""
@@ -156,13 +162,10 @@ function Session_serversNext(list as dynamic, prev as dynamic, s as object) as o
             if eu <> url and not Session_serversHas(out, eu) then
                 c = { "url": eu, "name": Str_orEmpty(e.name), "id": Str_orEmpty(e.id) }
                 if prevUrl <> "" and eu = prevUrl then
-                    c.session = Session_storedSignIn(prev)
                     if not Str_isEmpty(prev.serverName) then c.name = Str_orEmpty(prev.serverName)
                     if not Str_isEmpty(prev.serverId) then c.id = Str_orEmpty(prev.serverId)
-                else if e.session <> invalid and Type(e.session) = "roAssociativeArray" then
-                    c.session = e.session
                 end if
-                if c.session = invalid then c.Delete("session")
+                if e.session <> invalid and Type(e.session) = "roAssociativeArray" then c.session = e.session
                 out.Push(c)
             end if
         end if
@@ -181,7 +184,7 @@ function Session_serversHas(list as object, url as string) as boolean
 end function
 
 ' Keeps the list's JSON within Session_serversBudget(): the least recently used servers lose
-' their stored sign-in first, then whole entries go from the end (the first one always stays).
+' any layout-1 stored sign-in first, then whole entries go from the end (the first one always stays).
 function Session_serversFit(list as object) as object
     while Len(FormatJson(list)) > Session_serversBudget()
         dropped = false
@@ -230,7 +233,7 @@ function Session_savedServer(url as string) as dynamic
     return invalid
 end function
 
-' True when the entry (not the active server) holds a sign-in to switch back to.
+' True when a layout-1 entry holds a stored sign-in (the migration reads it; Accounts.brs).
 function Session_entrySignedIn(e as dynamic) as boolean
     if e = invalid or Type(e) <> "roAssociativeArray" then return false
     st = e.session
@@ -238,8 +241,8 @@ function Session_entrySignedIn(e as dynamic) as boolean
     return not Str_isEmpty(st.accessToken) or not Str_isEmpty(st.refreshToken)
 end function
 
-' Drops `url` from the saved-servers list and returns its entry (invalid when it was not saved).
-' Pure list form: Session_serversWithout.
+' Drops `url` from the saved-servers list, with every account on it, and returns its entry
+' (invalid when it was not saved). Pure list form: Session_serversWithout.
 function Session_forgetServer(url as string) as dynamic
     list = Session_savedServers()
     removed = invalid
@@ -247,7 +250,16 @@ function Session_forgetServer(url as string) as dynamic
         if Type(list[i]) = "roAssociativeArray" and Str_orEmpty(list[i].url) = url then removed = list[i]
     end for
     Registry_write("servers", Session_serversWithout(list, url))
+    Accounts_removeServer(url)
     return removed
+end function
+
+' True when any saved account on `url` holds a sign-in, or it is the active server and signed in.
+function Session_serverSignedIn(url as string) as boolean
+    if url = "" then return false
+    s = m.global.session
+    if Str_orEmpty(s.serverUrl) = url and Accounts_signedIn(s) and not Accounts_isTemporary(s) then return true
+    return Accounts_hasSignIn(Accounts_latestOn(Accounts_list(), url, ""))
 end function
 
 function Session_serversWithout(list as dynamic, url as string) as object
@@ -258,6 +270,23 @@ function Session_serversWithout(list as dynamic, url as string) as object
         if Type(e) = "roAssociativeArray" and Str_orEmpty(e.url) <> url then out.Push(e)
     end for
     return out
+end function
+
+' The session a saved account restores on its server (pure): the server entry's address, name and
+' identity, and the account's id, user and stored sign-in (none for an expired one, or with
+' `acct` invalid: the server with no account open). askProfile: see Session_fromEntry.
+function Session_fromAccount(srv as object, acct as dynamic, deviceId as string, askProfile as boolean) as object
+    e = { "url": Str_orEmpty(srv.url), "name": Str_orEmpty(srv.name), "id": Str_orEmpty(srv.id) }
+    if acct <> invalid and Type(acct) = "roAssociativeArray" and Accounts_hasSignIn(acct) then e.session = acct.session
+    s = Session_fromEntry(e, deviceId, askProfile)
+    if acct <> invalid and Type(acct) = "roAssociativeArray" then
+        s.accountId = Str_orEmpty(acct.id)
+        if Str_isEmpty(s.accessToken) and Str_isEmpty(s.refreshToken) then
+            ' An expired account: no tokens, but who it was (LoginScreen fills the username in).
+            s.user = { "id": Str_orEmpty(acct.userid), "username": Str_orEmpty(acct.username) }
+        end if
+    end if
+    return s
 end function
 
 ' The session a saved entry restores: its address, name, identity and stored sign-in (pure).
@@ -286,18 +315,30 @@ function Session_fromEntry(e as object, deviceId as string, askProfile as boolea
     return s
 end function
 
-' Makes a saved server the active one with its own sign-in (Manage Servers, Sign Out & Remove
-' Server). The server it replaces keeps its sign-in (Session_save). Callers then route with
-' Nav_reset("@start"): Home, Who's watching or the sign-in screen, whatever the sign-in reaches.
+' Makes a saved server the active one with its most recently used account (Manage Servers, Sign
+' Out & Remove Server). The account it replaces keeps its sign-in (Session_save). Callers then
+' route with Nav_reset("@start"): Home, Who's watching or the sign-in screen, whatever the sign-in
+' reaches.
 sub Session_activateServer(e as object, askProfile as boolean)
+    Session_activateAccount(e, Accounts_latestOn(Accounts_list(), Str_orEmpty(e.url), ""), askProfile)
+end sub
+
+' Makes `acct` (an "accounts" entry; invalid: none, for a sign-in of a new account) on the saved
+' server `srv` the active one (Change Account).
+sub Session_activateAccount(srv as object, acct as dynamic, askProfile as boolean)
     Session_forgetPlaybackCaps()
     Session_forgetServerState()
-    s = Session_fromEntry(e, Str_orEmpty(m.global.session.deviceId), askProfile)
+    s = Session_fromAccount(srv, acct, Str_orEmpty(m.global.session.deviceId), askProfile)
     signedIn = not Str_isEmpty(s.accessToken) or not Str_isEmpty(s.refreshToken)
     profile = "none"
     if not Str_isEmpty(s.profileId) then profile = "kept"
     if signedIn and askProfile then profile = "ask"
-    print "[siku-servers] switched signed_in=" + Session_boolWord(signedIn) + " profile=" + profile
+    state = "none"
+    if acct <> invalid then
+        state = "signed_in"
+        if not signedIn then state = "sign_in_again"
+    end if
+    Diag_log("[siku-accounts] switched account=" + state + " profile=" + profile + " accounts_on_server=" + Accounts_countOn(Str_orEmpty(srv.url)).ToStr())
     Session_save(s)
 end sub
 
@@ -314,10 +355,18 @@ sub Session_forgetServerState()
     if g.hasField("shuffleCaps") then g.shuffleCaps = {}
 end sub
 
-' Clears tokens and profile but keeps the server.
+' Signs out of the open account on this Roku: the account goes (its server stays), tokens and
+' profile are cleared. A phone's borrowed (temporary) session has no saved account of its own.
 sub Session_signOutLocal(s as object)
     Session_forgetPlaybackCaps()
     c = AA_copy(s)
+    id = Str_orEmpty(s.accountId)
+    if id <> "" and not Accounts_isTemporary(s) then
+        ' First, so Session_save cannot stash it back.
+        Accounts_remove(id)
+        Diag_log("[siku-accounts] signed out of an account; accounts left on this server=" + Accounts_countOn(Str_orEmpty(s.serverUrl)).ToStr())
+    end if
+    c.accountId = ""
     c.accessToken = ""
     c.refreshToken = ""
     c.expiresAt = 0
@@ -326,6 +375,23 @@ sub Session_signOutLocal(s as object)
     c.profileToken = ""
     c.profileName = ""
     c.profileAvatar = ""
+    Session_save(c)
+end sub
+
+' The server refused the open account's refresh token (expired or revoked): not a sign-out. The
+' account stays saved, needing to sign in again ("Sign in again" on Change Account), and its tokens
+' and profile are cleared.
+sub Session_expireLocal(s as object)
+    Session_forgetPlaybackCaps()
+    c = AA_copy(s)
+    c.accessToken = ""
+    c.refreshToken = ""
+    c.expiresAt = 0
+    c.profileId = ""
+    c.profileToken = ""
+    c.profileName = ""
+    c.profileAvatar = ""
+    if Str_orEmpty(c.accountId) <> "" then Diag_log("[siku-accounts] session expired; the account stays, needing to sign in again")
     Session_save(c)
 end sub
 
@@ -353,8 +419,10 @@ function Session_withTokens(s as object, tokens as object) as object
     if expiresIn <= 0 then expiresIn = 3600
     c.expiresAt = Time_nowSeconds() + expiresIn
     ' A response with a user is a new sign-in (refresh responses carry none):
-    ' drop any profile selected under the previous login.
+    ' drop any profile selected under the previous login. Its account is found again by the
+    ' server's user id (Accounts_resolveId), never assumed to be the open one.
     if tokens.user <> invalid then
+        c.accountId = ""
         c.user = tokens.user
         c.profileId = ""
         c.profileToken = ""

@@ -29,4 +29,5 @@
   <script type="text/brightscript" uri="pkg:/components/common/PasswordChange.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Accounts.brs" />
 </component>

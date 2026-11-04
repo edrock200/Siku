@@ -18,6 +18,7 @@
   <script type="text/brightscript" uri="pkg:/components/widgets/AuthAvatar.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Accounts.brs" />
   <children>
     <Poster id="tint" uri="pkg:/images/ui/circle.png" />
     <Label id="initial" horizAlign="center" vertAlign="center" color="0xFFFFFFF2" />

@@ -40,6 +40,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Api.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Accounts.brs" />
   <children>
     <Timer id="pollTimer" repeat="false" />
     <Timer id="endTimer" repeat="false" />

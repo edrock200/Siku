@@ -511,7 +511,7 @@ sub Pair_persist(a as object, tokens as object, d as object)
         s.profileToken = Str_orEmpty(d.profile_token)
     end if
     Session_forgetPlaybackCaps()
-    Session_save(s)
+    Api_saveSignIn(s)
     Pair_signedInNow()
 end sub
 

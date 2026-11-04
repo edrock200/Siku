@@ -446,6 +446,12 @@ sub openProfilePanel()
     if role = "" then role = "member"
     server = Str_orEmpty(s.serverName)
     if server = "" then server = Url_host(Str_orEmpty(s.serverUrl))
+    ' With several accounts on this server, "role · server" does not say whose profile it is: the
+    ' account's username replaces the role (Silo Android #795).
+    if not Session_isTemporary(s) and Accounts_countOn(Str_orEmpty(s.serverUrl)) > 1 then
+        name = Accounts_username(s)
+        if name <> "" then role = name
+    end if
     m.panelKind = "profile"
     m.panelTab = m.tabs.Count()
     m.panelFly.visible = false
@@ -462,7 +468,7 @@ sub openProfilePanel()
         { id: "-" },
         { id: "settings", label: "Settings", icon: "settings" },
         { id: "connect_phone", label: "Connect a Phone", icon: "phone" },
-        { id: "switch_server", label: "Switch Server", icon: "dns" },
+        { id: "change_account", label: "Change Account", icon: "person" },
         { id: "sign_out", label: "Sign Out", icon: "logout" }
     ]
     ' Requests sits after History while the server enables it (Silo Android #782, silo-roku 5b296d7).
@@ -580,16 +586,17 @@ sub onProfileAction(id as string)
         closePanel()
         focusBar(avatarIndex)
         Nav_push("ConnectPhoneScreen", {})
-    else if id = "switch_server" then
-        ' Manage Servers over the shell: the current server keeps its sign-in, Back comes here.
+    else if id = "change_account" then
+        ' Change Account over the shell (Silo Android #795, where Switch Server was): every saved
+        ' server's accounts; the open account keeps its sign-in, Back comes here.
         closePanel()
         focusBar(avatarIndex)
-        Nav_push("ServerConnectScreen", { manage: true })
+        Nav_push("ChangeAccountScreen", {})
     else if id = "sign_out" then
         ' Cancel / Sign Out / Sign Out & Remove Server (SignOutFlow.brs, Silo Android TV #764).
         closePanel()
         focusBar(avatarIndex)
-        SignOut_ask("Sign Out")
+        SignOut_ask()
     else
         closePanel()
         focusBar(avatarIndex)

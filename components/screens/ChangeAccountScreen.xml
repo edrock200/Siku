@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Change Account (Silo Android #795, Android TV's TvChangeAccountScreen, drawn as Silo's Roku app
+  draws it; adapted from Silo-Server/silo-roku, AGPL-3.0, AccountsScreen / docs/spec.md 7.5):
+  under the wordmark and the headline, a rail of the saved servers (the active one first, then by
+  last use) with Add server under them; beside it, the server focused on the rail's accounts, each
+  with its username's initial, the username, how many profiles it has and a badge (CURRENT for the
+  open account, SIGN IN AGAIN for one the server refused), then "Add an account" on that server.
+  Left / Right move between the rail and the accounts, Up / Down within them; each column scrolls,
+  with "More above" / "More below" while rows wait.
+  OK on an account opens it on its server and shows its Who's watching (a lone profile without a
+  PIN opens at once); on one that needs to sign in again, sign-in with its username filled in, Back
+  returning here. "Add an account" signs in on that server: over this screen on the open server
+  (the open account stays until another signs in), otherwise after making that server active.
+  Reached from Who's watching's "Change account" and the profile menu's "Change Account" (where
+  Change server / Switch Server were) and Settings > Server. With no account open while another
+  has a session it is the start screen (params.root): Back goes from the accounts to the rail,
+  then leaves Siku.
+  Params: { root: bool, signIn: bool (push the sign-in screen once, for a switch that needs it),
+  username: string (with signIn) }
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="ChangeAccountScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/screens/ChangeAccountScreen.brs" />
+  <children>
+    <AuthMarqueeChrome id="chrome" backdropUri="pkg:/images/marquee_server.jpg" />
+    <Label id="accountsHeadline" translation="[90, 150]" width="1600" color="0xEDEDEDFF" text="Change account">
+      <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="64" />
+    </Label>
+    <Label id="accountsBody" translation="[90, 236]" width="1600" color="0xEDEDED9E" text="Choose a server, then the account to use on it.">
+      <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="26" />
+    </Label>
+    <Group id="railRows" translation="[90, 330]" />
+    <Group id="paneRows" translation="[700, 330]" />
+    <Label id="railMoreUp" translation="[90, 296]" width="560" horizAlign="center" color="0xEDEDED9E" text="↑ More above" visible="false">
+      <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="20" />
+    </Label>
+    <Label id="railMoreDown" translation="[90, 1022]" width="560" horizAlign="center" color="0xEDEDED9E" text="↓ More below" visible="false">
+      <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="20" />
+    </Label>
+    <Label id="paneMoreUp" translation="[700, 296]" width="800" horizAlign="center" color="0xEDEDED9E" text="↑ More above" visible="false">
+      <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="20" />
+    </Label>
+    <Label id="paneMoreDown" translation="[700, 1022]" width="800" horizAlign="center" color="0xEDEDED9E" text="↓ More below" visible="false">
+      <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="20" />
+    </Label>
+  </children>
+</component>

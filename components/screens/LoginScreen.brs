@@ -878,7 +878,7 @@ sub onApproved(d as object)
         s.profileId = profileId
         s.profileToken = profileToken
     end if
-    Session_save(s)
+    Api_saveSignIn(s)
     user = tokens.user
     if user <> invalid and Type(user) = "roAssociativeArray" then m.accountName = Str_orEmpty(user.username)
     setStatus("signedin")
@@ -935,6 +935,16 @@ end sub
 sub showPassword()
     m.mode = "password"
     clearPwError()
+    ' Sign in again on a saved account (Change Account, or the open one the server refused): its
+    ' username is filled in.
+    if m.usernameField.text = "" then
+        p = m.top.params
+        name = ""
+        if p <> invalid then name = Str_orEmpty(p.username)
+        s = m.global.session
+        if name = "" and Str_orEmpty(s.accountId) <> "" and Str_isEmpty(s.accessToken) then name = Accounts_username(s)
+        if name <> "" then m.usernameField.text = name
+    end if
     renderMode()
     focusOn("username")
 end sub
@@ -1109,7 +1119,7 @@ sub onLogin(event as object)
     m.passwordField.disabled = false
     if resp.ok and resp.data <> invalid and Type(resp.data) = "roAssociativeArray" and not Str_isEmpty(resp.data.access_token) then
         m.routed = true
-        Session_save(withoutProfile(Session_withTokens(m.global.session, resp.data)))
+        Api_saveSignIn(withoutProfile(Session_withTokens(m.global.session, resp.data)))
         Nav_reset("@start")
         return
     end if
