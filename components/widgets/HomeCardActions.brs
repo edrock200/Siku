@@ -39,6 +39,28 @@ function CardActions_build(card as object, rowId as string) as object
     return actions
 end function
 
+' Whether the card a menu was opened on (target: { rowIndex, itemIndex, rowId, card }) is still the
+' card at that place in the page's rows ([{ id, items }]). A refresh that replaced it (Continue
+' Watching moving a show on to its next episode) closes the menu: its actions and the patch they
+' send belonged to the old card (Silo Android #803).
+function CardActions_targetCurrent(rows as dynamic, target as dynamic) as boolean
+    if target = invalid or Type(target) <> "roAssociativeArray" then return false
+    if rows = invalid or Type(rows) <> "roArray" then return false
+    r = Int(Num_or(target.rowIndex, -1))
+    i = Int(Num_or(target.itemIndex, -1))
+    if r < 0 or r >= rows.Count() or i < 0 then return false
+    row = rows[r]
+    if row = invalid or Type(row) <> "roAssociativeArray" then return false
+    if Str_orEmpty(row.id) <> Str_orEmpty(target.rowId) then return false
+    items = Arr_or(row.items)
+    if i >= items.Count() then return false
+    card = target.card
+    if card = invalid or Type(card) <> "roAssociativeArray" then return false
+    now = items[i]
+    if now = invalid or Type(now) <> "roAssociativeArray" then return false
+    return Str_orEmpty(now.content_id) <> "" and Str_orEmpty(now.content_id) = Str_orEmpty(card.content_id)
+end function
+
 ' Home rows built from playback state, whose cards can be removed.
 function CardActions_isProgressRow(rowId as string) as boolean
     rid = LCase(rowId)

@@ -82,6 +82,10 @@ sub init()
     ' shuffle. It outlives resetPlaybackState() because it spans every chained pick.
     m.shuffle = invalid
     m.upNextButtons = []
+    ' Series playback return (Silo Android #802, SeriesReturn.brs): who launched this player, and
+    ' the episode the series page below should select, recorded as the player closes.
+    m.launchIdentity = SeriesReturn_identity(m.global.session)
+    m.seriesReturn = invalid
     resetPlaybackState()
 
     m.video.observeField("state", "onVideoState")
@@ -196,6 +200,9 @@ sub resetPlaybackState()
     m.forcedDolbyWarned = false
     m.upNextShown = false
     m.upNextDismissed = false
+    ' The credits or the end of this item was reached. Opening Up Next by hand and Keep Watching
+    ' never set it (the series page moves on to the next episode only after it).
+    m.reachedCreditsOrEnd = false
     m.countdown = -1
     m.scrubbing = false
     m.scrubPos = 0.0
@@ -240,7 +247,7 @@ sub onScreenShown()
         Diag_log("[siku-playback] player shown again after it was closed; leaving")
         m.stopTimeout.control = "stop"
         m.focusSink.setFocus(true)
-        Nav_close()
+        Nav_close(m.seriesReturn)
         return
     end if
     restoreFocus()
@@ -1178,6 +1185,7 @@ end sub
 sub onFinished()
     if m.finished then return
     m.finished = true
+    m.reachedCreditsOrEnd = true
     m.progressTimer.control = "stop"
     if m.upNextDismissed then
         exitPlayer()
@@ -1326,6 +1334,7 @@ end sub
 
 sub exitPlayer()
     if m.closing then return
+    recordSeriesReturn()
     m.closing = true
     Remote_release()
     m.global.homeDirty = true
@@ -1363,6 +1372,7 @@ end sub
 ' expired): stop the video and close the server playback session.
 sub onScreenHidden()
     if m.closing then return
+    recordSeriesReturn()
     m.closing = true
     Remote_release()
     m.closed = true
@@ -1384,7 +1394,35 @@ sub finishClose()
     if m.closed = true then return
     m.closed = true
     m.stopTimeout.control = "stop"
-    Nav_close()
+    Nav_close(m.seriesReturn)
+end sub
+
+' As the player closes: the episode the series page below lands on (Silo Android #802). The one
+' on screen, or the one Up Next offers once this one reached its credits or end; never a shuffle
+' pick. Only while the identity that launched the player is still signed in.
+sub recordSeriesReturn()
+    m.seriesReturn = invalid
+    w = m.watch
+    if w = invalid or Type(w) <> "roAssociativeArray" or m.isExtra = true then return
+    ' m.isEpisode is set by the watch answer; typed check, it may be missing (skill pitfall 16).
+    if not SeriesReturn_isTrue(m.isEpisode) then return
+    t = SeriesReturn_target({
+        seriesId: Str_orEmpty(w.series_id)
+        itemId: m.itemId
+        seasonNumber: w.season_number
+        episodeNumber: w.episode_number
+        nextEpisode: m.nextEpisode
+        shuffle: m.shuffle <> invalid
+        reached: m.reachedCreditsOrEnd = true
+        launchIdentity: m.launchIdentity
+        identity: SeriesReturn_identity(m.global.session)
+    })
+    if t = invalid then
+        Diag_log("[siku-playback] series return not recorded (no series or another identity)")
+        return
+    end if
+    m.seriesReturn = t
+    Diag_log("[siku-playback] series return recorded episode=" + SeriesReturn_tag(t) + " reason=" + t.reason)
 end sub
 
 ' Shows or hides the buffering overlay. The spinner's own `visible` is toggled too, so its
@@ -1985,18 +2023,25 @@ sub stopShuffling()
 end sub
 
 sub checkUpNext()
-    if (not m.isEpisode and m.shuffle = invalid) or m.nextEpisode = invalid or m.upNextShown or m.upNextDismissed then return
+    if not m.isEpisode and m.shuffle = invalid then return
     if m.duration <= 0 then return
-    ' A picker or subtitle dialog the viewer has open is left alone: the card shows on a later
-    ' position tick once it closes (onFinished still closes it at the very end).
-    if m.picker.visible or m.subsDialog.visible then return
+    waiting = m.nextEpisode <> invalid and not m.upNextShown and not m.upNextDismissed
+    if m.reachedCreditsOrEnd and not waiting then return
     ' playback.next_up_prompt_seconds: how long before the end the card appears (0 = at the end).
     trigger = m.duration - Settings_nextUpPromptSeconds()
     ' Credits: the start of the LAST credits range (Silo Android #694), so a scene between two
     ' credits ranges still plays; each Skip Credits pill still ends at its own range.
     creditsAt = Markers_upNextCreditsStart(m.markers)
     if creditsAt >= 0 and creditsAt < trigger and creditsAt > m.duration * 0.5 then trigger = creditsAt
-    if m.position >= trigger then showUpNext()
+    if m.position < trigger then return
+    ' Recorded before the Up Next guards: Keep Watching on a hand-opened card also dismisses it
+    ' (Silo Android #802: the series page then still moves on after these credits).
+    m.reachedCreditsOrEnd = true
+    if not waiting then return
+    ' A picker or subtitle dialog the viewer has open is left alone: the card shows on a later
+    ' position tick once it closes (onFinished still closes it at the very end).
+    if m.picker.visible or m.subsDialog.visible then return
+    showUpNext()
 end sub
 
 ' playback.auto_play_next (server, profile_device scope) with the device pref as fallback.

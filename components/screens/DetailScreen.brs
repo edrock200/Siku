@@ -69,6 +69,7 @@ sub init()
     m.selectedSeason = invalid
     m.nextUp = invalid
     m.recomputeNextUp = false
+    m.seriesReturn = invalid    ' the episode a closed player asked this series page to land on (SeriesReturn.brs)
     m.currentEpisodeId = ""
     m.episodesFailed = false
     m.seasonsFailed = false
@@ -134,6 +135,21 @@ sub onScreenShown()
         focusZone(m.zoneIndex)
     end if
     ThemeMusic_show(m.item)
+end sub
+
+' The player this page opened closed (MainScene hands its result over before the page is shown):
+' a series page lands on the episode it names once the refresh reads the season (Silo Android #802).
+sub onChildResult(result as object)
+    if result = invalid or Str_orEmpty(result.kind) <> "series_return" then return
+    seriesId = ""
+    if m.item <> invalid then seriesId = Str_orEmpty(m.item.content_id)
+    t = SeriesReturn_accept(result, m.itemType, seriesId, SeriesReturn_identity(m.global.session))
+    if t = invalid then
+        Diag_log("[siku-detail] series return ignored (another page, series or identity)")
+        return
+    end if
+    m.seriesReturn = t
+    Diag_log("[siku-detail] series return episode=" + SeriesReturn_tag(t) + " reason=" + Str_orEmpty(t.reason))
 end sub
 
 ' Covered (the player, another page) or closed: theme music never plays under anything else.
@@ -246,15 +262,25 @@ end sub
 
 sub onItemRefreshed(event as object)
     resp = Api_result(event)
-    if not resp.ok or resp.data = invalid then return
-    m.item = SeriesChoice_overlay(resp.data)
-    updatePrimary()
-    updateToggles()
+    if resp.ok and resp.data <> invalid and Type(resp.data) = "roAssociativeArray" then
+        m.item = SeriesChoice_overlay(resp.data)
+        updatePrimary()
+        updateToggles()
+    else if m.seriesReturn = invalid then
+        return
+    end if
     ' Watched flags and the server's next-up may have moved (TvItemDetailViewModel.refreshOnReturn
-    ' reloads the season and re-resolves next-up): pick it again when the episodes land.
+    ' reloads the season and re-resolves next-up): pick it again when the episodes land. A series
+    ' return in another season loads that season first (Silo Android #802).
     if m.selectedSeason <> invalid then
+        season = SeriesReturn_seasonToLoad(m.seriesReturn, m.selectedSeason, m.seasons)
+        if season >= 0 then
+            Diag_log("[siku-detail] series return loads season " + season.ToStr())
+            selectSeason(season)
+        else
+            loadEpisodes(m.selectedSeason)
+        end if
         m.recomputeNextUp = true
-        loadEpisodes(m.selectedSeason)
     end if
 end sub
 
@@ -912,6 +938,9 @@ sub onSeasons(event as object)
         end for
     end if
     if sel = invalid and m.seasons.Count() > 0 then sel = m.seasons[0].season_number
+    ' A series return that arrived before the seasons did names its own season.
+    returnSeason = SeriesReturn_seasonToLoad(m.seriesReturn, invalid, m.seasons)
+    if returnSeason >= 0 then sel = returnSeason
     if sel = invalid then
         hideEpisodesRetry()
         m.episodesMsg.text = "No episodes available"
@@ -955,6 +984,8 @@ end sub
 
 sub onChipSelected(event as object)
     chip = event.getRoSGNode()
+    ' Picking a season by hand drops a pending series return (Android TV does the same).
+    m.seriesReturn = invalid
     selectSeason(chip.seasonNumber)
 end sub
 
@@ -991,6 +1022,7 @@ sub onEpisodes(event as object)
         ' A quiet refresh of the season on screen keeps what it shows (Android TV does the same).
         if m.episodes.Count() > 0 and m.episodesShownSeason = m.selectedSeason then
             m.recomputeNextUp = false
+            m.seriesReturn = invalid
             return
         end if
         ' Otherwise the row would show another season's episodes: clear it and offer a retry.
@@ -1017,16 +1049,29 @@ sub onEpisodes(event as object)
         m.currentEpisodeId = Str_orEmpty(m.item.content_id)
     else if m.nextUp = invalid or m.itemType = "season" or m.recomputeNextUp then
         m.recomputeNextUp = false
+        found = invalid
+        ' Back from the player: the episode it handed back (the next one once the last was finished).
+        if m.seriesReturn <> invalid and m.itemType = "series" then
+            idx = SeriesReturn_indexIn(m.seriesReturn, m.episodes)
+            if idx >= 0 then
+                found = m.episodes[idx]
+                Diag_log("[siku-detail] series return selected episode=" + SeriesReturn_tag(m.seriesReturn))
+            else
+                Diag_log("[siku-detail] series return episode=" + SeriesReturn_tag(m.seriesReturn) + " not in season " + Str_orEmpty(m.selectedSeason) + "; using next-up")
+            end if
+            m.seriesReturn = invalid
+        end if
         playId = Str_orEmpty(m.item.play_content_id)
         if m.itemType = "season" then
             for each s in m.seasons
                 if toInt(s.season_number) = m.selectedSeason and not Str_isEmpty(s.play_content_id) then playId = s.play_content_id
             end for
         end if
-        found = invalid
-        for each ep in m.episodes
-            if Str_orEmpty(ep.content_id) = playId then found = ep
-        end for
+        if found = invalid then
+            for each ep in m.episodes
+                if Str_orEmpty(ep.content_id) = playId then found = ep
+            end for
+        end if
         if found = invalid then
             ' Fall back to the first unwatched episode, else the first one.
             for each ep in m.episodes
