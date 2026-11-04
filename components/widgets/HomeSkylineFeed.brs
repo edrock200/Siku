@@ -151,7 +151,7 @@ function rowCardCount(row as object) as integer
     return n
 end function
 
-' {rowId, contentId, row, item} of the focused card, or invalid when nothing is drawn.
+' {rowId, contentId, seriesId, row, item} of the focused card, or invalid when nothing is drawn.
 function focusKey() as dynamic
     c = m.rowList.content
     if c = invalid or c.getChildCount() = 0 then return invalid
@@ -161,29 +161,40 @@ function focusKey() as dynamic
     i = rf[1]
     if r < 0 or r >= c.getChildCount() then return invalid
     row = c.getChild(r)
-    key = { rowId: Str_orEmpty(row.rowId), contentId: "", row: r, item: i }
-    if i >= 0 and i < row.getChildCount() then key.contentId = Str_orEmpty(row.getChild(i).contentId)
+    key = { rowId: Str_orEmpty(row.rowId), contentId: "", seriesId: "", row: r, item: i }
+    if i >= 0 and i < row.getChildCount() then
+        node = row.getChild(i)
+        key.contentId = Str_orEmpty(node.contentId)
+        key.seriesId = cardSeriesId(node)
+    end if
     return key
 end function
 
-' The [row, item] in the new content for a focusKey; [0, 0] when the row is gone.
+' The show an episode card belongs to ("" for anything else): progress rows key their cards by it.
+function cardSeriesId(node as dynamic) as string
+    if node = invalid or isExploreNode(node) or not node.hasField("raw") then return ""
+    raw = node.raw
+    if raw = invalid or Type(raw) <> "roAssociativeArray" then return ""
+    return Str_orEmpty(raw.series_id)
+end function
+
+' The [row, item] in the new content for a focusKey; [0, 0] when the row is gone. The same card,
+' else in Continue Watching / Next Up the same show's card (its next episode replaced the one
+' focused, Silo Android #803), else the same position in the same row.
 function findFocus(key as dynamic) as object
     c = m.rowList.content
     if key = invalid or c = invalid then return [0, 0]
     for r = 0 to c.getChildCount() - 1
         row = c.getChild(r)
         if Str_orEmpty(row.rowId) = key.rowId then
-            n = row.getChildCount()
-            if n = 0 then return [r, 0]
-            if key.contentId <> "" then
-                for i = 0 to n - 1
-                    if Str_orEmpty(row.getChild(i).contentId) = key.contentId then return [r, i]
-                end for
-            end if
-            i = key.item
-            if i >= n then i = n - 1
-            if i < 0 then i = 0
-            return [r, i]
+            cards = []
+            for i = 0 to row.getChildCount() - 1
+                node = row.getChild(i)
+                cards.Push({ contentId: Str_orEmpty(node.contentId), seriesId: cardSeriesId(node) })
+            end for
+            kept = RowFocus_index(key, cards, isProgressRowId(key.rowId))
+            if kept.how = "series" then Diag_log("[siku-home] refresh kept focus on the show's next episode row=" + key.rowId + " item=" + kept.index.ToStr())
+            return [r, kept.index]
         end if
     end for
     return [0, 0]

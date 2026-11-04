@@ -46,6 +46,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Accounts.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Spoilers.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/RowFocus.brs" />
   <children>
     <!-- Ambient backdrop: top-right 64% x 70%, faded by mask_backdrop (two layers crossfade). -->
     <Group id="backdrop" translation="[691, 0]">

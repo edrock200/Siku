@@ -72,6 +72,8 @@ clears one); GET /mock/switch lists them.
   hide_episode_images=1          catalog.hide_unwatched_episode_images defaults to true (spoiler protection)
   watched_fail=<code>|bare       POST/DELETE /api/v2/watched/{id} answers that status (default 409) with a
                                  problem detail, or (bare) a 500 with no body; Siku rolls the card back
+  cw_advance=1                   Continue Watching has moved Orbital on: its S1E3 card becomes S1E4 (next_up) and
+                                 leads the row (Silo Android #803: a focused card keeps focus on that show)
   art_expire=<seconds>           artwork URLs carry ?exp=<now+seconds> and answer 404 once expired
                                  (signed artwork); the log prints ART EXPIRED <kind>/<name>
   discover_layout=1              GET /requests/discover sends an admin layout (row_order: mixed rows, a
@@ -502,7 +504,10 @@ def home_sections():
     ss = all_series()
     cw = []
     m0 = dict(ms[3]); m0.update(position_seconds=1800, item_source="in_progress", progress_updated_at="2026-10-20T19:00:00Z"); cw.append(m0)
-    e = episode(0, 1, 3); e.update(position_seconds=900, item_source="in_progress", progress_updated_at="2026-10-21T20:00:00Z"); cw.append(e)
+    if STATE["switches"].get("cw_advance"):
+        e = episode(0, 1, 4); e.update(item_source="next_up"); cw.insert(0, e)
+    else:
+        e = episode(0, 1, 3); e.update(position_seconds=900, item_source="in_progress", progress_updated_at="2026-10-21T20:00:00Z"); cw.append(e)
     e2 = episode(1, 2, 1); e2.update(item_source="next_up"); cw.append(e2)
     m1 = dict(ms[8]); m1.update(position_seconds=3000, item_source="in_progress", progress_updated_at="2026-10-19T18:00:00Z"); cw.append(m1)
     e3 = episode(3, 1, 2); e3.update(item_source="next_up"); cw.append(e3)

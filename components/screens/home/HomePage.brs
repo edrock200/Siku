@@ -459,6 +459,7 @@ sub buildRows(fromCache = false as boolean)
     end if
     Launch_ready("home")
     if m.top.hasFocus() then m.feed.focusRequested = true
+    closeStaleMenu(m.rows)
     if m.scopeIncomplete = true then
         m.scopeIncomplete = false
         m.global.toast = "Some shelves could not be fully loaded for this media type. Retry or open Browse."
@@ -610,6 +611,18 @@ sub CardActions_onDismissed(event as object)
         m.global.homeDirty = false
         load()
     end if
+end sub
+
+' A refresh replaced the card a menu left open was opened on (Silo Android #803): close the menu,
+' since its actions belonged to the old card, and give the feed its focus back.
+sub closeStaleMenu(rows as object)
+    if not m.menu.visible or m.optionsTarget = invalid then return
+    if CardActions_targetCurrent(rows, m.optionsTarget) then return
+    Diag_log("[siku-cards] card menu closed: its card changed in a refresh")
+    hadFocus = m.menu.isInFocusChain()
+    m.optionsTarget = invalid
+    m.menu.visible = false
+    if hadFocus then m.feed.focusRequested = true
 end sub
 
 sub onMenuDismissed()

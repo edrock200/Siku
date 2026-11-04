@@ -41,6 +41,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/Shuffle.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/SeriesChoice.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/SeriesReturn.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/PlayerRemote.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/PlaybackErrors.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/PlaybackRecovery.brs" />
