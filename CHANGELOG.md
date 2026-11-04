@@ -3,6 +3,21 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.39
+
+Four changes from Silo's Android TV app (November 4, 2026).
+
+**New**
+- **More than one account on the same server.** "Change account" (on Who's watching, in the profile menu and in Settings › Server) lists your servers and each server's accounts, and lets you add another account on the same server. Your current sign-in carries over automatically the first time you open this version.
+- **Sign Out signs out of the account you are using only.** The server and its other accounts stay. Removing the server is offered only with its last account.
+- **Expired sign-ins stay on the list.** When an account's session expires, it is marked "Sign in again" and your username is already filled in.
+
+**Better**
+- **The show's page moves on after an episode.** When you finish an episode and leave the player, the show's page now lands on the next episode, switching season if needed. If you stopped partway, or were watching on shuffle, it stays on the episode you were watching.
+- **Continue Watching keeps your place.** When a show moves on to its next episode, the highlight stays on that show instead of landing on a different title, and a card's options menu left open closes if its card changes.
+
+**Needs testing on a real Roku:** your existing sign-in carrying over, adding and switching accounts, finishing an episode and then going back to the show's page, and the Continue Watching highlight after watching an episode.
+
 ## v0.1.38
 
 Two changes from Silo's Android TV app (November 4, 2026).

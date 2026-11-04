@@ -249,6 +249,20 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   Mock: `--switch password_change_required=1` (everything but `account/me`, the password capability, the
   change and sign-out answers 403; log `PASSWORD_CHANGE_REQUIRED 403 <method> <path>`); clear it with
   `curl -X POST -d '{"password_change_required": null}' localhost:<port>/mock/switch`, then Retry shows the profiles.
+- Accounts (Silo Android #795, `Accounts.brs`, `ChangeAccountScreen`; registry layout 2: `session` + `accountId`,
+  `servers` [{url,name,id}], `accounts` [{id,url,userid,username,profiles,added,used,expired,session?}], at most 12 / 9000
+  bytes, LRU accounts lose their stored sign-in first): `[siku-accounts] migration layout=1->2 accounts= active= servers=`
+  (or `migration failed: … did not read back; layout 1 kept`), `added an account on this server (accounts=N)`, `switched
+  account=signed_in|sign_in_again|none profile=kept|ask|none accounts_on_server=N`, `signed out of an account; accounts left
+  on this server=N`, `session expired; the account stays, needing to sign in again`, `signed in again as a saved account;
+  ending the session it replaces`, `change account shown servers= accounts= root=`, `registry budget: …`. Simulator:
+  `debugAccounts=reset|two|legacy`. Mock: `--switch multi_user=1` (each username its own user id) and
+  `--switch device_user=<name>` (code sign-ins approved as that user); log `SIGNIN password|device user= id=`.
+- Series return (Silo Android #802, `SeriesReturn.brs`): `[siku-playback] series return recorded episode=<s>x<e>
+  reason=finished|on_screen|shuffle` / `not recorded (no series or another identity)`; the series page `[siku-detail] series
+  return episode= reason=`, `loads season <n>`, `selected episode=`, `… not in season <n>; using next-up`; elsewhere
+  `series return ignored`. Home focus by show (#803, `RowFocus.brs`): `[siku-home] refresh kept focus on the show's next
+  episode row= item=`, `[siku-cards] card menu closed: its card changed in a refresh`; mock `--switch cw_advance=1`.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 
