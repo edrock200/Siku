@@ -51,6 +51,14 @@ clears one); GET /mock/switch lists them.
   empty_inventory=once|always    GET /watch/{id} lists no versions (once: only the first read of each item)
   start_terminal=<reason>        POST /playback/start answers a terminal decision with that reason
   device_manual=1                device sign-in codes stay pending until POST /api/v2/auth/device/approve
+                                 (body {"user_code", "username"?}: with a username the pending codes sign in as
+                                 that user, with its own user id: one phone approving several accounts,
+                                 Silo Android #810; log DEVICE APPROVE user=)
+  session_binding=1              /auth/device/capability says session_binding: true (Silo Android #810). The mock
+                                 checks a bound login all the same: device/start keeps `binding`, and a poll
+                                 whose binding_secret does not hash to it answers 403 device_binding_mismatch.
+                                 Log: DEVICE START binding=yes|no, DEVICE POLL binding=ok|mismatch|none
+                                 (never the values). binding_mismatch=1 refuses every bound poll.
   seasons_fail=1 / episodes_fail=1
                                  GET .../seasons or .../seasons/{n}/episodes answers 500
   more_fail=1                    a catalog or notifications page after the first (a cursor) answers 500
@@ -155,6 +163,7 @@ have no stills (the default artwork). Home dismissals are kept (PUT/DELETE
 /api/v2/home/dismissals/{surface}/{id}); an episode or series dismissal drops the whole show.
 """
 import argparse
+import base64
 import hashlib
 import io
 import json
@@ -2170,11 +2179,18 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/v2/auth/providers":
             return self.send(200, {"password_login": True, "providers": []})
         if p == "/api/v2/auth/device/capability":
-            return self.send(200, {"revision": "1", "state": "available", "cancel": True, "opened_signal": True, "protocol_versions": [2],
-                                   "remote_playback_handoff": True})
+            cap = {"revision": "1", "state": "available", "cancel": True, "opened_signal": True, "protocol_versions": [2],
+                   "remote_playback_handoff": True}
+            if STATE["switches"].get("session_binding"):
+                cap["session_binding"] = True
+            return self.send(200, cap)
         if p == "/api/v2/auth/device/start" and method == "POST":
             code = "dev-" + uuid.uuid4().hex[:8]
             STATE["devices"][code] = 0
+            if isinstance(b.get("binding"), str) and b.get("binding"):
+                STATE.setdefault("device_bindings", {})[code] = b["binding"]
+            if b.get("client_purpose") != "remote_playback":
+                print("DEVICE START binding=%s" % ("yes" if code in STATE.get("device_bindings", {}) else "no"), flush=True)
             host = self.headers.get("Host", "127.0.0.1")
             # A remote-playback handoff (SiloCast to a TV) asks for a temporary session of the
             # approving phone's profile: it stays pending until POST /auth/device/approve-handoff.
@@ -2193,6 +2209,21 @@ class Handler(BaseHTTPRequestHandler):
             if code not in STATE["devices"]:
                 return self.problem(404, "not_found", "Unknown device code")
             STATE["devices"][code] += 1
+            bound = STATE.get("device_bindings", {}).get(code)
+            if bound:
+                secret = b.get("binding_secret") or ""
+                try:
+                    raw = base64.urlsafe_b64decode(secret + "=" * (-len(secret) % 4))
+                    got = base64.urlsafe_b64encode(hashlib.sha256(raw).digest()).decode().rstrip("=")
+                except (ValueError, TypeError):
+                    got = ""
+                if got != bound or STATE["switches"].get("binding_mismatch"):
+                    print("DEVICE POLL binding=mismatch", flush=True)
+                    return self.problem(403, "device_binding_mismatch", "The session binding does not match")
+                if STATE["devices"][code] == 1:
+                    print("DEVICE POLL binding=ok", flush=True)
+            elif STATE["devices"][code] == 1 and code not in STATE.get("handoffs", {}):
+                print("DEVICE POLL binding=none", flush=True)
             handoff = STATE.get("handoffs", {}).get(code)
             if handoff is not None:
                 if handoff["denied"]:
@@ -2212,8 +2243,9 @@ class Handler(BaseHTTPRequestHandler):
             if STATE["devices"][code] < 3:
                 return self.send(200, {"status": "pending", "poll_after": 3, "opened": STATE["devices"][code] > 1})
             del STATE["devices"][code]
-            name = str(STATE["switches"].get("device_user") or "laura")
-            t = tokens(name, distinct=bool(STATE["switches"].get("device_user")))
+            chosen = STATE.get("device_user_for", {}).pop(code, None)
+            name = str(chosen or STATE["switches"].get("device_user") or "laura")
+            t = tokens(name, distinct=bool(chosen or STATE["switches"].get("device_user")))
             print("SIGNIN device user=%s id=%s" % (name, t["user"]["id"]), flush=True)
             return self.send(200, {"status": "approved", "tokens": t, "profile_id": "", "profile_token": ""})
         if p == "/api/v2/auth/device" and method == "GET":
@@ -2225,7 +2257,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"user_code": uc, "match_code": "warm pony", "client_purpose": "device_login", "temporary": False})
         if p == "/api/v2/auth/device/approve" and method == "POST":
             # With device_manual=1: approve every pending sign-in code (the phone's approval).
-            STATE.setdefault("approved_devices", set()).update(STATE["devices"].keys())
+            pending = [c for c in STATE["devices"].keys() if c not in STATE.get("handoffs", {})]
+            STATE.setdefault("approved_devices", set()).update(pending)
+            who = b.get("username")
+            if isinstance(who, str) and who:
+                for c in pending:
+                    STATE.setdefault("device_user_for", {})[c] = who
+                print("DEVICE APPROVE user=%s codes=%d" % (who, len(pending)), flush=True)
             return self.send(200, {"status": "approved"})
         if p in ("/api/v2/auth/device/approve-handoff", "/api/v2/auth/device/deny") and method == "POST":
             uc = b.get("user_code", "")

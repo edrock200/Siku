@@ -165,6 +165,44 @@ function Lan_randomBytes(n as integer) as object
     return Lan_slice(out, 0, n)
 end function
 
+' A phone sign-in session's binding secret (Silo Android #810, contract B.1; adapted from
+' Silo-Server/silo-roku, AGPL-3.0, source/auth/binding.bs): 32 bytes, SHA-256 of eight
+' GetRandomUUID values, the uptime, the clock and `extra`, as unpredictable as Roku's UUID
+' generator (Roku documents no CSPRNG for channels). Task only (roEVPDigest). Never printed.
+function Lan_bindingSecret(extra as string) as object
+    di = CreateObject("roDeviceInfo")
+    ts = CreateObject("roTimespan")
+    clock = CreateObject("roDateTime")
+    material = "silo-companion-binding-1"
+    for i = 1 to 8
+        material = material + "|" + di.GetRandomUUID()
+    end for
+    material = material + "|" + ts.TotalMilliseconds().ToStr() + "|" + clock.AsSeconds().ToStr() + "." + clock.GetMilliseconds().ToStr() + "|" + Rnd(2147483647).ToStr() + "|" + extra
+    return Lan_sha256(Lan_bytes(material))
+end function
+
+' {secret, binding} for a 32-byte secret: the poll's binding_secret (base64url of the secret) and
+' the start's binding (base64url of its SHA-256), both without padding, 43 characters each.
+function Lan_bindingFor(secret as object) as object
+    return { "secret": Lan_base64url(secret), "binding": Lan_base64url(Lan_sha256(secret)) }
+end function
+
+' The TXT pairs of _silopair-roku._tcp after v, name, id, sid and st: `srv` on the sign-in
+' screen; on the server screen acct=1 (several pushServer per session, each its own account) and
+' lim=<n> (the most sign-ins one session keeps) when n > 0 (Silo Android #810, silo-roku #38).
+function Lan_pairTxtExtra(mode as string, srv as string, limit as dynamic) as object
+    out = []
+    if mode = "login" and srv <> "" then out.Push(["srv", srv])
+    if mode = "setup" then
+        out.Push(["acct", "1"])
+        t = Type(limit)
+        if t = "Integer" or t = "roInt" or t = "roInteger" then
+            if limit > 0 then out.Push(["lim", limit.ToStr()])
+        end if
+    end if
+    return out
+end function
+
 ' Base64url (no padding) of a server URL as the Silo apps key their saved servers
 ' (AndroidServerRegistry.idFor): the URL trimmed of spaces and trailing slashes.
 function Lan_serverIdFor(url as dynamic) as string

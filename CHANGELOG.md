@@ -3,6 +3,18 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.40
+
+Two changes from Silo's apps (November 5, 2026).
+
+**New**
+- **Sign in several accounts from your phone at once.** On the "Enter your server address" screen, Silo's phone app can now sign Siku in to more than one account in one go, on the same server or on different servers, up to six. Each one is saved as its own account. If one of them doesn't work, the others still sign in. When more than one signed in, Siku opens the first account's "Who's watching?" with "Change account" on top, so you can pick which account to use. On HTTPS servers that support it, your phone may only ask you to compare the code for the first account.
+
+**Better**
+- **No more flash of text before a show's logo on Home.** The big banner on Home used to show the title as text for a moment before the show's logo appeared. It now waits briefly for the logo; the text only appears if the logo fails to load or takes longer than 0.7 seconds.
+
+**Needs testing on a real Roku:** signing in several accounts with Silo's phone app (and the phone skipping the code check on an HTTPS server), and the Home banner title with slow and fast logos.
+
 ## v0.1.39
 
 Four changes from Silo's Android TV app (November 4, 2026).

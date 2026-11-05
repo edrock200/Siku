@@ -126,8 +126,9 @@ end function
 ' (tests/test_accounts.py). `prev`'s account, when another one is now active, keeps its sign-in in
 ' its entry (only an entry still in the list: a signed-out account never comes back). `s`'s
 ' account is created or updated; keepStash leaves its stored copy in place (the first of the two
-' writes of a switch, so a stop between them never loses a sign-in).
-function Accounts_next(list as dynamic, prev as dynamic, s as object, now as integer, keepStash as boolean) as object
+' writes of a switch, so a stop between them never loses a sign-in). quiet: a what-if (phone
+' sign-in's room check, PairSession.brs) logs nothing.
+function Accounts_next(list as dynamic, prev as dynamic, s as object, now as integer, keepStash as boolean, quiet = false as boolean) as object
     out = []
     items = Accounts_clean(list)
     for i = 0 to items.Count() - 1
@@ -166,13 +167,13 @@ function Accounts_next(list as dynamic, prev as dynamic, s as object, now as int
             if not keepStash or not signedIn then e.Delete("session")
         end if
     end if
-    return Accounts_fit(out, id)
+    return Accounts_fit(out, id, quiet)
 end function
 
 ' Keeps at most Accounts_max() entries and Accounts_budget() bytes of JSON. The active account
 ' (`keepId`) always stays; past the budget the least recently used accounts lose their stored
 ' sign-in first (they stay, needing to sign in again), then go.
-function Accounts_fit(list as object, keepId as string) as object
+function Accounts_fit(list as object, keepId as string, quiet = false as boolean) as object
     while list.Count() > Accounts_max()
         i = Accounts_oldest(list, keepId, false)
         if i < 0 then exit while
@@ -183,12 +184,12 @@ function Accounts_fit(list as object, keepId as string) as object
         if i >= 0 then
             list[i].Delete("session")
             list[i].expired = true
-            Diag_log("[siku-accounts] registry budget: an account not used lately needs to sign in again")
+            if not quiet then Diag_log("[siku-accounts] registry budget: an account not used lately needs to sign in again")
         else
             i = Accounts_oldest(list, keepId, false)
             if i < 0 then exit while
             list.Delete(i)
-            Diag_log("[siku-accounts] registry budget: forgot an account not used lately")
+            if not quiet then Diag_log("[siku-accounts] registry budget: forgot an account not used lately")
         end if
     end while
     return list

@@ -263,6 +263,20 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   return episode= reason=`, `loads season <n>`, `selected episode=`, `… not in season <n>; using next-up`; elsewhere
   `series return ignored`. Home focus by show (#803, `RowFocus.brs`): `[siku-home] refresh kept focus on the show's next
   episode row= item=`, `[siku-cards] card menu closed: its card changed in a refresh`; mock `--switch cw_advance=1`.
+- Several accounts from one phone session (Silo Android #810, silo-roku #38, `PairSession.brs`):
+  `[siku-pair] accepting a phone (state setup); advertising acct=1 lim=6`, `push N accepted (accounts so
+  far K)` / `push N limit_reached (lim=6 accounts=6)` / `push N limit_reached (registry room)` (one more
+  would cost an account this session signed in its stored sign-in) / `push N auth_failed` (the session is
+  ending), `binding sent=yes` / `binding sent=no reason=http|capability_unread|no_session_binding`,
+  `the server refused the session binding` (403 `device_binding_mismatch`), `signed in (accounts this
+  session N)`, `session ended with N account(s)`, `N accounts signed in: the first one's profiles with
+  Change Account over them`, `receiver stopped; Change Account no longer due`. Console only (the
+  diagnostics converter leaves `[siku-pair]` out); never the binding, codes or tokens. Mock: `--switch
+  device_manual=1` + `tools/silo_phone.py pair --approve --account laura --account sam` (each approved
+  as its user; log `DEVICE APPROVE user=`), `--expect-limit`, `--switch session_binding=1` (`DEVICE START
+  binding=yes|no`, `DEVICE POLL binding=ok|mismatch|none`; the mock is plain HTTP, so no binding is sent
+  to it), `binding_mismatch=1`. Home marquee (Silo Android #813): the text title waits up to 0.7 s for
+  a loading logo (`logoGraceTimer` in HomeSkylineFeed).
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

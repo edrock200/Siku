@@ -36,6 +36,8 @@ sub init()
     m.actionBtn = m.top.findNode("actionBtn")
     m.restTimer = m.top.findNode("restTimer")
     m.pressTimer = m.top.findNode("pressTimer")
+    m.logoGraceTimer = m.top.findNode("logoGraceTimer")
+    m.logoTextShown = false  ' the grace period ran out for the logo loading now
     m.pendingSelect = invalid
     LongPress_init()
 
@@ -56,6 +58,7 @@ sub init()
     m.imgA.observeField("loadStatus", "onBackdropLoaded")
     m.imgB.observeField("loadStatus", "onBackdropLoaded")
     m.logo.observeField("loadStatus", "onLogoLoaded")
+    m.logoGraceTimer.observeField("fire", "onLogoGrace")
     layoutBand()
     applyState()
 end sub
@@ -451,17 +454,26 @@ sub showCard(node as object)
     if not Theme_showTitleArt() then logoUrl = "" ' Settings → General → Show title art
     m.titleLabel.text = title
     if logoUrl <> "" then
-        ' Hidden until loaded and sized (onLogoLoaded), so it never flashes centered.
+        ' Hidden until loaded and sized (onLogoLoaded), so it never flashes centered. The text
+        ' title waits too, for up to 0.7 s (Silo Android #813): a cached or fast logo never
+        ' flashes it first, a failed one shows it at once, a slow one when the grace runs out.
+        sameLogo = m.logo.uri = logoUrl
         m.logo.visible = false
-        m.titleLabel.visible = false
-        if m.logo.uri <> logoUrl then
+        m.titleLabel.visible = sameLogo and m.logoTextShown
+        if not sameLogo then
+            m.logoGraceTimer.control = "stop"
+            m.logoTextShown = false
             m.logo.width = 880
             m.logo.height = 168
             m.logo.uri = logoUrl
         end if
         ' A cached bitmap may already be "ready" without a loadStatus change.
         onLogoLoaded()
+        st = m.logo.loadStatus
+        if not sameLogo and st <> "ready" and st <> "failed" then m.logoGraceTimer.control = "start"
     else
+        m.logoGraceTimer.control = "stop"
+        m.logoTextShown = false
         m.logo.visible = false
         m.logo.uri = ""
         m.titleLabel.visible = true
@@ -595,6 +607,7 @@ sub onLogoLoaded()
     if m.logo.uri = "" then return
     if m.logo.loadStatus = "failed" then
         ' Fall back to the text title.
+        m.logoGraceTimer.control = "stop"
         m.logo.visible = false
         m.titleLabel.visible = true
         layoutMarquee()
@@ -604,6 +617,7 @@ sub onLogoLoaded()
     bw = m.logo.bitmapWidth
     bh = m.logo.bitmapHeight
     if bw <= 0 or bh <= 0 then return
+    m.logoGraceTimer.control = "stop"
     m.logo.visible = true
     m.titleLabel.visible = false
     scale = 880 / bw
@@ -611,6 +625,17 @@ sub onLogoLoaded()
     if scale > 1.5 then scale = 1.5
     m.logo.width = Int(bw * scale)
     m.logo.height = Int(bh * scale)
+    layoutMarquee()
+end sub
+
+' The logo is still loading 0.7 s after its card showed: the text title shows meanwhile, and the
+' logo takes its place if it loads later (onLogoLoaded).
+sub onLogoGrace()
+    if m.logo.uri = "" or m.logo.visible then return
+    st = m.logo.loadStatus
+    if st = "ready" or st = "failed" then return
+    m.logoTextShown = true
+    m.titleLabel.visible = true
     layoutMarquee()
 end sub
 

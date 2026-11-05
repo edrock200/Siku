@@ -29,6 +29,7 @@ sub init()
     m.pinProfile = invalid
     m.busy = false
     m.offerVisible = false
+    m.accountsOpened = false
     m.loaded = false
     m.active = false
     m.cols = 6
@@ -49,6 +50,14 @@ end sub
 
 sub onScreenShown()
     m.active = true
+    ' A phone signed several accounts in (PhonePairing.brs): this is the first one's picker, and
+    ' Change Account opens over it once, focused on its card; Back from it lands here.
+    p = m.top.params
+    if p <> invalid and isTrue(p.openAccounts) and not m.accountsOpened then
+        m.accountsOpened = true
+        Nav_push("ChangeAccountScreen", {})
+        return
+    end if
     applyFocus()
 end sub
 

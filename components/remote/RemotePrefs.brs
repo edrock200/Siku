@@ -43,10 +43,11 @@ function RemoteControl_lanTask() as dynamic
 end function
 
 ' The server and sign-in screens accept a phone while they are up: mode "setup" (no server yet)
-' or "login" with srv = the server's deployment identity; "" stops it.
-sub RemoteControl_setPairing(mode as string, srv = "" as string)
+' or "login" with srv = the server's deployment identity; "" stops it. lim (setup): the most
+' sign-ins one phone session keeps, advertised as TXT lim beside acct=1 (PairSession.brs).
+sub RemoteControl_setPairing(mode as string, srv = "" as string, lim = 0 as integer)
     rc = RemoteControl_node()
-    if rc <> invalid then rc.pairing = { mode: mode, srv: srv }
+    if rc <> invalid then rc.pairing = { mode: mode, srv: srv, lim: lim }
 end sub
 
 sub RemoteControl_pairSend(conn as string, message as object)

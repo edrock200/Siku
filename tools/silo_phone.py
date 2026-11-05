@@ -22,6 +22,9 @@ identity the Roku's hello advertises (Silo Android #717).
 is turned away; `cast --hold N` stops after the handoff and keeps the connection N seconds (sign out
 or change server on the Roku meanwhile to see the borrowed profile end); `pair --idle` connects and
 says nothing, expecting the Roku to close the sign-in connection after about 30 s;
+`pair --account laura --account sam --approve` (mock with device_manual=1) pushes two accounts in one
+session, approving each as its user (Silo Android #810: the Roku keeps both and ends on Change
+Account); `--expect-limit` expects the last push to answer limit_reached.
 `pair --expect-idle-timeout` pushes and then says nothing, expecting `cancel idle_timeout` after
 about 180 s (Silo Android #748; no limit while a sign-in attempt is in flight).
 The protocol code is tools/silo_lan.py (ported from silo-android FETCH_HEAD 88db96c). The phone
@@ -115,13 +118,32 @@ def cmd_pair(args):
     if not hello or hello.get("type") != "hello" or 1 not in hello.get("supportedVersions", []):
         log("not a compatible pairing hello")
         return 1
-    push = {"v": 1, "type": "pushServer", "serverURL": args.server, "serverName": args.name}
-    if args.identity:
-        push["serverIdentity"] = args.identity
-    if args.endpoint:
-        push["endpoints"] = [{"url": u, "kind": "public"} for u in args.endpoint]
-    conn.send(push)
-    log("pushed", args.server, "- allow it on the Roku (OK on Allow) if it asks")
+    # Several accounts in one session (Silo Android #810): --account NAME[@URL], one push each, in
+    # order; a Roku that does not advertise acct=1 takes only the first.
+    targets = []
+    for a in args.account or []:
+        name, _, url = a.partition("@")
+        targets.append((name, url or args.server))
+    if not targets:
+        targets = [(None, args.server)]
+
+    def push_next():
+        name, url = targets[pushed[0]]
+        push = {"v": 1, "type": "pushServer", "serverURL": url, "serverName": args.name}
+        if name:
+            push["accountName"] = name
+        if args.identity:
+            push["serverIdentity"] = args.identity
+        if args.endpoint:
+            push["endpoints"] = [{"url": u, "kind": "public"} for u in args.endpoint]
+        conn.send(push)
+        pushed[0] += 1
+        log("pushed %d of %d:" % (pushed[0], len(targets)), url, "as %s" % name if name else "",
+            "- allow it on the Roku (OK on Allow) if it asks")
+
+    pushed = [0]
+    results = []
+    push_next()
     if args.expect_idle_timeout:
         # Silo Android #748: after its last frame the phone says nothing; with no sign-in attempt in
         # flight (consent left unanswered on the Roku) the Roku sends cancel idle_timeout at ~180 s.
@@ -153,15 +175,30 @@ def cmd_pair(args):
             started = m
             log("the phone would now look up %s and ask its user to confirm, then approve" % m.get("userCode"))
             if args.approve:
-                http("POST", args.server.rstrip("/") + "/api/v2/auth/device/approve", {"user_code": m.get("userCode")})
-                log("approved on the (mock) server")
+                name, url = targets[pushed[0] - 1]
+                body = {"user_code": m.get("userCode")}
+                if name:
+                    body["username"] = name
+                http("POST", url.rstrip("/") + "/api/v2/auth/device/approve", body)
+                log("approved on the (mock) server" + (" as %s" % name if name else ""))
         elif m.get("type") == "serverResult":
-            ok = m.get("status") == "signedIn"
-            if ok:
-                conn.send({"v": 1, "type": "done"})
-                log("signed in; sent done")
+            status = m.get("status") if m.get("status") == "signedIn" else "failed:" + str(m.get("error"))
+            results.append(status)
+            log("result %d: %s" % (len(results), status))
+            if pushed[0] < len(targets):
+                time.sleep(args.gap)
+                push_next()
+                continue
+            conn.send({"v": 1, "type": "done"})
+            log("sent done after %d push(es): %s" % (len(results), ", ".join(results)))
+            time.sleep(1)
             conn.close()
-            return 0 if ok and started else 1
+            want = ["signedIn"] * len(targets)
+            if args.expect_limit:
+                want[-1] = "failed:limit_reached"
+            ok = results == want and started is not None
+            log(("ok: " if ok else "FAIL: ") + "expected " + ", ".join(want))
+            return 0 if ok else 1
         elif m.get("type") == "cancel":
             return 1
     log("timed out")
@@ -509,6 +546,11 @@ def main():
     p.add_argument("--endpoint", action="append", default=[])
     p.add_argument("--timeout", type=float, default=120)
     p.add_argument("--approve", action="store_true", help="approve the code on the mock (switch device_manual=1)")
+    p.add_argument("--account", action="append", default=[], metavar="NAME[@URL]",
+                   help="push this account (its accountName; --approve signs in as that user on the mock); "
+                        "repeat for several accounts in one session (Silo Android #810)")
+    p.add_argument("--expect-limit", action="store_true", help="the last push must answer limit_reached")
+    p.add_argument("--gap", type=float, default=1.0, help="seconds between a sign-in and the next push")
     p.add_argument("--idle", action="store_true", help="say nothing; expect the Roku to close after about 30 s")
     p.add_argument("--expect-idle-timeout", action="store_true",
                    help="push, then say nothing (leave the Roku's consent unanswered); expect cancel idle_timeout after about 180 s")

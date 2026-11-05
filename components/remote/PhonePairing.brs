@@ -1,9 +1,16 @@
 ' Phone sign-in: Silo's phone app signs this Roku in (companion pairing, the Roku's side of
-' _silopair-roku._tcp; port of Android's PairingReceiver for a Roku, which keeps one server).
-' Included by ServerConnectScreen (state "setup": the phone pushes a server, Siku checks it and
+' _silopair-roku._tcp; port of Android's PairingReceiver).
+' Included by ServerConnectScreen (state "setup": the phone pushes servers, Siku checks each and
 ' runs its own device sign-in there) and LoginScreen (state "login": the phone approves the code
-' the screen already shows). The screen calls Pair_start / Pair_stop when shown / hidden and
-' implements:
+' the screen already shows). Several accounts in one phone session (Silo Android #810; adapted
+' from Silo-Server/silo-roku, AGPL-3.0 (components/AppSceneCompanion.bs, #38)): on the server
+' screen (TXT acct=1, lim) every push after a sign-in starts the next one, on any server, each
+' saved as its own account (Api_saveSignIn); a failed one does not end the session; past lim, or
+' when the registry could not keep one more beside them (PairSession_room), the push answers
+' limit_reached and the session waits for the next push or done. Every device login of a phone
+' session carries its binding at https servers whose device capability says session_binding.
+' With several signed in, the session ends on the first one's profile picker with Change Account
+' over it. The screen calls Pair_start / Pair_stop when shown / hidden and implements:
 '   Pair_screenCode()   login only: the code on screen {device_code, user_code, match_code} or invalid
 '   applyFocus()        to take focus back when the panel closes
 ' LoginScreen reports its sign-in outcome with Pair_codeStatus(status).
@@ -21,12 +28,31 @@ sub Pair_start(mode as string, srv = "" as string)
         m.pairTimer.observeField("fire", "Pair_onTimer")
     end if
     m.pair = { mode: mode, srv: srv, conn: "", consented: false, push: invalid, attempt: invalid, signedIn: "", view: "idle", gen: 0, timerAction: "", busy: false, routed: false }
+    Pair_newSession(invalid)
     t = RemoteControl_lanTask()
     if t = invalid then return
     t.unobserveField("pairEvent")
     t.observeField("pairEvent", "Pair_onEvent")
-    RemoteControl_setPairing(mode, srv)
-    print "[siku-pair] accepting a phone (state " + mode + ")"
+    lim = 0
+    if mode = "setup" then lim = PairSession_limit()
+    RemoteControl_setPairing(mode, srv, lim)
+    if mode = "setup" then
+        print "[siku-pair] accepting a phone (state setup); advertising acct=1 lim=" + lim.ToStr()
+    else
+        print "[siku-pair] accepting a phone (state " + mode + ")"
+    end if
+end sub
+
+' A phone session's own state: the accounts it signed in (ids, in the order they first signed in),
+' its last sign-in, the plain-HTTP origins the viewer allowed, its binding, and the push count.
+sub Pair_newSession(binding as dynamic)
+    m.pair.accounts = []
+    m.pair.lastPush = invalid
+    m.pair.lastUser = ""
+    m.pair.allowedHttp = {}
+    m.pair.pushes = 0
+    m.pair.binding = invalid
+    if binding <> invalid and Type(binding) = "roAssociativeArray" then m.pair.binding = binding
 end sub
 
 sub Pair_stop()
@@ -35,10 +61,19 @@ sub Pair_stop()
     if t <> invalid then t.unobserveField("pairEvent")
     m.pairTimer.control = "stop"
     Pair_abandon()
+    ' A Change Account still waiting for the end of the session is no longer due.
+    if not m.pair.routed and m.pair.accounts.Count() > 1 then print "[siku-pair] receiver stopped; Change Account no longer due"
+    m.pair.accounts = []
     RemoteControl_setPairing("")
     Pair_show(invalid)
     m.pair.conn = ""
 end sub
+
+' How long "Signed in" waits for the phone's next push or its done: the server screen takes more.
+function Pair_finishSeconds() as float
+    if Pair_isLogin() then return 4
+    return 10
+end function
 
 function Pair_isLogin() as boolean
     return m.pair <> invalid and m.pair.mode = "login"
@@ -58,9 +93,12 @@ sub Pair_onEvent(event as object)
     conn = Str_orEmpty(e.conn)
     if kind = "connected" then
         m.pair.conn = conn
+        m.pair.busy = false
+        ' A session that is ending keeps what it signed in; its pushes get auth_failed.
+        if m.pair.view = "completed" then return
         m.pair.consented = false
         m.pair.signedIn = ""
-        m.pair.busy = false
+        Pair_newSession(e.binding)
         print "[siku-pair] phone connected"
         Pair_view("connected")
     else if conn <> m.pair.conn then
@@ -69,7 +107,7 @@ sub Pair_onEvent(event as object)
         print "[siku-pair] phone disconnected"
         m.pair.conn = ""
         Pair_abandon()
-        if m.pair.signedIn <> "" then
+        if m.pair.accounts.Count() > 0 then
             Pair_complete()
         else if m.pair.view <> "failed" then
             Pair_show(invalid)
@@ -87,7 +125,7 @@ sub Pair_onMessage(msg as dynamic)
     else if kind = "done" then
         print "[siku-pair] phone finished"
         Pair_abandon()
-        if m.pair.signedIn <> "" then
+        if m.pair.accounts.Count() > 0 then
             Pair_complete()
         else if m.pair.view <> "failed" then
             Pair_show(invalid)
@@ -95,7 +133,7 @@ sub Pair_onMessage(msg as dynamic)
     else if kind = "cancel" then
         print "[siku-pair] phone cancelled (" + Str_orEmpty(msg.reason) + ")"
         Pair_abandon()
-        if m.pair.signedIn <> "" then Pair_complete() else Pair_show(invalid)
+        if m.pair.accounts.Count() > 0 then Pair_complete() else Pair_show(invalid)
     end if
 end sub
 
@@ -109,19 +147,49 @@ function Pair_displayName(push as object) as string
     return Lan_trimUrl(push.serverURL)
 end function
 
+' The phone's word for the account it approves with (pushServer accountName): shown, never
+' matched (the account that signs in is the poll's). At most 64 characters.
+function Pair_accountLabel(push as dynamic) as string
+    if push = invalid then return ""
+    return Left(Str_orEmpty(push.accountName).Trim(), 64)
+end function
+
 sub Pair_onPush(push as object)
     if Str_isEmpty(push.serverURL) then return
-    print "[siku-pair] server pushed"
-    ' A Roku keeps one server: a second push after a sign-in is refused.
-    if m.pair.signedIn <> "" then
-        Pair_send({ "v": 1, "type": "serverResult", "serverURL": Str_orEmpty(push.serverURL), "status": "failed", "error": "auth_failed" })
+    m.pair.pushes = m.pair.pushes + 1
+    n = m.pair.pushes.ToStr()
+    signedIn = m.pair.accounts.Count()
+    lim = PairSession_limit()
+    refusal = PairSession_refusal(m.pair.mode, signedIn, lim, m.pair.view = "completed" or m.pair.routed)
+    why = "lim=" + lim.ToStr() + " accounts=" + signedIn.ToStr()
+    if refusal = "" and signedIn > 0 then
+        ' One more sign-in must not cost an account this session signed in its stored sign-in.
+        url = Url_normalize(Lan_trimUrl(push.serverURL))
+        if not PairSession_room(Accounts_list(), Session_savedServers(), Registry_read("session"), m.pair.accounts, url, Pair_displayName(push), Str_orEmpty(push.serverIdentity).Trim(), Time_nowSeconds()) then
+            refusal = "limit_reached"
+            why = "registry room"
+        end if
+    end if
+    if refusal <> "" then
+        print "[siku-pair] push " + n + " " + refusal + " (" + why + ")"
+        Pair_send({ "v": 1, "type": "serverResult", "serverURL": Str_orEmpty(push.serverURL), "status": "failed", "error": refusal })
+        ' Still waiting for the phone's next push or its done, showing the last sign-in.
+        if refusal = "limit_reached" and m.pair.view = "signedIn" then Pair_schedule("complete", Pair_finishSeconds())
         return
+    end if
+    print "[siku-pair] push " + n + " accepted (accounts so far " + signedIn.ToStr() + ")"
+    ' A push after a sign-in starts the next one: the wait for it ends.
+    if m.pair.timerAction = "complete" then
+        m.pair.timerAction = ""
+        m.pairTimer.control = "stop"
     end if
     ' One server at a time: a newer push replaces one in flight.
     Pair_abandon()
     m.pair.push = push
     unencrypted = LCase(Left(Lan_trimUrl(push.serverURL), 7)) = "http://"
-    if not m.pair.consented or unencrypted then
+    ' Consent once a session, and for every plain-HTTP origin not allowed yet in it.
+    origin = Url_origin(Url_normalize(Lan_trimUrl(push.serverURL)))
+    if not m.pair.consented or (unencrypted and not m.pair.allowedHttp.DoesExist(origin)) then
         m.pair.unencrypted = unencrypted
         Pair_view("consent")
         return
@@ -173,7 +241,7 @@ sub Pair_view(name as string, extra = {} as object)
         if login then
             v = { eyebrow: "Phone or tablet connected", title: "Continue on your phone", detail: "Continue on your phone or tablet.", server: "On your phone", cardNote: "Approve the sign-in there.", busy: true, buttons: [{ id: "cancel", text: "Cancel" }] }
         else
-            v = { eyebrow: "Phone or tablet connected", title: "Choose servers on your phone", detail: "On your phone or tablet, choose which servers " + Pair_noun() + " should sign in to.", server: "On your phone", cardNote: "Pick the servers to bring over, then tap Continue.", busy: true, buttons: [{ id: "cancel", text: "Cancel" }] }
+            v = { eyebrow: "Phone or tablet connected", title: "Choose accounts on your phone", detail: "On your phone or tablet, choose which accounts " + Pair_noun() + " should sign in to.", server: "On your phone", cardNote: "Pick the accounts to bring over, then tap Continue.", busy: true, buttons: [{ id: "cancel", text: "Cancel" }] }
         end if
     else if name = "consent" then
         chip = "A nearby phone is setting up " + Pair_noun()
@@ -188,7 +256,10 @@ sub Pair_view(name as string, extra = {} as object)
         if Lan_isTrue(m.pair.unencrypted) then detail = detail + " Your password and what you watch will be sent unencrypted to " + Url_host(Lan_trimUrl(push.serverURL)) + ". Only do this on a network you trust."
         v = { eyebrow: chip, title: title, detail: detail, server: server, cardNote: "After you allow it, a code appears here to compare with your phone.", buttons: [{ id: "allow", text: "Allow" }, { id: "deny", text: "Don" + Chr(8217) + "t Allow" }], note: note }
     else if name = "starting" then
-        v = { eyebrow: "Getting a code", title: "Signing in to " + server, detail: "Getting " + Pair_noun() + Chr(8217) + "s sign-in code.", server: server, busy: true, buttons: [{ id: "cancel", text: "Cancel" }] }
+        title = "Signing in to " + server
+        account = Pair_accountLabel(push)
+        if account <> "" then title = "Signing in " + account + " on " + server
+        v = { eyebrow: "Getting a code", title: title, detail: "Getting " + Pair_noun() + Chr(8217) + "s sign-in code.", server: server, busy: true, buttons: [{ id: "cancel", text: "Cancel" }] }
     else if name = "unreachable" then
         detail = "This TV can" + Chr(8217) + "t reach " + server + " at " + Url_host(Lan_trimUrl(push.serverURL)) + ". Check its network connection and try again."
         buttons = []
@@ -200,11 +271,18 @@ sub Pair_view(name as string, extra = {} as object)
         cardNote = ""
         words = UCase(Str_orEmpty(extra.matchCode).Trim())
         if words <> "" then cardNote = "Older phones show " + words + " instead."
-        v = { eyebrow: "Waiting for your phone", title: "Confirm on your phone", detail: "Check that your phone or tablet shows this code, then approve.", code: Pair_codeText(extra.userCode), server: server, cardNote: cardNote, busy: true, buttons: [{ id: "cancel", text: "Cancel" }] }
+        detail = "Check that your phone or tablet shows this code, then approve."
+        account = Pair_accountLabel(push)
+        if account <> "" then detail = "Signing in " + account + " on " + server + ". " + detail
+        v = { eyebrow: "Waiting for your phone", title: "Confirm on your phone", detail: detail, code: Pair_codeText(extra.userCode), server: server, cardNote: cardNote, busy: true, buttons: [{ id: "cancel", text: "Cancel" }] }
     else if name = "signedIn" then
-        v = { title: "Signed in", detail: "Finishing up on your phone or tablet" + Chr(8230), server: server, busy: true }
+        detail = "Finishing up on your phone or tablet" + Chr(8230)
+        if m.pair.lastUser <> "" then detail = m.pair.lastUser + " is signed in on " + server + ". Finishing up" + Chr(8230)
+        v = { title: "Signed in", detail: detail, server: server, busy: true }
+        ' The server screen waits for more accounts; Done ends the session with what signed in.
+        if not login then v.buttons = [{ id: "finish", text: "Done" }]
     else if name = "completed" then
-        v = { title: "You" + Chr(8217) + "re all set", detail: "Signed in to " + m.pair.signedIn + ". Taking you to your profiles" + Chr(8230), server: "Signed in", buttons: [{ id: "continue", text: "Continue" }] }
+        v = { title: "You" + Chr(8217) + "re all set", detail: PairSession_completedText(m.pair.accounts.Count(), m.pair.signedIn), server: "Signed in", buttons: [{ id: "continue", text: "Continue" }] }
     else if name = "failed" then
         title = "Setup didn" + Chr(8217) + "t finish"
         if login then title = "Sign-in didn" + Chr(8217) + "t finish"
@@ -236,26 +314,39 @@ sub Pair_onChosen()
     v = m.pair.view
     if id = "allow" and v = "consent" then
         m.pair.consented = true
+        if Lan_isTrue(m.pair.unencrypted) and m.pair.push <> invalid then m.pair.allowedHttp[Url_origin(Url_normalize(Lan_trimUrl(m.pair.push.serverURL)))] = true
         Pair_begin()
     else if (id = "deny" or id = "back") and v = "consent" then
         print "[siku-pair] consent denied"
         Pair_send({ "v": 1, "type": "cancel", "reason": "consent_denied" })
         RemoteControl_pairClose(m.pair.conn, "")
-        Pair_show(invalid)
+        if m.pair.accounts.Count() > 0 then Pair_complete() else Pair_show(invalid)
     else if id = "alternate" and v = "unreachable" then
         Pair_useTarget(m.pair.alternate, Str_orEmpty(m.pair.push.serverIdentity).Trim())
     else if id = "retry" and v = "unreachable" then
         Pair_begin()
     else if id = "continue" and v = "completed" then
         Pair_onTimerRoute()
+    else if (id = "finish" or id = "back") and v = "signedIn" then
+        ' The session ends with what it signed in.
+        if Pair_isLogin() then return
+        Pair_endSession()
     else if id = "close" or (id = "back" and v = "failed") then
-        Pair_show(invalid)
+        ' After a sign-in, a later account's failure ends the session with the ones that did.
+        if m.pair.accounts.Count() > 0 then Pair_endSession() else Pair_show(invalid)
     else if id = "cancel" or id = "back" then
         if v = "completed" or v = "signedIn" then return
         Pair_abandon()
         if m.pair.conn <> "" then RemoteControl_pairClose(m.pair.conn, "user-cancelled")
-        Pair_show(invalid)
+        if m.pair.accounts.Count() > 0 then Pair_complete() else Pair_show(invalid)
     end if
+end sub
+
+' The viewer ends a session that signed in: the phone hears it, "You're all set" shows.
+sub Pair_endSession()
+    Pair_abandon()
+    if m.pair.conn <> "" then RemoteControl_pairClose(m.pair.conn, "user-cancelled")
+    Pair_complete()
 end sub
 
 ' ---------- One attempt ----------
@@ -272,15 +363,29 @@ sub Pair_signedInNow()
     push = m.pair.push
     m.pair.attempt = invalid
     m.pair.signedIn = Pair_displayName(push)
-    print "[siku-pair] signed in"
+    m.pair.lastPush = push
+    ' The saved account it signed in (or refreshed): the same account twice counts once.
+    s = m.global.session
+    id = Str_orEmpty(s.accountId)
+    if Pair_isLogin() or id = "" then id = "push-" + m.pair.pushes.ToStr()
+    m.pair.accounts = PairSession_note(m.pair.accounts, id)
+    m.pair.lastUser = ""
+    if not Pair_isLogin() then m.pair.lastUser = Left(Accounts_username(s), 64)
+    print "[siku-pair] signed in (accounts this session " + m.pair.accounts.Count().ToStr() + ")"
     Pair_send({ "v": 1, "type": "serverResult", "serverURL": Str_orEmpty(push.serverURL), "status": "signedIn" })
     Pair_view("signedIn")
-    ' The phone answers with done; if it never does, carry on anyway.
-    Pair_schedule("complete", 4)
+    ' The phone pushes the next account or answers with done; if it does neither, carry on.
+    Pair_schedule("complete", Pair_finishSeconds())
 end sub
 
+' "You're all set", naming the last sign-in's server (not a later push that failed or was
+' refused). An attempt still in flight is withdrawn.
 sub Pair_complete()
     if m.pair.view = "completed" then return
+    if m.pair.timerAction = "complete" then m.pair.timerAction = ""
+    Pair_abandon()
+    if m.pair.lastPush <> invalid then m.pair.push = m.pair.lastPush
+    print "[siku-pair] session ended with " + m.pair.accounts.Count().ToStr() + " account(s)"
     Pair_view("completed")
     Pair_schedule("route", 2)
 end sub
@@ -291,7 +396,7 @@ sub Pair_abandon()
     m.pair.gen = m.pair.gen + 1
     if m.pairTimer <> invalid and m.pair.timerAction <> "route" and m.pair.timerAction <> "complete" then m.pairTimer.control = "stop"
     m.pair.attempt = invalid
-    if a <> invalid and not Str_isEmpty(a.deviceCode) and m.pair.signedIn = "" then
+    if a <> invalid and not Str_isEmpty(a.deviceCode) then
         Api_call({ method: "POST", path: "/api/v2/auth/device/cancel", baseUrl: a.base, body: { device_code: a.deviceCode }, auth: false, profile: false, timeout: 5 }, "Api_onFired")
     end if
 end sub
@@ -317,14 +422,44 @@ sub Pair_onTimer()
     end if
 end sub
 
-' "You're all set": Continue, or 2 s later, moves on to the profiles.
+' "You're all set": Continue, or 2 s later, moves on to the profiles: the one account's, or with
+' several, the first one's picker with Change Account over it, focused on its card (silo-roku
+' companionOpenAccounts; Android TV ends on Change Account).
 sub Pair_onTimerRoute()
     if m.pair = invalid or m.pair.routed = true then return
     m.pair.routed = true
     m.pairTimer.control = "stop"
+    ids = m.pair.accounts
+    several = not Pair_isLogin() and ids.Count() > 1
     Pair_stop()
+    if several and Pair_openAccount(Str_orEmpty(ids[0])) then
+        print "[siku-pair] " + ids.Count().ToStr() + " accounts signed in: the first one's profiles with Change Account over them"
+        Nav_reset("@start", { switching: true, openAccounts: true })
+        return
+    end if
     Nav_reset("@start")
 end sub
+
+' Makes the session's first account the open one, its picker waiting for the viewer (a profile
+' it had open closes). False when it is no longer saved.
+function Pair_openAccount(id as string) as boolean
+    s = m.global.session
+    if id <> "" and Str_orEmpty(s.accountId) = id and not Accounts_isTemporary(s) then
+        c = AA_copy(s)
+        c.profileId = ""
+        c.profileToken = ""
+        c.profileName = ""
+        c.profileAvatar = ""
+        Session_save(c)
+        return true
+    end if
+    e = Accounts_find(Accounts_list(), id)
+    if e = invalid then return false
+    srv = Session_savedServer(Str_orEmpty(e.url))
+    if srv = invalid then return false
+    Session_activateAccount(srv, e, true)
+    return true
+end function
 
 sub Pair_begin()
     push = m.pair.push
@@ -401,10 +536,37 @@ end sub
 
 sub Pair_useTarget(base as string, identity as string)
     m.pair.gen = m.pair.gen + 1
-    m.pair.attempt = { kind: "setup", gen: m.pair.gen, base: Url_normalize(base), identity: identity, deviceCode: "", interval: 3, deadline: 0, failingSince: 0 }
+    m.pair.attempt = { kind: "setup", gen: m.pair.gen, base: Url_normalize(base), identity: identity, deviceCode: "", interval: 3, deadline: 0, failingSince: 0, binding: invalid }
     Pair_view("starting")
+    ' The session binding goes only to an https server whose capability says session_binding;
+    ' over plain HTTP it is never sent, so the capability is not read there.
+    if LCase(Left(m.pair.attempt.base, 8)) = "https://" and m.pair.binding <> invalid then
+        Api_call({ method: "GET", path: "/api/v2/auth/device/capability", baseUrl: m.pair.attempt.base, auth: false, profile: false, timeout: 8, context: { gen: m.pair.gen } }, "Pair_onCapability")
+        return
+    end if
+    Pair_startLogin(invalid)
+end sub
+
+sub Pair_onCapability(event as object)
+    resp = Api_result(event)
+    if not Pair_current(resp) then return
+    cap = invalid
+    if resp.ok and Type(resp.data) = "roAssociativeArray" then cap = resp.data
+    Pair_startLogin(cap)
+end sub
+
+' POST device/start at the attempt's address, with the session's binding when that server takes it.
+sub Pair_startLogin(capability as dynamic)
+    a = m.pair.attempt
+    a.binding = PairSession_bindingFor(a.base, capability, m.pair.binding)
     body = { device_name: Pair_deviceName(), device_platform: "roku" }
-    Api_call({ method: "POST", path: "/api/v2/auth/device/start", baseUrl: m.pair.attempt.base, body: body, auth: false, profile: false, timeout: 15, context: { gen: m.pair.gen } }, "Pair_onStart")
+    if a.binding <> invalid then
+        body["binding"] = a.binding.binding
+        print "[siku-pair] binding sent=yes"
+    else
+        print "[siku-pair] binding sent=no reason=" + PairSession_noBindingReason(a.base, capability, m.pair.binding)
+    end if
+    Api_call({ method: "POST", path: "/api/v2/auth/device/start", baseUrl: a.base, body: body, auth: false, profile: false, timeout: 15, context: { gen: m.pair.gen } }, "Pair_onStart")
 end sub
 
 function Pair_deviceName() as string
@@ -448,7 +610,9 @@ sub Pair_poll()
         Pair_failed("expired")
         return
     end if
-    Api_call({ method: "POST", path: "/api/v2/auth/device/poll", baseUrl: a.base, body: { device_code: a.deviceCode }, auth: false, profile: false, timeout: 15, context: { gen: m.pair.gen } }, "Pair_onPoll")
+    body = { device_code: a.deviceCode }
+    if a.binding <> invalid then body["binding_secret"] = a.binding.secret
+    Api_call({ method: "POST", path: "/api/v2/auth/device/poll", baseUrl: a.base, body: body, auth: false, profile: false, timeout: 15, context: { gen: m.pair.gen } }, "Pair_onPoll")
 end sub
 
 sub Pair_onPoll(event as object)
@@ -459,6 +623,12 @@ sub Pair_onPoll(event as object)
     if not resp.ok or Type(d) <> "roAssociativeArray" then
         if resp.status = 404 then
             Pair_failed("expired")
+            return
+        end if
+        ' A refused binding secret cannot change by polling again: the request is withdrawn.
+        if resp.status = 403 and resp.error <> invalid and Str_orEmpty(resp.error.code) = "device_binding_mismatch" then
+            print "[siku-pair] the server refused the session binding"
+            Pair_failed("auth_failed")
             return
         end if
         if a.failingSince = 0 then a.failingSince = Time_nowSeconds()

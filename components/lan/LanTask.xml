@@ -22,7 +22,7 @@
       by Connect a Phone through `pairingInfo`. Keys, nonces and tokens are never printed.
   Fields
     config      in:  {castEnabled, sealed, deviceId, deviceName, serverId, serverName,
-                      serverIdentity, signedIn, hasLogin, playing, pairing: {mode: ""|"setup"|"login", srv}}
+                      serverIdentity, signedIn, hasLogin, playing, pairing: {mode: ""|"setup"|"login", srv, lim}}
     command     in:  {kind: castSend|castClose|castCloseAll|castAuthorize|pairSend|pairClose|pairBusy|resetKey|shutdown, ...}
                      pairBusy {conn, busy}: a phone sign-in attempt is in flight (no 180 s idle limit);
                      shutdown: the app is leaving (cancel/close every phone, mDNS goodbye, then `stopped`)
@@ -30,7 +30,8 @@
                      since the server screen can ask before the Task observes its fields
     castState   in:  the latest SiloCast playback state, sent to every authorized controller
     castEvent   out: {type: hello|offer|handoffCancel|launch|control|presence|closed, conn, ...}
-    pairEvent   out: {type: connected|message|closed, conn, message}
+    pairEvent   out: {type: connected|message|closed, conn, message}; connected carries the phone
+                     session's binding {secret, binding} (never printed)
     status      out: {castPort, castListening, pairPort, pairListening, mdns, ip, controllers: [...]}
     pairingInfo out: {keyId, keyText (groups of four), keyBase32, ip, port, sealed}
     stopped     out: true once `shutdown` has said goodbye

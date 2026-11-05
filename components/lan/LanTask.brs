@@ -361,7 +361,9 @@ sub acceptOne(s as object, kind as string)
         print "[siku-lan] phone sign-in connection " + cn.id + " from " + peer
         hello = { "v": 1, "type": "hello", "tvName": Str_orEmpty(m.cfg.deviceName), "tvDeviceId": Str_orEmpty(m.cfg.deviceId), "state": Str_orEmpty(m.cfg.pairing.mode), "supportedVersions": [1] }
         sendJson(cn, hello)
-        m.top.pairEvent = { type: "connected", conn: cn.id }
+        ' Each phone session gets its own binding secret (Silo Android #810): every device login
+        ' the server screen starts for this phone carries it, at servers that take it.
+        m.top.pairEvent = { type: "connected", conn: cn.id, binding: Lan_bindingFor(Lan_bindingSecret(Str_orEmpty(m.cfg.deviceId))) }
         return
     end if
     if countConns("cast") >= lanMaxControllers() then
@@ -980,7 +982,7 @@ function mdnsServices() as object
     if m.io.pairListener <> invalid then
         mode = Str_orEmpty(m.cfg.pairing.mode)
         txt = [["v", "1"], ["name", Str_orEmpty(m.cfg.deviceName)], ["id", Str_orEmpty(m.cfg.deviceId)], ["sid", m.pairSid], ["st", mode]]
-        if mode = "login" and not Str_isEmpty(m.cfg.pairing.srv) then txt.Push(["srv", Str_orEmpty(m.cfg.pairing.srv)])
+        txt.Append(Lan_pairTxtExtra(mode, Str_orEmpty(m.cfg.pairing.srv), m.cfg.pairing.lim))
         out.Push(Mdns_service("_silopair-roku._tcp", inst, m.pairPort, txt))
     end if
     return out

@@ -17,7 +17,7 @@
       and start position; control: forwarded to the player (remoteCommand);
     - state: PlayerScreen publishes it (RemoteState_publish); idle "Ready" otherwise.
   Fields
-    pairing        in   {mode: ""|"setup"|"login", srv}: set by the server and sign-in screens
+    pairing        in   {mode: ""|"setup"|"login", srv, lim}: set by the server and sign-in screens
     reloadPrefs    in   set after Connect a Phone changed a Remote Control setting
     disconnectAll  in   the TV's own "Disconnect phones"
     endBorrowed    in   a reason; ends a borrowed phone identity now (its session expired)

@@ -81,6 +81,8 @@ components/remote/
   RemoteControl the SiloCast receiver's decisions on the render thread (MainScene child)
   RemotePrefs.brs Remote Control settings and helpers (RemoteControl_*, RemoteState_*)
   PhonePairing.brs phone sign-in for the server and sign-in screens (Pair_*)
+  PairSession.brs several accounts in one phone session: lim, limit_reached, registry room,
+                session binding eligibility (pure, PairSession_*)
 components/widgets/             reusable UI: MediaCardItem, PillButton, Toast, LoadingSpinner, PairingPanel, …
 components/screens/             one folder or file pair per screen
 components/screens/debug/       developer diagnostics opened by deep link: StreamTestScreen, FontTestScreen
@@ -221,6 +223,11 @@ end sub
 - Build the content with `Content_rows([{ id, title, style: "poster"|"landscape", items: [card...] }])`.
 - Grids use a `MarkupGrid` with `itemComponentName="MediaCardItem"`. MarkupGrid clips to its bounds, so grid cells carry an inset (`Content_grid(cards, style, insetX, insetY)` → `cardInsetX/Y` on the node) and the grid starts that much left of / above the first card.
 - Card styles: `poster` (2:3), `landscape` (16:9), `circle` (people) and `square` (1:1: audiobooks, albums, audiobook groups; `initials` on the node draws a lettered placeholder when there is no image).
+- The `HomeSkylineFeed` marquee shows a title logo when the card has one; the text title waits for
+  it up to 0.7 s (`logoGraceTimer`, Silo Android #813): a logo that loads inside the grace never
+  reveals the text, a failed one shows the text at once, a slow one when the grace ends (and the
+  logo takes its place if it arrives later). The timer stops when the logo is ready or fails, or
+  the card has no logo.
 - Row titles in `HomeSkylineFeed` are drawn by the feed itself (RowList's own label is transparent): RowList sizes its label to the row's content width, so a one-card row would truncate its title.
 - Item sizes:
 
@@ -338,19 +345,62 @@ crypto. It talks to the render thread through fields: `config` and `command` in,
 control, the borrowed identity. Screens use `PhonePairing.brs`.
 
 **Phone sign-in (`_silopair-roku._tcp`, port 52819, protocol v1).** Advertised only while
-`ServerConnectScreen` (TXT `st=setup`) or `LoginScreen` (TXT `st=login`, `srv=<server identity>`)
-is up; TXT also carries `v=1`, `name`, `id`, `sid`. One phone at a time. Siku sends
-`hello {tvName, tvDeviceId, state, supportedVersions:[1]}`; the phone sends `pushServer
-{serverURL, serverName, serverIdentity?, endpoints?}` (one server: a Roku keeps one), Siku asks
-"Allow this setup?" (also for every plain-HTTP address), then
+`ServerConnectScreen` (TXT `st=setup`, `acct=1`, `lim=<n>`) or `LoginScreen` (TXT `st=login`,
+`srv=<server identity>`) is up; TXT also carries `v=1`, `name`, `id`, `sid`. One phone at a time.
+Siku sends `hello {tvName, tvDeviceId, state, supportedVersions:[1]}`; the phone sends `pushServer
+{serverURL, serverName, serverIdentity?, accountName?, endpoints?}`, Siku asks "Allow this setup?"
+(once a phone session, and again for every plain-HTTP origin not yet allowed in it), then
 - setup: `GET {pushed}/api/v2/system/identity` must answer the pushed identity (another identity
   is `identity_mismatch`; unreachable offers a verified alternate endpoint, never takes it),
   `POST /api/v2/auth/device/start` there, `deviceStarted {serverURL, userCode, matchCode}`,
-  poll, save server + tokens, `serverResult {status: signedIn}`, then the phone's `done` routes on;
+  poll, save server + tokens as an account (`Api_saveSignIn`), `serverResult {status: signedIn}`;
 - login: the pushed identity must equal `srv`; Siku sends the code the sign-in screen already
   shows and relays that screen's outcome.
-Failures answer `serverResult {status: failed, error: denied|expired|unreachable|identity_mismatch|update_required|auth_failed}`.
+Failures answer `serverResult {status: failed, error: denied|expired|unreachable|identity_mismatch|update_required|auth_failed|limit_reached}`.
 Tokens never cross the LAN; the server gives them to the Roku over HTTPS after the phone approves.
+
+*Several accounts in one phone session* (Silo Android #810; adapted from Silo-Server/silo-roku
+#38, AGPL-3.0; pure decisions in `components/remote/PairSession.brs`, host-tested in
+`tests/test_pair_session.py`):
+- `acct=1`: on the server screen the phone may push again after each sign-in, on any server, the
+  same one included; each sign-in is saved as its own account, matched by the poll's
+  `tokens.user.id` (the same user again refreshes its account and counts once). `accountName` is
+  only shown ("Signing in sam on Home"), never matched. A push while one is in flight replaces it.
+- `lim=6` (`PairSession_limit`): the most sign-ins one session keeps: 12 accounts, 6 saved
+  servers, and the 9000-byte accounts budget at 1800 bytes per stored sign-in plus the open one.
+  A push past it, or one that would make the budget (`Accounts_fit`, least recently used first) or
+  the servers list drop the stored sign-in or the server of an account this session signed in
+  (`PairSession_room`, a quiet what-if of `Session_save`, with the next sign-in at its largest), gets
+  `serverResult failed limit_reached` and the session keeps waiting for the next push or `done`.
+  The sign-in screen signs in one account (a later push: `limit_reached`); a push once "You're all
+  set" is up: `auth_failed`.
+- A failed account does not end the session: its failure shows until the phone pushes again or
+  the session ends (OK, `done`, the phone leaving), which goes on with the accounts that did sign in.
+- After a sign-in, "Signed in" ("{user} is signed in on {server}. Finishing up…", with Done) waits
+  10 s for the next push, `done` or the phone leaving; then "You're all set" (the last sign-in's
+  server, or "{n} accounts are signed in. Next, choose which one to open.") with Continue, 2 s.
+  One account: its profiles. Several: the first one to sign in becomes the open account (its
+  profile closed), `Nav_reset("@start", {switching, openAccounts})` opens its picker, which pushes
+  Change account over itself once (focus on that account; Back returns to its picker). A receiver
+  that stops before then (the screen hidden) drops that pending Change account.
+- Session binding (contract B.1): when a phone connects, LanTask makes a 32-byte secret (SHA-256
+  of eight `GetRandomUUID` values, the clocks and the device id; Roku documents no CSPRNG) and hands
+  `{secret, binding}` to the screen with the `connected` event. Every device login of that session
+  at an **https** server whose `GET /api/v2/auth/device/capability` says `session_binding: true`
+  sends `binding` = base64url(SHA-256(secret)) on start and `binding_secret` = base64url(secret) on
+  every poll (no padding, 43 characters each); a failed read, a missing key or plain HTTP means no
+  binding (the capability is not even read over HTTP). A `403 device_binding_mismatch` poll fails
+  `auth_failed` and withdraws the request. The phone then approves later bound codes after the
+  person compared the first. The sign-in screen's own code carries none. Never printed.
+- Console: `[siku-pair] accepting a phone (state setup); advertising acct=1 lim=6`, `push N accepted
+  (accounts so far K)` / `push N limit_reached (lim=6 accounts=6 | registry room)` / `push N
+  auth_failed (...)`, `binding sent=yes` / `binding sent=no reason=http|capability_unread|no_session_binding`,
+  `the server refused the session binding`, `signed in (accounts this session N)`, `session ended
+  with N account(s)`, `N accounts signed in: the first one's profiles with Change Account over them`,
+  `receiver stopped; Change Account no longer due`. Mock: `--switch device_manual=1` with
+  `silo_phone.py pair --approve --account laura --account sam` (approves each as that user,
+  `DEVICE APPROVE user=`), `--switch session_binding=1` (`DEVICE START binding=`, `DEVICE POLL
+  binding=ok|mismatch|none`; the mock is plain HTTP, so Siku sends none there), `binding_mismatch=1`.
 
 **Remote control (`_silocast-roku._tcp`, port 52817..52821, protocol v2).** TXT: `v=2`, `id`,
 `deviceId`, `name`, `server` (base64url of the server URL, the phone's registry key), `serverName`,

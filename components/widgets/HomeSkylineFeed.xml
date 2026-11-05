@@ -107,5 +107,7 @@
     </Group>
     <Timer id="restTimer" duration="0.15" repeat="false" />
     <Timer id="pressTimer" duration="0.6" repeat="false" />
+    <!-- Silo Android #813: how long the marquee holds the text title back while a logo loads. -->
+    <Timer id="logoGraceTimer" duration="0.7" repeat="false" />
   </children>
 </component>

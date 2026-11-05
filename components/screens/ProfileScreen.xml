@@ -11,7 +11,8 @@
   PIN profiles open AuthPinDialog and POST /api/v2/profiles/{id}/verify-pin.
   An account with a temporary password (403 password_change_required, Silo Android #790) gets a
   message saying where to change it, with Retry | Change account | Sign out and Sign out focused.
-  Params: { switching: bool, atLaunch: bool }
+  Params: { switching: bool, atLaunch: bool, openAccounts: bool }; openAccounts (a phone signed
+  several accounts in, PhonePairing.brs) opens Change Account over the picker once.
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="ProfileScreen" extends="BaseScreen">
