@@ -277,6 +277,20 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   binding=yes|no`, `DEVICE POLL binding=ok|mismatch|none`; the mock is plain HTTP, so no binding is sent
   to it), `binding_mismatch=1`. Home marquee (Silo Android #813): the text title waits up to 0.7 s for
   a loading logo (`logoGraceTimer` in HomeSkylineFeed).
+- Card overlays (Silo's profile badges; adapted from silo-roku e8244ee; `Overlays.brs`, `CardOverlay*.brs`,
+  `OverlayArtTask`/`OverlayDraw.brs`): `[siku-overlays] config source=server|builtin enabled= preset= badges= images=
+  profile_doc=yes|no profile_enabled=on|off|unset` (or `config read failed status=N; keeping what applies`), `art drawn= hits=
+  files= shared= sprites=<hits>/<misses> dropped= failed= queued=` per batch, `image kept|download failed status=|could not
+  be kept|unreadable`, `drawing failed:`. Settings `ui.card_overlays` / `ui.card_overlays_enabled` (source `profile` only) +
+  GET `/api/v2/settings/overlay-config`. Mock: `--switch card_overlays=1|<preset>|rails|combined|off|404|500` (default off),
+  `overlay_profile=<preset>`, `overlay_profile_enabled=0|1`, `overlay_images=1|missing`; log `OVERLAY CONFIG`, `OVERLAY IMAGE`.
+  The simulator draws translucent fills opaque (brs-engine ignores bitmap alpha); `scratchpad/pngfix.py` opens its PNGs.
+- Audiobook session expiry (Silo Android #708, `AudioSessionRecovery.brs`): `[siku-audio] session expired on the server
+  (progress 404|play|voice play); starting a fresh one at <s> s (renewal N)`, `… while paused; a fresh one starts on Play at
+  <s> s`, `session expired again; not renewing after 3 renewals`, `the server ended this playback session; not starting
+  another` (410 `playback_session_ended`: Close only), `retry at <s> s`, `retry refused: …`, `play ignored: …`. Mock
+  `--switch audiobook_session=expire|expire_v1|ended|other_404|start_fail` (audiobook sessions only; log `AUDIOBOOK SESSION
+  <kind> sid=`, `AUDIO START file= start_position= persistence=`).
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

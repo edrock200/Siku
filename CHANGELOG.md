@@ -3,6 +3,18 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.41
+
+Two changes from Silo's apps (November 6, 2026).
+
+**New**
+- **Badges on posters, wide cards and episode pictures.** Siku now shows the badges your profile picked in Silo's web app, in the style you chose there: 4K, Dolby Vision, Atmos, the release type, ratings and more. A show or season you've started shows how many episodes are left on its poster. Turn them on or off in Silo's web app.
+
+**Better**
+- **Audiobooks keep playing after the server drops the session.** If the server has forgotten your audiobook's playback session (after a long pause or a server restart), Siku starts a fresh one where you were instead of going quiet. If you were paused, pressing Play starts it again. If a server administrator stopped your audiobook or music, the player stops and says so, and doesn't start again on its own. When playback stops on an error, pressing Play tries again from where it stopped.
+
+**Needs testing on a real Roku:** how smoothly Home and library pages scroll with badges on, how the badges look at 1080p, and audiobooks picking up after a long pause.
+
 ## v0.1.40
 
 Two changes from Silo's apps (November 5, 2026).
