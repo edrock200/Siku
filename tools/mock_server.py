@@ -21,6 +21,16 @@ clears one); GET /mock/switch lists them.
   progress_404=<n>               the next n POST /playback/{id}/progress answer 404 playback_session_not_found
                                  (the session is forgotten too, like a server restart); Siku starts a new
                                  session at the position. Log: PROGRESS sid= seq= pos= paused= status=
+  audiobook_session=expire|expire_v1|ended|other_404|start_fail
+                                 the next POST /playback/{id}/progress of an audiobook session (progress_persistence
+                                 "client") answers: expire = 404 not_found "Playback session not found" (v2's form)
+                                 and forgets the session; expire_v1 = the same with code playback_session_not_found;
+                                 ended = 410 playback_session_ended (every answer, as an administrator's stop);
+                                 other_404 = 404 not_found "Source media file is missing". expire, expire_v1 and
+                                 other_404 clear themselves after one answer (Silo Android #708: Siku starts a fresh
+                                 session at the position; never after ended). start_fail: the next audiobook
+                                 POST /playback/start answers 503 once (the error screen; Play / Try again start it
+                                 again). Log: AUDIOBOOK SESSION <kind> sid=, AUDIO START file= start_position=
   stop_fail=<n>                  the next n DELETE /playback/{id} answer 503 (Siku resends the same stop
                                  after 2, 4, 8 ... s). Log: STOP sid= stop_id= seq= pos= status=
   replan_410=1                   POST /playback/{id}/replan answers 410 playback_session_ended
@@ -1022,7 +1032,14 @@ def audio_route(handler, method, p, q, b):
         section_list(handler, p, q, secs)
         return True
     if p == "/api/v2/playback/start" and method == "POST" and b.get("file_id") in AUDIO_FILES:
+        if STATE["switches"].get("audiobook_session") == "start_fail" and b.get("progress_persistence") == "client":
+            STATE["switches"].pop("audiobook_session", None)
+            print("AUDIOBOOK SESSION start_fail file=%s start_position=%s" % (b.get("file_id"), b.get("start_position")), flush=True)
+            LOG.append("AUDIOBOOK SESSION start_fail")
+            handler.problem(503, "dependency_unavailable", "Playback is temporarily unavailable.")
+            return True
         f = AUDIO_FILES[b["file_id"]]
+        print("AUDIO START file=%s start_position=%s persistence=%s" % (b.get("file_id"), b.get("start_position"), b.get("progress_persistence")), flush=True)
         sid = uuid.uuid4().hex
         STATE["sessions"][sid] = b
         LOG.append("START " + json.dumps(b)[:400])
@@ -2848,6 +2865,25 @@ class Handler(BaseHTTPRequestHandler):
                 LOG.append("REPLAN moved to file %s" % other)
             return self.send(200, decision)
         m = re.match(r"^/api/v2/playback/([^/]+)/progress$", p)
+        abook = STATE["switches"].get("audiobook_session") if m else None
+        if abook and (STATE["sessions"].get(m.group(1)) or {}).get("progress_persistence") == "client":
+            kind = str(abook)
+            line = "AUDIOBOOK SESSION %s sid=%s seq=%s pos=%s paused=%s" % (kind, m.group(1)[:8], b.get("sequence"), b.get("position"), b.get("is_paused"))
+            print(line, flush=True)
+            LOG.append(line)
+            if kind == "ended":
+                return self.problem(410, "playback_session_ended", "An administrator ended this playback session")
+            if kind in ("expire", "expire_v1", "other_404"):
+                STATE["switches"].pop("audiobook_session", None)
+                code, detail = "not_found", "Playback session not found"
+                if kind == "expire_v1":
+                    code = "playback_session_not_found"
+                if kind == "other_404":
+                    detail = "Source media file is missing"
+                else:
+                    STATE["sessions"].pop(m.group(1), None)
+                return self.send(404, {"type": "https://siloserver.org/docs/api/v2/problems/" + code, "title": "Not Found",
+                                       "status": 404, "detail": detail}, "application/problem+json")
         if m:
             left = int(STATE["switches"].get("progress_404") or 0)
             status = 404 if left > 0 or m.group(1) not in STATE["sessions"] else 200

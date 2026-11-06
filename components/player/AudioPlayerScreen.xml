@@ -27,6 +27,10 @@
   progress_persistence "client" and a part-local start_position; whole-book progress is written with
   POST /api/v2/sync/progress {items:[{media_item_id, position_ms, duration_ms}]}.
   Back closes an open panel, otherwise stops playback and closes; m.global.homeDirty is set on exit.
+  Session answers (Silo Android #708, AudioSessionRecovery.brs): a progress post answering 404 "Playback
+  session not found" starts a fresh audiobook session at the position (on Play when paused; at most 3 in
+  a row); 410 playback_session_ended (an administrator stopped it) stops playback and shows the error
+  without Try again. On any other error screen Play / Try again start again where playback was.
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="AudioPlayerScreen" extends="BaseScreen">
@@ -39,6 +43,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioCaps.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioTimeline.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/AudioSessionRecovery.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/VoiceTransport.brs" />
   <children>
     <Rectangle width="1920" height="1080" color="0x000000FF" />
@@ -106,7 +111,7 @@
     <Group id="errorGroup" visible="false">
       <Rectangle width="1920" height="1080" color="0x000000F2" />
       <Poster uri="pkg:/images/icons/error.png" width="80" height="80" translation="[920, 380]" blendColor="0xEDEDED9E" />
-      <Label text="Something went wrong" width="1920" translation="[0, 480]" horizAlign="center" color="0xEDEDEDFF">
+      <Label id="errorTitle" text="Something went wrong" width="1920" translation="[0, 480]" horizAlign="center" color="0xEDEDEDFF">
         <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="38" />
       </Label>
       <Label id="errorLabel" width="1200" translation="[360, 540]" horizAlign="center" wrap="true" maxLines="3" color="0xEDEDEDBF">

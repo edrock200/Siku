@@ -17,7 +17,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LOGGED = ("playback", "home", "auth", "memory", "launch", "trickplay", "theme", "trailer", "detail",
-          "cards", "voice", "diag", "accounts")
+          "cards", "voice", "diag", "accounts", "audio")
 # source/main.brs runs before m.global exists on the main thread; its lines stay prints.
 SKIP = {"source/main.brs"}
 LINE = re.compile(r'^(?P<lead>\s*(?:.*?\bthen\s+)?)print\s+(?P<args>"\[siku-(?P<cat>[a-z0-9]+)\].*)$')

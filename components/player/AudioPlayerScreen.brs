@@ -28,6 +28,7 @@ sub init()
     m.spinner = m.top.findNode("spinner")
     m.errorGroup = m.top.findNode("errorGroup")
     m.errorLabel = m.top.findNode("errorLabel")
+    m.errorTitle = m.top.findNode("errorTitle")
     m.retryBtn = m.top.findNode("retryBtn")
     m.errorCloseBtn = m.top.findNode("errorCloseBtn")
     m.panel = m.top.findNode("panel")
@@ -65,6 +66,9 @@ sub init()
     m.voiceDebugDone = false   ' debugVoice injected (simulator aid)
     m.pendingSeek = -1.0
     m.waitingForToken = false
+    m.renewals = 0              ' fresh sessions since the last good progress answer (#708)
+    m.sessionExpired = false    ' the server forgot the session while paused: Play starts a fresh one
+    m.endedByServer = false     ' 410 playback_session_ended: never start another on our own
     m.chapterIdx = -1
     m.sleepMode = "off"
     m.sleepRemaining = 0
@@ -151,9 +155,14 @@ sub onScreenHidden()
 end sub
 
 sub retry()
+    if m.endedByServer or m.closing then
+        Diag_log("[siku-audio] retry refused: the server ended this playback session")
+        return
+    end if
     m.errorGroup.visible = false
     m.retriedInstall = false
     if m.mode = "audiobook" and m.timeline <> invalid then
+        Diag_log(Diag_join(["[siku-audio] retry at ", Int(m.globalPos).ToStr(), " s"]))
         seekGlobal(m.globalPos, true)
     else if m.mode = "music" and m.queue.Count() > 0 then
         playQueueIndex(m.qIndex, m.localPos)
@@ -437,6 +446,7 @@ end sub
 sub startFile(fileId as string, localStart as float, persistence as string)
     stopSession(true)
     m.audio.control = "stop"
+    m.sessionExpired = false
     m.loadGen = m.loadGen + 1
     m.attemptId = m.di.GetRandomUUID()
     m.retriedInstall = false
@@ -674,10 +684,62 @@ end sub
 
 sub onProgressResult(event as object)
     resp = Api_result(event)
-    if (resp.status = 404 or resp.status = 410) and resp.context <> invalid and resp.context.sid = m.sessionId then
+    ' Only answers about the session playing now count (a late one for the previous part's must not
+    ' end or renew this one).
+    if resp.context = invalid or m.sessionId = "" or Str_orEmpty(resp.context.sid) <> m.sessionId or m.closing then return
+    if resp.ok then
+        m.renewals = 0
+        return
+    end if
+    action = AudioSession_progressAction(resp, m.mode, m.isPaused, m.renewals)
+    ' The error screen is up (the stream failed): Try again starts the fresh session, not this answer.
+    if m.errorGroup.visible and action <> "ended" then action = "stop_reporting"
+    if action = "ended" then
+        leaveServerEndedSession()
+    else if action = "renew" then
+        renewExpiredSession("progress " + Str_orEmpty(resp.status))
+    else if action = "renew_on_play" then
+        ' Nothing plays now, so nothing is lost: the fresh session starts with Play (togglePlay).
+        Diag_log(Diag_join(["[siku-audio] session expired on the server while paused; a fresh one starts on Play at ", Int(m.globalPos).ToStr(), " s"]))
+        m.sessionId = ""
+        m.progressTimer.control = "stop"
+        m.sessionExpired = true
+    else if action = "stop_reporting" then
+        if m.mode = "audiobook" and AudioSession_isMissing(resp) and m.renewals >= 3 then Diag_log(Diag_join(["[siku-audio] session expired again; not renewing after ", m.renewals.ToStr(), " renewals"]))
         ' The session ended on the server; stop reporting.
         m.sessionId = ""
     end if
+end sub
+
+' The server no longer knows this audiobook's session (Silo Android #708): a fresh one for the part
+' playing, at the file-local position, instead of failing. The expired session is not stopped (the
+' server has forgotten it); answers about it are dropped from here on.
+sub renewExpiredSession(reason as string)
+    if m.closing or m.endedByServer or m.mode <> "audiobook" or m.timeline = invalid then return
+    if m.trackIdx < 0 or m.trackIdx >= m.timeline.tracks.Count() then return
+    m.renewals = m.renewals + 1
+    Diag_log(Diag_join(["[siku-audio] session expired on the server (", reason, "); starting a fresh one at ", Int(m.globalPos).ToStr(), " s (renewal ", m.renewals.ToStr(), ")"]))
+    m.sessionId = ""
+    tr = m.timeline.tracks[m.trackIdx]
+    startFile(tr.fileId, m.localPos, "client")
+end sub
+
+' 410 playback_session_ended: an administrator stopped this session. Stop and say so; neither Play
+' nor Try again starts another (Android's sessionEndedByServer). No DELETE: it is already over.
+sub leaveServerEndedSession()
+    if m.closing or m.endedByServer then return
+    Diag_log("[siku-audio] the server ended this playback session; not starting another")
+    syncBookProgress()
+    m.endedByServer = true
+    m.sessionId = ""
+    m.pending = invalid
+    m.loadGen = m.loadGen + 1
+    m.sleepTimer.control = "stop"
+    m.audio.control = "stop"
+    m.isPaused = true
+    m.playBtn.iconUri = "pkg:/images/icons/play.png"
+    m.statusLabel.text = ""
+    showError("An administrator ended this playback session.")
 end sub
 
 ' DELETE the current session with a final file-local sample. Safe to call twice.
@@ -734,8 +796,18 @@ sub showError(msg as string)
     m.progressTimer.control = "stop"
     m.panel.visible = false
     m.errorLabel.text = msg
+    ' Ended by the server: Close only, centred (TvErrorScreen without onRetry).
+    canRetry = AudioSession_canRetry(true, m.endedByServer, m.closing)
+    m.retryBtn.visible = canRetry
+    if canRetry then
+        m.errorTitle.text = "Something went wrong"
+        m.errorCloseBtn.translation = [990, 680]
+    else
+        m.errorTitle.text = "Playback ended"
+        m.errorCloseBtn.translation = [Int((1920 - Num_or(m.errorCloseBtn.width, 160)) / 2), 680]
+    end if
     m.errorGroup.visible = true
-    m.retryBtn.setFocus(true)
+    restoreFocus()
 end sub
 
 ' ---------- Audio node ----------
@@ -931,6 +1003,10 @@ sub togglePlay()
         else
             playQueueIndex(m.qIndex, 0)
         end if
+        return
+    end if
+    if m.sessionExpired and m.pending = invalid then
+        renewExpiredSession("play")
         return
     end if
     st = m.audio.state
@@ -1137,7 +1213,7 @@ end sub
 
 sub restoreFocus()
     if m.errorGroup.visible then
-        m.retryBtn.setFocus(true)
+        if m.retryBtn.visible then m.retryBtn.setFocus(true) else m.errorCloseBtn.setFocus(true)
     else if m.panel.visible then
         m.panel.setFocus(true)
     else if not m.main.visible then
@@ -1167,7 +1243,7 @@ function voiceTransport(info as dynamic) as object
         reason = "closing"
     else if m.errorGroup.visible then
         reason = "error_shown"
-    else if m.pending <> invalid or m.sessionId = "" then
+    else if m.pending <> invalid or (m.sessionId = "" and not m.sessionExpired) then
         reason = "loading"
     else if st <> "playing" and st <> "paused" and st <> "buffering" then
         reason = "state_" + st
@@ -1183,7 +1259,11 @@ function voiceTransport(info as dynamic) as object
     else if cmd.action = "pause" then
         if st <> "paused" then m.audio.control = "pause"
     else if cmd.action = "play" then
-        if st = "paused" then m.audio.control = "resume"
+        if m.sessionExpired then
+            renewExpiredSession("voice play")
+        else if st = "paused" then
+            m.audio.control = "resume"
+        end if
     else
         if m.mode = "audiobook" then
             if m.timeline = invalid then return { "status": "error.generic", "reason": "no_duration" }
@@ -1231,8 +1311,14 @@ function onKeyEvent(key as string, press as boolean) as boolean
         return true
     end if
     if m.errorGroup.visible then
-        if key = "left" then m.retryBtn.setFocus(true)
+        if key = "left" and m.retryBtn.visible then m.retryBtn.setFocus(true)
         if key = "right" then m.errorCloseBtn.setFocus(true)
+        ' Play starts playback again from the error screen (Android canRetryPlayback).
+        if key = "play" and AudioSession_canRetry(true, m.endedByServer, m.closing) then
+            retry()
+        else if key = "play" then
+            Diag_log("[siku-audio] play ignored: the server ended this playback session")
+        end if
         return true
     end if
     if key = "play" then
