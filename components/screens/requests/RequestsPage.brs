@@ -36,6 +36,9 @@ sub init()
     m.busy = {}            ' request ids with an action in flight
     m.menuMode = ""
     m.menuTarget = invalid
+    m.removedIds = {}      ' requests this page removed: a list read already in flight must not bring them back
+    m.removeCheck = invalid ' an uncertain removal: the next re-read says whether it landed
+    m.removeDialog = invalid
     m.top.focusable = true
 end sub
 
@@ -45,6 +48,7 @@ sub onPageShown()
 end sub
 
 sub focusContent()
+    if m.removeDialog <> invalid then return
     if m.menu.visible then
         m.menu.setFocus(true)
     else
@@ -87,6 +91,9 @@ end sub
 sub onRequestsListLoaded(tag as string, ok as boolean, items as object, resp as object)
     if tag = "mine" then
         if ok then
+            for each id in m.removedIds
+                items = Req_recordsWithout(items, id)
+            end for
             m.newMine = Req_bucketMine(items)
         else
             m.mineError = resp
@@ -110,6 +117,7 @@ sub readDone(tag as string)
     m.hubError = m.discoverError
     if m.hubError = invalid then m.hubError = m.mineError
     m.loaded = true
+    settleRemoveCheck()
     render()
 end sub
 
@@ -275,6 +283,8 @@ function actionsFor(card as object) as object
     if data = invalid or m.busy.DoesExist(Str_orEmpty(data.id)) then return out
     if card.req_kind = "record" then
         if Req_displayOfRecord(data).kind = "pending" then out.Push({ id: "cancel", label: "Cancel Request", icon: "close" })
+        ' A failed request that delivered nothing, on a server that takes removals (Silo Android #792).
+        if Req_canRemove(data, Req_removeFailedSupported(), false) then out.Push({ id: "remove", label: "Remove request", icon: "close" })
     end if
     return out
 end function
@@ -304,6 +314,7 @@ sub onMenuChosen()
     m.feed.focusRequested = true
     if target = invalid then return
     if chosen = "cancel" then perform(chosen, target.req)
+    if chosen = "remove" then askRemove(target.req)
 end sub
 
 sub onMenuDismissed()
@@ -336,4 +347,133 @@ sub onMutation(event as object)
         return
     end if
     m.global.toast = Req_failureText(resp, "Couldn't cancel the request")
+end sub
+
+' ---------- Remove a failed request (Silo Android #792, TvRequestsPage removeTarget) ----------
+
+' The confirmation names the title; Keep request comes first and takes focus, so a stray OK
+' deletes nothing. Back answers Keep.
+sub askRemove(rec as object)
+    if m.removeDialog <> invalid then return
+    dlg = CreateObject("roSGNode", "StandardMessageDialog")
+    if dlg <> invalid then
+        dlg.title = Req_removeConfirmTitle()
+        dlg.message = [Req_removeConfirmMessage(rec.title)]
+    else
+        dlg = CreateObject("roSGNode", "Dialog")
+        dlg.title = Req_removeConfirmTitle()
+        dlg.message = Req_removeConfirmMessage(rec.title)
+    end if
+    dlg.buttons = ["Keep request", "Remove request"]
+    dlg.observeField("buttonSelected", "onRemoveButton")
+    dlg.observeField("wasClosed", "onRemoveClosed")
+    m.removeDialog = dlg
+    m.removeTarget = rec
+    m.top.getScene().dialog = dlg
+    print "[siku-requests] remove asked id="; Str_orEmpty(rec.id)
+end sub
+
+sub onRemoveButton()
+    dlg = m.removeDialog
+    if dlg = invalid then return
+    choice = dlg.buttonSelected
+    rec = m.removeTarget
+    closeRemoveDialog()
+    if choice = 1 and rec <> invalid then
+        removeFailed(rec)
+    else
+        print "[siku-requests] remove kept"
+    end if
+end sub
+
+sub onRemoveClosed()
+    if m.removeDialog = invalid then return
+    closeRemoveDialog()
+    print "[siku-requests] remove kept"
+end sub
+
+sub closeRemoveDialog()
+    dlg = m.removeDialog
+    m.removeDialog = invalid
+    m.removeTarget = invalid
+    if dlg <> invalid then
+        dlg.unobserveField("buttonSelected")
+        dlg.unobserveField("wasClosed")
+        dlg.close = true
+        scene = m.top.getScene()
+        if scene.dialog <> invalid and scene.dialog.isSameNode(dlg) then scene.dialog = invalid
+    end if
+    m.feed.focusRequested = true
+end sub
+
+sub removeFailed(rec as object)
+    id = Str_orEmpty(rec.id)
+    if id = "" or m.busy.DoesExist(id) then return
+    ' The gate may have changed while the dialog was up.
+    if not Req_canRemove(rec, Req_removeFailedSupported(), false) then return
+    m.busy[id] = true
+    Api_send("DELETE", "/api/v2/requests/" + Str_urlEncode(id), invalid, "onRemoved", { id: id, rec: rec })
+end sub
+
+sub onRemoved(event as object)
+    resp = Api_result(event)
+    ctx = resp.context
+    if ctx = invalid then return
+    m.busy.Delete(ctx.id)
+    out = Req_removeOutcome(resp)
+    print "[siku-requests] removed id="; ctx.id; " outcome="; out.kind; " status="; Int(Num_or(resp.status, 0))
+    if out.kind = "removed" or out.kind = "gone" then
+        ' The row leaves the page at once, and its title is requestable again (applyingRemoval); the
+        ' feed keeps focus on the card that takes its place. Other pages re-read the server.
+        dropRemoved(ctx.rec)
+        m.global.homeDirty = true
+        if out.toast <> "" then m.global.toast = out.toast
+        ' Removed elsewhere: re-read to show the rest as it stands now.
+        if out.kind = "gone" then load()
+        return
+    end if
+    if out.kind = "uncertain" then
+        ' Never resend: the re-read says whether it landed.
+        m.removeCheck = { id: ctx.id, rec: ctx.rec }
+        load()
+        return
+    end if
+    m.global.toast = out.toast
+    ' A conflict (retried or completed since the list loaded) re-reads the list to show why.
+    load()
+end sub
+
+sub dropRemoved(rec as object)
+    id = Str_orEmpty(rec.id)
+    m.removedIds[id] = true
+    m.mine = Req_recordsWithout(m.mine, id)
+    discover = []
+    for each s in m.discover
+        discover.Push({ key: s.key, title: s.title, results: Req_resultsWithout(s.results, rec) })
+    end for
+    m.discover = discover
+    if m.loaded and not m.loading then render()
+end sub
+
+' After an uncertain removal's re-read: gone means it landed.
+sub settleRemoveCheck()
+    chk = m.removeCheck
+    if chk = invalid then return
+    m.removeCheck = invalid
+    if m.mineError <> invalid then
+        print "[siku-requests] removed id="; chk.id; " unconfirmed (the re-read failed)"
+        m.global.toast = Req_unconfirmedRemoveText()
+        return
+    end if
+    for each r in m.mine
+        if Str_orEmpty(r.id) = chk.id then
+            print "[siku-requests] removed id="; chk.id; " unconfirmed (still listed)"
+            m.global.toast = Req_unconfirmedRemoveText()
+            return
+        end if
+    end for
+    print "[siku-requests] removed id="; chk.id; " confirmed by the re-read"
+    dropRemoved(chk.rec)
+    m.global.homeDirty = true
+    m.global.toast = "Request removed"
 end sub

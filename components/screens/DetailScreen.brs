@@ -118,6 +118,17 @@ sub init()
     m.episodesRetryBtn.observeField("buttonSelected", "retryEpisodes")
     m.menu.observeField("chosen", "onMenuChosen")
     m.menu.observeField("dismissed", "onMenuDismissed")
+
+    ' Auto translation of the shown season's episode descriptions (EpisodeTranslation.brs).
+    m.trOnView = ""             ' "" = not read yet, else EpTr_onView
+    m.trCapAsked = false
+    m.trJob = invalid           ' { seasonId, seasonNumber, lang, polls } while a season's job runs
+    m.trFired = {}              ' "<season id>|<lang>" already started on this page
+    m.trDeferred = false        ' a season asked while another season's job ran
+    m.trPaused = false
+    m.trTimer = CreateObject("roSGNode", "Timer")
+    m.trTimer.repeat = false
+    m.trTimer.observeField("fire", "onTrTick")
 end sub
 
 ' ---------- Lifecycle ----------
@@ -129,6 +140,11 @@ sub onScreenShown()
     if CardOverlay_watch("onCardOverlays", m.overlayRev) then onCardOverlays()
     ' Back on top (Back from a page this one opened): its More Like This rail picks again.
     m.chainLeaving = false
+    ' A season job paused while the page was covered polls again.
+    if m.trPaused then
+        m.trPaused = false
+        if m.trJob <> invalid then trSchedule()
+    end if
     if m.item = invalid then
         if not m.loading then load()
         return
@@ -160,6 +176,10 @@ end sub
 ' Covered (the player, another page) or closed: theme music never plays under anything else.
 sub onScreenHidden()
     m.onTop = false
+    if m.trJob <> invalid then
+        m.trTimer.control = "stop"
+        m.trPaused = true
+    end if
     CardOverlay_unwatch()
     ThemeMusic_stop()
 end sub
@@ -1118,15 +1138,179 @@ sub onEpisodes(event as object)
             eyebrow: ""
             meta: Content_episodeCaptionMeta(airDateText(ep.air_date), toInt(ep.runtime))
             synopsis: episodeSynopsis(ep)
-            aiTranslated: overviewMachineTranslated(ep) and episodeSynopsis(ep) <> ""
+            aiTranslated: false
+            aiTranslating: false
             isCurrent: Str_orEmpty(ep.content_id) = m.currentEpisodeId
         })
+        node.setFields(episodeTranslationFields(ep))
         if node.isCurrent then focusIdx = i
         row.appendChild(node)
     end for
     m.episodeRow.content = root
     m.episodeRow.jumpToRowItem = [0, focusIdx]
     buildZones()
+    trMaybeStart()
+end sub
+
+' ---------- Auto translation of the shown season (Silo Android #822, EpisodeTranslation.brs) ----------
+
+' An episode card's translation fields: "Translating description…" while its season's job fills it,
+' else the "Translated by AI" glyph for a machine-translated synopsis.
+function episodeTranslationFields(ep as object) as object
+    translatingId = ""
+    if m.trJob <> invalid then translatingId = m.trJob.seasonId
+    shown = EpTr_isTranslating(ep.pending_translation_language, seasonContentIdOf(ep.season_number), translatingId)
+    label = EpTr_label(shown, overviewMachineTranslated(ep), episodeSynopsis(ep) <> "")
+    return { aiTranslating: label = "translating", aiTranslated: label = "translated", synopsis: episodeSynopsis(ep) }
+end function
+
+function seasonContentIdOf(n as dynamic) as string
+    if n = invalid then return ""
+    sn = toInt(n)
+    for each s in m.seasons
+        if toInt(s.season_number) = sn then return Str_orEmpty(s.content_id)
+    end for
+    return ""
+end function
+
+' The rail's cards follow m.episodes (one card per row, in order) without being rebuilt, so focus stays.
+sub trPatchCards()
+    root = m.episodeRow.content
+    if root = invalid or root.getChildCount() = 0 then return
+    row = root.getChild(0)
+    n = row.getChildCount()
+    if n > m.episodes.Count() then n = m.episodes.Count()
+    for i = 0 to n - 1
+        row.getChild(i).setFields(episodeTranslationFields(m.episodes[i]))
+    end for
+end sub
+
+' translateShownSeasonEpisodes: once per (season, language) on a series page in the `auto` on-view mode.
+sub trMaybeStart()
+    if m.itemType <> "series" or m.selectedSeason = invalid then return
+    if m.episodesShownSeason = invalid or m.episodesShownSeason <> m.selectedSeason then return
+    lang = EpTr_pendingLanguage(m.episodes)
+    if lang = "" then return
+    if m.trOnView = "" then
+        if not m.trCapAsked then
+            m.trCapAsked = true
+            Api_get("/api/v2/capabilities/metadata-ai", invalid, "onTrCapability")
+        end if
+        return
+    end if
+    if m.trOnView <> "auto" then return
+    seasonId = seasonContentIdOf(m.selectedSeason)
+    if seasonId = "" then return
+    ' One job at a time: a season switched to while another season's job runs is tried when it ends.
+    if m.trJob <> invalid then
+        if m.trJob.seasonId <> seasonId then
+            m.trDeferred = true
+            Diag_log(Diag_join(["[siku-detail] translation deferred season=", m.selectedSeason, ": season ", m.trJob.seasonNumber, "'s job runs"]))
+        end if
+        return
+    end if
+    key = seasonId + "|" + lang
+    if m.trFired.DoesExist(key) then return
+    m.trFired[key] = true
+    m.trJob = { seasonId: seasonId, seasonNumber: m.selectedSeason, lang: lang, polls: 0 }
+    Diag_log(Diag_join(["[siku-detail] translation started season=", m.selectedSeason, " lang=", lang]))
+    trPatchCards()
+    Api_send("POST", "/api/v2/catalog/items/" + Str_urlEncode(seasonId) + "/translate-description", { "target_language": lang }, "onTrStarted", { seasonId: seasonId })
+end sub
+
+sub onTrCapability(event as object)
+    resp = Api_result(event)
+    ' A failed read means off for this page (an older server has no such route).
+    m.trOnView = "off"
+    if resp.ok then m.trOnView = EpTr_onView(resp.data)
+    Diag_log(Diag_join(["[siku-detail] translation capability on_view=", m.trOnView, " status=", Int(Num_or(resp.status, 0))]))
+    trMaybeStart()
+end sub
+
+sub onTrStarted(event as object)
+    resp = Api_result(event)
+    job = m.trJob
+    if resp.context = invalid or job = invalid or job.seasonId <> resp.context.seasonId then return
+    if not resp.ok or not EpTr_jobAccepted(resp.data, job.seasonId) then
+        st = ""
+        if Type(resp.data) = "roAssociativeArray" then st = Str_orEmpty(resp.data.status)
+        Diag_log(Diag_join(["[siku-detail] translation failed season=", job.seasonNumber, " status=", Int(Num_or(resp.status, 0)), " job=", st]))
+        trEnd()
+        return
+    end if
+    trSchedule()
+end sub
+
+sub trSchedule()
+    job = m.trJob
+    steps = EpTr_backoff()
+    if job = invalid then return
+    if job.polls >= steps.Count() then
+        Diag_log(Diag_join(["[siku-detail] translation gave up season=", job.seasonNumber, " after ", job.polls, " re-reads"]))
+        trEnd()
+        return
+    end if
+    m.trTimer.duration = steps[job.polls] + 0.0
+    m.trTimer.control = "start"
+end sub
+
+sub onTrTick()
+    job = m.trJob
+    if job = invalid or m.trPaused then return
+    sid = seriesIdOf()
+    if sid = "" then
+        trEnd()
+        return
+    end if
+    job.polls = job.polls + 1
+    Api_get("/api/v2/catalog/series/" + Str_urlEncode(sid) + "/seasons/" + Str_orEmpty(job.seasonNumber) + "/episodes", Artwork_query({ image_size: "medium" }, "episodes"), "onTrPoll", { seasonId: job.seasonId })
+end sub
+
+sub onTrPoll(event as object)
+    resp = Api_result(event)
+    job = m.trJob
+    if resp.context = invalid or job = invalid or job.seasonId <> resp.context.seasonId then return
+    if not resp.ok or Type(resp.data) <> "roAssociativeArray" then
+        ' A transient failure keeps polling.
+        trSchedule()
+        return
+    end if
+    fresh = Arr_or(resp.data.items)
+    ' The shown season takes the new descriptions in place; a season browsed away from re-reads later.
+    if m.episodesShownSeason <> invalid and m.episodesShownSeason = job.seasonNumber then
+        byId = {}
+        for each ep in fresh
+            if Type(ep) = "roAssociativeArray" then byId[Str_orEmpty(ep.content_id)] = ep
+        end for
+        merged = []
+        for each ep in m.episodes
+            id = Str_orEmpty(ep.content_id)
+            if byId.DoesExist(id) then merged.Push(EpTr_merge(ep, byId[id])) else merged.Push(ep)
+        end for
+        m.episodes = merged
+        trPatchCards()
+    end if
+    pending = 0
+    for each ep in fresh
+        if Type(ep) = "roAssociativeArray" and Str_orEmpty(ep.pending_translation_language).Trim() <> "" then pending = pending + 1
+    end for
+    if pending = 0 then
+        Diag_log(Diag_join(["[siku-detail] translation done season=", job.seasonNumber, " after ", job.polls, " re-reads"]))
+        trEnd()
+        return
+    end if
+    Diag_log(Diag_join(["[siku-detail] translation poll ", job.polls, " season=", job.seasonNumber, " pending=", pending]))
+    trSchedule()
+end sub
+
+sub trEnd()
+    m.trTimer.control = "stop"
+    m.trJob = invalid
+    trPatchCards()
+    if m.trDeferred then
+        m.trDeferred = false
+        trMaybeStart()
+    end if
 end sub
 
 ' An episode card's synopsis; spoiler protection may hide it (Spoilers.brs).

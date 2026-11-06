@@ -238,6 +238,7 @@ sub onRequestsStatus(event as object)
     if not resp.ok or Type(resp.data) <> "roAssociativeArray" then return
     g = AA_copy(Req_gate())
     g.followSupported = Req_flag(resp.data.follow_supported)
+    g.removeFailedSupported = Req_flag(resp.data.remove_failed_supported)
     Req_setGate(g)
     if m.detail <> invalid then render()
 end sub

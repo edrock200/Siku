@@ -291,6 +291,21 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   another` (410 `playback_session_ended`: Close only), `retry at <s> s`, `retry refused: …`, `play ignored: …`. Mock
   `--switch audiobook_session=expire|expire_v1|ended|other_404|start_fail` (audiobook sessions only; log `AUDIOBOOK SESSION
   <kind> sid=`, `AUDIO START file= start_position= persistence=`).
+- Remove a failed request (Silo Android #792, `Req_isRemovableFailure` / `Req_removeOutcome` in `Requests.brs`):
+  RequestsPage's * menu offers "Remove request" on a failed request with no completed target while
+  `/requests/status` says `remove_failed_supported`; a StandardMessageDialog (Keep request first) confirms, then
+  `DELETE /api/v2/requests/{id}`. Console: `[siku-requests] remove asked id=`, `remove kept`, `removed id=<id>
+  outcome=removed|gone|conflict|uncertain|failed status=N`, and after an uncertain answer's re-read `removed id=<id>
+  confirmed by the re-read` / `unconfirmed (still listed|the re-read failed)`. Mock: Laura's r-7 (removable) and r-8
+  (1080p delivered, no Remove); `--switch request_remove=off|conflict|gone|fail` (log `REQUESTS REMOVE id= mode= answer=`).
+- Season description translation (Silo Android #822, `EpisodeTranslation.brs`): a series page in the profile's
+  `auto` on-view mode (GET `/api/v2/capabilities/metadata-ai`) starts the shown season's job once per (season,
+  language) when its episodes report `pending_translation_language` (POST `/catalog/items/<season>/translate-description`),
+  re-reads the episodes on a 1-5 s backoff (about 45 s) and shows "Translating description…" on each card still
+  pending, then "Translated by AI". `[siku-detail] translation capability on_view=`, `translation started season=
+  lang=`, `translation poll <n> season= pending=`, `translation done season= after <n> re-reads`, `translation gave up`,
+  `translation failed season= status= job=`, `translation deferred season=`. Mock: `--switch season_translation=run|stuck|fail`
+  (+ `translation_seconds=<n>`, default 12; Orbital S1's odd episodes; log `METADATA TRANSLATE`, `EPISODES translation=`).
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

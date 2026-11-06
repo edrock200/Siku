@@ -140,12 +140,17 @@ sub onRequestsStatus(event as object)
     prev = Req_gate()
     enabled = prev.enabled = true
     follow = Req_followSupported()
+    removes = Req_removeFailedSupported()
     if resp.ok then
         enabled = Req_statusAvailable(resp.data)
-        if Type(resp.data) = "roAssociativeArray" then follow = Req_flag(resp.data.follow_supported)
+        if Type(resp.data) = "roAssociativeArray" then
+            follow = Req_flag(resp.data.follow_supported)
+            removes = Req_flag(resp.data.remove_failed_supported)
+        end if
         m.gateLoadedAt = Time_nowSeconds()
     end if
-    applyRequestsGate({ enabled: enabled, resolved: true, followSupported: follow })
+    ' Like the feature flag, a failed read keeps the previous answer; requests off offers no Remove.
+    applyRequestsGate({ enabled: enabled, resolved: true, followSupported: follow, removeFailedSupported: removes and enabled })
 end sub
 
 sub applyRequestsGate(g as object)

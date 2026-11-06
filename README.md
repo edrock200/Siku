@@ -49,13 +49,14 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Playback | Seek-bar preview pictures, hold Left/Right to fast-scan, audio and subtitle choices remembered for the whole series | 🟡 needs device testing |
 | Profiles | "Who's watching?" at launch (Profile Selection setting), recovery when an administrator changes access; an account with a temporary password is told where to change it (new in 0.1.36) | ✅ simulator, device pending |
 | Accounts | Several accounts per server with Change Account, Sign Out of one account, "Sign in again" for expired ones (new in 0.1.39); the show's page lands on the next episode after you finish one, and Continue Watching keeps its highlight (new in 0.1.39) | 🟡 simulator-tested, needs device testing |
+| Requests / Detail | Remove a failed request that delivered nothing, after a confirmation (on servers that support it); "Translating description…" on episode cards while the shown season is auto-translated, then "Translated by AI" (new in 0.1.42) | 🟡 simulator-tested, needs device testing |
 | Cards | Silo's profile badges on posters, wide cards and episode stills, episodes left on started shows; audiobooks pick up after the server drops the session (new in 0.1.41) | 🟡 simulator-tested, needs device testing |
 | Phone | Sign in several accounts, on one server or several, from one phone session on the server screen (up to 6); with more than one, Siku opens the first account's profiles with Change account over them (new in 0.1.40) | 🟡 simulator-tested, needs device testing (with Silo's phone app and an HTTPS server) |
 | Home | The banner's text title waits up to 0.7 s for the show's logo instead of flashing first (new in 0.1.40) | 🟡 needs device testing |
 | Settings | Spoilers (hide unwatched episodes' pictures and descriptions), hidden libraries, remembered sort and filters | ✅ simulator, device pending |
 | Settings | Android TV's General, Playback, Subtitles and Server pages (quality and bandwidth, Dolby Vision, skip intro/credits, auto-play, home sections, cards), synced with your Silo profile | ✅ |
 | Audio | Audiobooks (chapters, parts, resume, sleep timer) and music albums/artists with a now-playing screen | 🟡 needs device testing; music waits on server support |
-| Requests | Request movies and series, track their status, cancel a pending request (when the server enables it; approving and declining stay in the server's web admin) | ✅ |
+| Requests | Request movies and series, track their status, cancel a pending request, remove a failed one (0.1.42) (when the server enables it; approving and declining stay in the server's web admin) | ✅ |
 | Subtitles | Display and selection of SRT/WebVTT tracks, automatic choice from the profile's preference | ✅ |
 | Subtitles | Search and download from providers, AI translate/transcribe (started from the playhead, v0.1.29), sync to audio, subtitle delay (server-gated) | 🟡 needs device testing |
 | Notifications | Inbox from the profile menu, mark read, mark all read | ✅ |

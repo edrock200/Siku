@@ -17,6 +17,7 @@ sub init()
     m.meta = m.top.findNode("meta")
     m.synopsis = m.top.findNode("synopsis")
     m.aiIcon = m.top.findNode("aiIcon")
+    m.translating = m.top.findNode("translating")
     ' Card overlays (CardOverlayCard.brs): their Posters go under the watched check.
     CardOverlay_init(m.card, m.badge)
 end sub
@@ -40,6 +41,9 @@ sub onContent()
     m.synopsis.text = fieldOr(c, "synopsis", "")
     m.badge.visible = fieldOr(c, "watched", false) = true
     m.aiIcon.visible = fieldOr(c, "aiTranslated", false) = true
+    ' The progress replaces the mark while the season's job fills this description (#822).
+    m.translating.visible = fieldOr(c, "aiTranslating", false) = true
+    if m.translating.visible then m.aiIcon.visible = false
     layout()
 end sub
 
@@ -93,6 +97,13 @@ sub layout()
     m.meta.width = w
     m.synopsis.translation = [0, top + 74]
     m.synopsis.width = w
+    m.synopsis.maxLines = 3
+    m.translating.width = w
+    if m.translating.visible then
+        m.translating.translation = [0, top + 74]
+        m.synopsis.translation = [0, top + 108]
+        m.synopsis.maxLines = 2
+    end if
     m.eyebrow.visible = m.eyebrow.text <> ""
     m.meta.visible = m.meta.text <> ""
     ' Compact AI marker at the right end of the meta line; the meta text stops short of it.

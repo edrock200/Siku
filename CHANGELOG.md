@@ -3,6 +3,18 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.42
+
+Two changes from Silo's Android TV app (November 6, 2026).
+
+**New**
+- **Remove a failed request.** On the Requests page, a request of yours that failed without delivering anything can now be removed: press * on it, choose "Remove request" and confirm. The confirmation names the title, and "Keep request" is selected first so nothing is removed by accident. Once it is gone, Siku says "Request removed" and the title can be requested again, from the Requests page, Search or the title's page. A request that delivered one quality before another failed keeps no Remove, because it is the record of that copy. If the request was retried or completed since the page loaded, nothing is removed and Siku tells you why. This appears only on servers that support it.
+
+**Better**
+- **Episode descriptions say when they are being translated.** When your profile translates descriptions automatically, a show's page asks the server to translate the season you are looking at, and each episode whose description is on its way shows "Translating description…". When the translation arrives, it replaces the text and the episode shows the "Translated by AI" mark. The note is just text, so it adds no stop when you move around with the remote.
+
+**Needs testing on a real Roku:** the Remove confirmation (which button has focus first) and the "Translating description…" line on episode cards at 1080p.
+
 ## v0.1.41
 
 Two changes from Silo's apps (November 6, 2026).

@@ -13,6 +13,8 @@
   over the still, under the watched check (components/common/CardOverlayCard.brs).
   aiTranslated (the synopsis is machine-translated: a small translate glyph at the end of the meta line,
   Android TV's compact "Translated by AI" marker).
+  aiTranslating (the shown season's auto translation job is filling this description, Silo Android
+  #822: passive "Translating description…" above the synopsis, which then keeps two lines; no glyph).
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="DetailEpisodeItem" extends="Group">
@@ -59,6 +61,9 @@
       <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
     </Label>
     <Poster id="aiIcon" uri="pkg:/images/icons/language.png" width="24" height="24" blendColor="0xFFFFFF99" visible="false" />
+    <Label id="translating" text="Translating description…" color="0xFFFFFF99" maxLines="1" height="30" vertAlign="center" visible="false">
+      <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="22" />
+    </Label>
     <Label id="synopsis" color="0xEDEDED9E" wrap="true" maxLines="3" lineSpacing="4">
       <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="27" />
     </Label>

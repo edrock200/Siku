@@ -98,6 +98,20 @@ clears one); GET /mock/switch lists them.
                                  studios brand row, an empty row); log REQUESTS DISCOVER layout=
   mine_fail=1                    GET /requests/mine answers 500 (the hub still shows Discover)
   follow_fail=1                  PUT/DELETE /requests/follows/... answer 409 (log REQUESTS FOLLOW)
+  request_remove=off|conflict|gone|fail
+                                 removing a failed request (Silo Android #792; default: /requests/status says
+                                 remove_failed_supported and DELETE /requests/{id} answers 204 for a failed request
+                                 that delivered nothing, 409 conflict otherwise). off = an older server (no flag,
+                                 DELETE 405), conflict = 409 conflict, gone = removed elsewhere (404), fail = removed
+                                 but answered 502 (an uncertain answer). Log REQUESTS REMOVE id= mode= answer=
+  season_translation=run|stuck|fail
+                                 auto description translation of a season (Silo Android #822): GET
+                                 /api/v2/capabilities/metadata-ai says on_view auto; Orbital season 1's odd episodes
+                                 report pending_translation_language "de" until POST /catalog/items/<season>/
+                                 translate-description has run translation_seconds (default 12); then they carry a
+                                 German overview and machine_translated_fields. stuck = never finishes, fail = the
+                                 job is answered failed. Log METADATA TRANSLATE content= lang= status=,
+                                 EPISODES translation=pending|done
   member_fail=<code>|bare        PUT/DELETE /api/v2/watchlist|favorites/{id} answers that status (default 409)
                                  with a problem detail, or (bare) a 500; the detail page rolls back
   refresh_status=<code>|html     POST /auth/refresh answers that status (400/401 session_expired, others
@@ -436,7 +450,32 @@ def episode(si, s, e):
         "user_data": {"position_seconds": pos, "duration_seconds": 2880, "played": cid in STATE["watched"]},
         "user_state": {"played": cid in STATE["watched"], "is_favorite": False, "in_watchlist": False},
         **({"machine_translated_fields": ["overview"]} if si == 0 and s == 1 and e % 2 == 0 else {}),
-    } | episode_artwork_switches(sr, cid, s)
+    } | episode_artwork_switches(sr, cid, s) | episode_translation_fields(si, s, e)
+
+
+def season_translation_state():
+    """season_translation: "off" (no switch), "pending" (Orbital S1's odd episodes wait for their German
+    overview) or "done" (the season's job has run translation_seconds)."""
+    mode = str(STATE["switches"].get("season_translation") or "")
+    if not mode:
+        return "off"
+    job = STATE.get("mai_job")
+    secs = float(STATE["switches"].get("translation_seconds") or 12)
+    if mode == "run" and job and time.time() - job["at"] >= secs:
+        return "done"
+    return "pending"
+
+
+def episode_translation_fields(si, s, e):
+    if si != 0 or s != 1 or e % 2 == 0:
+        return {}
+    st = season_translation_state()
+    if st == "pending":
+        return {"pending_translation_language": "de"}
+    if st == "done":
+        return {"overview": "Die Crew steht in Folge %d der Staffel %d vor einem neuen Problem." % (e, s),
+                "machine_translated_fields": ["overview"]}
+    return {}
 
 
 def episode_artwork_switches(sr, cid, s):
@@ -1236,6 +1275,12 @@ def req_seed():
         req_record("r-5", "movie", 9003, "2", "failed", "failed", "failed", 4, [("1080p", "failed")],
                    last_error="one or more fulfillment targets failed"),
         req_record("r-6", "movie", 9004, "1", "pending", "declined", "declined", 9, outcome_reason="Not available in your region"),
+        # Laura's failed requests (Silo Android #792): r-7 delivered nothing (Remove offered), r-8 delivered
+        # its 1080p copy before the 4K target failed (no Remove).
+        req_record("r-7", "movie", 9005, "1", "failed", "failed", "failed", 3, [("1080p", "failed")],
+                   last_error="one or more fulfillment targets failed"),
+        req_record("r-8", "series", 9101, "1", "failed", "failed", "failed", 5, [("1080p", "completed"), ("4K", "failed")],
+                   last_error="one or more fulfillment targets failed"),
     ]
 
 
@@ -1343,7 +1388,8 @@ def requests_route(handler, method, p, q, b):
         handler.send(200, {"revision": "mock-requests-1", "state": "available", "allowed": True, "requests_enabled": True,
                            "rating_restrictions_enforced": False, "follow_supported": True, "season_requests_supported": True,
                            "missing_seasons_requestable": False, "download_progress_supported": True,
-                           "watchlist_titles_supported": False, "watchlist_requests": False})
+                           "watchlist_titles_supported": False, "watchlist_requests": False,
+                           **({} if STATE["switches"].get("request_remove") == "off" else {"remove_failed_supported": True})})
         return True
     if p == "/api/v2/admin/requests/capabilities":
         handler.send(200, {"available": True, "guarded_configuration": False, "routing": False,
@@ -1466,6 +1512,31 @@ def requests_route(handler, method, p, q, b):
         r = req_find(m.group(1))
         if r is None or r["requested_by_user_id"] != "1":
             handler.problem(404, "not_found", "Request not found")
+            return True
+        if not m.group(2) and method == "DELETE":
+            # Remove one of the viewer's failed requests (Silo Android #792, silo-server#3430): 204, or 409
+            # once it was retried, completed or delivered a copy. request_remove=off|conflict|gone|fail.
+            mode = str(STATE["switches"].get("request_remove") or "ok")
+            delivered = any(t.get("status") == "completed" for t in r.get("targets") or [])
+            if mode == "off":
+                answer = 405
+                handler.problem(405, "method_not_allowed", "Method not allowed")
+            elif mode == "conflict" or r["outcome"] != "failed" or delivered:
+                answer = 409
+                handler.problem(409, "conflict", "This request can no longer be removed")
+            elif mode == "gone":
+                answer = 404
+                REQ_STATE["requests"] = [x for x in REQ_STATE["requests"] if x["id"] != r["id"]]
+                handler.problem(404, "not_found", "Request not found")
+            elif mode == "fail":
+                answer = 502
+                REQ_STATE["requests"] = [x for x in REQ_STATE["requests"] if x["id"] != r["id"]]
+                handler.problem(502, "bad_gateway", "The removal was sent but no answer came back")
+            else:
+                answer = 204
+                REQ_STATE["requests"] = [x for x in REQ_STATE["requests"] if x["id"] != r["id"]]
+                handler.send(204)
+            print("REQUESTS REMOVE id=%s mode=%s answer=%d" % (r["id"], mode, answer), flush=True)
             return True
         if m.group(2):
             if method != "POST":
@@ -2687,6 +2758,25 @@ class Handler(BaseHTTPRequestHandler):
             if not found:
                 return self.send(200, {})
             return self.send(200, {"box_set": dict(box_set_fields(bs, "1"), items=box_set_movies(bs))})
+        m = re.match(r"^/api/v2/catalog/items/(.+)/translate-description$", p)
+        if m and method == "POST":
+            # Viewer on-view translation (season_translation): a 202 job receipt; the episodes fill later.
+            mode = str(STATE["switches"].get("season_translation") or "")
+            cid, lang = m.group(1), (b or {}).get("target_language") or ""
+            if not mode:
+                return self.problem(409, "capability_disabled", "Metadata AI is not configured")
+            status = "failed" if mode == "fail" else "running"
+            if mode != "fail" and not STATE.get("mai_job"):
+                STATE["mai_job"] = {"content_id": cid, "at": time.time()}
+            print("METADATA TRANSLATE content=%s lang=%s status=%s" % (cid, lang, status), flush=True)
+            kind = "season" if cid.startswith("season:") else "item"
+            return self.send(202, {"id": "mai-job-1", "target_kind": kind, "content_id": cid, "target_language": lang,
+                                   "status": status, "include_children": kind == "season", "progress": 0.0,
+                                   "created_at": req_ts(0), "updated_at": req_ts(0)})
+        if p == "/api/v2/capabilities/metadata-ai":
+            on = bool(STATE["switches"].get("season_translation"))
+            return self.send(200, {"state": "available" if on else "not_configured", "revision": "mock-mai-1",
+                                   "on_view": "auto" if on else "off"})
         m = re.match(r"^/api/v2/catalog/items/(.+)$", p)
         if m:
             d = detail(m.group(1))
@@ -2711,6 +2801,8 @@ class Handler(BaseHTTPRequestHandler):
                 if s["content_id"] == m.group(1):
                     _, seasons, eps = SERIES[i]
                     sn = int(m.group(2))
+                    if i == 0 and sn == 1 and STATE["switches"].get("season_translation"):
+                        print("EPISODES translation=%s" % season_translation_state(), flush=True)
                     return self.send(200, {"items": [episode(i, sn, e) for e in range(1, eps + 1)] if 1 <= sn <= seasons else []})
             return self.problem(404, "not_found", "Not found")
         if p == "/api/v2/catalog/people":
@@ -2982,15 +3074,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self.problem(410, "playback_session_ended", "An administrator ended this playback session")
             if kind in ("expire", "expire_v1", "other_404"):
                 STATE["switches"].pop("audiobook_session", None)
-                code, detail = "not_found", "Playback session not found"
+                # Not `detail`: a local of that name shadows the module helper in all of route() (v0.1.23/33 lesson).
+                code, why = "not_found", "Playback session not found"
                 if kind == "expire_v1":
                     code = "playback_session_not_found"
                 if kind == "other_404":
-                    detail = "Source media file is missing"
+                    why = "Source media file is missing"
                 else:
                     STATE["sessions"].pop(m.group(1), None)
                 return self.send(404, {"type": "https://siloserver.org/docs/api/v2/problems/" + code, "title": "Not Found",
-                                       "status": 404, "detail": detail}, "application/problem+json")
+                                       "status": 404, "detail": why}, "application/problem+json")
         if m:
             left = int(STATE["switches"].get("progress_404") or 0)
             status = 404 if left > 0 or m.group(1) not in STATE["sessions"] else 200

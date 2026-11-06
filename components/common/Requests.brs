@@ -36,6 +36,15 @@ function Req_followSupported() as boolean
     return Req_flag(g.followSupported)
 end function
 
+' Whether the server takes removals of the viewer's own failed requests (DELETE
+' /api/v2/requests/{id}, `remove_failed_supported` in GET /api/v2/requests/status; Silo Android #792).
+' Absent on older servers, which then never offer Remove.
+function Req_removeFailedSupported() as boolean
+    g = Req_gate()
+    if Type(g) <> "roAssociativeArray" then return false
+    return Req_flag(g.removeFailedSupported)
+end function
+
 function Req_statusAvailable(data as dynamic) as boolean
     if data = invalid then return false
     return data.requests_enabled = true and data.allowed = true and Str_orEmpty(data.state) = "available"
@@ -304,6 +313,84 @@ end function
 function Req_isUncertain(resp as object) as boolean
     if resp = invalid then return true
     return resp.status = 0 or resp.status = 408 or resp.status >= 500
+end function
+
+' ---------- Removing a failed request (Silo Android #792) ----------
+
+' The server's rule (MediaRequest.isRemovableFailure): the request failed and no target delivered a
+' copy. One that delivered a quality before failing stays as the record of that copy.
+function Req_isRemovableFailure(rec as dynamic) as boolean
+    if Type(rec) <> "roAssociativeArray" then return false
+    if LCase(Str_orEmpty(rec.outcome)) <> "failed" then return false
+    for each tg in Arr_or(rec.targets)
+        if Type(tg) = "roAssociativeArray" and LCase(Str_orEmpty(tg.status)) = "completed" then return false
+    end for
+    return true
+end function
+
+' Whether a "Your requests" card offers Remove (MyRequestsUiState.canRemove): a removable failure on
+' a server that takes it, with no other action of it in flight.
+function Req_canRemove(rec as dynamic, supported as boolean, busy as boolean) as boolean
+    return supported and not busy and Req_isRemovableFailure(rec)
+end function
+
+function Req_removeConfirmTitle() as string
+    return "Remove this request?"
+end function
+
+function Req_removeConfirmMessage(title as dynamic) as string
+    return "Your failed request for " + Chr(34) + Str_orEmpty(title) + Chr(34) + " will be deleted. You can request the title again later."
+end function
+
+' What a DELETE /api/v2/requests/{id} answer means (MyRequestsViewModel.removeFailed):
+' {kind: "removed" | "gone" | "conflict" | "uncertain" | "failed", toast}. 204 removed it; 404 means
+' another device already did (the row leaves the list all the same, without a notice); a 409
+' `conflict` means it was retried or completed since the list loaded; no usable answer is uncertain
+' (never resent: the re-read shows where it stands). Requests turned off answers 409
+' capability_disabled, which reads as a plain failure.
+function Req_removeOutcome(resp as dynamic) as object
+    if resp = invalid then return { kind: "uncertain", toast: Req_unconfirmedRemoveText() }
+    if Req_flag(resp.ok) then return { kind: "removed", toast: "Request removed" }
+    status = Int(Num_or(resp.status, 0))
+    code = ""
+    if Type(resp.error) = "roAssociativeArray" then code = Str_orEmpty(resp.error.code)
+    if status = 404 then return { kind: "gone", toast: "" }
+    if status = 409 and code = "conflict" then return { kind: "conflict", toast: "This request changed since the list loaded, so it wasn't removed." }
+    if Req_isUncertain(resp) then return { kind: "uncertain", toast: Req_unconfirmedRemoveText() }
+    return { kind: "failed", toast: Req_failureText(resp, "Couldn't remove the request") }
+end function
+
+function Req_unconfirmedRemoveText() as string
+    return "We couldn't confirm the removal. Refresh your requests to check it."
+end function
+
+' Search/discover results once the server deleted `rec` (applyingRemoval): the title whose
+' annotation names that request is requestable again; other titles, and a title showing another
+' request, keep what they show.
+function Req_resultsWithout(results as object, rec as object) as object
+    out = []
+    mt = Str_orEmpty(rec.media_type)
+    tid = Str_orEmpty(rec.tmdb_id)
+    rid = Str_orEmpty(rec.id)
+    for each r in results
+        if Type(r) = "roAssociativeArray" and Str_orEmpty(r.media_type) = mt and Str_orEmpty(r.tmdb_id) = tid and Type(r.request) = "roAssociativeArray" and Str_orEmpty(r.request.request_id) = rid then
+            copy = AA_copy(r)
+            copy["request"] = { "requestable": true }
+            out.Push(copy)
+        else
+            out.Push(r)
+        end if
+    end for
+    return out
+end function
+
+' The user's own list without `id` (removed here or on another device).
+function Req_recordsWithout(records as object, id as string) as object
+    out = []
+    for each r in records
+        if Type(r) <> "roAssociativeArray" or Str_orEmpty(r.id) <> id then out.Push(r)
+    end for
+    return out
 end function
 
 ' ---------- Images ----------
