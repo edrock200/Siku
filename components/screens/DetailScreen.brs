@@ -2,6 +2,8 @@
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
 sub init()
+    ' The card overlays this page's rows were drawn under (onCardOverlays).
+    m.overlayRev = CardOverlay_revision()
     m.page = m.top.findNode("page")
     m.hero = m.top.findNode("hero")
     m.backdrop = m.top.findNode("backdrop")
@@ -122,6 +124,9 @@ end sub
 
 sub onScreenShown()
     m.onTop = true
+    ' Card overlays (CardOverlayKeys.brs): a document that changed while this page was covered (or
+    ' before its rows were built) draws its episode stills and posters again.
+    if CardOverlay_watch("onCardOverlays", m.overlayRev) then onCardOverlays()
     ' Back on top (Back from a page this one opened): its More Like This rail picks again.
     m.chainLeaving = false
     if m.item = invalid then
@@ -155,7 +160,16 @@ end sub
 ' Covered (the player, another page) or closed: theme music never plays under anything else.
 sub onScreenHidden()
     m.onTop = false
+    CardOverlay_unwatch()
     ThemeMusic_stop()
+end sub
+
+' The card overlays that apply changed: the episode stills and the poster rails draw again.
+sub onCardOverlays()
+    m.overlayRev = CardOverlay_revision()
+    CardOverlay_refresh(m.episodeRow.content)
+    CardOverlay_refresh(m.relatedRow.content)
+    CardOverlay_refresh(m.boxSetRow.content)
 end sub
 
 ' Opened without the shell (a deep link): the profile's settings were never read, and theme music

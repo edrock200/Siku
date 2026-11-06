@@ -85,6 +85,50 @@ function Http_send(method as string, url as string, headers as object, body as d
     return result
 end function
 
+' A GET whose body is saved to path (tmp: only; ApiTask checks), not parsed. Returns
+' {status, text, data: {path} or invalid, error}. A failed or refused download leaves no file.
+function Http_download(url as string, headers as object, path as string, timeoutSec as integer) as object
+    xfer = CreateObject("roUrlTransfer")
+    port = CreateObject("roMessagePort")
+    xfer.SetMessagePort(port)
+    xfer.SetUrl(url)
+    if LCase(Left(url, 6)) = "https:" then
+        xfer.SetCertificatesFile("common:/certs/ca-bundle.crt")
+        xfer.EnablePeerVerification(true)
+        xfer.EnableHostVerification(true)
+        xfer.InitClientCertificates()
+    end if
+    for each k in headers
+        xfer.AddHeader(k, headers[k])
+    end for
+    files = CreateObject("roFileSystem")
+    if files.Exists(path) then files.Delete(path)
+    if not xfer.AsyncGetToFile(path) then return { status: 0, text: "", data: invalid, error: { code: "network", title: "Could not start request" } }
+    clock = CreateObject("roTimespan")
+    limitMs = timeoutSec * 1000
+    msg = invalid
+    while msg = invalid
+        remainMs = limitMs - clock.TotalMilliseconds()
+        if remainMs <= 0 then exit while
+        ev = Wait(remainMs, port)
+        if ev = invalid then exit while
+        if Type(ev) = "roUrlEvent" then
+            if ev.GetSourceIdentity() = xfer.GetIdentity() and ev.GetInt() = 1 then msg = ev
+        end if
+    end while
+    if msg = invalid then
+        xfer.AsyncCancel()
+        if files.Exists(path) then files.Delete(path)
+        return { status: 0, text: "", data: invalid, error: { code: "timeout", title: "The server took too long to answer" } }
+    end if
+    status = msg.GetResponseCode()
+    if status < 200 or status >= 300 or not files.Exists(path) then
+        if files.Exists(path) then files.Delete(path)
+        return { status: status, text: "", data: invalid, error: Http_problem(status, invalid, msg.GetFailureReason()) }
+    end if
+    return { status: status, text: "", data: { path: path }, error: invalid, headers: msg.GetResponseHeaders() }
+end function
+
 ' Turns an RFC 7807 problem body into {code, title, detail}.
 function Http_problem(status as integer, data as dynamic, failure as dynamic) as object
     code = ""

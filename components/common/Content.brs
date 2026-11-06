@@ -7,6 +7,8 @@
 '   initials (placeholder text when there is no image; the title when empty),
 '   cardInsetX / cardInsetY (room inside a grid cell so the focused 1.10 card is not clipped at the grid's edge),
 '   boxSet / cornerLabel (a box set card: sleeves, a "BOX SET" pill and the film count; BoxSets.brs)
+'   overlayData / overlayKey / remaining (card overlays: the fields its badges read, their key, and
+'   the episodes a started series or season has left; Content_overlayData)
 function Content_cardNode(card as object, style = "poster" as string) as object
     node = CreateObject("roSGNode", "ContentNode")
     Content_ensureFields(node)
@@ -30,6 +32,9 @@ sub Content_ensureFields(node as object)
         cardInsetY: 0
         boxSet: false
         cornerLabel: ""
+        overlayData: {}
+        overlayKey: ""
+        remaining: 0
         raw: {}
     })
 end sub
@@ -101,7 +106,144 @@ sub Content_fillCard(node as object, card as object, style as string)
         node.progress = BoxSet_watchedFraction(bs)
         node.watched = false
     end if
+    ' Card overlays (Overlays.brs, CardOverlayCard.brs): a box set card has none (Android TV
+    ' TvCatalogGrid passes no overlay data for one).
+    data = {}
+    if bs = invalid then data = Content_overlayData(card)
+    node.overlayData = data
+    node.overlayKey = Content_overlayKey(data)
+    node.remaining = 0
+    if bs = invalid and (t = "series" or t = "season") then node.remaining = Content_episodesLeft(card)
 end sub
+
+' ---------- Card overlays (the data part; Overlays.brs holds the rest) ----------
+
+' The fields of a card the overlay badges read (Android OverlayDataExtractor.fromSectionItem /
+' fromBrowseItem / fromEpisode), only those present so the node stays small: overlay_summary's
+' tech facts, else an episode's best file; ratings, content and advisory ratings, year, runtime,
+' original language, the first studio and network, the show status. Adapted from
+' Silo-Server/silo-roku, AGPL-3.0 (source/catalog/overlayData.bs).
+function Content_overlayData(card as object) as object
+    out = {}
+    summary = card.overlay_summary
+    if Type(summary) = "roAssociativeArray" then
+        for each k in ["resolution", "hdr", "audio", "audio_channels", "video_codec", "container", "aspect_ratio", "release_type", "edition"]
+            Content_keepText(out, k, summary[k])
+        end for
+        if Content_isTrue(summary.multi_audio) then out.multi_audio = true
+        if Content_isTrue(summary.multi_sub) then out.multi_sub = true
+    else if Type(card.files) = "roArray" then
+        Content_overlayFromFiles(out, card)
+    end if
+    for each k in ["rating_imdb", "rating_tmdb", "rating_rt_critic", "rating_rt_audience", "advisory_age", "year", "runtime"]
+        v = Content_num(card[k])
+        if v > 0 then out[k] = v
+    end for
+    for each k in ["content_rating", "original_language", "show_status"]
+        Content_keepText(out, k, card[k])
+    end for
+    Content_keepText(out, "studio", Content_firstText(card.studios))
+    Content_keepText(out, "network", Content_firstText(card.networks))
+    return out
+end function
+
+' An episode without a summary: the last played file's facts, else its highest-resolution file's
+' (OverlayDataExtractor.fromEpisode / bestFile; the server's audioChannelsLabel).
+sub Content_overlayFromFiles(out as object, card as object)
+    best = invalid
+    bestRank = -1
+    for each f in card.files
+        if Type(f) = "roAssociativeArray" then
+            r = LCase(Str_orEmpty(f.resolution)).Trim()
+            if r = "4k" or r = "uhd" then r = "2160p"
+            rank = 0
+            if Len(r) > 1 and Right(r, 1) = "p" then rank = Int(Val(Left(r, Len(r) - 1)))
+            if best = invalid or rank > bestRank then
+                best = f
+                bestRank = rank
+            end if
+        end if
+    end for
+    ud = card.user_data
+    if Type(ud) <> "roAssociativeArray" then ud = {}
+    if best = invalid then best = {}
+    Content_keepText(out, "resolution", Content_firstText([ud.last_resolution, best.resolution]))
+    Content_keepText(out, "video_codec", Content_firstText([ud.last_codec_video, best.codec_video]))
+    hdr = ud.last_hdr
+    if hdr = invalid then hdr = best.hdr
+    if Content_isTrue(hdr) then out.hdr = "HDR"
+    ch = Int(Content_num(best.audio_channels))
+    labels = { "1": "Mono", "2": "Stereo", "6": "5.1", "7": "6.1", "8": "7.1" }
+    if ch > 0 then
+        lbl = labels[ch.ToStr()]
+        if lbl = invalid then lbl = ch.ToStr() + "ch"
+        out.audio_channels = lbl
+    end if
+    Content_keepText(out, "container", best.container)
+end sub
+
+' A flag that is really true (comparing invalid with a Boolean throws on a Roku, pitfall 16).
+function Content_isTrue(v as dynamic) as boolean
+    if Type(v) = "roBoolean" or Type(v) = "Boolean" then return v
+    return false
+end function
+
+sub Content_keepText(out as object, key as string, v as dynamic)
+    if Type(v) = "roString" or Type(v) = "String" then
+        if v.Trim() <> "" then out[key] = v.Trim()
+    end if
+end sub
+
+function Content_firstText(values as dynamic) as string
+    if Type(values) <> "roArray" then return ""
+    for each v in values
+        if Type(v) = "roString" or Type(v) = "String" then
+            if v.Trim() <> "" then return v.Trim()
+        end if
+    end for
+    return ""
+end function
+
+' A short, stable key for a card's overlay data ("" for none): two polynomial hashes of its names
+' and values, each modulo a 31-bit prime, so OverlayArtTask draws each distinct look once.
+function Content_overlayKey(data as object) as string
+    if data.Count() = 0 then return ""
+    text = ""
+    keys = []
+    for each k in data
+        keys.Push(k)
+    end for
+    keys.Sort()
+    for each k in keys
+        text = text + k + "=" + Str_orEmpty(data[k]) + Chr(31)
+    end for
+    return Content_hash(text)
+end function
+
+function Content_hash(text as string) as string
+    a = 0&
+    b = 0&
+    for i = 1 to Len(text)
+        c = Asc(Mid(text, i, 1))
+        a = (a * 131& + c) mod 2147483647&
+        b = (b * 257& + c) mod 2147483629&
+    end for
+    return a.ToStr() + "z" + b.ToStr()
+end function
+
+' The episodes a started, unfinished series or season has left, or 0: an untouched one shows
+' nothing, or every new show would carry a count (web CardWatchStatus).
+function Content_episodesLeft(card as object) as integer
+    for each st in [card.user_data, card.user_state]
+        if Type(st) = "roAssociativeArray" then
+            if Content_isTrue(st.played) then return 0
+            watched = Content_num(st.watched_count)
+            unplayed = Content_num(st.unplayed_count)
+            if watched > 0 and unplayed > 0 then return Int(unplayed)
+        end if
+    end for
+    return 0
+end function
 
 ' A card's progress bar fraction (0..1) from position_seconds / duration_seconds.
 function Content_progressOf(card as object) as float

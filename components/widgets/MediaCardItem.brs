@@ -50,6 +50,8 @@ sub init()
     m.fonts = {}
     m.textLifted = false
     m.image.observeField("loadStatus", "onImageStatus")
+    ' Card overlays (CardOverlayCard.brs): their Posters go under the watched check.
+    CardOverlay_init(m.card, m.badge)
 end sub
 
 ' Image box size for the current item width (minus the cell inset). Captions go below it.
@@ -280,6 +282,9 @@ sub layout()
     if m.isBoxSet then layoutBoxSet(w, h)
     if m.isBoxSet or m.isMarked then layoutPill()
 
+    ' The card overlays for this content at this size (none on Explore all, people, audio).
+    if c <> invalid then CardOverlay_show(c, CardOverlay_shapeOf(m.style), Int(w), Int(h), hasProgress and not m.isBoxSet)
+
     m.title.width = w
     m.subtitle.width = w
     m.title.translation = [0, h + 22]
@@ -343,6 +348,7 @@ sub onFocus()
     h = size[1]
     CardFocus_apply(m.card, m.border, m.glow, w, h, p, [0, 0], m.isMarked = true)
     placeArtLabels(p >= 1)
+    CardOverlay_focus(p)
     if m.isExplore then
         ' White 8% at rest, 16% focused (over black; opaque, so the shadow behind the tile does not
         ' show through it); the circle and label brighten with it.

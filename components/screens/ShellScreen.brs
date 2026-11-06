@@ -44,12 +44,16 @@ sub init()
     ' read them through Settings_* / Theme_* with the device prefs as fallback until they land.
     m.settingsSig = Settings_uiSignature()
     Settings_load()
+    ' Card overlays (CardOverlayState.brs): the overlay config, settled with the snapshot above.
+    CardOverlays_read()
 end sub
 
 ' The settings snapshot changed (loaded here, edited in Settings, or reset by a profile switch):
 ' rebuild what depends on it only when the drawn values actually differ, so the first answer with
 ' the default values costs nothing. Also run when the shell is shown again (after Settings).
 sub onSettingsChanged()
+    ' The profile's card overlay choices come with the snapshot (CardOverlayState.brs).
+    CardOverlays_onSettings()
     sig = Settings_uiSignature()
     if sig = m.settingsSig then return
     m.settingsSig = sig
@@ -87,7 +91,10 @@ sub refreshData(force = false as boolean)
     if force or (not m.libsLoading and (m.libsLoadedAt = 0 or now - m.libsLoadedAt > maxAge)) then
         ' A stale list also re-reads the settings, so a library hidden or shown again on another
         ' device is picked up (Android TV re-reads ui.disabled_library_ids on foreground).
-        if not force and m.libsLoadedAt > 0 then Settings_load()
+        if not force and m.libsLoadedAt > 0 then
+            Settings_load()
+            CardOverlays_read()
+        end if
         loadLibraries()
     end if
     if force or (not m.gateLoading and (m.gateLoadedAt = 0 or now - m.gateLoadedAt > maxAge)) then loadRequestsGate()
@@ -631,6 +638,7 @@ sub onScreenShown()
         m.global.homeDirty = false
         m.settingsSig = Settings_uiSignature()
         Settings_load()
+        CardOverlays_read()
         focusBar(0)
         return
     end if

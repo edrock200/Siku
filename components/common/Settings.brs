@@ -51,6 +51,10 @@ function Settings_keyDefs() as object
         { key: "ui.disabled_library_ids", rev: 1, def: invalid }
         { key: "ui.theme_music_enabled", rev: 11, def: false }
         { key: "ui.theme_music_loop", rev: 11, def: false }
+        ' Card overlays (CardOverlayState.brs, Overlays.brs): the profile's own badge document and
+        ' on/off choice, both null until the profile chooses (the overlay config's default applies).
+        { key: "ui.card_overlays", rev: 1, def: invalid }
+        { key: "ui.card_overlays_enabled", rev: 8, def: invalid }
         ' Spoiler protection (Spoilers.brs). "optional": a server can reach the revision without the
         ' keys (upstream #427 saw revision 16 taken by other settings), so a refused read retries without them.
         { key: "catalog.hide_unwatched_episode_images", rev: 17, def: false, optional: true }

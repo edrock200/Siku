@@ -27,6 +27,8 @@ sub init()
 
     m.grid.observeField("itemFocused", "onGridFocused")
     m.grid.observeField("itemSelected", "onGridSelected")
+    ' Card overlays (CardOverlayKeys.brs): draw the grid's cards again with a new document.
+    CardOverlay_observe("onCardOverlays")
     m.backPill.observeField("buttonSelected", "onBackPill")
     m.sortPill.observeField("buttonSelected", "openSortPanel")
     m.filterPill.observeField("buttonSelected", "openFilterPanel")
@@ -670,6 +672,9 @@ sub blankCard(node as object)
     node.logoUrl = ""
     node.progress = 0.0
     node.watched = false
+    node.overlayData = {}
+    node.overlayKey = ""
+    node.remaining = 0
 end sub
 
 ' Reads an emptied page again with the cursor it was first read with.
@@ -728,6 +733,7 @@ sub setCards(items as object)
     m.status.visible = false
     m.grid.content = Content_grid(items, m.cardStyle, m.insetX, m.insetY)
     Fresh_watchArt(m.grid.content, "onArtworkFailed")
+    prefetchOverlays()
     m.grid.visible = true
     if m.top.hasFocus() then m.grid.setFocus(true)
 end sub
@@ -788,6 +794,20 @@ sub appendCards(items as object)
     end if
     m.cards.Append(items)
     Content_appendCards(m.grid.content, items, m.cardStyle, m.insetX, m.insetY)
+    prefetchOverlays()
+end sub
+
+sub onCardOverlays()
+    prefetchOverlays()
+    CardOverlay_refresh(m.grid.content)
+end sub
+
+' Asks ahead for the grid's card overlay images (posters; square cards carry none). Cards already
+' asked for are skipped by the Task.
+sub prefetchOverlays()
+    if m.grid.content = invalid or m.cardStyle <> "poster" then return
+    w = m.grid.itemSize[0] - 2 * m.insetX
+    CardOverlay_prefetch(m.grid.content, m.cardStyle, Int(w), Int(w * 3 / 2))
 end sub
 
 ' A failed "load more": say so once per attempt and wait before the grid asks again, so moving
@@ -1090,6 +1110,8 @@ end function
 ' ---------- Grid events ----------
 
 sub onGridFocused()
+    ' Card overlay images wait while the viewer moves (CardOverlayKeys.brs).
+    CardOverlay_activity()
     idx = m.grid.itemFocused
     trimGrid()
     if m.moreFailures > 0 and Time_nowSeconds() < m.moreRetryAt then return
