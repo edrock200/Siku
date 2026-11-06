@@ -29,6 +29,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/LibraryFilters.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/GridWindow.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/MemoryPolicy.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/CardOverlayKeys.brs" />
   <children>
     <Label id="titleLabel" translation="[80, 128]" color="0xEDEDEDFF" maxLines="1" width="1400">
       <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="38" />

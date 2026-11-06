@@ -16,6 +16,10 @@
   no caption; HomeSkylineFeed adds it).
   boxSet / cornerLabel (Content.brs): a box set card draws sleeves above the poster, a "BOX SET"
   pill and the film count, and its progress bar is the share of its films watched (a full bar too).
+  Card overlays (Silo Android TV TvMediaCard CardOverlays): posters and landscape cards carry the
+  badges the profile's ui.card_overlays document picks, and a started series or season poster the
+  episodes left in the watched check's place; two Posters made on first use, between the art and the
+  watched check (components/common/CardOverlayCard.brs). Explore all and marked cards carry none.
   markedBadge (optional string field on the content node): the card is outlined at rest and tagged
   with that text in the top-left pill (the movie on screen in a movie page's box set row: "THIS FILM").
   playGlyph (optional boolean field on the content node): a centered play button over the image,
@@ -36,6 +40,8 @@
     <field id="rowListHasFocus" type="boolean" value="true" onChange="onFocus" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/MediaCardItem.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/CardOverlayKeys.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/CardOverlayCard.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/CardFocus.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/FocusText.brs" />
   <children>

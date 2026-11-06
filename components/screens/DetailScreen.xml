@@ -23,6 +23,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/SeriesReturn.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Trailers.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/ThemeMusic.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/CardOverlayKeys.brs" />
   <children>
     <Rectangle id="bg" width="1920" height="1080" color="0x040D0FFF" />
     <Group id="page">

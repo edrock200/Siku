@@ -14,6 +14,9 @@
   <script type="text/brightscript" uri="pkg:/components/common/Requests.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/SignOutFlow.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/ProfileLaunch.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Overlays.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/CardOverlayKeys.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/CardOverlayState.brs" />
   <children>
     <Group id="content" />
     <ShellTopBar id="bar" />

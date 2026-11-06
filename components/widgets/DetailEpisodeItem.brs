@@ -17,6 +17,8 @@ sub init()
     m.meta = m.top.findNode("meta")
     m.synopsis = m.top.findNode("synopsis")
     m.aiIcon = m.top.findNode("aiIcon")
+    ' Card overlays (CardOverlayCard.brs): their Posters go under the watched check.
+    CardOverlay_init(m.card, m.badge)
 end sub
 
 function fieldOr(c as object, name as string, default as dynamic) as dynamic
@@ -96,6 +98,7 @@ sub layout()
     ' Compact AI marker at the right end of the meta line; the meta text stops short of it.
     m.aiIcon.translation = [w - 24, m.insetY + h + 80]
     if m.aiIcon.visible then m.meta.width = w - 36
+    if c <> invalid then CardOverlay_show(c, "episode", Int(w), Int(h), hasProgress)
     onFocus()
 end sub
 
@@ -107,6 +110,7 @@ sub onFocus()
     h = Int(w * 9 / 16)
     current = fieldOr(m.top.itemContent, "isCurrent", false) = true
     CardFocus_apply(m.card, m.focusRing, m.shadow, w, h, p, [0, m.insetY], current)
+    CardOverlay_focus(p)
     if p > 0.5 or current then
         m.title.color = "0xEDEDEDFF"
     else

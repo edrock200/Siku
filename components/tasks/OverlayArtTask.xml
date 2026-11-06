@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Card overlay images (components/common/CardOverlayCard.brs): one Task for the app, made by the
+  first view that needs it and kept in m.global.overlayArt. Each request draws a card's badges and
+  episodes-left disc under tmp:/overlay-* (OverlayDraw.brs), once per key, into two PNGs, the top
+  half's and the bottom half's ("x,y,w,h,uri;x,y,w,h,uri", either half "" for none), or "" for
+  nothing to draw. Images drawn alike share one file. When keys are ready the Task adds string
+  fields named for them, a few at a time, so a card checks hasField(key) without copying anything,
+  then bumps drawn, which only cards still waiting observe. It bumps m.global.overlayArtRevision once
+  when it starts listening, so views have requests set before then sent again. It makes no HTTP
+  requests: ShellScreen downloads uploaded images through ApiTask and hands them over (image).
+  Adapted from Silo-Server/silo-roku, AGPL-3.0 (components/tasks/OverlayArtTask.xml, commit e8244ee).
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="OverlayArtTask" extends="Task">
+  <interface>
+    <!-- Requests, each { seq, key, doc, data, w, h, shape, progress, remaining, radius,
+         check: { size, inset }, prefetch } (CardOverlayKeys.brs CardOverlay_requestFor), appended by
+         CardOverlay_send with the next queueSeq; the Task reads those above what it read last and
+         sets ack, and the senders drop entries at or below ack. -->
+    <field id="queue" type="array" />
+    <field id="queueSeq" type="integer" />
+    <field id="ack" type="integer" />
+    <!-- Counts the batches published (and requests dropped for an old document): a waiting card
+         looks for its image again, and asks again when its request was lost. -->
+    <field id="drawn" type="integer" />
+    <!-- Counts the viewer's focus moves (CardOverlay_activity); the Task draws nothing until focus
+         has rested for 1.5 s, since encoding an image stalls the frames drawn meanwhile. -->
+    <field id="activity" type="integer" />
+    <!-- { ref, path }: an uploaded image ApiTask downloaded (CardOverlayState.brs). -->
+    <field id="image" type="assocarray" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/tasks/OverlayArtTask.brs" />
+  <script type="text/brightscript" uri="pkg:/components/tasks/OverlayDraw.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Overlays.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+</component>

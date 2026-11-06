@@ -9,6 +9,8 @@
   cardInsetY on the content node: headroom above the still inside the cell (a real Roku clips items
   to their cell), so the lifted still and its shadow are not cut.
   Expected ContentNode fields: title, HDPosterUrl, progress, watched, eyebrow, meta, synopsis, isCurrent,
+  Card overlays (Silo Android TV TvEpisodeCard CardOverlays, Wide variant): the profile's badges
+  over the still, under the watched check (components/common/CardOverlayCard.brs).
   aiTranslated (the synopsis is machine-translated: a small translate glyph at the end of the meta line,
   Android TV's compact "Translated by AI" marker).
   SPDX-License-Identifier: AGPL-3.0-or-later
@@ -25,6 +27,8 @@
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/DetailEpisodeItem.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/CardFocus.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/CardOverlayKeys.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/CardOverlayCard.brs" />
   <children>
     <Group id="card">
       <Poster id="shadow" uri="pkg:/images/ui/card_shadow.9.png" blendColor="0x00000080" visible="false" />

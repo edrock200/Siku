@@ -131,6 +131,23 @@ clears one); GET /mock/switch lists them.
                                  A start or replan that names it logs SUBTITLE requested unplayable
   credits_twice=1                every version's marker_segments carry two credits ranges (duration-600..-420
                                  and duration-300..end; the singular credits field the first), Silo Android #694
+  card_overlays=1|<preset>|rails|combined|off|404|500
+                                 GET /api/v2/settings/overlay-config (Siku's card overlays): without the
+                                 switch the server default is off ({"enabled": false}); 1 turns it on with
+                                 the classic look, a preset name (minimal, classic, vibrant, pill, square,
+                                 plate, band) picks that look, rails adds IMDb on the left edge, show status
+                                 on the right edge and year/runtime/content rating at the bottom, combined
+                                 turns on resolution_hdr_audio (hiding resolution, hdr and audio), off sends
+                                 enabled false, 404 an older server without the endpoint, 500 a failure.
+                                 With the switch on, movies carry a fuller overlay_summary (release type,
+                                 HDR/DV, Atmos, codecs) and ratings, and series a watched/unplayed count
+                                 (the started-series poster's episodes left). Log: OVERLAY CONFIG <variant>
+  overlay_profile=<preset>       the profile's own ui.card_overlays (source profile): that preset with
+                                 IMDb at the bottom right and the release type off
+  overlay_profile_enabled=0|1    the profile's own ui.card_overlays_enabled
+  overlay_images=1               the config lists an uploaded image and the document gives resolution "4K" a
+                                 valueImages entry; GET /api/v2/overlay-images/<ref> serves it (log OVERLAY
+                                 IMAGE <ref8>); overlay_images=missing answers 404 (the badge draws as text)
   box_sets=1                     movie box sets (Silo Android #646): library 1 lists box_sets_enabled true
                                  (group=box_set answers 422 since Silo Android #796, switch or not)
                                  (BOX_SETS: "The Paper Collection" = Paper Moons + Paper Tigers, "Night
@@ -258,7 +275,7 @@ def movie(i):
         "release_date": "%d-0%d-1%d" % (year, 1 + h(title) % 9, h(title) % 9),
         "overlay_summary": {"resolution": ["4K", "1080p", "1080p"][h(title) % 3], "hdr": ["HDR10", "", "Dolby Vision"][h(title) % 3], "audio": "EAC3"},
         "user_state": {"played": cid in STATE["watched"], "is_favorite": cid in STATE["favorites"], "in_watchlist": cid in STATE["watchlist"]},
-    } | missing_artwork(title)
+    } | missing_artwork(title) | (overlay_movie_fields(title) if overlays_on() else {})
 
 
 # Movie box sets (switch box_sets=1, Silo Android #646): TMDB collections in library 1.
@@ -298,6 +315,89 @@ def missing_artwork(title):
     return {}
 
 
+# Card overlays (switch card_overlays, Siku CardOverlayState.brs / Overlays.brs).
+OVERLAY_IMAGE_REF = "a" * 63 + "1.webp"
+OVERLAY_RELEASES = ["REMUX", "BluRay", "WEB-DL"]
+OVERLAY_AUDIO = ["TrueHD Atmos", "EAC3", "DTS-HD MA", "AAC"]
+OVERLAY_HDR = ["DV", "HDR10", "", "HDR10+"]
+
+
+def overlays_on():
+    v = STATE["switches"].get("card_overlays")
+    return v not in (None, "", 0, "0", "off", "404", "500", False)
+
+
+def overlay_movie_fields(title):
+    k = h(title)
+    res = ["4K", "1080p", "1080p", "720p"][k % 4]
+    return {"overlay_summary": {"resolution": res, "hdr": OVERLAY_HDR[k % 4] if res == "4K" else ["", "HDR10"][k % 2],
+                                "audio": OVERLAY_AUDIO[(k // 3) % 4], "audio_channels": ["7.1", "5.1", "Stereo"][k % 3],
+                                "video_codec": ["HEVC", "H.264", "AV1"][(k // 5) % 3], "container": "MKV",
+                                "release_type": OVERLAY_RELEASES[(k // 7) % 3], "multi_audio": k % 2 == 0, "multi_sub": True},
+            "rating_tmdb": round(5 + (k % 45) / 10, 1), "rating_rt_critic": 40 + k % 60, "original_language": ["en", "fr", "ja"][k % 3],
+            "studios": [MOCK_STUDIOS[k % 3]]}
+
+
+def overlay_series_fields(cid, seasons, eps):
+    total = seasons * eps
+    watched = sum(1 for sn in range(1, seasons + 1) for e in range(1, eps + 1) if episode_id(cid, sn, e) in STATE["watched"])
+    out = {"show_status": ["Returning Series", "Ended", "Canceled"][h(cid) % 3], "rating_imdb": round(6 + (h(cid) % 35) / 10, 1),
+           "user_data": {"played": watched >= total, "watched_count": watched, "unplayed_count": total - watched}}
+    return out
+
+
+def overlay_document(preset, variant=""):
+    items = {"release_type": {"enabled": True, "position": "bottom-left"}}
+    if variant == "rails":
+        items.update({"rating_imdb": {"enabled": True, "position": "left-edge"}, "rating_rt": {"enabled": True, "position": "left-edge"},
+                      "show_status": {"enabled": True, "position": "right-edge"}, "year": {"enabled": True, "position": "bottom-left"},
+                      "runtime": {"enabled": True, "position": "bottom-left"}, "content_rating": {"enabled": True, "position": "bottom-right"}})
+    if variant == "combined":
+        items.update({"resolution_hdr_audio": {"enabled": True, "position": "top-left"}, "rating_imdb": {"enabled": True, "position": "bottom-right"}})
+    if variant == "profile":
+        items = {"release_type": {"enabled": False}, "rating_imdb": {"enabled": True, "position": "bottom-right"},
+                 "audio_channels": {"enabled": True, "position": "top-left"}}
+    if STATE["switches"].get("overlay_images"):
+        items.setdefault("resolution", {"enabled": True, "position": "top-left"})
+        items["resolution"]["valueImages"] = {"4K": OVERLAY_IMAGE_REF}
+    return {"version": 2, "preset": preset, "order": [], "items": items}
+
+
+def overlay_config(handler):
+    v = str(STATE["switches"].get("card_overlays") or "")
+    LOG.append("OVERLAY CONFIG %s" % (v or "default-off"))
+    print("OVERLAY CONFIG %s" % (v or "default-off"), flush=True)
+    if v == "404":
+        return handler.problem(404, "not_found", "No such route")
+    if v == "500":
+        return handler.problem(500, "internal", "Overlay config failed")
+    if not overlays_on():
+        return handler.send(200, {"enabled": False, "defaults": None, "images": []})
+    variant = v if v in ("rails", "combined") else ""
+    preset = v if v in ("minimal", "classic", "vibrant", "pill", "square", "plate", "band") else "classic"
+    images = [{"ref": OVERLAY_IMAGE_REF, "width": 96, "height": 40}] if STATE["switches"].get("overlay_images") else []
+    return handler.send(200, {"enabled": True, "defaults": json.dumps(overlay_document(preset, variant)), "images": images})
+
+
+def overlay_image_png():
+    import struct
+    import zlib
+    w, hgt = 96, 40
+    rows = []
+    for y in range(hgt):
+        row = bytearray(b"\x00")
+        for x in range(w):
+            edge = x < 3 or x >= w - 3 or y < 3 or y >= hgt - 3
+            row += bytes((250, 200, 20, 255) if edge else (30, 30, 30, 230))
+        rows.append(bytes(row))
+    raw = b"".join(rows)
+
+    def chunk(tag, data):
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, hgt, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
+
+
 def series(i):
     title, seasons, eps = SERIES[i]
     cid = "series:%s" % title.lower().replace(" ", "-")
@@ -313,7 +413,7 @@ def series(i):
         "play_content_id": play[0], "play_season_number": play[1], "first_air_date": "%d-03-04" % year,
         "networks": ["Mock Network"],
         "user_state": {"played": False, "is_favorite": cid in STATE["favorites"], "in_watchlist": cid in STATE["watchlist"]},
-    }
+    } | (overlay_series_fields(cid, seasons, eps) if overlays_on() else {})
 
 
 def episode_id(series_cid, s, e):
@@ -2104,6 +2204,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, make_image(kind, name.rsplit(".", 1)[0]), "image/png" if kind == "logo" else "image/jpeg")
         if p.startswith("/mock-media/"):
             return self.send(404)
+        # Uploaded card overlay images: a public, immutable read (no credentials), as on the server.
+        if p.startswith("/api/v2/overlay-images/") and method == "GET":
+            ref = p.rsplit("/", 1)[1]
+            print("OVERLAY IMAGE %s" % ref[:8], flush=True)
+            if ref != OVERLAY_IMAGE_REF or STATE["switches"].get("overlay_images") in (None, "", "missing"):
+                return self.problem(404, "not_found", "No such image")
+            return self.send(200, overlay_image_png(), "image/webp")
         # Signed seek-preview sheets: authorised by the URL alone, like presigned storage, which
         # refuses a second credential (a client must not send its Silo token here).
         m = re.match(r"^/api/v2/artwork/trickplay/(\d+)/(\d+)/(\d+)\.(\d+)\.jpg$", p)
@@ -3208,6 +3315,8 @@ SETTINGS_DEFS = {
     "ui.disabled_library_ids": (1, None, ["profile"], ["profile"]),
     "ui.theme_music_enabled": (11, False, ["profile", "profile_device"], ["profile_device", "profile"]),
     "ui.theme_music_loop": (11, False, ["profile", "profile_device"], ["profile_device", "profile"]),
+    "ui.card_overlays": (1, None, ["profile"], ["profile"]),
+    "ui.card_overlays_enabled": (8, None, ["profile"], ["profile"]),
     "catalog.hide_unwatched_episode_images": (17, False, ["profile"], ["profile"]),
     "catalog.hide_unwatched_episode_overviews": (17, False, ["profile"], ["profile"]),
     "ui.theme": (1, "cinema-dark", ["account", "profile"], ["profile", "account"]),
@@ -3267,6 +3376,14 @@ def settings_effective(handler, key, q):
         default = json.loads(hid) if isinstance(hid, str) else hid
     if key == "catalog.hide_unwatched_episode_images" and STATE["switches"].get("hide_episode_images"):
         default = True
+    # The profile's own card overlay choices (switches overlay_profile / overlay_profile_enabled).
+    sw = STATE["switches"]
+    if key == "ui.card_overlays" and sw.get("overlay_profile"):
+        return {"key": key, "value": overlay_document(str(sw["overlay_profile"]), "profile"), "source": "profile", "scope": "profile",
+                "definition_revision": introduced, "profile_id": handler.headers.get("X-Profile-Id") or ""}
+    if key == "ui.card_overlays_enabled" and sw.get("overlay_profile_enabled") not in (None, ""):
+        return {"key": key, "value": str(sw["overlay_profile_enabled"]) not in ("0", "false", "False"), "source": "profile", "scope": "profile",
+                "definition_revision": introduced, "profile_id": handler.headers.get("X-Profile-Id") or ""}
     store = settings_store()
     for scope in order:
         ident = settings_identity(handler, scope, q)
@@ -3379,6 +3496,8 @@ def series_effective(handler, d, q):
 
 
 def settings_route(handler, method, p, q, b):
+    if p == "/api/v2/settings/overlay-config" and method == "GET":
+        return overlay_config(handler) or True
     if p == "/api/v2/settings/contract/capabilities" and method == "GET":
         return handler.send(200, {"revision": "mock-settings", "state": "available", "allowed": True, "api_version": 1,
                                   "manifest_revision": SETTINGS_REVISION, "contract_etag": '"etag-%d"' % SETTINGS_REVISION,

@@ -59,8 +59,29 @@ sub init()
     m.imgB.observeField("loadStatus", "onBackdropLoaded")
     m.logo.observeField("loadStatus", "onLogoLoaded")
     m.logoGraceTimer.observeField("fire", "onLogoGrace")
+    ' Card overlays (CardOverlayKeys.brs): a new document changes every card's image key, and the
+    ' Task starting to listen means requests made before were lost.
+    CardOverlay_observe("onCardOverlays")
     layoutBand()
     applyState()
+end sub
+
+sub onCardOverlays()
+    prefetchOverlays()
+    CardOverlay_refresh(m.rowList.content)
+end sub
+
+' Asks ahead for the card overlay images of every row's cards, so scrolling finds them drawn.
+sub prefetchOverlays()
+    c = m.rowList.content
+    if c = invalid then return
+    for i = 0 to c.getChildCount() - 1
+        row = c.getChild(i)
+        style = Str_orEmpty(row.rowStyle)
+        if style = "" then style = "poster"
+        size = rowCardSize(style)
+        CardOverlay_prefetch(row, style, size[0], size[1] - 90)
+    end for
 end sub
 
 ' ---------- Rows ----------
@@ -96,6 +117,7 @@ sub onRows()
     target = findFocus(keep)
     m.focusRow = target[0]
     syncRowMetrics()
+    prefetchOverlays()
     if target[0] > 0 or target[1] > 0 then m.rowList.jumpToRowItem = target
     m.top.hasRows = true
     m.rowList.visible = m.top.state = "ready"
@@ -367,6 +389,8 @@ end sub
 ' ---------- Focus / marquee ----------
 
 sub onRowItemFocused()
+    ' Card overlay images wait while the viewer moves (CardOverlayKeys.brs).
+    CardOverlay_activity()
     m.pendingFocus = m.rowList.rowItemFocused
     rf = m.pendingFocus
     if rf <> invalid and rf.Count() >= 1 and rf[0] <> m.focusRow then

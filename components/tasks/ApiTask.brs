@@ -88,6 +88,12 @@ function perform(req as object) as object
         if Instr(1, url, "?") > 0 then url = url + "&" + qs else url = url + "?" + qs
     end if
 
+    ' A file download (card overlay images): only a GET, only into tmp:, and its body is not parsed.
+    saveTo = Str_orEmpty(req.saveTo)
+    if saveTo <> "" and (method <> "GET" or Left(saveTo, 5) <> "tmp:/" or Instr(1, saveTo, "..") > 0) then
+        return { status: 0, text: "", data: invalid, error: { code: "bad_download", title: "Unsupported download" } }
+    end if
+
     if isAnonymous(req) then
         ' An address that only advertised itself (Find servers) gets no credentials and no device
         ' metadata, as on Silo Android (LanServerProbe): Accept is the only header.
@@ -115,6 +121,7 @@ function perform(req as object) as object
 
     timeout = 20
     if req.timeout <> invalid then timeout = req.timeout
+    if saveTo <> "" then return Http_download(url, headers, saveTo, timeout)
     return Http_send(method, url, headers, req.body, timeout)
 end function
 
