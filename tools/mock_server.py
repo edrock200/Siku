@@ -52,6 +52,14 @@ clears one); GET /mock/switch lists them.
                                  refused with that 422; slow: the capability read takes 30 s; fail:
                                  it answers 500. Rows carry up to 24 cards without item_limit.
   item_limit_max=<n>             the advertised section_item_limit_max (default 100)
+  ai_live=1|off|fail             live AI subtitle lines over the playback control socket (silo.playback-control.v2).
+                                 1 (or unset): GET /playback/sessions/control/capabilities says available, POST
+                                 .../control/ws-ticket mints a ticket and GET .../control/ws upgrades with it; a
+                                 translate job for a session whose socket is open streams subtitle_translation_started,
+                                 then batches of 8 cues a second from start_position (wrapping to the start), then
+                                 subtitle_translation_completed, and its job reads stay running until then. off: an older
+                                 server (available false, no socket). fail: the stream sends one batch, then
+                                 subtitle_translation_failed, and the job fails. Log: AI LIVE ticket|socket|started|cues|done
   ai_session=missing             POST /subtitles/ai/translate with a session_id answers 404 playback_session_not_found
                                  (Silo Android #726: the client sends it again without one, as a background job)
   route_events=accept|reject|bad_receipt
@@ -2010,6 +2018,177 @@ def playback_decision(sid, position, fid, body=None):
                               "source": source, **plan_extra}}
 
 
+# ---------- Live AI subtitle lines: the playback control socket (silo.playback-control.v2) ----------
+
+AI_LIVE = {"tickets": {}, "sockets": {}}   # ticket -> session id; session id -> LiveSocket
+AI_LIVE_PROTOCOL = "silo.playback-control.v2"
+
+
+def ai_live_mode():
+    return str(STATE["switches"].get("ai_live") or "1")
+
+
+class LiveSocket:
+    """A server-side WebSocket on the request's own connection (text frames only)."""
+
+    def __init__(self, handler, sid):
+        self.h = handler
+        self.sid = sid
+        self.lock = threading.Lock()
+        self.alive = True
+
+    def send_text(self, text):
+        data = text.encode()
+        head = bytearray([0x81])
+        n = len(data)
+        if n < 126:
+            head.append(n)
+        elif n < 65536:
+            head.append(126)
+            head += n.to_bytes(2, "big")
+        else:
+            head.append(127)
+            head += n.to_bytes(8, "big")
+        with self.lock:
+            if not self.alive:
+                return False
+            try:
+                self.h.wfile.write(bytes(head) + data)
+                self.h.wfile.flush()
+                return True
+            except OSError:
+                self.alive = False
+                return False
+
+    def send_frame(self, opcode, payload=b""):
+        with self.lock:
+            try:
+                self.h.wfile.write(bytes([0x80 | opcode, len(payload)]) + payload)
+                self.h.wfile.flush()
+            except OSError:
+                self.alive = False
+
+    def read_frame(self):
+        r = self.h.rfile
+        b = r.read(2)
+        if len(b) < 2:
+            return None, None
+        opcode = b[0] & 0x0F
+        n = b[1] & 0x7F
+        if n == 126:
+            n = int.from_bytes(r.read(2), "big")
+        elif n == 127:
+            n = int.from_bytes(r.read(8), "big")
+        mask = r.read(4) if b[1] & 0x80 else b"\0\0\0\0"
+        data = bytes(c ^ mask[i % 4] for i, c in enumerate(r.read(n)))
+        return opcode, data
+
+
+def ai_live_upgrade(handler, sid):
+    offered = [x.strip() for x in (handler.headers.get("Sec-WebSocket-Protocol") or "").split(",")]
+    ticket = next((x[len("silo.ticket."):] for x in offered if x.startswith("silo.ticket.")), "")
+    owner = AI_LIVE["tickets"].pop(ticket, None)
+    if handler.headers.get("Upgrade", "").lower() != "websocket" or AI_LIVE_PROTOCOL not in offered:
+        print("AI LIVE socket refused (protocol)", flush=True)
+        return handler.problem(400, "validation_failed", "Offer silo.playback-control.v2 and a ticket")
+    if owner != sid:
+        print("AI LIVE socket refused (ticket)", flush=True)
+        return handler.problem(401, "unauthorized", "Unknown or spent ticket")
+    key = handler.headers.get("Sec-WebSocket-Key", "")
+    accept = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
+    handler.send_response(101)
+    handler.send_header("Upgrade", "websocket")
+    handler.send_header("Connection", "Upgrade")
+    handler.send_header("Sec-WebSocket-Accept", accept)
+    handler.send_header("Sec-WebSocket-Protocol", AI_LIVE_PROTOCOL)
+    handler.end_headers()
+    handler.wfile.flush()
+    ws = LiveSocket(handler, sid)
+    AI_LIVE["sockets"][sid] = ws
+    print("AI LIVE socket open session=%s" % sid[:8], flush=True)
+    handler.close_connection = True
+    try:
+        while ws.alive:
+            opcode, data = ws.read_frame()
+            if opcode is None or opcode == 8:
+                break
+            if opcode == 9:
+                ws.send_frame(10, data)
+            elif opcode == 1:
+                try:
+                    msg = json.loads(data.decode())
+                except ValueError:
+                    msg = {}
+                print("AI LIVE socket %s" % (msg.get("type") or "text"), flush=True)
+    except OSError:
+        pass
+    ws.alive = False
+    if AI_LIVE["sockets"].get(sid) is ws:
+        AI_LIVE["sockets"].pop(sid, None)
+    print("AI LIVE socket closed session=%s" % sid[:8], flush=True)
+
+
+def ai_live_cues(start):
+    """60 mock cues, 4 s apart, in source seconds; played from start forward, then the beginning."""
+    cues = [{"start": 4.0 * i, "end": 4.0 * i + 3.0, "text": "Übersetzte Zeile %d" % (i + 1)} for i in range(60)]
+    first = next((i for i, c in enumerate(cues) if c["end"] > start), 0)
+    return cues[first:] + cues[:first]
+
+
+def ai_live_stream(job, sid, start):
+    ws = AI_LIVE["sockets"].get(sid)
+    fid = int(job["media_file_id"]) if str(job["media_file_id"]).isdigit() else 0
+    jid = int(job["id"])
+    key = "live-%s" % job["id"]
+    cues = ai_live_cues(start)
+
+    def ev(name, **payload):
+        body = {"session_id": sid, "file_id": fid, "job_id": jid, "track_key": key}
+        body.update(payload)
+        return ws.send_text(json.dumps({"type": "event", "session_id": sid, "name": name, "payload": body}))
+
+    time.sleep(0.5)
+    ev("subtitle_translation_started", language=job["target_language"], label="AI", total_cues=len(cues))
+    print("AI LIVE started job=%s cues=%d" % (job["id"], len(cues)), flush=True)
+    done = 0
+    for i in range(0, len(cues), 8):
+        if job["status"] == "cancelled":
+            return
+        batch = cues[i:i + 8]
+        done += len(batch)
+        ev("subtitle_translation_cues", cues=batch, done=done, total=len(cues))
+        print("AI LIVE cues job=%s +%d %d/%d" % (job["id"], len(batch), done, len(cues)), flush=True)
+        if ai_live_mode() == "fail":
+            job.update(status="failed", progress_message="", error_message="The translation model stopped answering.")
+            ev("subtitle_translation_failed", message="The translation model stopped answering.")
+            print("AI LIVE failed job=%s" % job["id"], flush=True)
+            return
+        job.update(progress=done / len(cues))
+        time.sleep(1.0)
+    src = job["source_language"] or "en"
+    rec = sub_store(job["media_file_id"], "translated", job["target_language"], "%s → %s (AI)" % (src, job["target_language"]), auto_sync=False)
+    job.update(status="completed", progress=1.0, progress_message="", result_subtitle_id=rec["id"])
+    ev("subtitle_translation_completed", subtitle_id=int(rec["id"]), language=job["target_language"], label="AI")
+    print("AI LIVE done job=%s subtitle=%s" % (job["id"], rec["id"]), flush=True)
+
+
+def ai_live_route(handler, method, p, q, b):
+    if p == "/api/v2/playback/sessions/control/capabilities" and method == "GET":
+        on = ai_live_mode() != "off"
+        return handler.send(200, {"available": on, "protocol": AI_LIVE_PROTOCOL if on else ""}) or True
+    m = re.match(r"^/api/v2/playback/sessions/([^/]+)/control/ws-ticket$", p)
+    if m and method == "POST":
+        if ai_live_mode() == "off":
+            handler.problem(404, "not_found", "Not found")
+            return True
+        ticket = uuid.uuid4().hex
+        AI_LIVE["tickets"][ticket] = m.group(1)
+        print("AI LIVE ticket session=%s installation=%s" % (m.group(1)[:8], "yes" if b.get("installation_id") else "no"), flush=True)
+        handler.send(200, {"ticket": ticket, "expires_in": 30, "max_connection_seconds": 14400, "protocol": AI_LIVE_PROTOCOL})
+        return True
+    return False
+
+
 def subtitle_route(handler, method, p, q, b):
     if not p.startswith("/api/v2/subtitles"):
         return False
@@ -2052,7 +2231,12 @@ def subtitle_route(handler, method, p, q, b):
                "status": "pending", "progress": 0.0, "progress_message": "", "result_subtitle_id": None,
                "created_at": "2026-10-06T00:00:00.000Z", "updated_at": "2026-10-06T00:00:00.000Z", "_reads": 0}
         SUBS["ai_jobs"][job["id"]] = job
-        handler.send(202, {"job": {k: v for k, v in job.items() if not k.startswith("_")}, "live_delivery_attached": bool(sid)})
+        live = bool(sid) and sid in AI_LIVE["sockets"] and ai_live_mode() != "off"
+        if live:
+            job["_live"] = True
+            job.update(status="running", progress_message="Translating")
+            threading.Thread(target=ai_live_stream, args=(job, sid, float(b.get("start_position") or 0)), daemon=True).start()
+        handler.send(202, {"job": {k: v for k, v in job.items() if not k.startswith("_")}, "live_delivery_attached": live})
         return True
     m = re.match(r"^/api/v2/subtitles/ai/jobs/([^/]+)(/cancel)?$", p)
     if m:
@@ -2065,7 +2249,9 @@ def subtitle_route(handler, method, p, q, b):
             LOG.append("AI CANCEL " + job["id"])
             handler.send(204)
             return True
-        if job["status"] in ("pending", "running"):
+        if job.get("_live"):
+            pass   # the live stream (ai_live_stream) moves the job on
+        elif job["status"] in ("pending", "running"):
             job["_reads"] += 1
             if job["_reads"] == 1:
                 job.update(status="running", progress=0.34, progress_message="Transcribing" if job["kind"] != "translate" else "Translating")
@@ -2297,6 +2483,12 @@ class Handler(BaseHTTPRequestHandler):
             if Image is None:
                 return self.send(404)
             return self.send(200, trickplay_sheet(fid, idx), "image/jpeg", {"Cache-Control": "public, max-age=86400, immutable"})
+        # The playback control socket authenticates with its ticket (a subprotocol), not a bearer.
+        m = re.match(r"^/api/v2/playback/sessions/([^/]+)/control/ws$", p)
+        if m and method == "GET":
+            if ai_live_mode() == "off":
+                return self.problem(404, "not_found", "Not found")
+            return ai_live_upgrade(self, m.group(1))
         # Test control (not part of the API): empty or reseed the notifications inbox.
         if p == "/mock/notifications/clear" and method == "POST":
             STATE["notifs"] = []
@@ -2541,6 +2733,8 @@ class Handler(BaseHTTPRequestHandler):
             print("STALE_PROFILE 403", method, p, flush=True)
             return self.problem(403, "profile_verification_required", "Profile verification required")
         if requests_route(self, method, p, q, b):
+            return
+        if ai_live_route(self, method, p, q, b):
             return
         if subtitle_route(self, method, p, q, b):
             return

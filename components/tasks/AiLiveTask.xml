@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The playback session's control socket (silo.playback-control.v2) over Roku OS 16's roWebSocket,
+  kept open only while an AI subtitle job streams its live cues (components/player/AiLive.brs).
+  request: { url: "wss://…/api/v2/playback/sessions/{sid}/control/ws", protocols: "silo.playback-control.v2,
+             silo.ticket.<t>" (the ticket: never logged), sessionId, fileId, hello: the hello frame }
+  shutdown (in): set true to close the socket and end the task.
+  socketState (out): { kind: "open" | "failed" | "closed", reason }   reason: unsupported | url | protocol |
+               timeout | error | quiet | closed_by_server | max_age | shutdown
+  event (out): { items: [{ id, name, payload }] }, every subtitle_translation_* event of this session
+               and file not yet acknowledged; ids rise from 1. A set can be coalesced or lost in a
+               burst (seen in brs-engine), so each one carries everything unacknowledged.
+  ack (in): the highest id the player has handled; the task then forgets those.
+  Commands from the server are ignored (the hello advertises none). Nothing here prints a URL,
+  ticket or frame. SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="AiLiveTask" extends="Task">
+  <interface>
+    <field id="request" type="assocarray" />
+    <field id="shutdown" type="boolean" alwaysNotify="true" />
+    <field id="socketState" type="assocarray" alwaysNotify="true" />
+    <field id="event" type="assocarray" alwaysNotify="true" />
+    <field id="ack" type="integer" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/tasks/AiLiveTask.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/AiLiveCues.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+</component>

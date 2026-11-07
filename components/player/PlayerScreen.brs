@@ -136,6 +136,7 @@ sub init()
     m.errorCloseBtn.observeField("buttonSelected", "exitPlayer")
     m.picker.observeField("chosen", "onPickerChosen")
     m.picker.observeField("dismissed", "onPickerDismissed")
+    AiLive_init()
     Subs_init()
     Bufq_init()
     Trickplay_init()
@@ -1166,6 +1167,7 @@ sub onVideoPosition()
     SeekReanchor_checkStartSeek()
     m.position = m.video.position + m.timelineOffset
     if not m.scrubbing then m.scrubber.position = m.position
+    AiLive_onPosition()
     checkMarkers()
     checkUpNext()
 end sub
@@ -1343,6 +1345,7 @@ sub exitPlayer()
     m.hideTimer.control = "stop"
     m.subsSyncTimer.control = "stop"
     m.subsAiTimer.control = "stop"
+    AiLive_close("player_closed")
     m.subsCheckTimer.control = "stop"
     m.subsLoadTimer.control = "stop"
     m.subsLoading.visible = false
@@ -1382,6 +1385,7 @@ sub onScreenHidden()
     m.hideTimer.control = "stop"
     m.subsSyncTimer.control = "stop"
     m.subsAiTimer.control = "stop"
+    AiLive_close("player_closed")
     HoldSeek_stop()
     Trickplay_reset()
     Bufq_onStopped()
@@ -2897,6 +2901,7 @@ sub onPickerChosen()
                 m.global.toast = "Roku can't display image-based or styled subtitles (PGS, VobSub, ASS). A text version (SRT) would work."
             end if
         else
+            AiLive_onUserSubtitle()
             setSubtitle(Int(Val(id)))
             rememberSubtitlePick()
         end if
@@ -2929,6 +2934,7 @@ sub saveSeriesAudio(body as object)
 end sub
 
 sub setSubtitle(idx as integer)
+    idx = AiLive_filterSubtitle(idx)
     if idx < 0 or idx >= m.subtitleTracks.Count() then
         m.subtitleIndex = -1
         m.video.subtitleTrack = ""

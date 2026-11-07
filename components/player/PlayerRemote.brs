@@ -162,6 +162,7 @@ sub Remote_onCommand()
         ' A null trackId turns subtitles off.
         idx = -1
         if c.trackId <> invalid then idx = Int(Num_or(c.trackId, -1))
+        AiLive_onUserSubtitle()
         setSubtitle(idx)
     else if name = "set_muted" then
         Remote_setMuted(PlaybackCaps_truthy(c.enabled))

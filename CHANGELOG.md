@@ -3,6 +3,15 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.43
+
+One change past Silo's Android TV app, asked for by a user (November 7, 2026).
+
+**Better**
+- **AI subtitles show up within seconds.** When you pick Translate with AI in the player, Siku now shows the translated lines as the server makes them, starting where you are in the video, the way Silo's website does. Before, Siku waited until the server had translated the whole file, which can take several minutes. While the lines stream in they are drawn by Siku at the bottom of the picture; when the translation is finished and saved, Siku switches to the saved subtitle track on its own. Picking another subtitle (or Off) stops the live lines. If the translation fails, the subtitle you had before comes back. This needs Roku OS 16 or later and a Silo server that offers live subtitle lines; other Rokus and servers translate as before.
+
+**Needs testing on a real Roku:** live lines on a Roku with Roku OS 16 (the timing against the picture, the look at 1080p, and that the saved track takes over cleanly), and that a Roku on an older OS still translates as before.
+
 ## v0.1.42
 
 Two changes from Silo's Android TV app (November 6, 2026).

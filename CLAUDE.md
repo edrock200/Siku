@@ -306,6 +306,14 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   lang=`, `translation poll <n> season= pending=`, `translation done season= after <n> re-reads`, `translation gave up`,
   `translation failed season= status= job=`, `translation deferred season=`. Mock: `--switch season_translation=run|stuck|fail`
   (+ `translation_seconds=<n>`, default 12; Orbital S1's odd episodes; log `METADATA TRANSLATE`, `EPISODES translation=`).
+- Live AI subtitle lines (v0.1.43, past Android TV; `AiLiveCues.brs`, `AiLive.brs`, `AiLiveTask`): on Translate with AI the
+  player reads GET `/api/v2/playback/sessions/control/capabilities`, mints POST `…/sessions/{sid}/control/ws-ticket`, opens
+  `…/control/ws` (`silo.playback-control.v2`, ticket as the second subprotocol; hello advertises no commands) and only then
+  sends the job (6 s bound), draws `subtitle_translation_cues` in `aiLiveGroup` and hands over to the stored track the poll
+  adopts. `[siku-playback] ai live socket open|failed reason=<unsupported|ticket|open_timeout|error|protocol|timeout>|closed
+  reason=`, `ai live started cues=N`, `ai live cues +N done/total` (first batch, then every 10 s), `ai live completed|failed`.
+  Never the ticket. Mock: `--switch ai_live=1|off|fail` (log `AI LIVE ticket|socket|started|cues|done|failed`); brs-cli has
+  a real roWebSocket, so the simulator runs the whole path.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

@@ -52,6 +52,7 @@ sub Subs_resetPlayback()
     s.adoptBody = invalid   ' the adoption replan's request (diagnostics line)
     if m.subsSyncTimer <> invalid then m.subsSyncTimer.control = "stop"
     if m.subsAiTimer <> invalid then m.subsAiTimer.control = "stop"
+    AiLive_resetPlayback()
 end sub
 
 function Subs_filePath(suffix as string) as string
@@ -1396,6 +1397,7 @@ sub Subs_onAdoptReplan(event as object)
         m.global.toast = "Subtitle saved on the server, but Roku can't show this format."
         trackId = Subs_selectedTrackId()
     end if
+    if origin = "ai" then AiLive_onAdopting()
     m.video.control = "stop"
     applyPlan(plan, { resumeAt: m.position, subtitleTrackId: trackId, mountKind: "track" })
     if planFileId(plan) <> m.markersFileId then adoptFileMarkers(planFileId(plan))
@@ -1409,6 +1411,7 @@ end function
 
 sub Subs_adoptFailed(origin as string, message as string)
     if origin = "ai" then
+        AiLive_onJobEnded()
         m.subs.ai.phase = "failed"
         m.subs.ai.error = message
         if m.subs.dialog = "ai" then Subs_renderAi()
@@ -1486,6 +1489,7 @@ sub Subs_openAi()
     if not Subs_aiAvailable() then return
     ai = m.subs.ai
     Api_get("/api/v2/subtitles/ai/quota", invalid, "Subs_onAiQuota", { fileId: m.fileId })
+    AiLive_readCaps()
     ' The phase is kept (Silo Android #545): a running job shows its progress and a failure keeps
     ' its reason above a form that stays usable for a new request.
     ' The mode row appears only when both modes are available; otherwise the available one is fixed.
@@ -1627,7 +1631,8 @@ end sub
 ' session_id names the playback session (Silo Android #726): the server then runs the job in
 ' the foreground, transcribing from the playhead in short chunks, so progress moves within
 ' seconds. Without it the whole file is extracted first and the dialog sits at 0% for minutes.
-' Siku still polls the job and ignores the live cues the server streams to the session.
+' The server also streams the job's lines to the session's control socket: on Roku OS 16 Siku
+' opens it first and draws them as they arrive (AiLive.brs); the job poll stays the authority.
 sub Subs_aiSubmit()
     ai = m.subs.ai
     if m.fileId = "" or ai.phase = "running" or ai.phase = "submitting" or Subs_quotaExhausted() then return
@@ -1660,7 +1665,7 @@ sub Subs_aiSubmit()
     ai.error = ""
     body = { media_file_id: m.fileId, kind: kind, source_index: sourceIndex, source_language: sourceLanguage, target_language: target, start_position: m.position }
     ai.request = body
-    Subs_aiSend(m.sessionId)
+    AiLive_submit()
     Subs_renderAi()
 end sub
 
@@ -1703,6 +1708,7 @@ sub Subs_onAiCreated(event as object)
         if job.progress <> invalid then ai.progress = job.progress * 1.0
         ai.message = Str_orEmpty(job.progress_message)
         if ai.message = "" and resp.data.live_delivery_attached <> true then ai.message = "Processing in background"
+        AiLive_onJobCreated(job)
         Subs_applyAiJob(job)
         if ai.phase = "running" then m.subsAiTimer.control = "start"
     else
@@ -1710,6 +1716,7 @@ sub Subs_onAiCreated(event as object)
         if resp.status = 429 then Api_get("/api/v2/subtitles/ai/quota", invalid, "Subs_onAiQuota", { fileId: m.fileId })
         ai.phase = "failed"
         ai.error = Subs_errorText(resp, "Translation failed")
+        AiLive_onJobEnded()
     end if
     if m.subs.dialog = "ai" then Subs_renderAi()
 end sub
@@ -1737,6 +1744,7 @@ sub Subs_onAiJob(event as object)
         m.subsAiTimer.control = "stop"
         ai.phase = "failed"
         ai.error = "The translation job is gone."
+        AiLive_onJobEnded()
     end if
     ' Ordinary transport failures keep polling.
     if m.subs.dialog = "ai" then Subs_renderAi()
@@ -1756,6 +1764,7 @@ sub Subs_applyAiJob(job as object)
         if resultId = "" then
             ai.phase = "failed"
             ai.error = "Translated, but the server named no subtitle."
+            AiLive_onJobEnded()
             return
         end if
         Subs_adoptStored(resultId, "ai")
@@ -1764,6 +1773,7 @@ sub Subs_applyAiJob(job as object)
         ai.phase = "failed"
         ai.error = Str_orEmpty(job.error_message)
         if ai.error = "" then ai.error = "Translation failed"
+        AiLive_onJobEnded()
         ' The dialog may have been closed while the job ran (Silo Android #545): say why in the
         ' player, long enough to read a full sentence on a TV. Reopening the dialog shows it too.
         if m.subs.dialog <> "ai" then
@@ -1775,6 +1785,7 @@ sub Subs_applyAiJob(job as object)
         m.subsAiTimer.control = "stop"
         ai.phase = "idle"
         ai.job = invalid
+        AiLive_onJobEnded()
     end if
 end sub
 
@@ -1783,6 +1794,7 @@ sub Subs_aiCancel()
     ai = m.subs.ai
     m.subsAiTimer.control = "stop"
     if ai.job <> invalid then Api_fire("POST", "/api/v2/subtitles/ai/jobs/" + Str_urlEncode(Str_orEmpty(ai.job.id)) + "/cancel")
+    AiLive_onJobEnded()
     ai.job = invalid
     ai.phase = "idle"
     ai.error = ""

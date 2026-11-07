@@ -30,6 +30,8 @@
   <script type="text/brightscript" uri="pkg:/components/player/PlayerScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/PlaybackCaps.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/SubtitleSuite.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/AiLive.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/AiLiveCues.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/MarkerTimeline.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/SubtitleSelect.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/BufferingQuality.brs" />
@@ -57,6 +59,16 @@
       <Poster uri="pkg:/images/ui/scrim_bottom.png" width="1920" height="500" translation="[0, 580]" opacity="0.9" />
     </Group>
     <Video id="video" width="1920" height="1080" enableUI="false" enableTrickPlay="false" notificationInterval="1" />
+    <!-- Live AI subtitle lines while a translation streams (AiLive.brs): drawn here because the
+         Video node takes subtitle files only. A shadow copy under the text keeps it readable. -->
+    <Group id="aiLiveGroup" visible="false">
+      <Label id="aiLiveShadow" width="1600" height="200" translation="[162, 772]" horizAlign="center" vertAlign="bottom" wrap="true" maxLines="3" color="0x000000E6">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="42" />
+      </Label>
+      <Label id="aiLiveText" width="1600" height="200" translation="[160, 770]" horizAlign="center" vertAlign="bottom" wrap="true" maxLines="3" color="0xFFFFFFFF">
+        <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="42" />
+      </Label>
+    </Group>
     <Poster id="videoFrame" uri="pkg:/images/ui/r16_ring2.9.png" blendColor="0xFFFFFF29" visible="false" />
     <Group id="focusSink" focusable="true" />
 
@@ -238,6 +250,9 @@
     <Timer id="captionTimer" duration="4" />
     <Timer id="subsSyncTimer" duration="3" repeat="true" />
     <Timer id="subsAiTimer" duration="2" repeat="true" />
+    <!-- AiLive.brs: redraws the live AI lines; bounds the wait for the control socket before the job is sent. -->
+    <Timer id="aiLiveTimer" duration="0.25" repeat="true" />
+    <Timer id="aiLiveConnectTimer" duration="6" />
     <!-- How long a playing stream may take to list the plan's HLS subtitle rendition. -->
     <Timer id="renditionTimer" duration="8" />
     <!-- PlayerSeekReanchor: a copy remux's lead-in reanchor is handed to the Video node this long after its answer. -->
