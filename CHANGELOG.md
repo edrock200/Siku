@@ -3,6 +3,13 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.44
+
+A fix asked for by a user (November 8, 2026).
+
+**Fixed**
+- **Running times show up again on servers that don't store them.** A movie or episode page now shows how long the video is even when the server has no running time on record for it: Siku uses the length the server measured from the file, like Silo's own apps. Before, those pages showed no running time at all.
+
 ## v0.1.43
 
 One change past Silo's Android TV app, asked for by a user (November 7, 2026).

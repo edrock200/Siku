@@ -411,7 +411,8 @@ sub renderHero()
     tokens = []
     y = yearOf(it)
     if y <> "" then tokens.Push(y)
-    if toInt(it.runtime) > 0 then tokens.Push(Time_runtime(toInt(it.runtime) * 60))
+    lengthSec = detailLengthSeconds(it, t)
+    if lengthSec > 0 then tokens.Push(Time_runtime(lengthSec))
     if t = "series" and it.season_count <> invalid then
         sc = toInt(it.season_count)
         if sc = 1 then tokens.Push("1 season") else tokens.Push(sc.ToStr() + " seasons")
@@ -582,6 +583,21 @@ function selectorTargetId() as string
         return Str_orEmpty(m.nextUp.content_id)
     end if
     return Str_orEmpty(m.item.content_id)
+end function
+
+' The length the header shows (Silo's selectedMediaRuntimeMinutes): the shown file's measured
+' duration, else the catalog runtime (minutes). Silo sends 0 for either when unknown; 0 = none.
+function detailLengthSeconds(it as object, t as string) as integer
+    if t <> "series" and t <> "season" then
+        v = displayVersion()
+        if v <> invalid then
+            d = Content_num(v.duration)
+            if d > 0 then return Int(d + 0.5)
+        end if
+    end if
+    r = toInt(it.runtime)
+    if r > 0 then return r * 60
+    return 0
 end function
 
 function playVersions() as object

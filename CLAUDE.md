@@ -314,6 +314,8 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   reason=`, `ai live started cues=N`, `ai live cues +N done/total` (first batch, then every 10 s), `ai live completed|failed`.
   Never the ticket. Mock: `--switch ai_live=1|off|fail` (log `AI LIVE ticket|socket|started|cues|done|failed`); brs-cli has
   a real roWebSocket, so the simulator runs the whole path.
+- Detail running time (v0.1.44, `detailLengthSeconds` in DetailScreen): the shown file's measured `duration`, else
+  `runtime` minutes; 0 means unknown and hides it. Mock `--switch no_runtime=1` (runtime 0, files keep their duration).
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

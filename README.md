@@ -24,7 +24,7 @@ Siku brings your Silo library to Roku TVs and streaming players. It is a port of
 | Navigation | Top bar like Android TV: Home, media tabs (Movies, Shows, Music, Audiobooks), For You, Calendar, Search, Profile | ✅ |
 | Home | Hero banner plus server-defined rows: Continue Watching, Next Up, Recently Added | ✅ |
 | Browse | Library grids with sort and filters, collections, A‑Z rail; audiobook Authors / Series groups; music Genres | ✅ |
-| Detail | Movies, series (seasons and episodes), episodes, cast, person pages | ✅ |
+| Detail | Movies, series (seasons and episodes), episodes, cast, person pages; the running time falls back to the file's measured length when the server stores none (0.1.44) | ✅ |
 | Discover | Search, For You (Watchlist and Favorites), release Calendar | ✅ |
 | Discover | DIGITAL and PHYSICAL tags on Calendar movies, an X beside the search box that clears it and reopens the keyboard (new in 0.1.38) | 🟡 simulator-tested, needs device testing |
 | Phone | Phone hand-off uses the Roku's own home-network address for the server; Rokus signed in with older Siku builds are found by phones on other addresses (new in 0.1.28) | 🟡 simulator-tested, needs device testing |

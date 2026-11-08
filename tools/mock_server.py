@@ -90,6 +90,8 @@ clears one); GET /mock/switch lists them.
                                  /api/v2/account/password/capability, POST /api/v2/account/password (it
                                  clears the switch, as changing it on a phone would) and sign-out. The log
                                  prints PASSWORD_CHANGE_REQUIRED 403 <method> <path>
+  no_runtime=1                   detail pages carry runtime 0 (a server without a stored running time);
+                                 the files keep their measured duration
   parent_artwork=1               episode cards, episode lists and episode detail carry series_poster_url,
                                  series_backdrop_url and season_poster_url (+ *_thumbhash), as servers with
                                  episode_parent_artwork send them (Silo #711)
@@ -606,6 +608,8 @@ def detail(cid):
                       "duration": d.get("duration_seconds", 3000), "bitrate": 8000, "file_size": 1, "added_at": "2026-01-01T00:00:00Z",
                       "audio_tracks": [{"index": 0, "language": "eng", "codec": "aac", "channels": 2, "default": True, "title": "English"}],
                       "subtitle_tracks": [{"index": 0, "language": "eng", "codec": "srt", "forced": False, "default": False, "external": True, "title": "English"}]}]
+    if STATE["switches"].get("no_runtime"):
+        d["runtime"] = 0
     if d["type"] == "movie" and h(cid) % 3 == 0:
         # A second, richer version so the detail page's Version / Audio / Subtitles selectors appear.
         d["versions"].insert(0, {"file_id": "43", "resolution": "2160p", "codec_video": "hevc", "codec_audio": "eac3", "container": "mkv", "hdr": True,
