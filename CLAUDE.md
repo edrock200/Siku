@@ -88,7 +88,7 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
 ## Releases
 - **Every release is announced on Discord** with its plain-language notes and download links
   (the user's standing request). `release.yml` runs `tools/announce_discord.py` with the
-  repository secret `DISCORD_WEBHOOK` (set by the user on 2026-11-09; `DISCORD_WEBHOOK_URL` is the
+  repository secret `SIKU_DISCORD_WEBHOOK` (set by the user on 2026-11-09; `DISCORD_WEBHOOK_URL` is the
   old name, still read as a fallback). Do not also post by hand: check the release run's
   announce step instead, and run the script by hand only when that step failed or was skipped.
   Never commit, print or log the webhook URL: it is a secret, and Discord revokes webhooks found on GitHub.
