@@ -6,6 +6,8 @@
 
 sub init()
     m.page = m.top.findNode("page")
+    ' One key for "Requested" in any case: Roku table lookups ignore case (I18n in Utils.brs).
+    m.top.findNode("fieldRequestedLabel").text = UCase(Tx("Requested"))
     m.backdrop = m.top.findNode("backdrop")
     m.hero = m.top.findNode("hero")
     m.titleLabel = m.top.findNode("heroTitle")
@@ -117,7 +119,7 @@ sub onDetail(event as object)
         m.isSubmitting = false
         m.isCancelling = false
         if m.detail = invalid then
-            m.errorBody.text = Req_failureText(resp, "Failed to load request details")
+            m.errorBody.text = Req_failureText(resp, Tx("Failed to load request details"))
             m.errorGroup.visible = true
             m.errorRetry.translation = [(1920 - m.errorRetry.width) / 2, 560]
             m.errorRetry.setFocus(true)
@@ -146,7 +148,7 @@ sub onRequestsListLoaded(tag as string, ok as boolean, items as object, resp as 
         m.record = Req_currentRecord(own)
         if m.cancelUnconfirmed and (m.record = invalid or Req_displayOfRecord(m.record).kind <> "pending") then
             m.cancelUnconfirmed = false
-            clearMessage("We couldn't confirm the cancellation. Refresh your requests to check it.")
+            clearMessage(Tx("We couldn't confirm the cancellation. Refresh your requests to check it."))
         end if
     end if
     if m.pendingReads.Count() = 0 then
@@ -154,7 +156,7 @@ sub onRequestsListLoaded(tag as string, ok as boolean, items as object, resp as 
         m.isCancelling = false
         if m.submissionUnconfirmed and primaryAction().kind <> "request" then
             m.submissionUnconfirmed = false
-            clearMessage("We couldn't confirm the request. Check My Requests before trying again.")
+            clearMessage(Tx("We couldn't confirm the request. Check My Requests before trying again."))
         end if
     end if
     render()
@@ -268,11 +270,11 @@ function primaryTitle(action as object, p as dynamic) as string
     k = action.kind
     if k = "loading" then return ""
     if k = "request" then
-        if endedRequest() = invalid then return "Request"
-        return "Request Again"
+        if endedRequest() = invalid then return Tx("Request")
+        return Tx("Request Again")
     end if
-    if k = "submitting" then return "Requesting…"
-    if k = "open" then return "Open in Library"
+    if k = "submitting" then return Tx("Requesting…")
+    if k = "open" then return Tx("Open in Library")
     st = action.state
     if p <> invalid and st.kind <> "pending" and st.kind = p.display.kind and st.attention = p.display.attention then return p.long
     return Req_detailTitle(st)
@@ -387,15 +389,15 @@ function factsLine(d as object) as string
     if Str_orEmpty(d.media_type) = "series" then
         n = Int(Req_num(d.number_of_seasons))
         if n > 0 then
-            if n = 1 then parts.Push("1 season") else parts.Push(n.ToStr() + " seasons")
+            parts.Push(TxP("1 season", "{0} seasons", n))
         end if
     else
         rt = Int(Req_num(d.runtime))
         if rt > 0 then
             if rt >= 60 then
-                parts.Push(Int(rt / 60).ToStr() + "h " + (rt mod 60).ToStr() + "m")
+                parts.Push(TxF("{0}h {1}m", [Int(rt / 60), rt mod 60]))
             else
-                parts.Push(rt.ToStr() + "m")
+                parts.Push(TxF("{0}m", [rt]))
             end if
         end if
     end if
@@ -404,12 +406,12 @@ function factsLine(d as object) as string
 end function
 
 function creditText(d as object) as string
-    if not Str_isEmpty(d.director) then return "Directed by " + d.director
+    if not Str_isEmpty(d.director) then return TxF("Directed by {0}", [d.director])
     creators = Arr_or(d.creators)
     if creators.Count() > 0 then
         names = [creators[0]]
         if creators.Count() > 1 then names.Push(creators[1])
-        return "Created by " + names.Join(", ")
+        return TxF("Created by {0}", [names.Join(", ")])
     end if
     return ""
 end function
@@ -437,10 +439,10 @@ sub renderActions(p as dynamic)
     m.followBtn.visible = canFollow()
     if m.followBtn.visible then
         if isFollowing() then
-            m.followBtn.text = "Stop notifying me"
+            m.followBtn.text = Tx("Stop notifying me")
             m.followBtn.iconUri = "pkg:/images/icons/notifications.png"
         else
-            m.followBtn.text = "Notify me when available"
+            m.followBtn.text = Tx("Notify me when available")
             m.followBtn.iconUri = "pkg:/images/icons/notifications_none.png"
         end if
         m.followBtn.translation = [x, 0]
@@ -569,13 +571,13 @@ sub onSubmitted(event as object)
     if Req_isUncertain(resp) then
         ' Never resend: hold the action until a read shows the request.
         m.submissionUnconfirmed = true
-        m.actionErrorText = "We couldn't confirm the request. Check My Requests before trying again."
+        m.actionErrorText = Tx("We couldn't confirm the request. Check My Requests before trying again.")
         m.global.homeDirty = true
         render()
         fetch()
         return
     end if
-    m.actionErrorText = Req_failureText(resp, "Failed to submit request")
+    m.actionErrorText = Req_failureText(resp, Tx("Failed to submit request"))
     render()
 end sub
 
@@ -630,13 +632,13 @@ sub onFollowed(event as object)
             if follow and Type(resp.data) = "roAssociativeArray" and resp.data.DoesExist("following") then m.detail.request = resp.data
         end if
         if follow then
-            m.followNotice = "We'll let you know when it's available"
+            m.followNotice = Tx("We'll let you know when it's available")
         else
-            m.followNotice = "Notification turned off"
+            m.followNotice = Tx("Notification turned off")
         end if
     else
         print "[siku-requests] follow failed status="; Int(Num_or(resp.status, 0))
-        m.actionErrorText = Req_failureText(resp, "Failed to update notification")
+        m.actionErrorText = Req_failureText(resp, Tx("Failed to update notification"))
     end if
     render()
     restoreFocus()
@@ -653,12 +655,12 @@ sub onCancelled(event as object)
     m.isCancelling = false
     if Req_isUncertain(resp) then
         m.cancelUnconfirmed = true
-        m.actionErrorText = "We couldn't confirm the cancellation. Refresh your requests to check it."
+        m.actionErrorText = Tx("We couldn't confirm the cancellation. Refresh your requests to check it.")
         render()
         fetch()
         return
     end if
-    m.actionErrorText = Req_failureText(resp, "Couldn't cancel the request")
+    m.actionErrorText = Req_failureText(resp, Tx("Couldn't cancel the request"))
     render()
 end sub
 

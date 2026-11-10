@@ -182,12 +182,12 @@ sub buildTabs()
             groups[mode].Push(lib)
         end if
     end for
-    tabs = [{ id: "home", label: "Home", kind: "home", hasPanel: false }]
+    tabs = [{ id: "home", label: Tx("Home"), kind: "home", hasPanel: false }]
     defs = [
-        { id: "movies", label: "Movies", mode: "movies", mediaType: "movie", header: "MOVIE LIBRARIES" },
-        { id: "series", label: "Series", mode: "series", mediaType: "series", header: "SERIES LIBRARIES" },
-        { id: "music", label: "Music", mode: "music", mediaType: "", header: "MUSIC LIBRARIES" },
-        { id: "audiobooks", label: "Audiobooks", mode: "audiobooks", mediaType: "", header: "AUDIOBOOK LIBRARIES" }
+        { id: "movies", label: Tx("Movies"), mode: "movies", mediaType: "movie", header: Tx("MOVIE LIBRARIES") },
+        { id: "series", label: Tx("Series"), mode: "series", mediaType: "series", header: Tx("SERIES LIBRARIES") },
+        { id: "music", label: Tx("Music"), mode: "music", mediaType: "", header: Tx("MUSIC LIBRARIES") },
+        { id: "audiobooks", label: Tx("Audiobooks"), mode: "audiobooks", mediaType: "", header: Tx("AUDIOBOOK LIBRARIES") }
     ]
     prefs = m.global.prefs
     showAudiobooks = prefs <> invalid and prefs.showAudiobooks = true
@@ -197,8 +197,8 @@ sub buildTabs()
             tabs.Push({ id: d.id, label: d.label, kind: "library", mode: d.mode, mediaType: d.mediaType, header: d.header, libraries: libs, hasPanel: true })
         end if
     end for
-    tabs.Push({ id: "foryou", label: "For You", kind: "foryou", hasPanel: true })
-    tabs.Push({ id: "calendar", label: "Calendar", kind: "calendar", hasPanel: false })
+    tabs.Push({ id: "foryou", label: Tx("For You"), kind: "foryou", hasPanel: true })
+    tabs.Push({ id: "calendar", label: Tx("Calendar"), kind: "calendar", hasPanel: false })
     ' Keep the selected tabDef by id across rebuilds.
     selectedId = "home"
     if m.tabs.Count() > 0 and m.bar.selectedIndex < m.tabs.Count() then selectedId = m.tabs[m.bar.selectedIndex].id
@@ -234,6 +234,8 @@ sub showPage(key as string, componentName as string, params as object)
     page = m.pages[key]
     if page = invalid then
         page = CreateObject("roSGNode", componentName)
+        ' The page's layout text in the applied language (MainScene does this for pushed screens).
+        I18n_translateTree(page)
         page.params = params
         page.observeField("navigateTo", "onPageNavigate")
         m.content.appendChild(page)
@@ -344,17 +346,17 @@ end sub
 ' Collections. Music: Recommended · Browse · Genres. Audiobooks: Recommended · Browse · Authors ·
 ' Series · Collections · A-Z. The ids are LibraryPage sections.
 function sectionRows(tabDef as object) as object
-    rows = [{ id: "recommended", label: "Recommended", icon: "sparkle" }]
-    rows.Push({ id: "browse", label: "Browse", icon: "list" })
+    rows = [{ id: "recommended", label: Tx("Recommended"), icon: "sparkle" }]
+    rows.Push({ id: "browse", label: Tx("Browse"), icon: "list" })
     if tabDef.mode = "music" then
-        rows.Push({ id: "genres", label: "Genres", icon: "sparkle" })
+        rows.Push({ id: "genres", label: Tx("Genres"), icon: "sparkle" })
     else if tabDef.mode = "audiobooks" then
-        rows.Push({ id: "authors", label: "Authors", icon: "person" })
-        rows.Push({ id: "series", label: "Series", icon: "collections" })
-        rows.Push({ id: "collections", label: "Collections", icon: "collections" })
+        rows.Push({ id: "authors", label: Tx("Authors"), icon: "person" })
+        rows.Push({ id: "series", label: Tx("Series"), icon: "collections" })
+        rows.Push({ id: "collections", label: Tx("Collections"), icon: "collections" })
         rows.Push({ id: "alphabet", label: "A-Z", icon: "list" })
     else
-        rows.Push({ id: "collections", label: "Collections", icon: "collections" })
+        rows.Push({ id: "collections", label: Tx("Collections"), icon: "collections" })
     end if
     return rows
 end function
@@ -406,24 +408,24 @@ sub openTabPanel(ti as integer)
                 rows.Push({ id: Str_orEmpty(lib.id), label: Str_orEmpty(lib.name), icon: libIcon(lib), trailing: tr })
             end for
             m.panelMain.header = tabDef.header
-            m.panelMain.footer = "Press opens the library · → jumps to a section · Menu closes"
+            m.panelMain.footer = Tx("Press opens the library · → jumps to a section · Menu closes")
             m.panelMain.rows = rows
             m.panelMain.focusIndex = focusIdx
             totalW = 460 + 12 + 300
         else
             m.panelKind = "sections"
             m.panelMain.header = UCase(tabDef.label)
-            m.panelMain.footer = "Press opens the section · Menu closes"
+            m.panelMain.footer = Tx("Press opens the section · Menu closes")
             m.panelMain.rows = sectionRows(tabDef)
         end if
     else if tabDef.kind = "foryou" then
         m.panelKind = "foryou"
-        m.panelMain.header = "FOR YOU"
-        m.panelMain.footer = "Press opens the section · Menu closes"
+        m.panelMain.header = UCase(Tx("For You"))
+        m.panelMain.footer = Tx("Press opens the section · Menu closes")
         m.panelMain.rows = [
-            { id: "recommendations", label: "Recommendations", icon: "sparkle" },
-            { id: "favorites", label: "Favorites", icon: "heart" },
-            { id: "watchlist", label: "Watchlist", icon: "bookmark" }
+            { id: "recommendations", label: Tx("Recommendations"), icon: "sparkle" },
+            { id: "favorites", label: Tx("Favorites"), icon: "heart" },
+            { id: "watchlist", label: Tx("Watchlist"), icon: "bookmark" }
         ]
     else
         return
@@ -473,15 +475,15 @@ sub openProfilePanel()
     m.panelMain.profile = { name: Str_orEmpty(s.profileName), "sub": role + " · " + server, avatar: Str_orEmpty(s.profileAvatar) }
     m.panelMain.rows = [
         ' Watchlist and Favorites live under For You (Silo Android #786, silo-roku addf483).
-        { id: "switch_profile", label: "Switch Profile", icon: "people" },
-        { id: "history", label: "History", icon: "history" },
-        { id: "requests", label: "Requests", icon: "add" },
-        { id: "notifications", label: "Notifications", icon: "notifications" },
+        { id: "switch_profile", label: Tx("Switch Profile"), icon: "people" },
+        { id: "history", label: Tx("History"), icon: "history" },
+        { id: "requests", label: Tx("Requests"), icon: "add" },
+        { id: "notifications", label: Tx("Notifications"), icon: "notifications" },
         { id: "-" },
-        { id: "settings", label: "Settings", icon: "settings" },
-        { id: "connect_phone", label: "Connect a Phone", icon: "phone" },
-        { id: "change_account", label: "Change Account", icon: "person" },
-        { id: "sign_out", label: "Sign Out", icon: "logout" }
+        { id: "settings", label: Tx("Settings"), icon: "settings" },
+        { id: "connect_phone", label: Tx("Connect a Phone"), icon: "phone" },
+        { id: "change_account", label: Tx("Change Account"), icon: "person" },
+        { id: "sign_out", label: Tx("Sign Out"), icon: "logout" }
     ]
     ' Requests sits after History while the server enables it (Silo Android #782, silo-roku 5b296d7).
     if Req_gate().enabled <> true then

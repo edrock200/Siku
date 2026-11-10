@@ -191,11 +191,11 @@ sub announce()
     if acts = invalid or m.index < 0 or m.index >= acts.Count() or not m.top.visible then return
     a = acts[m.index]
     label = A11y_join([a.label, a.trailing, a.detail])
-    role = "option"
-    if A11y_isTrue(a.checked) then role = "option, selected"
+    role = Tx("option")
+    if A11y_isTrue(a.checked) then role = Tx("option, selected")
     if m.a11yIntro then
         title = A11y_clean(m.top.title)
-        if title <> "" and label <> "" then label = title + " menu, " + label
+        if title <> "" and label <> "" then label = TxF("{0} menu, {1}", [title, label])
         m.a11yIntro = false
     end if
     A11y_say(A11y_id() + ":" + m.index.ToStr(), label, role, m.index, acts.Count())

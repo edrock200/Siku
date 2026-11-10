@@ -28,6 +28,7 @@
     <field id="rowListHasFocus" type="boolean" value="true" onChange="onFocus" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/DetailEpisodeItem.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/CardFocus.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/CardOverlayKeys.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/CardOverlayCard.brs" />

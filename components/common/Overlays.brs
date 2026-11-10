@@ -176,9 +176,9 @@ end function
 
 ' ---------- What a badge shows ----------
 
-' The words the labels use (English; Siku ships no other locale).
+' The words the labels use, in the interface language ("CC" stays as it is).
 function Ovl_words() as object
-    return { multiAudio: "Multi-Audio", subtitles: "CC", returning: "Returning", ended: "Ended", cancelled: "Cancelled", upcoming: "Upcoming" }
+    return { multiAudio: Tx("Multi-Audio"), subtitles: "CC", returning: Tx("Returning"), ended: Tx("Ended"), cancelled: Tx("Cancelled"), upcoming: Tx("Upcoming") }
 end function
 
 ' The badge's label for data, or "" when the card has no value for it.
@@ -342,8 +342,8 @@ function Ovl_runtimeText(minutes as dynamic) as string
     whole = Int(n)
     h = whole \ 60
     rest = whole mod 60
-    if h > 0 then return h.ToStr() + "h " + rest.ToStr() + "m"
-    return rest.ToStr() + "m"
+    if h > 0 then return TxF("{0}h {1}m", [h, rest])
+    return TxF("{0}m", [rest])
 end function
 
 ' The language's English name ("English"), the code in capitals when unknown, "" for none.
@@ -356,11 +356,11 @@ function Ovl_languageText(value as dynamic) as string
     folded = { ara: "ar", bul: "bg", chi: "zh", zho: "zh", ces: "cs", cze: "cs", dan: "da", deu: "de", ger: "de", ell: "el", gre: "el", eng: "en", spa: "es", fin: "fi", fra: "fr", fre: "fr", heb: "he", hin: "hi", hrv: "hr", hun: "hu", ind: "id", ita: "it", jpn: "ja", kor: "ko", msa: "ms", may: "ms", nld: "nl", dut: "nl", nor: "no", nob: "no", fas: "fa", per: "fa", pol: "pl", por: "pt", ron: "ro", rum: "ro", rus: "ru", slk: "sk", slo: "sk", slv: "sl", swe: "sv", tam: "ta", tel: "te", tha: "th", tur: "tr", ukr: "uk", vie: "vi" }
     if folded[code] <> invalid then code = folded[code]
     names = {
-        ar: "Arabic", bg: "Bulgarian", bn: "Bengali", cs: "Czech", da: "Danish", de: "German", el: "Greek", en: "English"
-        es: "Spanish", fa: "Persian", fi: "Finnish", fr: "French", he: "Hebrew", hi: "Hindi", hr: "Croatian", hu: "Hungarian"
-        id: "Indonesian", it: "Italian", ja: "Japanese", ko: "Korean", ms: "Malay", nl: "Dutch", no: "Norwegian", pl: "Polish"
-        pt: "Portuguese", ro: "Romanian", ru: "Russian", sk: "Slovak", sl: "Slovenian", sv: "Swedish", ta: "Tamil", te: "Telugu"
-        th: "Thai", tr: "Turkish", uk: "Ukrainian", vi: "Vietnamese", zh: "Chinese"
+        ar: Tx("Arabic"), bg: Tx("Bulgarian"), bn: Tx("Bengali"), cs: Tx("Czech"), da: Tx("Danish"), de: Tx("German"), el: Tx("Greek"), en: Tx("English")
+        es: Tx("Spanish"), fa: Tx("Persian"), fi: Tx("Finnish"), fr: Tx("French"), he: Tx("Hebrew"), hi: Tx("Hindi"), hr: Tx("Croatian"), hu: Tx("Hungarian")
+        id: Tx("Indonesian"), it: Tx("Italian"), ja: Tx("Japanese"), ko: Tx("Korean"), ms: Tx("Malay"), nl: Tx("Dutch"), no: Tx("Norwegian"), pl: Tx("Polish")
+        pt: Tx("Portuguese"), ro: Tx("Romanian"), ru: Tx("Russian"), sk: Tx("Slovak"), sl: Tx("Slovenian"), sv: Tx("Swedish"), ta: Tx("Tamil"), te: Tx("Telugu")
+        th: Tx("Thai"), tr: Tx("Turkish"), uk: Tx("Ukrainian"), vi: Tx("Vietnamese"), zh: Tx("Chinese")
     }
     if names[code] <> invalid then return names[code]
     return UCase(raw)

@@ -39,7 +39,7 @@
     </Label>
     <Group id="controls" translation="[80, 196]" visible="false">
       <PillButton id="backPill" text="All Authors" iconUri="pkg:/images/icons/chevron_left.png" height="56" fontSize="24" padX="28" scaleOnFocus="1.04" visible="false" />
-      <PillButton id="sortPill" text="Sort · Title" height="56" fontSize="24" padX="28" scaleOnFocus="1.04" />
+      <PillButton id="sortPill" text="Sort · Title" height="56" fontSize="24" padX="28" scaleOnFocus="1.04" /> <!-- i18n="no": set by the code -->
       <PillButton id="filterPill" text="Filter" height="56" fontSize="24" padX="28" scaleOnFocus="1.04" />
       <PillButton id="clearPill" text="Clear filters" height="56" fontSize="24" padX="28" scaleOnFocus="1.04" visible="false" />
       <PillButton id="shufflePill" text="Shuffle" iconUri="pkg:/images/icons/shuffle.png" height="56" fontSize="24" padX="28" scaleOnFocus="1.04" visible="false" />

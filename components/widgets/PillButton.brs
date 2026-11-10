@@ -129,9 +129,9 @@ sub announce(focused as boolean)
     end if
     label = m.top.a11yLabel
     if label = "" then label = m.top.text
-    role = "button"
-    if m.top.disabled then role = "button, unavailable"
-    if m.top.selectedState then role = "button, selected"
+    role = Tx("button")
+    if m.top.disabled then role = Tx("button, unavailable")
+    if m.top.selectedState then role = Tx("button, selected")
     p = A11y_position(m.top, ["PillButton", "DetailCircleButton"])
     A11y_say(A11y_id(), label, role, p.idx, p.count)
 end sub

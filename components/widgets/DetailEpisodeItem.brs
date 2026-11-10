@@ -18,6 +18,7 @@ sub init()
     m.synopsis = m.top.findNode("synopsis")
     m.aiIcon = m.top.findNode("aiIcon")
     m.translating = m.top.findNode("translating")
+    m.translating.text = Tx("Translating description…")
     ' Card overlays (CardOverlayCard.brs): their Posters go under the watched check.
     CardOverlay_init(m.card, m.badge)
 end sub

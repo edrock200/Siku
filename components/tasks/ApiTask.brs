@@ -74,7 +74,7 @@ function perform(req as object) as object
     if refusal <> "" then
         ' Siku speaks only the Silo v2 API (docs/api-spec.md §0); v1 is a frozen alpha surface.
         print "[ApiTask] refused request: "; refusal
-        return { status: 0, text: "", data: invalid, error: { code: "not_v2", title: "Unsupported API path" } }
+        return { status: 0, text: "", data: invalid, error: { code: "not_v2", title: Tx("Unsupported API path") } }
     end if
     if not Str_isEmpty(req.url) then
         url = req.url
@@ -91,7 +91,7 @@ function perform(req as object) as object
     ' A file download (card overlay images): only a GET, only into tmp:, and its body is not parsed.
     saveTo = Str_orEmpty(req.saveTo)
     if saveTo <> "" and (method <> "GET" or Left(saveTo, 5) <> "tmp:/" or Instr(1, saveTo, "..") > 0) then
-        return { status: 0, text: "", data: invalid, error: { code: "bad_download", title: "Unsupported download" } }
+        return { status: 0, text: "", data: invalid, error: { code: "bad_download", title: Tx("Unsupported download") } }
     end if
 
     if isAnonymous(req) then

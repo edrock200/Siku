@@ -56,5 +56,5 @@ sub Diag_showNotice()
     Diag_log(Diag_join(["[siku-diag] notice shown kind=", Str_orEmpty(e.kind)]))
     if not m.global.hasField("toastSeconds") then m.global.addFields({ toastSeconds: 0.0 })
     m.global.toastSeconds = 10
-    m.global.toast = "Siku closed unexpectedly last time: " + Diag_exitWords(Str_orEmpty(e.kind)) + ". See Settings › Diagnostics."
+    m.global.toast = TxF("Siku closed unexpectedly last time: {0}. See Settings › Diagnostics.", [Diag_exitWords(Str_orEmpty(e.kind))])
 end sub

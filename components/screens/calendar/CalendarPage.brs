@@ -12,9 +12,9 @@ sub init()
     m.retryBtn = m.top.findNode("retryBtn")
 
     m.filters = [
-        { id: "following", label: "Following" },
-        { id: "trending", label: "Trending" },
-        { id: "all", label: "All" }
+        { id: "following", label: Tx("Following") },
+        { id: "trending", label: Tx("Trending") },
+        { id: "all", label: Tx("All") }
     ]
     m.filterIndex = 0
     m.segFocus = 0
@@ -77,14 +77,16 @@ function Cal_weekStart(dt as object) as object
 end function
 
 function Cal_dowName(dt as object, long = false as boolean) as string
-    names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-    n = names[dt.GetDayOfWeek()]
-    if long then return n
-    return Left(n, 3)
+    if long then
+        names = [Tx("Sunday"), Tx("Monday"), Tx("Tuesday"), Tx("Wednesday"), Tx("Thursday"), Tx("Friday"), Tx("Saturday")]
+    else
+        names = [Tx("Sun"), Tx("Mon"), Tx("Tue"), Tx("Wed"), Tx("Thu"), Tx("Fri"), Tx("Sat")]
+    end if
+    return names[dt.GetDayOfWeek()]
 end function
 
 function Cal_monthName(mo as integer) as string
-    names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+    names = [Tx("January"), Tx("February"), Tx("March"), Tx("April"), Tx("May"), Tx("June"), Tx("July"), Tx("August"), Tx("September"), Tx("October"), Tx("November"), Tx("December")]
     return names[mo - 1]
 end function
 
@@ -204,7 +206,7 @@ sub buildStrip()
     lbl.height = 72
     lbl.horizAlign = "center"
     lbl.vertAlign = "center"
-    lbl.text = "Today"
+    lbl.text = Tx("Today")
 end sub
 
 function stripCell(id as string, x as integer, w as integer) as object
@@ -383,8 +385,8 @@ sub onCalendar(event as object)
     if not resp.ok then
         m.errored = true
         m.status.visible = true
-        m.statusTitle.text = "Something went wrong"
-        m.statusBody.text = "Press the week arrows to try another week."
+        m.statusTitle.text = Tx("Something went wrong")
+        m.statusBody.text = Tx("Press the week arrows to try another week.")
         m.retryBtn.visible = true
         m.retryBtn.translation = [(1920 - m.retryBtn.width) / 2, 690]
         if m.focusArea = "rows" then
@@ -417,14 +419,14 @@ sub buildShelves(total as integer)
     if total = 0 then
         f = m.filters[m.filterIndex].id
         if f = "following" then
-            title = "Nothing from shows you follow"
-            body = "No upcoming releases this week from shows you watch, favorite, or watchlist. Try Trending or All."
+            title = Tx("Nothing from shows you follow")
+            body = Tx("No upcoming releases this week from shows you watch, favorite, or watchlist. Try Trending or All.")
         else if f = "trending" then
-            title = "Nothing trending this week"
-            body = "No trending releases this week. Try Following or All."
+            title = Tx("Nothing trending this week")
+            body = Tx("No trending releases this week. Try Following or All.")
         else
-            title = "Nothing scheduled this week"
-            body = "Use the week arrows to look at another week."
+            title = Tx("Nothing scheduled this week")
+            body = Tx("Use the week arrows to look at another week.")
         end if
         m.status.visible = true
         m.statusTitle.text = title
@@ -448,16 +450,16 @@ sub buildShelves(total as integer)
         dt = Cal_addDays(m.weekStart, i)
         row = root.createChild("ContentNode")
         if ymd = todayYmd then
-            row.title = "Today"
+            row.title = Tx("Today")
         else
-            row.title = Cal_dowName(dt, true) + ", " + Cal_monthName(dt.GetMonth()) + " " + dt.GetDayOfMonth().ToStr()
+            row.title = TxF("{0}, {1} {2}", [Cal_dowName(dt, true), Cal_monthName(dt.GetMonth()), dt.GetDayOfMonth()])
         end if
         row.addFields({ rowId: ymd, rowStyle: "poster" })
         items = []
         if m.eventsByDate.DoesExist(ymd) then items = m.eventsByDate[ymd]
         ' Cards sit 32 px down inside a taller cell so the focused card's zoom is not clipped (pitfall 12).
         if items.Count() = 0 then
-            stub = Content_cardNode({ content_id: "", "type": "stub", title: "Nothing scheduled" }, "poster")
+            stub = Content_cardNode({ content_id: "", "type": "stub", title: Tx("Nothing scheduled") }, "poster")
             stub.raw = { stub: true }
             stub.cardInsetY = 32
             row.appendChild(stub)
@@ -471,7 +473,7 @@ sub buildShelves(total as integer)
                     node.subtitle = Str_joinDots([se, Str_orEmpty(ev.episode_title)])
                     if Str_isEmpty(node.title) then node.title = Str_orEmpty(ev.series_title)
                 else if t = "movie" then
-                    node.subtitle = "Movie"
+                    node.subtitle = Tx("Movie")
                 end if
                 ' Every badge the server sends (CalCardItem stacks them) and the air time pill.
                 labels = CalFmt_badgeLabels(ev.badges)

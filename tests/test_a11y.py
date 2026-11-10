@@ -4,7 +4,7 @@ import unittest
 
 from brs import check_cases
 
-FILES = ["components/common/A11y.brs", "components/widgets/PlayerTransportButton.brs"]
+FILES = ["components/common/A11y.brs", "components/widgets/PlayerTransportButton.brs", "components/common/Utils.brs"]
 
 
 class Wording(unittest.TestCase):

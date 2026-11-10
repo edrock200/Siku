@@ -58,10 +58,10 @@ end function
 
 ' Plain words for an exit kind, completing "Siku closed unexpectedly last time: ...".
 function Diag_exitWords(kind as string) as string
-    if kind = "crash" then return "an error stopped it"
-    if kind = "hang" then return "it stopped responding"
-    if kind = "memory" then return "it ran out of memory"
-    if kind = "killed" then return "the Roku closed it"
+    if kind = "crash" then return Tx("an error stopped it")
+    if kind = "hang" then return Tx("it stopped responding")
+    if kind = "memory" then return Tx("it ran out of memory")
+    if kind = "killed" then return Tx("the Roku closed it")
     return ""
 end function
 
@@ -95,11 +95,11 @@ end function
 
 ' The Settings row value for an exit: "Normal", "Not reported", or the plain words and time.
 function Diag_exitLabel(e as dynamic) as string
-    if Type(e) <> "roAssociativeArray" then return "Not reported"
+    if Type(e) <> "roAssociativeArray" then return Tx("Not reported")
     code = Diag_text(e.code)
-    if code = "" then return "Not reported"
+    if code = "" then return Tx("Not reported")
     kind = Diag_text(e.kind)
-    if kind = "" then return "Normal"
+    if kind = "" then return Tx("Normal")
     words = Diag_exitWords(kind)
     words = UCase(Left(words, 1)) + Mid(words, 2)
     when = Diag_text(e.when)

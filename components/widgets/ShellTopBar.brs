@@ -187,13 +187,13 @@ sub announce(focused as boolean, fi as integer, tabs as object)
     end if
     m.a11yLastId = id
     if fi = -1 then
-        A11y_say(id, "Search", "button", -1, 0)
+        A11y_say(id, Tx("Search"), Tx("button"), -1, 0)
     else if fi >= 0 and fi < tabs.Count() then
-        role = "tab"
-        if fi = m.top.selectedIndex then role = "tab, selected"
+        role = Tx("tab")
+        if fi = m.top.selectedIndex then role = Tx("tab, selected")
         A11y_say(id, Str_orEmpty(tabs[fi].label), role, fi, tabs.Count())
     else if fi = tabs.Count() then
-        A11y_say(id, "Profile menu", "button", -1, 0)
+        A11y_say(id, Tx("Profile menu"), Tx("button"), -1, 0)
     end if
 end sub
 

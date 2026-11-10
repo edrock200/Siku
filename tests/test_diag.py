@@ -4,7 +4,7 @@ import unittest
 
 from brs import check_cases
 
-FILES = ["components/common/Diag.brs"]
+FILES = ["components/common/Diag.brs", "components/common/Utils.brs"]
 
 
 def lacks(*parts):

@@ -28,7 +28,7 @@ sub applyState()
         label = m.top.a11yLabel
         if label = "" then label = Transport_iconName(m.top.iconUri)
         p = A11y_position(m.top, ["PlayerTransportButton"])
-        A11y_say(A11y_id(), label, "button", p.idx, p.count)
+        A11y_say(A11y_id(), label, Tx("button"), p.idx, p.count)
     else
         A11y_blur(A11y_id())
     end if
@@ -36,7 +36,7 @@ end sub
 
 ' A spoken name for a transport glyph (the buttons have no text).
 function Transport_iconName(uri as string) as string
-    names = { "rewind": "Skip back", "forward": "Skip forward", "pause": "Pause", "play": "Play", "skip_next": "Next episode", "subtitles": "Subtitles", "tune": "Audio and video options", "close": "Close player" }
+    names = { "rewind": Tx("Skip back"), "forward": Tx("Skip forward"), "pause": Tx("Pause"), "play": Tx("Play"), "skip_next": Tx("Next episode"), "subtitles": Tx("Subtitles"), "tune": Tx("Audio and video options"), "close": Tx("Close player") }
     slash = 0
     for i = 1 to Len(uri)
         if Mid(uri, i, 1) = "/" then slash = i

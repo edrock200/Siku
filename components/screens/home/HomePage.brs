@@ -2,6 +2,10 @@
 
 sub init()
     m.feed = m.top.findNode("feed")
+    ' The feed's default empty-state copy in the interface language (field defaults are not translated).
+    m.feed.emptyTitle = Tx("Nothing to watch yet")
+    m.feed.emptyBody = Tx("Add media to your libraries or start watching to see it here.")
+    m.feed.emptyAction = Tx("Refresh")
     m.menu = m.top.findNode("menu")
     m.feed.observeField("itemSelected", "onItemSelected")
     m.feed.observeField("itemOptions", "onItemOptions")
@@ -188,7 +192,7 @@ sub onSections(event as object)
             ' Keep what is drawn (the cached Home or the last answer); the next visit tries again.
             Diag_log(Diag_join(["[siku-home] refresh failed status=", resp.status, ", keeping the drawn rows"]))
             m.loaded = false
-            if m.top.active then m.global.toast = "Couldn't refresh Home. " + Api_errorText(resp)
+            if m.top.active then m.global.toast = TxF("Couldn't refresh Home. {0}", [Api_errorText(resp)])
         else
             m.feed.errorText = Api_errorText(resp)
             m.feed.state = "error"
@@ -436,7 +440,7 @@ sub buildRows(fromCache = false as boolean)
                 ' The section's page goes on the first row drawn from it (Continue Listening
                 ' when the section holds only audiobooks).
                 if video.Count() > 0 then rows.Push({ id: sid, title: Str_orEmpty(s.title), style: "landscape", items: video, exploreSectionId: exploreId(explore, sid), exploreTitle: Str_orEmpty(s.title) })
-                if audio.Count() > 0 then rows.Push({ id: "continue_listening", title: "Continue Listening", style: "square", items: audio, exploreSectionId: exploreId(explore and video.Count() = 0, sid), exploreTitle: Str_orEmpty(s.title) })
+                if audio.Count() > 0 then rows.Push({ id: "continue_listening", title: Tx("Continue Listening"), style: "square", items: audio, exploreSectionId: exploreId(explore and video.Count() = 0, sid), exploreTitle: Str_orEmpty(s.title) })
             else
                 rows.Push({ id: sid, title: Str_orEmpty(s.title), style: defaultStyle, items: items, exploreSectionId: exploreId(explore, sid), exploreTitle: Str_orEmpty(s.title) })
             end if
@@ -462,7 +466,7 @@ sub buildRows(fromCache = false as boolean)
     closeStaleMenu(m.rows)
     if m.scopeIncomplete = true then
         m.scopeIncomplete = false
-        m.global.toast = "Some shelves could not be fully loaded for this media type. Retry or open Browse."
+        m.global.toast = Tx("Some shelves could not be fully loaded for this media type. Retry or open Browse.")
     end if
 end sub
 
@@ -605,7 +609,7 @@ end sub
 ' local removal. Refused: say so and re-read, which brings the card back.
 sub CardActions_onDismissed(event as object)
     resp = Api_result(event)
-    if not resp.ok then m.global.toast = "Couldn't remove it: " + Api_errorText(resp)
+    if not resp.ok then m.global.toast = TxF("Couldn't remove it: {0}", [Api_errorText(resp)])
     m.global.homeDirty = true
     if m.top.active and libraryId() = "" then
         m.global.homeDirty = false
