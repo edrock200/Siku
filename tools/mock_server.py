@@ -3603,6 +3603,8 @@ SETTINGS_DEFS = {
     "ui.card_presentation": (5, {"poster_size": "standard", "caption": "title_metadata"}, ["profile", "profile_client", "profile_device"],
                              ["profile_device", "profile_client", "profile"]),
     "ui.title_art": (16, True, ["profile", "profile_device"], ["profile", "profile_device"]),
+    # ui.app_language (revision 28): the profile's interface language, null = match the device.
+    "ui.app_language": (28, None, ["profile", "profile_device"], ["profile_device", "profile"]),
     "ui.disabled_library_ids": (1, None, ["profile"], ["profile"]),
     "ui.theme_music_enabled": (11, False, ["profile", "profile_device"], ["profile_device", "profile"]),
     "ui.theme_music_loop": (11, False, ["profile", "profile_device"], ["profile_device", "profile"]),

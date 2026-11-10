@@ -559,6 +559,11 @@ sub handleDeepLink(args as dynamic)
     ' an ECP launch link.
     ' debugA11y=1: speak (and log "[siku-a11y] say:") as if Roku's screen reader were on.
     if not Str_isEmpty(args.debugA11y) then m.global.a11yForce = args.debugA11y = "1"
+    ' debugLang=<de|fr|es|pt-BR|en>: apply that interface language now (screens built from here on).
+    if not Str_isEmpty(args.debugLang) then
+        m.debugLang = I18n_resolve(args.debugLang, "en_US")
+        I18n_apply(m.debugLang, "debug")
+    end if
     ' debugMemory=<percent>: replay a memory warning once a second screen is open (the simulator
     ' never sends one), so the covered screen's release and restore can be watched.
     if not Str_isEmpty(args.debugMemory) then m.debugMemoryAt = Int(Val(Str_orEmpty(args.debugMemory)))
@@ -834,6 +839,7 @@ sub onLanguageSettings()
     st = m.global.settings
     if st = invalid or st.ready <> true then return
     if Str_isEmpty(m.global.session.profileId) then return
+    if m.debugLang <> invalid then return ' simulator: debugLang holds
     value = invalid
     if st.items <> invalid and st.items["ui.app_language"] <> invalid then value = st.items["ui.app_language"].value
     tag = ""
