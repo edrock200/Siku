@@ -256,8 +256,8 @@ sub onHello(conn as string, c as object)
     if m.greeted.DoesExist(id) or m.global.castPlayer <> invalid then return
     m.greeted[id] = true
     name = Str_orEmpty(c.deviceName)
-    if name = "" then name = "A phone"
-    m.global.toast = name + " can now control Siku"
+    if name = "" then name = Tx("A phone")
+    m.global.toast = TxF("{0} can now control Siku", [name])
 end sub
 
 sub onClosed(conn as string)
@@ -335,12 +335,12 @@ sub startFullHandoff(conn as string, offer as object, c as object)
     ' base: where the handoff runs, chosen by resolveHandoffAddress before the first request.
     m.handoff = { conn: conn, requestId: Str_orEmpty(offer.requestId), offer: offer, controller: c, base: "", gen: m.handoffGen, deviceCode: "", interval: 3, deadline: 0, probes: invalid, answers: invalid }
     who = Str_orEmpty(c.deviceName)
-    if who = "" then who = "your phone"
+    if who = "" then who = Tx("your phone")
     title = Str_orEmpty(offer.title)
     if title <> "" then
-        m.global.toast = "Starting " + title + " from " + who
+        m.global.toast = TxF("Starting {0} from {1}", [title, who])
     else
-        m.global.toast = "Getting ready for " + who
+        m.global.toast = TxF("Getting ready for {0}", [who])
     end if
     resolveHandoffAddress()
 end sub

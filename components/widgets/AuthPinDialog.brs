@@ -88,6 +88,7 @@ sub init()
     end for
 
     m.top.observeField("focusedChild", "onFocusChanged")
+    I18n_translateTree(m.top)
     renderDots()
     renderStatus()
     renderKeys()
@@ -112,7 +113,7 @@ sub onProfile()
     m.showError = false
     m.focusIndex = 4
     ' The screen reader introduces the pad once, with the first key it says.
-    m.a11yIntro = "PIN for " + name + ". "
+    m.a11yIntro = TxF("PIN for {0}.", [name]) + " "
     m.a11yIntroKey = m.focusIndex
     A11y_reset()
     renderDots()
@@ -137,10 +138,10 @@ sub renderStatus()
         m.status.text = m.top.error
         m.status.color = "0xFF6961FF"
     else if m.top.verifying then
-        m.status.text = "Checking…"
+        m.status.text = Tx("Checking…")
         m.status.color = "0xEDEDED9E"
     else
-        m.status.text = "Enter your PIN"
+        m.status.text = Tx("Enter your PIN")
         m.status.color = "0xEDEDED9E"
     end if
 end sub
@@ -194,7 +195,7 @@ sub announceKey(hasFocus as boolean)
     end if
     label = m.labels[i]
     if label = "" then return
-    if label = "<" then label = "Delete"
+    if label = "<" then label = Tx("Delete")
     ' The introduction stays with the first key until focus moves (a repaint must not drop it).
     intro = ""
     if m.a11yIntro <> invalid then

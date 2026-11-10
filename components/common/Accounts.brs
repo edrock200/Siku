@@ -317,14 +317,13 @@ end function
 function Accounts_profileLine(n as dynamic) as string
     c = Accounts_int(n)
     if n = invalid or c < 0 then return ""
-    if c = 1 then return "1 profile"
-    return c.ToStr() + " profiles"
+    return TxP("1 profile", "{0} profiles", c)
 end function
 
 ' The badge an account card shows: "SIGN IN AGAIN", "CURRENT" or "".
 function Accounts_badge(e as object, current as boolean) as string
-    if Accounts_isExpired(e) then return "SIGN IN AGAIN"
-    if current then return "CURRENT"
+    if Accounts_isExpired(e) then return Tx("SIGN IN AGAIN")
+    if current then return Tx("CURRENT")
     return ""
 end function
 

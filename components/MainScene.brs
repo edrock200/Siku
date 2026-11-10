@@ -161,7 +161,7 @@ sub pushScreen(name as string, params = {} as object)
     screen = CreateObject("roSGNode", name)
     if screen = invalid then
         print "[MainScene] unknown screen "; name
-        m.global.toast = "Something went wrong"
+        m.global.toast = Tx("Something went wrong")
         return
     end if
     ' The layout's English text in the applied language (I18n in Utils.brs), before params load data.
@@ -430,14 +430,14 @@ sub onAuthExpired()
     if isTemporarySession(s) then
         ' A phone's borrowed profile expired: hand it back, keep the Roku's own sign-in.
         m.remote.endBorrowed = "refresh refused"
-        m.global.toast = "The phone profile session expired."
+        m.global.toast = Tx("The phone profile session expired.")
         return
     end if
     ' Not a sign-out (Silo Android #795): the account stays saved, needing to sign in again.
     ' A second refusal for the same expiry (requests that were in flight) changes nothing.
     if Str_isEmpty(s.accessToken) and Str_isEmpty(s.refreshToken) then return
     Session_expireLocal(s)
-    m.global.toast = "Your session expired. Please sign in again."
+    m.global.toast = Tx("Your session expired. Please sign in again.")
     routeToStart()
 end sub
 
@@ -731,7 +731,7 @@ sub onDeepLinkItem(event as object)
     end if
     if not resp.ok or Type(resp.data) <> "roAssociativeArray" then
         print "[siku-deeplink] dropped reason=unavailable status=" + Str_orEmpty(resp.status)
-        m.global.toast = "That title isn't available."
+        m.global.toast = Tx("That title isn't available.")
         return
     end if
     if resp.context.stage = "next" then
@@ -750,7 +750,7 @@ sub onDeepLinkItem(event as object)
     else if r.action = "audio" then
         showDeepLinkScreen("AudioDetailScreen", { itemId: r.itemId, itemType: r.itemType })
     else
-        m.global.toast = "That title isn't available."
+        m.global.toast = Tx("That title isn't available.")
     end if
 end sub
 

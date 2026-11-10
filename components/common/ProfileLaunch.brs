@@ -14,10 +14,10 @@
 ' The four choices, with upstream's stored values (silo-apple raw values) and copy.
 function ProfileLaunch_behaviors() as object
     return [
-        { id: "automatic", title: "Automatic", detail: "Use the last profile selected on this Roku. A protected profile can reopen without asking for its PIN.", awaySeconds: 0 }
-        { id: "askEveryLaunch", title: "Every Time", detail: "Show Who's Watching whenever you return to Siku.", awaySeconds: 0 }
-        { id: "afterOneHour", title: "After 1 Hour", detail: "Show Who's Watching when you've been away from Siku for 1 hour.", awaySeconds: 3600 }
-        { id: "afterTwelveHours", title: "After 12 Hours", detail: "Show Who's Watching when you've been away from Siku for 12 hours.", awaySeconds: 43200 }
+        { id: "automatic", title: Tx("Automatic"), detail: Tx("Use the last profile selected on this Roku. A protected profile can reopen without asking for its PIN."), awaySeconds: 0 }
+        { id: "askEveryLaunch", title: Tx("Every Time"), detail: Tx("Show Who's Watching whenever you return to Siku."), awaySeconds: 0 }
+        { id: "afterOneHour", title: Tx("After 1 Hour"), detail: Tx("Show Who's Watching when you've been away from Siku for 1 hour."), awaySeconds: 3600 }
+        { id: "afterTwelveHours", title: Tx("After 12 Hours"), detail: Tx("Show Who's Watching when you've been away from Siku for 12 hours."), awaySeconds: 43200 }
     ]
 end function
 
