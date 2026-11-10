@@ -58,6 +58,11 @@ sub init()
     PlaybackJobs_init()
 
     m.global.observeField("toast", "onToast")
+    ' Interface language (I18n in Utils.brs): the last profile language applied, else the Roku's.
+    m.global.addFields({ appLocale: "en", strings: {} })
+    m.languageRebuild = false
+    I18n_apply(I18n_resolve(m.global.prefs.appLanguage, CreateObject("roDeviceInfo").GetCurrentLocale()), "launch")
+    m.global.observeField("settings", "onLanguageSettings")
     m.global.observeField("authExpired", "onAuthExpired")
     m.global.observeField("staleProfile", "onStaleProfile")
     m.profilePrompt = invalid       ' a pending "pick your profile again" prompt (onStaleProfile)
@@ -159,6 +164,8 @@ sub pushScreen(name as string, params = {} as object)
         m.global.toast = "Something went wrong"
         return
     end if
+    ' The layout's English text in the applied language (I18n in Utils.brs), before params load data.
+    I18n_translateTree(screen)
     if params = invalid then params = {}
     screen.params = params
     screen.observeField("navigateTo", "onNavigate")
@@ -399,6 +406,7 @@ sub onCloseScreen(event as object)
     screen = event.getRoSGNode()
     top = topScreen()
     if top <> invalid and top.isSameNode(screen) then popScreen()
+    if m.languageRebuild = true and not languagePlayerOnTop() then languageRebuild()
 end sub
 
 sub onToast()
@@ -798,3 +806,70 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
     return false
 end function
+
+' ---------- Interface language ----------
+' Loads a language's strings (pkg:/locale/<folder>/strings.json) for screens built from now on.
+sub I18n_apply(folder as string, reason as string)
+    table = {}
+    if folder <> "en" then
+        raw = ReadAsciiFile("pkg:/locale/" + folder + "/strings.json")
+        parsed = invalid
+        if raw <> "" then parsed = ParseJson(raw)
+        if Type(parsed) = "roAssociativeArray" then
+            table = parsed
+        else
+            Diag_log("[siku-i18n] strings for " + folder + " unreadable; showing English")
+            folder = "en"
+        end if
+    end if
+    m.global.strings = table
+    m.global.appLocale = folder
+    Diag_log("[siku-i18n] language " + folder + " (" + reason + ", " + table.Count().ToStr() + " strings)")
+end sub
+
+' The profile's settings arrived or changed: apply its ui.app_language (Match device when unset or
+' on a server without the key) and rebuild the screens in it. A playing video is never torn down:
+' the rebuild waits until the player closes.
+sub onLanguageSettings()
+    st = m.global.settings
+    if st = invalid or st.ready <> true then return
+    if Str_isEmpty(m.global.session.profileId) then return
+    value = invalid
+    if st.items <> invalid and st.items["ui.app_language"] <> invalid then value = st.items["ui.app_language"].value
+    tag = ""
+    if Type(value) = "roString" or Type(value) = "String" then tag = value
+    p = m.global.prefs
+    if p.appLanguage <> tag then
+        p.appLanguage = tag
+        Prefs_save(p)
+    end if
+    folder = I18n_resolve(tag, CreateObject("roDeviceInfo").GetCurrentLocale())
+    if folder = I18n_locale() then return
+    I18n_apply(folder, "profile")
+    languageRebuild()
+end sub
+
+function languagePlayerOnTop() as boolean
+    top = topScreen()
+    if top = invalid then return false
+    t = top.subtype()
+    return t = "PlayerScreen" or t = "AudioPlayerScreen"
+end function
+
+' Rebuilds the stack in the new language: Home, with Settings on top again when the change came
+' from there. Waits for a playing video to close.
+sub languageRebuild()
+    if languagePlayerOnTop() then
+        m.languageRebuild = true
+        Diag_log("[siku-i18n] rebuild waits for the player")
+        return
+    end if
+    m.languageRebuild = false
+    top = topScreen()
+    if top = invalid or Str_isEmpty(m.global.session.profileId) then return
+    reopenSettings = top.subtype() = "SettingsScreen"
+    Diag_log("[siku-i18n] rebuilding screens in " + I18n_locale())
+    resetTo("ShellScreen")
+    if reopenSettings then pushScreen("SettingsScreen")
+end sub
+

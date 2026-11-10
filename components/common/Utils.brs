@@ -436,3 +436,150 @@ function Diag_join(parts as object) as string
     end for
     return s
 end function
+
+' ---------- Interface language (I18n) ----------
+' Interface text is written in English in the code and marked Tx("…") / TxF("… {0}", [x]) /
+' TxP("one …", "{0} others", n); layout XML keeps English in text/title/hintText and is translated
+' when a screen is built (I18n_translateTree). m.global.strings maps English to the applied
+' language's text (pkg:/locale/<folder>/strings.json, built by tools/i18n_build.py from Silo's
+' AGPL catalogs and i18n/siku); a missing entry shows the English. m.global.appLocale is the
+' applied folder ("en", "es", "de", "fr", "pt_BR"); MainScene applies it (I18n_apply) from the
+' profile's ui.app_language, else the Roku's language. Each component copies the table once:
+' a language change rebuilds the screens.
+
+function I18n_folders() as object
+    return ["en", "es", "de", "fr", "pt_BR"]
+end function
+
+' The applied language folder.
+function I18n_locale() as string
+    if m.global <> invalid and m.global.hasField("appLocale") then
+        v = m.global.appLocale
+        if v <> invalid and v <> "" then return v
+    end if
+    return "en"
+end function
+
+function I18n_table() as object
+    loc = I18n_locale()
+    if m.i18nTable = invalid or m.i18nLocale <> loc then
+        m.i18nLocale = loc
+        t = invalid
+        if loc <> "en" and m.global <> invalid and m.global.hasField("strings") then t = m.global.strings
+        if Type(t) <> "roAssociativeArray" then t = {}
+        m.i18nTable = t
+    end if
+    return m.i18nTable
+end function
+
+' The interface text for English `text` in the applied language.
+function Tx(text as string) as string
+    if text = "" then return ""
+    v = I18n_table()[text]
+    if Type(v) = "roString" or Type(v) = "String" then
+        if v <> "" then return v
+    end if
+    return text
+end function
+
+' Tx with {0}, {1}, … replaced by args (strings or numbers).
+function TxF(text as string, args as object) as string
+    out = Tx(text)
+    if Type(args) <> "roArray" then args = [args]
+    for i = 0 to args.Count() - 1
+        a = args[i]
+        if a = invalid then
+            a = ""
+        else if Type(a) <> "roString" and Type(a) <> "String" then
+            if GetInterface(a, "ifToStr") <> invalid then a = a.ToStr() else a = ""
+        end if
+        out = out.Replace("{" + i.ToStr() + "}", a)
+    end for
+    return out
+end function
+
+' A count: `one` for the language's singular, `other` otherwise; {0} is n.
+function TxP(one as string, other as string, n as dynamic) as string
+    count = 0
+    if n <> invalid then
+        if Type(n) = "roString" or Type(n) = "String" then count = Int(Val(n)) else count = Int(n)
+    end if
+    form = other
+    if I18n_isOne(I18n_locale(), count) then form = one
+    return TxF(form, [count])
+end function
+
+' CLDR plural "one" for integers: French and Brazilian Portuguese count 0 and 1 as one.
+function I18n_isOne(folder as string, n as integer) as boolean
+    if folder = "fr" or folder = "pt_BR" then return n = 0 or n = 1
+    return n = 1
+end function
+
+' The folder for a ui.app_language value (a BCP 47 tag; "" or invalid = the device's language)
+' and the Roku's locale (GetCurrentLocale, e.g. "de_DE"). A regional tag matches its language
+' (es-MX → es, pt-PT → pt_BR); an unshipped language falls back to English.
+function I18n_resolve(override as dynamic, deviceLocale as string) as string
+    tag = ""
+    if override <> invalid and (Type(override) = "roString" or Type(override) = "String") then tag = override
+    if tag = "" then tag = deviceLocale
+    f = I18n_match(tag)
+    if f = "" and tag <> deviceLocale then f = I18n_match(deviceLocale)
+    if f = "" then f = "en"
+    return f
+end function
+
+' The shipped folder for a tag, "" when none (pseudo-locales en-XA / ar-XB never match).
+function I18n_match(tag as string) as string
+    t = LCase(tag.Trim()).Replace("_", "-")
+    if t = "" then return ""
+    parts = t.Split("-")
+    lang = parts[0]
+    if parts.Count() > 1 then
+        r = parts[parts.Count() - 1]
+        if r = "xa" or r = "xb" then return ""
+    end if
+    if lang = "pt" then return "pt_BR"
+    for each f in ["en", "es", "de", "fr"]
+        if lang = f then return f
+    end for
+    return ""
+end function
+
+' The ui.app_language tag Silo's apps write for a folder.
+function I18n_tagOf(folder as string) as string
+    if folder = "pt_BR" then return "pt-BR"
+    return folder
+end function
+
+' The language's own name, for the App language picker.
+function I18n_nativeName(folder as string) as string
+    names = { en: "English", es: "Español", de: "Deutsch", fr: "Français", pt_BR: "Português (Brasil)" }
+    v = names[folder]
+    if v = invalid then return folder
+    return v
+end function
+
+' Translates the English text the layout XML gave `node` and its children (Label, Button,
+' StandardMessageDialog, …): text, title and hintText fields that are in the table.
+sub I18n_translateTree(node as dynamic)
+    if node = invalid or I18n_locale() = "en" then return
+    t = I18n_table()
+    I18n_translateNode(node, t, 0)
+end sub
+
+sub I18n_translateNode(node as object, t as object, depth as integer)
+    if depth > 24 then return
+    for each f in ["text", "title", "hintText"]
+        if node.hasField(f) then
+            v = node.getField(f)
+            if (Type(v) = "roString" or Type(v) = "String") and v <> "" then
+                tr = t[v]
+                if tr <> invalid and tr <> "" then node.setField(f, tr)
+            end if
+        end if
+    end for
+    n = node.getChildCount()
+    for i = 0 to n - 1
+        I18n_translateNode(node.getChild(i), t, depth + 1)
+    end for
+end sub

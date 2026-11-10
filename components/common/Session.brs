@@ -544,6 +544,7 @@ function Prefs_default() as object
         sectionOrder: []           ' Home Sections editor: row ids in display order
         resumeRewind: 7            ' Rewind on Resume, seconds (contract client_local, 0 = off)
         passoutThreshold: 3        ' Still Watching Prompt: auto-advances before Up Next waits (0 = off)
+        appLanguage: ""            ' the last profile ui.app_language applied ("" = the Roku's language)
     }
 end function
 

@@ -69,7 +69,7 @@ def main():
 
     if os.path.exists(zip_path):
         os.remove(zip_path)
-    subprocess.run(["sh", "-c", "cd '%s' && zip -qrD '%s' source components images fonts -x '*.DS_Store'" % (ROOT, zip_path)], check=True)
+    subprocess.run(["sh", "-c", "cd '%s' && zip -qrD '%s' source components images locale fonts -x '*.DS_Store'" % (ROOT, zip_path)], check=True)
     # The simulator's copy of the manifest compiles the developer aids in (bs_const DEBUG=true: the
     # debug* deep-link parameters in MainScene.handleDeepLink). The release package
     # (npm run package) keeps the manifest's DEBUG=false; tools/package_check.py insists on it.

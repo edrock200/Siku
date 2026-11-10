@@ -1,0 +1,109 @@
+{
+ "&#8592; &#8594; speed  &#183;  OK play  &#183;  Back cancel": [
+  "components/player/PlayerScreen.xml:123"
+ ],
+ ".com": [
+  "components/screens/ServerConnectScreen.xml:52"
+ ],
+ "Ag": [
+  "components/widgets/HomeSkylineFeed.xml:94"
+ ],
+ "Albums": [
+  "components/screens/AudioDetailScreen.xml:79"
+ ],
+ "Buffering": [
+  "components/player/PlayerScreen.xml:77"
+ ],
+ "Diagnostics Log": [
+  "components/screens/settings/DiagnosticsScreen.xml:10"
+ ],
+ "Enter the address you use for Silo in a browser or the Silo app, like media.example.com. Or open Silo on a phone or tablet on this network: it offers to set up this Roku.": [
+  "components/screens/ServerConnectScreen.xml:80"
+ ],
+ "Enter your&#10;server address": [
+  "components/screens/ServerConnectScreen.xml:39"
+ ],
+ "Find servers on this network": [
+  "components/screens/ServerConnectScreen.xml:66"
+ ],
+ "HOME SECTIONS": [
+  "components/screens/settings/SettingsScreen.xml:68"
+ ],
+ "How do you want to sign in? You can switch on the next screen.": [
+  "components/screens/LoginScreen.xml:61"
+ ],
+ "Loading subtitles&#8230;": [
+  "components/player/PlayerScreen.xml:167"
+ ],
+ "New pairing code": [
+  "components/screens/ConnectPhoneScreen.xml:28"
+ ],
+ "Nothing played yet.": [
+  "components/screens/debug/StreamTestScreen.xml:22"
+ ],
+ "OK plays the highlighted stream. Back leaves. Every result is also printed to the debug console as [siku-streamtest].": [
+  "components/screens/debug/StreamTestScreen.xml:14"
+ ],
+ "On this network": [
+  "components/screens/ServerConnectScreen.xml:94"
+ ],
+ "PAIRING CODE": [
+  "components/screens/ConnectPhoneScreen.xml:42"
+ ],
+ "Pick one to connect again.": [
+  "components/screens/ServerConnectScreen.xml:88"
+ ],
+ "Saved servers": [
+  "components/screens/ServerConnectScreen.xml:85"
+ ],
+ "Scan a code, or approve it in the Silo app. Nothing to type.": [
+  "components/screens/LoginScreen.xml:71"
+ ],
+ "Sign in with your phone": [
+  "components/screens/LoginScreen.xml:68"
+ ],
+ "Sign in with&#10;a password": [
+  "components/screens/LoginScreen.xml:106"
+ ],
+ "Siku connects to your Silo server": [
+  "components/screens/ServerConnectScreen.xml:76"
+ ],
+ "Sleep Timer": [
+  "components/player/AudioPlayerScreen.xml:104"
+ ],
+ "Sort · Title": [
+  "components/screens/library/LibraryPage.xml:42"
+ ],
+ "Stream test: pick a stream, then watch the report and listen": [
+  "components/screens/debug/StreamTestScreen.xml:11"
+ ],
+ "The log is empty.": [
+  "components/screens/settings/DiagnosticsScreen.xml:15"
+ ],
+ "Type them with the remote.": [
+  "components/screens/LoginScreen.xml:82"
+ ],
+ "Username and password": [
+  "components/screens/LoginScreen.xml:79"
+ ],
+ "WATCH ON YOUR PHONE": [
+  "components/widgets/YouTubeHandoffDialog.xml:28"
+ ],
+ "What Siku did on this Roku, without addresses, names or sign-in details. It stays on this Roku. Up/Down scroll, Rewind/Fast Forward page.": [
+  "components/screens/settings/DiagnosticsScreen.xml:12"
+ ],
+ "http://": [
+  "components/screens/ServerConnectScreen.xml:51"
+ ],
+ "https://": [
+  "components/screens/ServerConnectScreen.xml:50"
+ ],
+ "↑ More above": [
+  "components/screens/ChangeAccountScreen.xml:35",
+  "components/screens/ChangeAccountScreen.xml:41"
+ ],
+ "↓ More below": [
+  "components/screens/ChangeAccountScreen.xml:38",
+  "components/screens/ChangeAccountScreen.xml:44"
+ ]
+}

@@ -30,7 +30,7 @@ SIZES = {
     "splash_screen_fhd": (1920, 1080), "splash_screen_hd": (1280, 720), "splash_screen_sd": (720, 480),
 }
 REQUIRED_KEYS = ["title", "major_version", "minor_version", "build_version"]
-TOP_LEVEL = {"manifest", "source", "components", "images", "fonts"}
+TOP_LEVEL = {"manifest", "source", "components", "images", "fonts", "locale"}
 TEXT_EXT = (".brs", ".xml", ".json", ".txt", ".md", ".csv", ".bs", "manifest")
 SECRET_NAMES = re.compile(r"(^|/)(\.env(\..*)?|\.npmrc|\.netrc|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|.*\.(pem|key|p12|pfx|jks|keystore|crt|der))$", re.I)
 LITTER = re.compile(r"(^|/)(\.DS_Store|Thumbs\.db|\.git(/|$)|node_modules/|__pycache__/|.*~$|.*\.swp$)")

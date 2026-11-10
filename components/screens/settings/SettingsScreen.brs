@@ -154,6 +154,14 @@ end function
 function buildPane(catId as string) as object
     out = []
     if catId = "general" then
+        ' App language (ui.app_language, revision 28), as Android TV's Settings › General offers it:
+        ' the profile's interface language on every device; Match device follows the Roku.
+        if Settings_available() and Settings_manifestRevision() >= 28 then
+            out.Push({ kind: "header", text: "Language" })
+            out.Push({ kind: "row", row: rowDef("appLanguage", "choice", "App language") })
+            out.Push({ kind: "footer", text: "The language of Siku's menus and buttons for this profile, on every device. Audio, subtitle and metadata languages are separate settings." })
+        end if
+
         ' tvOS / Android TV General → PROFILE AT LAUNCH. Device-wide and never synced, so it reads
         ' the same whichever profile is active (ProfileLaunch.brs).
         out.Push({ kind: "header", text: "Profile at Launch" })
@@ -428,6 +436,8 @@ function rowValue(row as object) as string
         return Settings_skipForwardSeconds().ToStr() + " seconds"
     else if id = "subtitleLanguage" then
         return Settings_languageLabel(Settings_value("playback.subtitle_language", ""), "playback.subtitle_language")
+    else if id = "appLanguage" then
+        return Settings_optionLabel(rowOptions(row), appLanguageTag())
     else if id = "subtitleMode" then
         return Settings_optionLabel(rowOptions(row), subtitleMode())
     else if id = "showForced" then
@@ -464,6 +474,15 @@ function rowValue(row as object) as string
         return "Standard"
     end if
     return ""
+end function
+
+' The profile's ui.app_language as one of the picker's values ("" = Match device).
+function appLanguageTag() as string
+    v = Settings_value("ui.app_language", invalid)
+    if Type(v) <> "roString" and Type(v) <> "String" then return ""
+    f = I18n_match(v)
+    if f = "" then return ""
+    return I18n_tagOf(f)
 end function
 
 function subtitleMode() as string
@@ -528,6 +547,12 @@ function rowOptions(row as object) as object
         return out
     else if id = "subtitleLanguage" then
         return Settings_languageOptions("playback.subtitle_language")
+    else if id = "appLanguage" then
+        out = [{ value: "", label: Tx("Match device") }]
+        for each f in I18n_folders()
+            out.Push({ value: I18n_tagOf(f), label: I18n_nativeName(f) })
+        end for
+        return out
     else if id = "subtitleMode" then
         return [{ value: "off", label: "Off" }, { value: "auto", label: "Auto" }, { value: "always", label: "Always" }]
     else if id = "textOpacity" then
@@ -571,6 +596,8 @@ function rowCurrent(row as object) as dynamic
         return Settings_skipForwardSeconds()
     else if id = "subtitleLanguage" then
         return Str_orEmpty(Settings_value("playback.subtitle_language", ""))
+    else if id = "appLanguage" then
+        return appLanguageTag()
     else if id = "subtitleMode" then
         return subtitleMode()
     else if row.appearance = true then
@@ -1216,6 +1243,9 @@ sub applyChoice(row as object, value as dynamic)
         end if
     else if id = "subtitleLanguage" then
         putLanguage("playback.subtitle_language", "profile", Str_orEmpty(value))
+    else if id = "appLanguage" then
+        ' Saved for the profile; MainScene rebuilds the screens in it once the snapshot updates.
+        putLanguage("ui.app_language", "profile", Str_orEmpty(value))
     else if id = "subtitleMode" then
         beginWrites(1)
         putValue("playback.subtitle_mode", "profile", Str_orEmpty(value))

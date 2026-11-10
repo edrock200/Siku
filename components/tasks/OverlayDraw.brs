@@ -488,16 +488,16 @@ sub OvDraw_paintBadgeAt(c as object, plan as object, x as float, y as float)
         OvDraw_text(c, lead.txt, cx, ly, lead.h, lead.font, OvDraw_colorOf(colors.ink))
     end if
     if plan.txt <> "" then
-        tx = cx + lead.w + plan.gap
+        textX = cx + lead.w + plan.gap
         textShadow = look.textShadow
         if textShadow <> invalid then
             offset = textShadow.y * c.k
             if offset < 1 then offset = 1
             shadowColor = OvDraw_colorOf(textShadow.color)
             shadowColor.a = shadowColor.a * 0.6
-            OvDraw_text(c, plan.txt, tx + textShadow.x * c.k, cy + offset, plan.contentHeight, plan.font, shadowColor)
+            OvDraw_text(c, plan.txt, textX + textShadow.x * c.k, cy + offset, plan.contentHeight, plan.font, shadowColor)
         end if
-        OvDraw_text(c, plan.txt, tx, cy, plan.contentHeight, plan.font, OvDraw_colorOf(colors.ink))
+        OvDraw_text(c, plan.txt, textX, cy, plan.contentHeight, plan.font, OvDraw_colorOf(colors.ink))
     end if
 end sub
 
