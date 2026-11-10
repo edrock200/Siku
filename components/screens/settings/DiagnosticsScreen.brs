@@ -31,7 +31,7 @@ end sub
 
 sub onScreenShown()
     m.top.setFocus(true)
-    A11y_say("diag-log", "Diagnostics Log", "", 0, 0)
+    A11y_say("diag-log", Tx("Diagnostics Log"), "", 0, 0)
 end sub
 
 sub onScreenHidden()
@@ -57,7 +57,7 @@ sub render()
     else
         last = m.first + m.visibleRows
         if last > m.lines.Count() then last = m.lines.Count()
-        m.position.text = "Lines " + (m.first + 1).ToStr() + "–" + last.ToStr() + " of " + m.lines.Count().ToStr()
+        m.position.text = TxF("Lines {0}–{1} of {2}", [m.first + 1, last, m.lines.Count()])
     end if
 end sub
 

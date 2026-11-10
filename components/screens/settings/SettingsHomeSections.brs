@@ -13,6 +13,8 @@ sub Hs_init()
     m.hsFooter = m.top.findNode("hsFooter")
     Label_setFont(m.top.findNode("hsTitle"), "semibold", 38)
     Label_setFont(m.top.findNode("hsEyebrow"), "semibold", 24)
+    ' The XML's upper-case eyebrow is the same words as the title; set from the translated title.
+    m.top.findNode("hsEyebrow").text = UCase(Tx("Home Sections"))
     Label_setFont(m.hsMessage, "regular", 24)
     Label_setFont(m.hsFooter, "regular", 24)
     m.hsVisible = false
@@ -143,31 +145,31 @@ sub Hs_render()
     ring.width = w
     ring.height = 96
     t1 = m.hsHeader.createChild("Label")
-    t1.text = "Home Sections"
+    t1.text = Tx("Home Sections")
     t1.color = "0xEDEDEDFF"
     Label_setFont(t1, "medium", 26)
     t1.translation = [24, 18]
     t2 = m.hsHeader.createChild("Label")
-    if m.hsEditing then t2.text = "Move rows into your preferred order." else t2.text = "Choose which rows appear on Home."
+    if m.hsEditing then t2.text = Tx("Move rows into your preferred order.") else t2.text = Tx("Choose which rows appear on Home.")
     t2.color = "0xEDEDED9E"
     Label_setFont(t2, "regular", 24)
     t2.translation = [24, 52]
-    editLabel = "Edit"
-    if m.hsEditing then editLabel = "Done Editing"
+    editLabel = Tx("Edit")
+    if m.hsEditing then editLabel = Tx("Done Editing")
     editBtn = Hs_button(m.hsHeader, 220, 56, "", editLabel)
     editBtn.translation = [w - 24 - 140 - 16 - 220, 20]
-    doneBtn = Hs_button(m.hsHeader, 140, 56, "", "Done")
+    doneBtn = Hs_button(m.hsHeader, 140, 56, "", Tx("Done"))
     doneBtn.translation = [w - 24 - 140, 20]
     m.hsHeaderButtons = [editBtn, doneBtn]
 
     if m.hsSections.Count() = 0 then
         m.hsMessage.visible = true
         if m.hsLoading then
-            m.hsMessage.text = "Loading Home sections…"
+            m.hsMessage.text = Tx("Loading Home sections…")
         else if m.hsError <> "" then
-            m.hsMessage.text = "Silo couldn't refresh the Home rows. Try again when the server is reachable."
+            m.hsMessage.text = Tx("Silo couldn't refresh the Home rows. Try again when the server is reachable.")
         else
-            m.hsMessage.text = "Home has no populated rows to arrange yet."
+            m.hsMessage.text = Tx("Home has no populated rows to arrange yet.")
         end if
         m.hsFooter.text = ""
     else
@@ -195,7 +197,7 @@ sub Hs_render()
             title.translation = [24, 12]
             title.width = w - 24 - 260
             countLbl = row.createChild("Label")
-            if sec.count = 1 then countLbl.text = "1 item" else countLbl.text = sec.count.ToStr() + " items"
+            countLbl.text = TxP("1 item", "{0} items", sec.count)
             countLbl.color = "0xEDEDED9E"
             Label_setFont(countLbl, "regular", 22)
             countLbl.translation = [24, 46]
@@ -226,9 +228,9 @@ sub Hs_render()
             y = y + 92
         end for
         if m.hsEditing then
-            m.hsFooter.text = "Use the arrow buttons to move rows. The new order saves immediately."
+            m.hsFooter.text = Tx("Use the arrow buttons to move rows. The new order saves immediately.")
         else
-            m.hsFooter.text = "Open eye: visible on Home. Closed eye: hidden. Hidden rows leave no gap."
+            m.hsFooter.text = Tx("Open eye: visible on Home. Closed eye: hidden. Hidden rows leave no gap.")
         end if
     end if
     Hs_updateFocus()
@@ -270,8 +272,8 @@ end sub
 sub Hs_announce()
     if not m.hsVisible then return
     if m.hsRow = -1 then
-        names = ["Edit", "Done"]
-        if m.hsEditing then names[0] = "Done Editing"
+        names = [Tx("Edit"), Tx("Done")]
+        if m.hsEditing then names[0] = Tx("Done Editing")
         if m.hsCol >= 0 and m.hsCol < 2 then A11y_say("hs:header:" + m.hsCol.ToStr(), names[m.hsCol], "button", m.hsCol, 2, m.hsEditor)
         return
     end if
@@ -279,13 +281,13 @@ sub Hs_announce()
     sec = m.hsSections[m.hsRow]
     cols = m.hsRowNodes[m.hsRow].buttons.Count()
     if m.hsCol = cols - 1 then
-        state = "shown on Home"
-        if Settings_sectionHidden(sec.id) then state = "hidden from Home"
+        state = Tx("shown on Home")
+        if Settings_sectionHidden(sec.id) then state = Tx("hidden from Home")
         A11y_say("hs:eye:" + sec.id, sec.title + ", " + state, "button", m.hsRow, m.hsSections.Count(), m.hsEditor)
     else if m.hsCol = 0 then
-        A11y_say("hs:up:" + sec.id, "Move " + sec.title + " up", "button", -1, 0, m.hsEditor)
+        A11y_say("hs:up:" + sec.id, TxF("Move {0} up", [sec.title]), "button", -1, 0, m.hsEditor)
     else
-        A11y_say("hs:down:" + sec.id, "Move " + sec.title + " down", "button", -1, 0, m.hsEditor)
+        A11y_say("hs:down:" + sec.id, TxF("Move {0} down", [sec.title]), "button", -1, 0, m.hsEditor)
     end if
 end sub
 
