@@ -42,7 +42,7 @@ sub init()
 
     m.signOutRow.rowWidth = 490
     m.signOutRow.rowHeight = 64
-    m.signOutRow.label = "Sign Out"
+    m.signOutRow.label = Tx("Sign Out")
     m.signOutRow.iconUri = "pkg:/images/icons/logout.png"
     m.signOutRow.showChevron = false
     m.signOutRow.destructive = true
@@ -115,10 +115,10 @@ end sub
 ' tvOS accountSubtitle: "Administrator" for admins, else the username, else a generic line.
 function accountSubtitle(s as object) as string
     if s.user <> invalid then
-        if LCase(Str_orEmpty(s.user.role)) = "admin" then return "Administrator"
+        if LCase(Str_orEmpty(s.user.role)) = "admin" then return Tx("Administrator")
         if not Str_isEmpty(s.user.username) then return s.user.username
     end if
-    return "Signed in"
+    return Tx("Signed in")
 end function
 
 function displaySupportsDolbyVision() as boolean
@@ -132,17 +132,17 @@ end function
 
 function buildCategories() as object
     return [
-        { id: "general", title: "General", description: "App and navigation", blurb: "App-level options for this Roku.", icon: "settings" }
-        { id: "playback", title: "Playback", description: "Quality and episodes", blurb: "Streaming quality and episode behavior for this Roku.", icon: "play_circle" }
-        { id: "subtitles", title: "Subtitles", description: "Language and appearance", blurb: "Language, behavior, and on-screen appearance.", icon: "subtitles" }
-        { id: "server", title: "Server", description: "Connection and version", blurb: "The Silo server this Roku is connected to.", icon: "dns" }
-        { id: "diagnostics", title: "Diagnostics", description: "Log and last close", blurb: "What Siku recorded on this Roku, to describe a problem after it happened.", icon: "info" }
+        { id: "general", title: Tx("General"), description: Tx("App and navigation"), blurb: Tx("App-level options for this Roku."), icon: "settings" }
+        { id: "playback", title: Tx("Playback"), description: Tx("Quality and episodes"), blurb: Tx("Streaming quality and episode behavior for this Roku."), icon: "play_circle" }
+        { id: "subtitles", title: Tx("Subtitles"), description: Tx("Language and appearance"), blurb: Tx("Language, behavior, and on-screen appearance."), icon: "subtitles" }
+        { id: "server", title: Tx("Server"), description: Tx("Connection and version"), blurb: Tx("The Silo server this Roku is connected to."), icon: "dns" }
+        { id: "diagnostics", title: Tx("Diagnostics"), description: Tx("Log and last close"), blurb: Tx("What Siku recorded on this Roku, to describe a problem after it happened."), icon: "info" }
     ]
 end function
 
 function onOff(v as boolean) as string
-    if v then return "On"
-    return "Off"
+    if v then return Tx("On")
+    return Tx("Off")
 end function
 
 function rowDef(id as string, kind as string, label as string) as object
@@ -157,44 +157,49 @@ function buildPane(catId as string) as object
         ' App language (ui.app_language, revision 28), as Android TV's Settings › General offers it:
         ' the profile's interface language on every device; Match device follows the Roku.
         if Settings_available() and Settings_manifestRevision() >= 28 then
-            out.Push({ kind: "header", text: "Language" })
-            out.Push({ kind: "row", row: rowDef("appLanguage", "choice", "App language") })
-            out.Push({ kind: "footer", text: "The language of Siku's menus and buttons for this profile, on every device. Audio, subtitle and metadata languages are separate settings." })
+            out.Push({ kind: "header", text: Tx("Language") })
+            out.Push({ kind: "row", row: rowDef("appLanguage", "choice", Tx("App language")) })
+            out.Push({ kind: "footer", text: Tx("The language of Siku's menus and buttons for this profile, on every device. Audio, subtitle and metadata languages are separate settings.") })
         end if
 
         ' tvOS / Android TV General → PROFILE AT LAUNCH. Device-wide and never synced, so it reads
         ' the same whichever profile is active (ProfileLaunch.brs).
-        out.Push({ kind: "header", text: "Profile at Launch" })
-        out.Push({ kind: "row", row: rowDef("profileSelection", "choice", "Profile Selection") })
+        out.Push({ kind: "header", text: Tx("Profile at Launch") })
+        out.Push({ kind: "row", row: rowDef("profileSelection", "choice", Tx("Profile Selection")) })
         out.Push({ kind: "footer", text: ProfileLaunch_behavior().detail })
 
-        out.Push({ kind: "header", text: "Home Sections" })
-        out.Push({ kind: "row", row: rowDef("homeSections", "action", "Home Sections") })
-        out.Push({ kind: "footer", text: "Choose which Home rows are visible and edit the order in which they appear on this Roku." })
+        out.Push({ kind: "header", text: Tx("Home Sections") })
+        out.Push({ kind: "row", row: rowDef("homeSections", "action", Tx("Home Sections")) })
+        out.Push({ kind: "footer", text: Tx("Choose which Home rows are visible and edit the order in which they appear on this Roku.") })
 
-        out.Push({ kind: "header", text: "Cards & Posters" })
+        out.Push({ kind: "header", text: Tx("Cards & Posters") })
         if Settings_available() and Settings_manifestRevision() < 5 then
-            out.Push({ kind: "footer", text: "Update your Silo server to customize media cards." })
+            out.Push({ kind: "footer", text: Tx("Update your Silo server to customize media cards.") })
         else
             ' Poster size is the only card option (the caption choice and presets are retired, Silo Android #700).
-            out.Push({ kind: "row", row: rowDef("cardPosterSize", "choice", "Poster Size") })
-            out.Push({ kind: "row", row: rowDef("cardDeviceOnly", "toggle", "Only This Device") })
+            out.Push({ kind: "row", row: rowDef("cardPosterSize", "choice", Tx("Poster Size")) })
+            out.Push({ kind: "row", row: rowDef("cardDeviceOnly", "toggle", Tx("Only This Device")) })
             if Settings_source("ui.card_presentation") = "profile_client" then
-                out.Push({ kind: "row", row: rowDef("cardUseProfileDefault", "action", "Use Profile Default") })
+                out.Push({ kind: "row", row: rowDef("cardUseProfileDefault", "action", Tx("Use Profile Default")) })
             end if
-            out.Push({ kind: "footer", text: "Poster size syncs with other TVs on this profile unless Only This Device is on." })
+            out.Push({ kind: "footer", text: Tx("Poster size syncs with other TVs on this profile unless Only This Device is on.") })
         end if
 
         ' Title Pages (ui.title_art, revision 16): hidden until the server confirms the key.
         if Settings_available() and Settings_manifestRevision() >= 16 then
-            out.Push({ kind: "header", text: "Title Pages" })
-            out.Push({ kind: "row", row: rowDef("titleArt", "toggle", "Show title art") })
-            out.Push({ kind: "footer", text: "Use logo artwork as the title when available." })
-            out.Push({ kind: "row", row: rowDef("titleArtAll", "toggle", "Apply to all devices") })
+            out.Push({ kind: "header", text: Tx("Title Pages") })
+            out.Push({ kind: "row", row: rowDef("titleArt", "toggle", Tx("Show title art")) })
+            out.Push({ kind: "footer", text: Tx("Use logo artwork as the title when available.") })
+            out.Push({ kind: "row", row: rowDef("titleArtAll", "toggle", Tx("Apply to all devices")) })
             if Settings_source("ui.title_art") = "profile" then
-                out.Push({ kind: "footer", text: "On: every device on this profile uses this choice. Title art is " + LCase(onOff(Settings_showTitleArt())) + " on every device signed into this profile. Changing it here changes it everywhere. Turn off “Apply to all devices” to choose for this Roku only." })
+                ' Two whole sentences (not "is " + on/off) so each translates as one text.
+                if Settings_showTitleArt() then
+                    out.Push({ kind: "footer", text: Tx("On: every device on this profile uses this choice. Title art is on on every device signed into this profile. Changing it here changes it everywhere. Turn off “Apply to all devices” to choose for this Roku only.") })
+                else
+                    out.Push({ kind: "footer", text: Tx("On: every device on this profile uses this choice. Title art is off on every device signed into this profile. Changing it here changes it everywhere. Turn off “Apply to all devices” to choose for this Roku only.") })
+                end if
             else
-                out.Push({ kind: "footer", text: "Off: only affects this Roku. Your other devices keep their own setting." })
+                out.Push({ kind: "footer", text: Tx("Off: only affects this Roku. Your other devices keep their own setting.") })
             end if
         end if
 
@@ -202,107 +207,107 @@ function buildPane(catId as string) as object
         ' Settings > General offers them. Each switch writes this Roku's value (profile_device);
         ' "Use Profile Setting" clears it so a value set for the profile elsewhere applies again.
         if Settings_available() and Settings_manifestRevision() >= 11 then
-            out.Push({ kind: "header", text: "Theme Music" })
-            out.Push({ kind: "row", row: rowDef("themeMusic", "toggle", "Theme Music") })
+            out.Push({ kind: "header", text: Tx("Theme Music") })
+            out.Push({ kind: "row", row: rowDef("themeMusic", "toggle", Tx("Theme Music")) })
             if Settings_source("ui.theme_music_enabled") = "profile_device" then
-                out.Push({ kind: "row", row: rowDef("themeMusicReset", "action", "Use Profile Setting for Theme Music") })
+                out.Push({ kind: "row", row: rowDef("themeMusicReset", "action", Tx("Use Profile Setting for Theme Music")) })
             end if
-            out.Push({ kind: "row", row: rowDef("themeMusicLoop", "toggle", "Loop Theme Music") })
+            out.Push({ kind: "row", row: rowDef("themeMusicLoop", "toggle", Tx("Loop Theme Music")) })
             if Settings_source("ui.theme_music_loop") = "profile_device" then
-                out.Push({ kind: "row", row: rowDef("themeMusicLoopReset", "action", "Use Profile Setting for Loop") })
+                out.Push({ kind: "row", row: rowDef("themeMusicLoopReset", "action", Tx("Use Profile Setting for Loop")) })
             end if
-            out.Push({ kind: "footer", text: "Play a title's theme music while its page is open, when the server has one. Loop repeats it until you leave the page. Roku plays it at the TV's volume." })
+            out.Push({ kind: "footer", text: Tx("Play a title's theme music while its page is open, when the server has one. Loop repeats it until you leave the page. Roku plays it at the TV's volume.") })
         end if
 
-        out.Push({ kind: "header", text: "Top Menu" })
-        out.Push({ kind: "row", row: rowDef("showAudiobooks", "toggle", "Show Audiobooks") })
-        out.Push({ kind: "footer", text: "Adds an Audiobooks tab to the top menu when your server has an audiobook library. Hidden by default." })
+        out.Push({ kind: "header", text: Tx("Top Menu") })
+        out.Push({ kind: "row", row: rowDef("showAudiobooks", "toggle", Tx("Show Audiobooks")) })
+        out.Push({ kind: "footer", text: Tx("Adds an Audiobooks tab to the top menu when your server has an audiobook library. Hidden by default.") })
 
-        out.Push({ kind: "header", text: "Profile" })
-        out.Push({ kind: "row", row: rowDef("switchProfile", "action", "Switch Profile") })
+        out.Push({ kind: "header", text: Tx("Profile") })
+        out.Push({ kind: "row", row: rowDef("switchProfile", "action", Tx("Switch Profile")) })
 
         ' Remote control from Silo's phone app (ConnectPhoneScreen, also in the profile menu):
         ' Remote Control on/off and the optional Require Pairing (off unless turned on there).
-        out.Push({ kind: "header", text: "Phones" })
-        out.Push({ kind: "row", row: rowDef("connectPhone", "action", "Connect a Phone") })
-        out.Push({ kind: "footer", text: "Control Siku from Silo's app on your phone or tablet. Require Pairing is optional: turn it on there if only phones that scanned this Roku's code may connect." })
+        out.Push({ kind: "header", text: Tx("Phones") })
+        out.Push({ kind: "row", row: rowDef("connectPhone", "action", Tx("Connect a Phone")) })
+        out.Push({ kind: "footer", text: Tx("Control Siku from Silo's app on your phone or tablet. Require Pairing is optional: turn it on there if only phones that scanned this Roku's code may connect.") })
 
-        out.Push({ kind: "header", text: "Metadata" })
-        out.Push({ kind: "row", row: rowDef("metadataLanguage", "choice", "Metadata Language") })
-        out.Push({ kind: "footer", text: "Fallback language Silo prefers for titles, descriptions, and artwork." })
+        out.Push({ kind: "header", text: Tx("Metadata") })
+        out.Push({ kind: "row", row: rowDef("metadataLanguage", "choice", Tx("Metadata Language")) })
+        out.Push({ kind: "footer", text: Tx("Fallback language Silo prefers for titles, descriptions, and artwork.") })
     else if catId = "playback" then
-        out.Push({ kind: "header", text: "Streaming" })
+        out.Push({ kind: "header", text: Tx("Streaming") })
         ' TvSettingsScreen STREAMING (Silo Android #613): Resolution and Maximum Bitrate are two
         ' pickers over the two server settings; there is no Original choice any more.
-        out.Push({ kind: "row", row: rowDef("resolution", "choice", "Resolution") })
-        out.Push({ kind: "row", row: rowDef("maxBitrate", "choice", "Maximum Bitrate") })
+        out.Push({ kind: "row", row: rowDef("resolution", "choice", Tx("Resolution")) })
+        out.Push({ kind: "row", row: rowDef("maxBitrate", "choice", Tx("Maximum Bitrate")) })
         ' Lower quality when buffering and the learned-limit row (SettingsConnection.brs).
         Conn_appendStreamingRows(out)
-        out.Push({ kind: "row", row: rowDef("audioLanguage", "choice", "Audio Language") })
+        out.Push({ kind: "row", row: rowDef("audioLanguage", "choice", Tx("Audio Language")) })
         ' TvSettingsScreen STREAMING parity: Dolby Vision (default on; off plays the HDR10 base
         ' layer) with the narrower Profile 7 fallback nested under it while Dolby Vision is on,
         ' then Force HDR Passthrough. Match Content Frame Rate and True Black Bars are Android-only
         ' (Roku switches refresh rate system-wide and never draws its own bars).
-        if m.supportsDolbyVision then out.Push({ kind: "row", row: rowDef("dolbyVision", "toggle", "Dolby Vision") })
-        if m.supportsDolbyVision and Settings_dolbyVision() then out.Push({ kind: "row", row: rowDef("dvProfile7Fallback", "toggle", "Profile 7 HDR10 Fallback") })
-        out.Push({ kind: "row", row: rowDef("forceHdr", "toggle", "Force HDR Passthrough") })
-        out.Push({ kind: "row", row: rowDef("forceDolby", "toggle", "Force Dolby Audio Passthrough") })
-        out.Push({ kind: "row", row: rowDef("tsCopy", "toggle", "Experimental: MPEG-TS Copy") })
-        out.Push({ kind: "row", row: rowDef("progressiveRemux", "toggle", "Experimental: Progressive Remux") })
+        if m.supportsDolbyVision then out.Push({ kind: "row", row: rowDef("dolbyVision", "toggle", Tx("Dolby Vision")) })
+        if m.supportsDolbyVision and Settings_dolbyVision() then out.Push({ kind: "row", row: rowDef("dvProfile7Fallback", "toggle", Tx("Profile 7 HDR10 Fallback")) })
+        out.Push({ kind: "row", row: rowDef("forceHdr", "toggle", Tx("Force HDR Passthrough")) })
+        out.Push({ kind: "row", row: rowDef("forceDolby", "toggle", Tx("Force Dolby Audio Passthrough")) })
+        out.Push({ kind: "row", row: rowDef("tsCopy", "toggle", Tx("Experimental: MPEG-TS Copy")) })
+        out.Push({ kind: "row", row: rowDef("progressiveRemux", "toggle", Tx("Experimental: Progressive Remux")) })
         qText = Settings_qualityDescription(Settings_quality(), Settings_maxBitrateKbps())
-        if m.supportsDolbyVision then qText = qText + " Dolby Vision off asks the server for the HDR10 layer of Dolby Vision files instead. Roku has no decoder for dual-layer Dolby Vision (profile 7), so those files always play as their HDR10 base layer; Profile 7 HDR10 Fallback is kept in step with your other Silo apps."
-        qText = qText + " Force HDR Passthrough allows HDR playback when this TV doesn't report support. It does not force the HDMI output into HDR; the Roku may still convert the picture to SDR. Enable it only if you've confirmed your TV supports the source format."
-        qText = qText + " Force Dolby Audio Passthrough tells the server this Roku can play Dolby Digital and Dolby Digital Plus even when the TV or receiver does not report it, so the original audio is sent instead of being converted to AAC. If you then get no sound, turn it off; a Roku app cannot switch the HDMI audio output itself."
-        qText = qText + " Experimental: Progressive Remux offers the server a second way to keep the original video while converting only the audio: one MP4 stream over plain HTTP instead of HLS. Tested on a Streaming Stick 4K (Roku OS 14): playback fails at once, so leave it off unless you are testing another Roku model."
-        qText = qText + " Experimental: MPEG-TS Copy (on) lets a server that offers it keep the original video (including 4K, HEVC and HDR10) and send it in a format Roku plays with sound, instead of converting it to H.264. It has not been tested on a Roku yet: if such titles play without sound or fail, turn it off."
+        if m.supportsDolbyVision then qText = qText + " " + Tx("Dolby Vision off asks the server for the HDR10 layer of Dolby Vision files instead. Roku has no decoder for dual-layer Dolby Vision (profile 7), so those files always play as their HDR10 base layer; Profile 7 HDR10 Fallback is kept in step with your other Silo apps.")
+        qText = qText + " " + Tx("Force HDR Passthrough allows HDR playback when this TV doesn't report support. It does not force the HDMI output into HDR; the Roku may still convert the picture to SDR. Enable it only if you've confirmed your TV supports the source format.")
+        qText = qText + " " + Tx("Force Dolby Audio Passthrough tells the server this Roku can play Dolby Digital and Dolby Digital Plus even when the TV or receiver does not report it, so the original audio is sent instead of being converted to AAC. If you then get no sound, turn it off; a Roku app cannot switch the HDMI audio output itself.")
+        qText = qText + " " + Tx("Experimental: Progressive Remux offers the server a second way to keep the original video while converting only the audio: one MP4 stream over plain HTTP instead of HLS. Tested on a Streaming Stick 4K (Roku OS 14): playback fails at once, so leave it off unless you are testing another Roku model.")
+        qText = qText + " " + Tx("Experimental: MPEG-TS Copy (on) lets a server that offers it keep the original video (including 4K, HEVC and HDR10) and send it in a format Roku plays with sound, instead of converting it to H.264. It has not been tested on a Roku yet: if such titles play without sound or fail, turn it off.")
         out.Push({ kind: "footer", text: qText })
 
         Conn_appendConnectionGroup(out)
 
-        out.Push({ kind: "header", text: "Episodes" })
-        out.Push({ kind: "row", row: rowDef("autoPlayNext", "toggle", "Auto-Play Next Episode") })
-        out.Push({ kind: "row", row: rowDef("showNextUp", "choice", "Show Next Up") })
-        out.Push({ kind: "row", row: rowDef("skipIntros", "choice", "Skip Intros") })
-        out.Push({ kind: "row", row: rowDef("skipCredits", "toggle", "Skip Credits") })
-        out.Push({ kind: "row", row: rowDef("rewindOnResume", "choice", "Rewind on Resume") })
-        out.Push({ kind: "row", row: rowDef("stillWatching", "choice", "Still Watching Prompt") })
-        out.Push({ kind: "footer", text: "Rewind on Resume skips back when you return to a partly watched title. Still Watching Prompt sets how many episodes play in a row before Silo asks whether you're still watching." })
+        out.Push({ kind: "header", text: Tx("Episodes") })
+        out.Push({ kind: "row", row: rowDef("autoPlayNext", "toggle", Tx("Auto-Play Next Episode")) })
+        out.Push({ kind: "row", row: rowDef("showNextUp", "choice", Tx("Show Next Up")) })
+        out.Push({ kind: "row", row: rowDef("skipIntros", "choice", Tx("Skip Intros")) })
+        out.Push({ kind: "row", row: rowDef("skipCredits", "toggle", Tx("Skip Credits")) })
+        out.Push({ kind: "row", row: rowDef("rewindOnResume", "choice", Tx("Rewind on Resume")) })
+        out.Push({ kind: "row", row: rowDef("stillWatching", "choice", Tx("Still Watching Prompt")) })
+        out.Push({ kind: "footer", text: Tx("Rewind on Resume skips back when you return to a partly watched title. Still Watching Prompt sets how many episodes play in a row before Silo asks whether you're still watching.") })
 
         ' Spoiler protection (catalog.hide_unwatched_episode_*, revision 17, profile scope): hidden
         ' on servers that do not know the keys.
         if spoilersSupported() then
-            out.Push({ kind: "header", text: "Spoilers" })
-            out.Push({ kind: "row", row: rowDef("spoilerImages", "toggle", "Blur unwatched episode images") })
-            out.Push({ kind: "row", row: rowDef("spoilerOverviews", "toggle", "Hide unwatched episode descriptions") })
-            out.Push({ kind: "footer", text: "Applies to episodes you have not started, on every device that uses this profile. Roku cannot blur a picture, so a hidden episode image shows the series artwork or a plain placeholder instead." })
+            out.Push({ kind: "header", text: Tx("Spoilers") })
+            out.Push({ kind: "row", row: rowDef("spoilerImages", "toggle", Tx("Blur unwatched episode images")) })
+            out.Push({ kind: "row", row: rowDef("spoilerOverviews", "toggle", Tx("Hide unwatched episode descriptions")) })
+            out.Push({ kind: "footer", text: Tx("Applies to episodes you have not started, on every device that uses this profile. Roku cannot blur a picture, so a hidden episode image shows the series artwork or a plain placeholder instead.") })
         end if
 
-        out.Push({ kind: "header", text: "Video" })
-        out.Push({ kind: "row", row: rowDef("skipBack", "choice", "Skip Back") })
-        out.Push({ kind: "row", row: rowDef("skipForward", "choice", "Skip Forward") })
+        out.Push({ kind: "header", text: Tx("Video") })
+        out.Push({ kind: "row", row: rowDef("skipBack", "choice", Tx("Skip Back")) })
+        out.Push({ kind: "row", row: rowDef("skipForward", "choice", Tx("Skip Forward")) })
         if seekIntervalsSynced() then
-            out.Push({ kind: "footer", text: "Used by left and right presses on the remote and the on-screen skip buttons. Applies to every device signed in to this profile." })
+            out.Push({ kind: "footer", text: Tx("Used by left and right presses on the remote and the on-screen skip buttons. Applies to every device signed in to this profile.") })
         else
-            out.Push({ kind: "footer", text: "Used by left and right presses on the remote and the on-screen skip buttons. This server does not sync skip intervals, so they stay on this Roku." })
+            out.Push({ kind: "footer", text: Tx("Used by left and right presses on the remote and the on-screen skip buttons. This server does not sync skip intervals, so they stay on this Roku.") })
         end if
 
-        out.Push({ kind: "header", text: "Reset" })
-        out.Push({ kind: "row", row: { id: "resetOverrides", kind: "action", label: "Reset Playback Overrides", destructive: true } })
-        out.Push({ kind: "footer", text: "Resets playback choices for this Roku and profile back to the server fallback." })
+        out.Push({ kind: "header", text: Tx("Reset") })
+        out.Push({ kind: "row", row: { id: "resetOverrides", kind: "action", label: Tx("Reset Playback Overrides"), destructive: true } })
+        out.Push({ kind: "footer", text: Tx("Resets playback choices for this Roku and profile back to the server fallback.") })
     else if catId = "subtitles" then
-        out.Push({ kind: "header", text: "Profile" })
-        out.Push({ kind: "row", row: rowDef("subtitleLanguage", "choice", "Language") })
-        out.Push({ kind: "row", row: rowDef("subtitleMode", "choice", "Behavior") })
-        out.Push({ kind: "row", row: rowDef("showForced", "toggle", "Show Forced Subtitles") })
-        out.Push({ kind: "footer", text: "Used to pick a matching track when one is available. Forced subtitles cover foreign-language dialogue even when subtitles are off or set to auto." })
+        out.Push({ kind: "header", text: Tx("Profile") })
+        out.Push({ kind: "row", row: rowDef("subtitleLanguage", "choice", Tx("Language")) })
+        out.Push({ kind: "row", row: rowDef("subtitleMode", "choice", Tx("Behavior")) })
+        out.Push({ kind: "row", row: rowDef("showForced", "toggle", Tx("Show Forced Subtitles")) })
+        out.Push({ kind: "footer", text: Tx("Used to pick a matching track when one is available. Forced subtitles cover foreign-language dialogue even when subtitles are off or set to auto.") })
 
-        out.Push({ kind: "header", text: "Appearance" })
+        out.Push({ kind: "header", text: Tx("Appearance") })
         out.Push({ kind: "preview" })
-        out.Push({ kind: "row", row: rowDef("useDeviceSettings", "info", "Use Device Settings") })
+        out.Push({ kind: "row", row: rowDef("useDeviceSettings", "info", Tx("Use Device Settings")) })
         ' Appearance is a profile preference (Silo Android #680); this keeps a separate one (and
         ' subtitle timing) for this Roku only.
-        out.Push({ kind: "row", row: rowDef("customAppearance", "toggle", "Only on This Device") })
-        for each f in [["fontSize", "Font Size"], ["fontFamily", "Font Family"], ["fontColor", "Font Color"], ["textOpacity", "Text Opacity"], ["textOutline", "Text Outline"], ["textOutlineColor", "Outline Color"], ["backgroundStyle", "Background Style"], ["backgroundOpacity", "Background Opacity"], ["backgroundColor", "Background Color"], ["position", "Position"]]
+        out.Push({ kind: "row", row: rowDef("customAppearance", "toggle", Tx("Only on This Device")) })
+        for each f in [["fontSize", Tx("Font Size")], ["fontFamily", Tx("Font Family")], ["fontColor", Tx("Font Color")], ["textOpacity", Tx("Text Opacity")], ["textOutline", Tx("Text Outline")], ["textOutlineColor", Tx("Outline Color")], ["backgroundStyle", Tx("Background Style")], ["backgroundOpacity", Tx("Background Opacity")], ["backgroundColor", Tx("Background Color")], ["position", Tx("Position")]]
             fid = f[0]
             if fid <> "textOpacity" or textOpacitySupported() then
                 kind = "choice"
@@ -312,38 +317,38 @@ function buildPane(catId as string) as object
                 out.Push({ kind: "row", row: r })
             end if
         end for
-        out.Push({ kind: "row", row: { id: "resetAppearance", kind: "action", label: "Reset Appearance", destructive: true } })
+        out.Push({ kind: "row", row: { id: "resetAppearance", kind: "action", label: Tx("Reset Appearance"), destructive: true } })
         if customAppearanceOn() then
-            out.Push({ kind: "footer", text: "Only on this device." })
+            out.Push({ kind: "footer", text: Tx("Only on this device.") })
         else
-            out.Push({ kind: "footer", text: "Saved for this profile on all devices." })
+            out.Push({ kind: "footer", text: Tx("Saved for this profile on all devices.") })
         end if
-        out.Push({ kind: "footer", text: "Roku draws captions with your Roku's own caption style (Settings › Accessibility › Captions style), so these choices are saved for your other Silo devices and do not change captions here." })
+        out.Push({ kind: "footer", text: Tx("Roku draws captions with your Roku's own caption style (Settings › Accessibility › Captions style), so these choices are saved for your other Silo devices and do not change captions here.") })
     else if catId = "server" then
         s = m.global.session
-        out.Push({ kind: "header", text: "Active Server" })
-        out.Push({ kind: "row", row: rowDef("server", "info", "Server") })
+        out.Push({ kind: "header", text: Tx("Active Server") })
+        out.Push({ kind: "row", row: rowDef("server", "info", Tx("Server")) })
         if not Str_isEmpty(s.serverUrl) and Str_orEmpty(s.serverName) <> Str_orEmpty(s.serverUrl) then
-            out.Push({ kind: "row", row: rowDef("address", "info", "Address") })
+            out.Push({ kind: "row", row: rowDef("address", "info", Tx("Address")) })
         end if
-        out.Push({ kind: "row", row: rowDef("serverVersion", "info", "Server Version") })
-        out.Push({ kind: "row", row: rowDef("changeAccount", "action", "Change Account") })
-        out.Push({ kind: "row", row: rowDef("manageServers", "action", "Manage Servers") })
-        out.Push({ kind: "header", text: "About" })
-        out.Push({ kind: "row", row: rowDef("appVersion", "info", "App Version") })
+        out.Push({ kind: "row", row: rowDef("serverVersion", "info", Tx("Server Version")) })
+        out.Push({ kind: "row", row: rowDef("changeAccount", "action", Tx("Change Account")) })
+        out.Push({ kind: "row", row: rowDef("manageServers", "action", Tx("Manage Servers")) })
+        out.Push({ kind: "header", text: Tx("About") })
+        out.Push({ kind: "row", row: rowDef("appVersion", "info", Tx("App Version")) })
     else if catId = "diagnostics" then
         ' The on-device log and Roku's record of how Siku last closed (Diag.brs, DiagTask).
-        out.Push({ kind: "header", text: "Last Close" })
-        out.Push({ kind: "row", row: rowDef("lastExit", "info", "Last Time") })
-        out.Push({ kind: "row", row: rowDef("lastProblem", "info", "Last Unexpected Close") })
-        out.Push({ kind: "footer", text: "As your Roku reported it when Siku started." })
-        out.Push({ kind: "header", text: "Log" })
-        out.Push({ kind: "row", row: rowDef("viewLog", "action", "View Log") })
-        out.Push({ kind: "row", row: { id: "clearLog", kind: "action", label: "Clear Log", destructive: true } })
-        out.Push({ kind: "footer", text: "Siku keeps a short log of what it did on this Roku (about 100 KB), without server addresses, names, ids or sign-in details, so a problem can be described after it happened. It stays on this Roku and is never sent anywhere." })
-        out.Push({ kind: "header", text: "Memory" })
-        out.Push({ kind: "row", row: rowDef("memoryMode", "info", "Memory Mode") })
-        out.Push({ kind: "footer", text: "On a Roku with little memory Siku keeps fewer pages of a library and fewer screens loaded, so it is less likely to be closed." })
+        out.Push({ kind: "header", text: Tx("Last Close") })
+        out.Push({ kind: "row", row: rowDef("lastExit", "info", Tx("Last Time")) })
+        out.Push({ kind: "row", row: rowDef("lastProblem", "info", Tx("Last Unexpected Close")) })
+        out.Push({ kind: "footer", text: Tx("As your Roku reported it when Siku started.") })
+        out.Push({ kind: "header", text: Tx("Log") })
+        out.Push({ kind: "row", row: rowDef("viewLog", "action", Tx("View Log")) })
+        out.Push({ kind: "row", row: { id: "clearLog", kind: "action", label: Tx("Clear Log"), destructive: true } })
+        out.Push({ kind: "footer", text: Tx("Siku keeps a short log of what it did on this Roku (about 100 KB), without server addresses, names, ids or sign-in details, so a problem can be described after it happened. It stays on this Roku and is never sent anywhere.") })
+        out.Push({ kind: "header", text: Tx("Memory") })
+        out.Push({ kind: "row", row: rowDef("memoryMode", "info", Tx("Memory Mode")) })
+        out.Push({ kind: "footer", text: Tx("On a Roku with little memory Siku keeps fewer pages of a library and fewer screens loaded, so it is less likely to be closed.") })
     end if
     return out
 end function
@@ -424,16 +429,16 @@ function rowValue(row as object) as string
         return onOff(Settings_autoSkipCredits())
     else if id = "rewindOnResume" then
         v = Settings_resumeRewindSeconds()
-        if v <= 0 then return "Off"
+        if v <= 0 then return Tx("Off")
         return v.ToStr() + "s"
     else if id = "stillWatching" then
         v = Settings_passoutThreshold()
-        if v <= 0 then return "Off"
+        if v <= 0 then return Tx("Off")
         return v.ToStr()
     else if id = "skipBack" then
-        return Settings_skipBackSeconds().ToStr() + " seconds"
+        return TxP("{0} second", "{0} seconds", Settings_skipBackSeconds())
     else if id = "skipForward" then
-        return Settings_skipForwardSeconds().ToStr() + " seconds"
+        return TxP("{0} second", "{0} seconds", Settings_skipForwardSeconds())
     else if id = "subtitleLanguage" then
         return Settings_languageLabel(Settings_value("playback.subtitle_language", ""), "playback.subtitle_language")
     else if id = "appLanguage" then
@@ -443,7 +448,7 @@ function rowValue(row as object) as string
     else if id = "showForced" then
         return onOff(Settings_value("playback.show_forced_subtitles", true) <> false)
     else if id = "useDeviceSettings" then
-        return "Always on"
+        return Tx("Always on")
     else if id = "customAppearance" then
         return onOff(customAppearanceOn())
     else if row.appearance = true then
@@ -452,7 +457,7 @@ function rowValue(row as object) as string
         if id = "textOutline" then return onOff(a.textOutline = true)
         return Settings_optionLabel(Settings_appearanceOptions(id), a[id])
     else if id = "server" then
-        if Str_isEmpty(s.serverName) then return "Not configured"
+        if Str_isEmpty(s.serverName) then return Tx("Not configured")
         return s.serverName
     else if id = "address" then
         return Str_orEmpty(s.serverUrl)
@@ -468,10 +473,10 @@ function rowValue(row as object) as string
         if Type(e) = "roAssociativeArray" and Type(e.last) = "roAssociativeArray" then
             if not Str_isEmpty(e.last.code) then return Diag_exitLabel(e.last)
         end if
-        return "None"
+        return Tx("None")
     else if id = "memoryMode" then
-        if Memory_isLowEnd() then return "Low-memory Roku"
-        return "Standard"
+        if Memory_isLowEnd() then return Tx("Low-memory Roku")
+        return Tx("Standard")
     end if
     return ""
 end function
@@ -492,10 +497,10 @@ function subtitleMode() as string
 end function
 
 function nextUpPromptLabel(seconds as integer) as string
-    if seconds <= 0 then return "At end"
-    if seconds < 60 then return seconds.ToStr() + " seconds before end"
-    if seconds = 60 then return "1 minute before end"
-    return (seconds \ 60).ToStr() + " minutes before end"
+    if seconds <= 0 then return Tx("At end")
+    if seconds < 60 then return TxF("{0} seconds before end", [seconds])
+    if seconds = 60 then return Tx("1 minute before end")
+    return TxF("{0} minutes before end", [seconds \ 60])
 end function
 
 ' Picker options for a choice row: [{value, label}].
@@ -508,7 +513,7 @@ function rowOptions(row as object) as object
         end for
         return out
     else if id = "cardPosterSize" then
-        return [{ value: "compact", label: "Compact" }, { value: "standard", label: "Standard" }, { value: "large", label: "Large" }]
+        return [{ value: "compact", label: Tx("Compact") }, { value: "standard", label: Tx("Standard") }, { value: "large", label: Tx("Large") }]
     else if id = "metadataLanguage" then
         return Settings_languageOptions("catalog.metadata_language")
     else if id = "bufferingQuality" then
@@ -526,23 +531,23 @@ function rowOptions(row as object) as object
         end for
         return out
     else if id = "skipIntros" then
-        return [{ value: "never", label: "Never" }, { value: "ask", label: "Ask to skip" }, { value: "always", label: "Skip automatically" }]
+        return [{ value: "never", label: Tx("Never") }, { value: "ask", label: Tx("Ask to skip") }, { value: "always", label: Tx("Skip automatically") }]
     else if id = "rewindOnResume" then
         out = []
         for each v in [0, 3, 5, 7, 10, 15, 20, 30]
-            if v = 0 then out.Push({ value: 0, label: "Off" }) else out.Push({ value: v, label: v.ToStr() + "s" })
+            if v = 0 then out.Push({ value: 0, label: Tx("Off") }) else out.Push({ value: v, label: v.ToStr() + "s" })
         end for
         return out
     else if id = "stillWatching" then
         out = []
         for each v in [0, 2, 3, 4, 5]
-            if v = 0 then out.Push({ value: 0, label: "Off" }) else out.Push({ value: v, label: v.ToStr() })
+            if v = 0 then out.Push({ value: 0, label: Tx("Off") }) else out.Push({ value: v, label: v.ToStr() })
         end for
         return out
     else if id = "skipBack" or id = "skipForward" then
         out = []
         for each v in [5, 10, 15, 30, 45, 60, 90]
-            out.Push({ value: v, label: v.ToStr() + " seconds" })
+            out.Push({ value: v, label: TxP("{0} second", "{0} seconds", v) })
         end for
         return out
     else if id = "subtitleLanguage" then
@@ -554,7 +559,7 @@ function rowOptions(row as object) as object
         end for
         return out
     else if id = "subtitleMode" then
-        return [{ value: "off", label: "Off" }, { value: "auto", label: "Auto" }, { value: "always", label: "Always" }]
+        return [{ value: "off", label: Tx("Off") }, { value: "auto", label: Tx("Auto") }, { value: "always", label: Tx("Always") }]
     else if id = "textOpacity" then
         return Settings_percentOptions(5, Int(Content_numOr(Settings_appearance().textOpacity, 100)))
     else if id = "backgroundOpacity" then
@@ -649,12 +654,12 @@ sub renderPane()
 
     st = Settings_state()
     if st.ready <> true then
-        y = addFooter("Loading settings from the server…", y, w)
+        y = addFooter(Tx("Loading settings from the server…"), y, w)
     else if st.available <> true or st.identity <> Settings_identity() then
-        y = addFooter("Couldn't load settings from the server (" + Str_orEmpty(st.error) + "). Showing this Roku's saved values.", y, w)
-        y = addRow(rowDef("retry", "action", "Try Again"), y, w)
+        y = addFooter(TxF("Couldn't load settings from the server ({0}). Showing this Roku's saved values.", [Str_orEmpty(st.error)]), y, w)
+        y = addRow(rowDef("retry", "action", Tx("Try Again")), y, w)
     else if not Str_isEmpty(st.error) then
-        y = addFooter("Couldn't refresh settings (" + Str_orEmpty(st.error) + "). Showing the last values the server sent.", y, w)
+        y = addFooter(TxF("Couldn't refresh settings ({0}). Showing the last values the server sent.", [Str_orEmpty(st.error)]), y, w)
     end if
 
     for each e in buildPane(cat.id)
@@ -735,7 +740,7 @@ function addPreview(y as integer, w as integer) as integer
     weight = "semibold"
     if LCase(Str_orEmpty(a.fontFamily)) = "monospace" then weight = "medium"
     lbl = g.createChild("Label")
-    lbl.text = "Subtitles will look like this"
+    lbl.text = Tx("Subtitles will look like this")
     Label_setFont(lbl, weight, fs)
     lbl.color = Settings_hexToColor(a.fontColor, Int(Content_numOr(a.textOpacity, 100)))
     lbl.horizAlign = "center"
@@ -824,7 +829,7 @@ sub updateFocus()
     railHasFocus = not m.inPane
     m.accountBg.visible = railHasFocus and m.railFocus = -1
     if m.accountBg.visible then
-        A11y_say("settings:account", "Account, " + m.accountName.text, "button", -1, 0)
+        A11y_say("settings:account", TxF("Account, {0}", [m.accountName.text]), "button", -1, 0)
     else
         A11y_blur("settings:account")
     end if
@@ -885,7 +890,7 @@ sub onServerInfo(event as object)
     if resp.ok and Type(resp.data) = "roAssociativeArray" then
         m.serverVersion = Str_orEmpty(resp.data.server_version)
     else
-        m.serverVersion = "Unknown"
+        m.serverVersion = Tx("Unknown")
     end if
     refreshValues()
 end sub
@@ -914,14 +919,14 @@ sub openPicker(row as object)
     for i = 0 to m.pickerOptions.Count() - 1
         if sameValue(m.pickerOptions[i].value, current) then m.pickerIndex = i
     end for
-    layoutPicker(row.label, "Choose an option", "")
+    layoutPicker(row.label, Tx("Choose an option"), "")
 end sub
 
 sub openConfirm(actionId as string, title as string, message as string, confirmLabel as string)
     m.pickerMode = "confirm"
     m.confirmAction = actionId
     m.pickerRow = invalid
-    m.pickerOptions = [{ value: "cancel", label: "Cancel" }, { value: "ok", label: confirmLabel, destructive: true }]
+    m.pickerOptions = [{ value: "cancel", label: Tx("Cancel") }, { value: "ok", label: confirmLabel, destructive: true }]
     m.pickerIndex = 0
     layoutPicker(title, "", message)
 end sub
@@ -1048,7 +1053,7 @@ end sub
 sub beginWrites(count as integer)
     m.pendingWrites = count
     m.writeFailed = false
-    showStatus("Saving…")
+    showStatus(Tx("Saving…"))
 end sub
 
 ' One write finished. A 404 on a DELETE means nothing was stored there, which is what was asked.
@@ -1060,7 +1065,7 @@ sub onWriteDone(event as object)
     if not ok and resp.status = 404 and ctx <> invalid and ctx.isDelete = true then ok = true
     if not ok then
         m.writeFailed = true
-        m.global.toast = "Couldn't save the setting: " + Api_errorText(resp)
+        m.global.toast = TxF("Couldn't save the setting: {0}", [Api_errorText(resp)])
     else if ctx <> invalid and ctx.thenOp <> invalid then
         op = ctx.thenOp
         if op.method = "DELETE" then
@@ -1315,7 +1320,7 @@ sub performConfirmed(actionId as string)
             ex.last = {}
             m.global.diagExit = ex
         end if
-        m.global.toast = "Diagnostics log cleared."
+        m.global.toast = Tx("Diagnostics log cleared.")
         renderPane()
     end if
 end sub
@@ -1327,7 +1332,8 @@ sub activateRow(row as object)
     if row.kind = "choice" then
         openPicker(row)
     else if row.kind = "toggle" then
-        current = rowValue(row) = "On"
+        ' Compares with onOff's own (translated) text.
+        current = rowValue(row) = onOff(true)
         applyChoice(row, not current)
     else if id = "homeSections" then
         Hs_open()
@@ -1349,13 +1355,13 @@ sub activateRow(row as object)
     else if id = "connectionSpeed" then
         Conn_testSpeed()
     else if id = "resetOverrides" then
-        openConfirm("resetOverrides", "Reset Playback Overrides?", "Playback choices for this Roku and profile go back to the server fallback.", "Reset")
+        openConfirm("resetOverrides", Tx("Reset Playback Overrides?"), Tx("Playback choices for this Roku and profile go back to the server fallback."), Tx("Reset"))
     else if id = "viewLog" then
         Nav_push("DiagnosticsScreen", {})
     else if id = "clearLog" then
-        openConfirm("clearLog", "Clear the Diagnostics Log?", "This deletes everything Siku has recorded on this Roku.", "Clear")
+        openConfirm("clearLog", Tx("Clear the Diagnostics Log?"), Tx("This deletes everything Siku has recorded on this Roku."), Tx("Clear"))
     else if id = "resetAppearance" then
-        openConfirm("resetAppearance", "Reset Subtitle Appearance?", "This restores every subtitle appearance option to its default.", "Reset")
+        openConfirm("resetAppearance", Tx("Reset Subtitle Appearance?"), Tx("This restores every subtitle appearance option to its default."), Tx("Reset"))
     else if id = "changeAccount" then
         ' Every saved server's accounts (Silo Android #795); Back comes here.
         Nav_push("ChangeAccountScreen", {})
@@ -1363,7 +1369,7 @@ sub activateRow(row as object)
         ' The server list over Settings: the current server keeps its sign-in, Back comes here.
         Nav_push("ServerConnectScreen", { manage: true })
     else if id = "retry" then
-        showStatus("Loading…")
+        showStatus(Tx("Loading…"))
         Settings_load()
     end if
 end sub
@@ -1430,9 +1436,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
             if SignOut_isRunning() then return true
             print "[siku-servers] sign out asked"
             ' The open account only (Silo Android #795); Remove Server while it is the server's last.
-            openConfirm("signOut", SignOut_title(), SignOut_message(), "Sign Out")
+            openConfirm("signOut", SignOut_title(), SignOut_message(), Tx("Sign Out"))
             if SignOut_offersRemove() then
-                m.pickerOptions.Push({ value: "remove", label: "Sign Out & Remove Server", destructive: true })
+                m.pickerOptions.Push({ value: "remove", label: Tx("Sign Out & Remove Server"), destructive: true })
                 layoutPicker(SignOut_title(), "", SignOut_message())
             end if
         else

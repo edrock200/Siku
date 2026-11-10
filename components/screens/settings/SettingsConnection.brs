@@ -83,14 +83,14 @@ end sub
 sub Conn_appendStreamingRows(out as object)
     mode = Settings_bufferingQualityMode()
     if Settings_supportsBufferingQualityMode() then
-        out.Push({ kind: "row", row: rowDef("bufferingQuality", "choice", "Lower quality when buffering") })
-        out.Push({ kind: "footer", text: "What Siku does on Auto when playback keeps buffering. Siku always asks before lowering a quality you picked." })
+        out.Push({ kind: "row", row: rowDef("bufferingQuality", "choice", Tx("Lower quality when buffering")) })
+        out.Push({ kind: "footer", text: Tx("What Siku does on Auto when playback keeps buffering. Siku always asks before lowering a quality you picked.") })
     end if
     limit = Conn_learnedLimit()
     if limit <> invalid and mode <> "never" then
         ' A long label with a short value ("Reset"): the label takes most of the row.
         out.Push({ kind: "row", row: { id: "learnedLimit", kind: "action", label: Conn_learnedLimitLabel(limit), labelWidth: 820 } })
-        if m.conn.resetFailed then out.Push({ kind: "footer", text: "Couldn't reset the limit. Try again." })
+        if m.conn.resetFailed then out.Push({ kind: "footer", text: Tx("Couldn't reset the limit. Try again.") })
     end if
 end sub
 
@@ -98,15 +98,15 @@ end sub
 sub Conn_appendConnectionGroup(out as object)
     caps = m.conn.caps
     if caps = invalid or not caps.speed then return
-    out.Push({ kind: "header", text: "Connection" })
-    out.Push({ kind: "row", row: { id: "connectionSpeed", kind: "action", label: "Connection speed" } })
+    out.Push({ kind: "header", text: Tx("Connection") })
+    out.Push({ kind: "row", row: { id: "connectionSpeed", kind: "action", label: Tx("Connection speed") } })
     out.Push({ kind: "footer", text: Conn_speedLine() })
     if m.conn.message <> "" then out.Push({ kind: "footer", text: m.conn.message })
     budget = 0
     if m.conn.state <> invalid then budget = Int(Num_or(m.conn.state.auto_budget_kbps, 0))
     ' In Never the server's budget counts a learned limit that Never ignores, so it hides then.
     if Settings_bufferingQualityMode() = "never" and Conn_learnedLimit() <> invalid then budget = 0
-    if budget > 0 then out.Push({ kind: "footer", text: "Auto plays videos up to " + Conn_rateLabel(budget) + " without converting them." })
+    if budget > 0 then out.Push({ kind: "footer", text: TxF("Auto plays videos up to {0} without converting them.", [Conn_rateLabel(budget)]) })
 end sub
 
 function Conn_learnedLimit() as dynamic
@@ -120,8 +120,8 @@ end function
 function Conn_learnedLimitLabel(limit as object) as string
     rate = Conn_rateLabel(Int(Num_or(limit.kbps, 0)))
     day = Conn_shortDate(Str_orEmpty(limit.observed_at))
-    if day = "" then return "Limited to " + rate + " after buffering"
-    return "Limited to " + rate + " after buffering on " + day
+    if day = "" then return TxF("Limited to {0} after buffering", [rate])
+    return TxF("Limited to {0} after buffering on {1}", [rate, day])
 end function
 
 ' connectionRate: rounded down so a bound or budget never overstates the link: "850 kbps",
@@ -146,7 +146,7 @@ function Conn_shortDate(iso as string) as string
     dt = CreateObject("roDateTime")
     dt.FromSeconds(secs)
     dt.ToLocalTime()
-    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    months = [Tx("Jan"), Tx("Feb"), Tx("Mar"), Tx("Apr"), Tx("May"), Tx("Jun"), Tx("Jul"), Tx("Aug"), Tx("Sep"), Tx("Oct"), Tx("Nov"), Tx("Dec")]
     mo = dt.GetMonth()
     if mo < 1 or mo > 12 then return ""
     return months[mo - 1] + " " + dt.GetDayOfMonth().ToStr()
@@ -162,7 +162,7 @@ end function
 ' The speed line: the newer of the server's probe reading and this Roku's own last test, else the
 ' playback sample (a lower bound), else "Not measured yet".
 function Conn_speedLine() as string
-    if m.conn.testing then return "Testing…"
+    if m.conn.testing then return Tx("Testing…")
     reading = invalid
     s = m.conn.state
     if s <> invalid and s.probe <> invalid and Type(s.probe) = "roAssociativeArray" then
@@ -175,40 +175,35 @@ function Conn_speedLine() as string
     if reading = invalid and s <> invalid and s.playback_sample <> invalid and Type(s.playback_sample) = "roAssociativeArray" then
         reading = { kbps: Int(Num_or(s.playback_sample.kbps, 0)), at: Conn_epochSeconds(Str_orEmpty(s.playback_sample.measured_at)), transport: "", lowerBound: true, playback: true }
     end if
-    if reading = invalid or reading.kbps <= 0 then return "Not measured yet"
+    if reading = invalid or reading.kbps <= 0 then return Tx("Not measured yet")
     rate = Conn_rateLabel(reading.kbps)
     ago = Conn_ago(reading.at)
     if reading.playback then
-        if ago = "" then return "Faster than " + rate + " · seen during playback"
-        return "Faster than " + rate + " · seen during playback " + ago
+        if ago = "" then return TxF("Faster than {0} · seen during playback", [rate])
+        return TxF("Faster than {0} · seen during playback {1}", [rate, ago])
     end if
-    network = "this connection"
+    network = Tx("this connection")
     if reading.transport = "wifi" then network = "Wi-Fi"
-    if reading.transport = "ethernet" then network = "Ethernet"
-    if reading.lowerBound then rate = "Faster than " + rate
-    if ago = "" then return rate + " · measured on " + network
-    return rate + " · measured " + ago + " on " + network
+    if reading.transport = "ethernet" then network = Tx("Ethernet")
+    if reading.lowerBound then rate = TxF("Faster than {0}", [rate])
+    if ago = "" then return TxF("{0} · measured on {1}", [rate, network])
+    return TxF("{0} · measured {1} on {2}", [rate, ago, network])
 end function
 
 function Conn_ago(at as integer) as string
     if at <= 0 then return ""
     now = CreateObject("roDateTime").AsSeconds()
     minutes = (now - at) \ 60
-    if minutes < 1 then return "just now"
-    if minutes < 60 then return Conn_plural(minutes, "minute") + " ago"
-    if minutes < 24 * 60 then return Conn_plural(minutes \ 60, "hour") + " ago"
-    return Conn_plural(minutes \ (24 * 60), "day") + " ago"
+    if minutes < 1 then return Tx("just now")
+    if minutes < 60 then return TxP("1 minute ago", "{0} minutes ago", minutes)
+    if minutes < 24 * 60 then return TxP("1 hour ago", "{0} hours ago", minutes \ 60)
+    return TxP("1 day ago", "{0} days ago", minutes \ (24 * 60))
 end function
 
 function Conn_truthy(v as dynamic) as boolean
     t = Type(v)
     if t = "roBoolean" or t = "Boolean" then return v
     return LCase(Str_orEmpty(v)) = "true"
-end function
-
-function Conn_plural(n as integer, unit as string) as string
-    if n = 1 then return "1 " + unit
-    return n.ToStr() + " " + unit + "s"
 end function
 
 ' A probe reading the server stored for this device, kept for playback starts while it is current.
@@ -235,22 +230,22 @@ end sub
 
 function Conn_rowValue(id as string) as dynamic
     if id = "bufferingQuality" then return Conn_modeLabel(Settings_bufferingQualityMode())
-    if id = "learnedLimit" then return "Reset"
+    if id = "learnedLimit" then return Tx("Reset")
     if id = "connectionSpeed" then
-        if m.conn.testing then return "Testing…"
-        return "Test speed"
+        if m.conn.testing then return Tx("Testing…")
+        return Tx("Test speed")
     end if
     return invalid
 end function
 
 function Conn_modeLabel(mode as string) as string
-    if mode = "never" then return "Never"
-    if mode = "ask" then return "Ask first"
-    return "Automatically"
+    if mode = "never" then return Tx("Never")
+    if mode = "ask" then return Tx("Ask first")
+    return Tx("Automatically")
 end function
 
 function Conn_modeOptions() as object
-    return [{ value: "never", label: "Never" }, { value: "ask", label: "Ask first" }, { value: "always", label: "Automatically" }]
+    return [{ value: "never", label: Tx("Never") }, { value: "ask", label: Tx("Ask first") }, { value: "always", label: Tx("Automatically") }]
 end function
 
 sub Conn_resetLimit()
@@ -294,12 +289,13 @@ sub Conn_onProbe()
     Diag_log("[siku-playback] speed test outcome=" + Str_orEmpty(r.outcome) + " kbps=" + Str_orEmpty(r.kbps) + " lower_bound=" + Str_orEmpty(r.lowerBound) + " bytes=" + Str_orEmpty(r.bytes) + " ms=" + Str_orEmpty(r.durationMs) + " method=" + Str_orEmpty(r.method) + " status=" + Str_orEmpty(r.status) + " saved=" + Str_orEmpty(r.saved))
     if r.outcome = "measured" then
         Conn_storeProbe({ kbps: r.kbps, at: CreateObject("roDateTime").AsSeconds(), transport: Str_orEmpty(r.transport), lowerBound: r.lowerBound = true })
-        if r.saved <> true then m.conn.message = "Couldn't save the speed test. Try again."
+        if r.saved <> true then m.conn.message = Tx("Couldn't save the speed test. Try again.")
     else if r.outcome = "rate_limited" then
         secs = Int(Num_or(r.retryAfter, 30))
-        m.conn.message = "Try again in " + Conn_plural(secs, "second") + "."
+        if secs < 1 then secs = 1
+        m.conn.message = TxP("Try again in 1 second.", "Try again in {0} seconds.", secs)
     else
-        m.conn.message = "Couldn't measure the connection speed. Try again."
+        m.conn.message = Tx("Couldn't measure the connection speed. Try again.")
     end if
     Conn_reread(true)
     Conn_rerender()

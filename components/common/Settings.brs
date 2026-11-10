@@ -713,7 +713,7 @@ end sub
 ' quality pair is phone-only and not ported.)
 function Settings_resolutionChoices() as object
     return [
-        { value: "auto", label: "Auto" }
+        { value: "auto", label: Tx("Auto") }
         { value: "2160p", label: "4K" }
         { value: "1080p", label: "1080p" }
         { value: "720p", label: "720p" }
@@ -736,7 +736,7 @@ end function
 
 ' "No limit", "40 Mbps", "1.5 Mbps"; a cap one decimal of Mbps can't show exactly reads in kbps.
 function Settings_bitrateLabel(kbps as integer) as string
-    if kbps <= 0 then return "No limit"
+    if kbps <= 0 then return Tx("No limit")
     if kbps mod 100 <> 0 then return kbps.ToStr() + " kbps"
     return Settings_formatKbps(kbps)
 end function
@@ -766,7 +766,7 @@ function Settings_bitrateChoices(current as integer) as object
         values.Push(v)
     end for
     if stored > 0 then values.Push(stored)
-    out = [{ value: 0, label: "No limit" }]
+    out = [{ value: 0, label: Tx("No limit") }]
     for each v in values
         out.Push({ value: v, label: Settings_bitrateLabel(v) })
     end for
@@ -777,28 +777,41 @@ end function
 function Settings_qualityDescription(resolution as dynamic, kbps as integer) as string
     r = Settings_normalizeResolution(resolution)
     if r = "auto" then
-        text = "Plays the original file whenever your Roku and connection can handle it."
+        text = Tx("Plays the original file whenever your Roku and connection can handle it.")
     else
-        text = "Plays the original file up to " + Settings_resolutionLabel(r) + ". Larger files are converted."
+        text = TxF("Plays the original file up to {0}. Larger files are converted.", [Settings_resolutionLabel(r)])
     end if
-    if kbps > 0 then text = text + " Files above this bitrate are converted to fit."
+    if kbps > 0 then text = text + " " + Tx("Files above this bitrate are converted to fit.")
     return text
 end function
 
 ' LanguageOptions: the contract's language floor (revision 7, two-letter tags) plus the
 ' server's suggestions and the current value, each with an English name.
-function Settings_languageName(tag as string) as string
+' English names of the language floor and the regional tags, in the interface language; built
+' once per language (Settings_languageOptions names every option).
+function Settings_languageNames() as object
+    loc = I18n_locale()
+    if m.settingsLangNames <> invalid and m.settingsLangNamesLocale = loc then return m.settingsLangNames
     names = {
-        ar: "Arabic", bn: "Bengali", bg: "Bulgarian", zh: "Chinese", hr: "Croatian", cs: "Czech", da: "Danish", nl: "Dutch"
-        en: "English", fi: "Finnish", fr: "French", de: "German", el: "Greek", he: "Hebrew", hi: "Hindi", hu: "Hungarian"
-        id: "Indonesian", it: "Italian", ja: "Japanese", ko: "Korean", ms: "Malay", no: "Norwegian", fa: "Persian", pl: "Polish"
-        pt: "Portuguese", ro: "Romanian", ru: "Russian", sk: "Slovak", sl: "Slovenian", es: "Spanish", sv: "Swedish", ta: "Tamil"
-        te: "Telugu", th: "Thai", tr: "Turkish", uk: "Ukrainian", vi: "Vietnamese"
+        ar: Tx("Arabic"), bn: Tx("Bengali"), bg: Tx("Bulgarian"), zh: Tx("Chinese"), hr: Tx("Croatian"), cs: Tx("Czech"), da: Tx("Danish"), nl: Tx("Dutch")
+        en: Tx("English"), fi: Tx("Finnish"), fr: Tx("French"), de: Tx("German"), el: Tx("Greek"), he: Tx("Hebrew"), hi: Tx("Hindi"), hu: Tx("Hungarian")
+        id: Tx("Indonesian"), it: Tx("Italian"), ja: Tx("Japanese"), ko: Tx("Korean"), ms: Tx("Malay"), no: Tx("Norwegian"), fa: Tx("Persian"), pl: Tx("Polish")
+        pt: Tx("Portuguese"), ro: Tx("Romanian"), ru: Tx("Russian"), sk: Tx("Slovak"), sl: Tx("Slovenian"), es: Tx("Spanish"), sv: Tx("Swedish"), ta: Tx("Tamil")
+        te: Tx("Telugu"), th: Tx("Thai"), tr: Tx("Turkish"), uk: Tx("Ukrainian"), vi: Tx("Vietnamese")
     }
     regional = {
-        "zh-hans": "Chinese (Simplified)", "zh-hant": "Chinese (Traditional)", "en-us": "English (United States)", "en-gb": "English (United Kingdom)"
-        "fr-ca": "French (Canada)", "pt-br": "Portuguese (Brazil)", "pt-pt": "Portuguese (Portugal)", "es-419": "Spanish (Latin America)", "es-es": "Spanish (Spain)"
+        "zh-hans": Tx("Chinese (Simplified)"), "zh-hant": Tx("Chinese (Traditional)"), "en-us": Tx("English (United States)"), "en-gb": Tx("English (United Kingdom)")
+        "fr-ca": Tx("French (Canada)"), "pt-br": Tx("Portuguese (Brazil)"), "pt-pt": Tx("Portuguese (Portugal)"), "es-419": Tx("Spanish (Latin America)"), "es-es": Tx("Spanish (Spain)")
     }
+    m.settingsLangNames = { names: names, regional: regional }
+    m.settingsLangNamesLocale = loc
+    return m.settingsLangNames
+end function
+
+function Settings_languageName(tag as string) as string
+    tables = Settings_languageNames()
+    names = tables.names
+    regional = tables.regional
     t = LCase(tag.Trim())
     if t = "" then return ""
     r = regional[t]
@@ -820,10 +833,10 @@ end function
 
 ' SettingPresentationMetadata.unsetLabel per key.
 function Settings_languageUnsetLabel(key as string) as string
-    if key = "playback.audio_language" then return "No preference"
-    if key = "playback.subtitle_language" then return "None"
-    if key = "catalog.metadata_language" then return "Library default"
-    return "Unset"
+    if key = "playback.audio_language" then return Tx("No preference")
+    if key = "playback.subtitle_language" then return Tx("None")
+    if key = "catalog.metadata_language" then return Tx("Library default")
+    return Tx("Unset")
 end function
 
 function Settings_languageLabel(tag as dynamic, key as string) as string
@@ -861,17 +874,17 @@ end function
 ' TvSubtitleAppearanceOptions.kt
 function Settings_appearanceOptions(field as string) as object
     if field = "fontSize" then
-        return [{ value: "small", label: "Small" }, { value: "medium", label: "Medium" }, { value: "large", label: "Large" }, { value: "xlarge", label: "X-Large" }, { value: "xxlarge", label: "XX-Large" }]
+        return [{ value: "small", label: Tx("Small") }, { value: "medium", label: Tx("Medium") }, { value: "large", label: Tx("Large") }, { value: "xlarge", label: Tx("X-Large") }, { value: "xxlarge", label: Tx("XX-Large") }]
     else if field = "fontFamily" then
-        return [{ value: "sans-serif", label: "Sans-serif" }, { value: "serif", label: "Serif" }, { value: "monospace", label: "Monospace" }]
+        return [{ value: "sans-serif", label: Tx("Sans-serif") }, { value: "serif", label: Tx("Serif") }, { value: "monospace", label: Tx("Monospace") }]
     else if field = "backgroundStyle" then
-        return [{ value: "none", label: "No background" }, { value: "box", label: "Box" }, { value: "shadow", label: "Drop Shadow" }, { value: "outline", label: "Outline" }]
+        return [{ value: "none", label: Tx("No background") }, { value: "box", label: Tx("Box") }, { value: "shadow", label: Tx("Drop Shadow") }, { value: "outline", label: Tx("Outline") }]
     else if field = "position" then
-        return [{ value: "bottom", label: "Bottom" }, { value: "lower-third", label: "Lower Third" }, { value: "top", label: "Top" }]
+        return [{ value: "bottom", label: Tx("Bottom") }, { value: "lower-third", label: Tx("Lower Third") }, { value: "top", label: Tx("Top") }]
     else if field = "fontColor" then
-        return [{ value: "#ffffff", label: "White" }, { value: "#facc15", label: "Yellow" }, { value: "#22c55e", label: "Green" }, { value: "#06b6d4", label: "Cyan" }, { value: "#d946ef", label: "Magenta" }, { value: "#ef4444", label: "Red" }, { value: "#3b82f6", label: "Blue" }, { value: "#9ca3af", label: "Gray" }, { value: "#000000", label: "Black" }]
+        return [{ value: "#ffffff", label: Tx("White") }, { value: "#facc15", label: Tx("Yellow") }, { value: "#22c55e", label: Tx("Green") }, { value: "#06b6d4", label: Tx("Cyan") }, { value: "#d946ef", label: Tx("Magenta") }, { value: "#ef4444", label: Tx("Red") }, { value: "#3b82f6", label: Tx("Blue") }, { value: "#9ca3af", label: Tx("Gray") }, { value: "#000000", label: Tx("Black") }]
     else if field = "backgroundColor" or field = "textOutlineColor" then
-        return [{ value: "#000000", label: "Black" }, { value: "#374151", label: "Dark Gray" }, { value: "#1e3a5f", label: "Navy" }, { value: "#7f1d1d", label: "Dark Red" }, { value: "#14532d", label: "Dark Green" }]
+        return [{ value: "#000000", label: Tx("Black") }, { value: "#374151", label: Tx("Dark Gray") }, { value: "#1e3a5f", label: Tx("Navy") }, { value: "#7f1d1d", label: Tx("Dark Red") }, { value: "#14532d", label: Tx("Dark Green") }]
     end if
     return []
 end function
