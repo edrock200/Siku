@@ -115,6 +115,7 @@ end sub
 function Api_errorText(resp as object) as string
     if resp = invalid or resp.error = invalid then return Tx("Something went wrong")
     if resp.status = 0 then return Tx("Can't reach the server. Check your connection and try again.")
+    if Type(resp.error) = "roAssociativeArray" and not Str_isEmpty(resp.error.shown) then return resp.error.shown
     return Api_titleText(resp.error.title)
 end function
 
@@ -140,6 +141,7 @@ function Api_reasonText(resp as dynamic, fallback as string) as string
     if Int(Num_or(resp.status, 0)) <= 0 then return Tx("Can't reach the server. Check your connection.")
     err = resp.error
     if err = invalid or Type(err) <> "roAssociativeArray" then return fallback
+    if not Str_isEmpty(err.shown) then return err.shown
     reason = Str_orEmpty(err.detail).Trim()
     if reason <> "" then return reason
     title = Str_orEmpty(err.title).Trim()

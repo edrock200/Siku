@@ -46,11 +46,11 @@ class PasswordChange(unittest.TestCase):
         by_code = {"code": "password_change_required", "detail": "protocol"}
         check_cases(self, FILES, [
             ("type ending in the code", "Http_problem", [403, body, None],
-             {"code": "password_change_required", "title": OTHER, "detail": OTHER}),
+             {"code": "password_change_required", "title": OTHER, "detail": OTHER, "shown": ""}),
             ("code field only", "Http_problem", [403, by_code, None],
-             {"code": "password_change_required", "title": OTHER, "detail": OTHER}),
+             {"code": "password_change_required", "title": OTHER, "detail": OTHER, "shown": ""}),
             ("another problem keeps its text", "Http_problem", [403, plain, None],
-             {"code": "forbidden", "title": "Forbidden", "detail": "No."}),
+             {"code": "forbidden", "title": "Forbidden", "detail": "No.", "shown": ""}),
         ])
 
 

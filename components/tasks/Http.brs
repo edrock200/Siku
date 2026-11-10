@@ -158,7 +158,12 @@ function Http_problem(status as integer, data as dynamic, failure as dynamic) as
         title = PasswordChange_message()
         detail = title
     end if
-    return { code: code, title: title, detail: detail }
+    ' shown: the catalog's text for this problem type in a non-English interface (error.<type>,
+    ' Silo's docs/architecture/i18n.md), "" in English or when the catalog lacks it. title and
+    ' detail stay the server's English: code matches on them; screens show `shown` first.
+    shown = ""
+    if code <> "" and code <> "network" and code <> PasswordChange_code() then shown = TxKey("error." + code, invalid, "")
+    return { code: code, title: title, detail: detail, shown: shown }
 end function
 
 ' Device identification headers sent on every request (docs/api-spec.md §2.3), except anonymous

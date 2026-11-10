@@ -49,6 +49,23 @@ class Lookup(unittest.TestCase):
         ])
 
 
+KEYED = {"appLocale": "de", "strings": {"@home.section.recentlyAddedIn": "Neu in {library}",
+                                          "@error.not_found": "Nicht gefunden."}}
+
+
+class ServerKeys(unittest.TestCase):
+    def test_cases(self):
+        k = "TxKey"
+        check_cases(self, UTILS, [
+            ("keyed title with its argument", k, ["home.section.recentlyAddedIn", {"library": "Filme"}, "Recently Added in Movies"], "Neu in Filme", {"global": KEYED}),
+            ("missing argument keeps the server title", k, ["home.section.recentlyAddedIn", {}, "Recently Added in Movies"], "Recently Added in Movies", {"global": KEYED}),
+            ("unknown key keeps the server title", k, ["home.section.nope", None, "Nope"], "Nope", {"global": KEYED}),
+            ("no key keeps the server title", k, [None, None, "Custom row"], "Custom row", {"global": KEYED}),
+            ("English keeps the server title", k, ["error.not_found", None, "Not found"], "Not found", {"global": {"appLocale": "en", "strings": {}}}),
+            ("problem type", k, ["error.not_found", None, ""], "Nicht gefunden.", {"global": KEYED}),
+        ])
+
+
 class LanguageFiles(unittest.TestCase):
     def test_built_files_are_current_and_parse(self):
         res = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "i18n_build.py"), "--check"],

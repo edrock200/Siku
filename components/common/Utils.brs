@@ -508,6 +508,30 @@ function Tx(text as string) as string
     return text
 end function
 
+' Server text by Silo catalog key (home.section.*, error.*): the translation of `key` with its
+' {name} placeholders filled from `args` (an AA, e.g. a section's title_args), else `fallback`
+' (the server's English) when the language lacks the key or an argument is missing.
+function TxKey(key as dynamic, args as dynamic, fallback as string) as string
+    if key = invalid or (Type(key) <> "roString" and Type(key) <> "String") or key = "" then return fallback
+    if I18n_locale() = "en" then return fallback
+    t = I18n_table()
+    v = t["@" + key]
+    if Type(v) <> "roString" and Type(v) <> "String" then return fallback
+    if Type(args) = "roAssociativeArray" then
+        for each name in args
+            a = args[name]
+            if a = invalid then
+                a = ""
+            else if Type(a) <> "roString" and Type(a) <> "String" then
+                if GetInterface(a, "ifToStr") <> invalid then a = a.ToStr() else a = ""
+            end if
+            v = v.Replace("{" + name + "}", a)
+        end for
+    end if
+    if Instr(1, v, "{") > 0 then return fallback
+    return v
+end function
+
 ' Tx with {0}, {1}, … replaced by args (strings or numbers).
 function TxF(text as string, args as object) as string
     out = Tx(text)

@@ -439,10 +439,10 @@ sub buildRows(fromCache = false as boolean)
                 end for
                 ' The section's page goes on the first row drawn from it (Continue Listening
                 ' when the section holds only audiobooks).
-                if video.Count() > 0 then rows.Push({ id: sid, title: Str_orEmpty(s.title), style: "landscape", items: video, exploreSectionId: exploreId(explore, sid), exploreTitle: Str_orEmpty(s.title) })
-                if audio.Count() > 0 then rows.Push({ id: "continue_listening", title: Tx("Continue Listening"), style: "square", items: audio, exploreSectionId: exploreId(explore and video.Count() = 0, sid), exploreTitle: Str_orEmpty(s.title) })
+                if video.Count() > 0 then rows.Push({ id: sid, title: TxKey(s.title_key, s.title_args, Str_orEmpty(s.title)), style: "landscape", items: video, exploreSectionId: exploreId(explore, sid), exploreTitle: TxKey(s.title_key, s.title_args, Str_orEmpty(s.title)) })
+                if audio.Count() > 0 then rows.Push({ id: "continue_listening", title: Tx("Continue Listening"), style: "square", items: audio, exploreSectionId: exploreId(explore and video.Count() = 0, sid), exploreTitle: TxKey(s.title_key, s.title_args, Str_orEmpty(s.title)) })
             else
-                rows.Push({ id: sid, title: Str_orEmpty(s.title), style: defaultStyle, items: items, exploreSectionId: exploreId(explore, sid), exploreTitle: Str_orEmpty(s.title) })
+                rows.Push({ id: sid, title: TxKey(s.title_key, s.title_args, Str_orEmpty(s.title)), style: defaultStyle, items: items, exploreSectionId: exploreId(explore, sid), exploreTitle: TxKey(s.title_key, s.title_args, Str_orEmpty(s.title)) })
             end if
         end if
     end for

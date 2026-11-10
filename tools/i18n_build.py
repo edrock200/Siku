@@ -187,6 +187,11 @@ def build():
                 from_catalog += 1
             else:
                 miss.append(text)
+        # Server text by catalog key (Silo's docs/architecture/i18n.md): Home row titles
+        # (title_key, named {placeholders} filled from title_args) and problem types, as "@key".
+        for k, v in roku_entries(LANGS[lang][1]).items():
+            if k.startswith(("home.section.", "error.")) and "#" not in k and v:
+                table["@" + k] = v
         built[lang] = case_merge(table)
         missing[lang] = miss
         stats[lang] = (len(strings), from_catalog, len(table) - from_catalog, len(miss))
