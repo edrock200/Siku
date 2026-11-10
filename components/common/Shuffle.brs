@@ -80,7 +80,7 @@ end function
 ' hand it to Shuffle_play to open the player on the first pick.
 sub Shuffle_start(kind as string, id as string, callback as string)
     if id = "" then
-        m.global.toast = "Couldn't start shuffle."
+        m.global.toast = Tx("Couldn't start shuffle.")
         return
     end if
     Api_call({ method: "POST", path: "/api/v2/shuffles", query: { image_size: "large" }, body: { scope: { kind: kind, id: id } } }, callback)
@@ -98,9 +98,9 @@ function Shuffle_play(resp as object) as boolean
         end if
     end if
     if resp.status = 409 then
-        m.global.toast = "Nothing here can be played."
+        m.global.toast = Tx("Nothing here can be played.")
     else
-        m.global.toast = "Couldn't start shuffle."
+        m.global.toast = Tx("Couldn't start shuffle.")
     end if
     return false
 end function

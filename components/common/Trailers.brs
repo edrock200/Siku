@@ -57,12 +57,12 @@ end function
 
 function Trailer_kindLabel(kind as dynamic) as string
     k = LCase(Str_orEmpty(kind).Trim())
-    if k = "trailer" then return "Trailer"
-    if k = "teaser" then return "Teaser"
-    if k = "featurette" then return "Featurette"
-    if k = "behind_the_scenes" or k = "behind-the-scenes" then return "Behind the Scenes"
-    if k = "deleted_scene" or k = "deleted-scene" then return "Deleted Scene"
-    if k = "interview" then return "Interview"
+    if k = "trailer" then return Tx("Trailer")
+    if k = "teaser" then return Tx("Teaser")
+    if k = "featurette" then return Tx("Featurette")
+    if k = "behind_the_scenes" or k = "behind-the-scenes" then return Tx("Behind the Scenes")
+    if k = "deleted_scene" or k = "deleted-scene" then return Tx("Deleted Scene")
+    if k = "interview" then return Tx("Interview")
     words = k.Replace("_", " ").Replace("-", " ").Tokenize(" ")
     out = ""
     for each w in words
@@ -71,7 +71,7 @@ function Trailer_kindLabel(kind as dynamic) as string
             out = out + UCase(Left(w, 1)) + Mid(w, 2)
         end if
     end for
-    if out = "" then return "Extra"
+    if out = "" then return Tx("Extra")
     return out
 end function
 

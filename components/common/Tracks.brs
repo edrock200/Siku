@@ -63,7 +63,7 @@ end function
 
 ' Resting value: resolution plus HDR family, e.g. "4K · DV"; "Auto" when nothing is known.
 function Tracks_versionCompact(v as dynamic) as string
-    if v = invalid then return "Auto"
+    if v = invalid then return Tx("Auto")
     tokens = []
     r = Tracks_resolution(v.resolution)
     if r <> "" then tokens.Push(r)
@@ -72,13 +72,13 @@ function Tracks_versionCompact(v as dynamic) as string
     else if Tracks_isHdr(v) then
         tokens.Push("HDR")
     end if
-    if tokens.Count() = 0 then return "Auto"
+    if tokens.Count() = 0 then return Tx("Auto")
     return Str_joinDots(tokens)
 end function
 
 ' Menu-row title: "4K · HEVC · DV · TrueHD" / "1080p · H.264 · AAC".
 function Tracks_versionShort(v as dynamic) as string
-    if v = invalid then return "Auto"
+    if v = invalid then return Tx("Auto")
     tokens = []
     r = Tracks_resolution(v.resolution)
     if r <> "" then tokens.Push(r)
@@ -96,7 +96,7 @@ function Tracks_versionShort(v as dynamic) as string
     end if
     if ac <> "" then tokens.Push(ac)
     if not Str_isEmpty(v.edition_key) then tokens.Unshift(Str_orEmpty(v.edition_key))
-    if tokens.Count() = 0 then return "Auto"
+    if tokens.Count() = 0 then return Tx("Auto")
     return Str_joinDots(tokens)
 end function
 
@@ -147,9 +147,35 @@ function Tracks_languageName(code as dynamic) as string
         la: "Latin", lat: "Latin", bn: "Bengali", ben: "Bengali", ur: "Urdu", urd: "Urdu", sw: "Swahili", swa: "Swahili", af: "Afrikaans", afr: "Afrikaans"
     }
     n = names[c]
-    if n <> invalid then return n
+    if n <> invalid then return n ' English: callers compare it with track titles; Tracks_languageLabel translates
     if Len(c) = 2 or Len(c) = 3 then return UCase(c)
     return Str_orEmpty(code)
+end function
+
+' The language's name in the interface language, for display.
+' The English-to-interface-language table is built once per component and language.
+function Tracks_languageLabel(code as dynamic) as string
+    n = Tracks_languageName(code)
+    if n = "" then return ""
+    loc = I18n_locale()
+    if loc = "en" then return n
+    if m.tracksLangLabels = invalid or m.tracksLangLocale <> loc then
+        m.tracksLangLocale = loc
+        m.tracksLangLabels = {
+            English: Tx("English"), Spanish: Tx("Spanish"), French: Tx("French"), German: Tx("German"), Italian: Tx("Italian"), Portuguese: Tx("Portuguese")
+            Japanese: Tx("Japanese"), Korean: Tx("Korean"), Chinese: Tx("Chinese"), Russian: Tx("Russian"), Hindi: Tx("Hindi"), Arabic: Tx("Arabic")
+            Dutch: Tx("Dutch"), Swedish: Tx("Swedish"), Norwegian: Tx("Norwegian"), Danish: Tx("Danish"), Finnish: Tx("Finnish"), Polish: Tx("Polish")
+            Turkish: Tx("Turkish"), Czech: Tx("Czech"), Greek: Tx("Greek"), Hebrew: Tx("Hebrew"), Hungarian: Tx("Hungarian"), Thai: Tx("Thai")
+            Vietnamese: Tx("Vietnamese"), Indonesian: Tx("Indonesian"), Ukrainian: Tx("Ukrainian"), Romanian: Tx("Romanian"), Tamil: Tx("Tamil"), Telugu: Tx("Telugu")
+            Persian: Tx("Persian"), Malay: Tx("Malay"), Tagalog: Tx("Tagalog"), Filipino: Tx("Filipino"), Catalan: Tx("Catalan"), Bulgarian: Tx("Bulgarian")
+            Croatian: Tx("Croatian"), Serbian: Tx("Serbian"), Slovak: Tx("Slovak"), Slovenian: Tx("Slovenian"), Latvian: Tx("Latvian"), Lithuanian: Tx("Lithuanian")
+            Estonian: Tx("Estonian"), Icelandic: Tx("Icelandic"), Irish: Tx("Irish"), Latin: Tx("Latin"), Bengali: Tx("Bengali"), Urdu: Tx("Urdu")
+            Swahili: Tx("Swahili"), Afrikaans: Tx("Afrikaans")
+        }
+    end if
+    v = m.tracksLangLabels[n]
+    if v = invalid then return n
+    return v
 end function
 
 ' ---------- Audio ----------
@@ -159,12 +185,12 @@ function Tracks_channelsLabel(t as object) as string
     ch = t.channels
     if ch = invalid then return ""
     n = Int(Num_or(ch))
-    if n = 1 then return "Mono"
-    if n = 2 then return "Stereo"
+    if n = 1 then return Tx("Mono")
+    if n = 2 then return Tx("Stereo")
     if n = 6 then return "5.1"
     if n = 8 then return "7.1"
     if n <= 0 then return ""
-    return n.ToStr() + " ch"
+    return TxF("{0} ch", [n])
 end function
 
 ' A custom title worth showing: not just the language or codec, and not a bare tag.
@@ -184,11 +210,11 @@ end function
 
 ' Menu-row title: language → useful custom title → "Track N".
 function Tracks_audioTitle(t as object, ordinal as integer) as string
-    n = Tracks_languageName(t.language)
+    n = Tracks_languageLabel(t.language)
     if n <> "" then return n
     u = Tracks_usefulTitle(t.title, t.language, t.codec)
     if u <> "" then return u
-    return "Track " + (ordinal + 1).ToStr()
+    return TxF("Track {0}", [ordinal + 1])
 end function
 
 ' Pill-value summary: "English · EAC3 · 5.1".
@@ -210,7 +236,7 @@ function Tracks_audioDetail(t as object) as string
     if c <> "" then tokens.Push(c)
     ch = Tracks_channelsLabel(t)
     if ch <> "" then tokens.Push(ch)
-    if t["default"] = true then tokens.Push("Default")
+    if t["default"] = true then tokens.Push(Tx("Default"))
     return Str_joinDots(tokens)
 end function
 
@@ -253,18 +279,18 @@ function Tracks_subtitleIsForced(t as object) as boolean
 end function
 
 function Tracks_subtitleTitle(t as object, ordinal as integer) as string
-    n = Tracks_languageName(t.language)
+    n = Tracks_languageLabel(t.language)
     if n <> "" then return n
     u = Tracks_usefulTitle(t.title, t.language, t.codec)
     if u <> "" then return u
-    return "Track " + (ordinal + 1).ToStr()
+    return TxF("Track {0}", [ordinal + 1])
 end function
 
 ' Pill-value summary: "English (Forced) · SRT" / "English (SDH) · PGS".
 function Tracks_subtitleSummary(t as object, ordinal as integer) as string
     name = Tracks_subtitleTitle(t, ordinal)
     if Tracks_subtitleIsSdh(t) and Instr(1, LCase(name), "sdh") = 0 and Instr(1, LCase(name), "cc") = 0 then name = name + " (SDH)"
-    if Tracks_subtitleIsForced(t) and Instr(1, LCase(name), "forced") = 0 then name = name + " (Forced)"
+    if Tracks_subtitleIsForced(t) and Instr(1, LCase(name), "forced") = 0 then name = name + " (" + Tx("Forced") + ")"
     c = Tracks_subtitleCodec(t.codec)
     if c = "" then return name
     return name + " · " + c
@@ -285,10 +311,10 @@ function Tracks_subtitleDetail(t as object) as string
     if u <> "" then tokens.Push(u)
     c = Tracks_subtitleCodec(t.codec)
     if c <> "" then tokens.Push(c)
-    if Tracks_subtitleIsForced(t) then tokens.Push("Forced")
+    if Tracks_subtitleIsForced(t) then tokens.Push(Tx("Forced"))
     if Tracks_subtitleIsSdh(t) then tokens.Push("SDH")
-    if t["default"] = true then tokens.Push("Default")
-    if t.external = true then tokens.Push("External")
+    if t["default"] = true then tokens.Push(Tx("Default"))
+    if t.external = true then tokens.Push(Tx("External"))
     return Str_joinDots(tokens)
 end function
 
@@ -303,8 +329,8 @@ function Tracks_aiSubtitleKind(label as dynamic) as string
     provider = ""
     pm = CreateObject("roRegex", "\(([^)]+)\)\s*$", "").Match(raw)
     if pm.Count() > 1 then provider = LCase(pm[1].Trim()).Replace("_", "").Replace("-", "")
-    if provider = "transcribed" or CreateObject("roRegex", "\bAI transcribed\b", "i").IsMatch(raw) then return "AI Transcription"
-    if provider = "translated" or CreateObject("roRegex", "\(\s*AI\s*\)", "i").IsMatch(raw) then return "AI Translation"
+    if provider = "transcribed" or CreateObject("roRegex", "\bAI transcribed\b", "i").IsMatch(raw) then return Tx("AI Transcription")
+    if provider = "translated" or CreateObject("roRegex", "\(\s*AI\s*\)", "i").IsMatch(raw) then return Tx("AI Translation")
     return ""
 end function
 

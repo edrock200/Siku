@@ -40,8 +40,8 @@ end function
 ' "8 films", or "1 film".
 function BoxSet_filmCount(count as dynamic) as string
     n = Int(Num_or(count, 0))
-    if n = 1 then return "1 film"
-    return n.ToStr() + " films"
+    if n = 1 then return Tx("1 film")
+    return TxF("{0} films", [n])
 end function
 
 ' "2001 – 2011", one year when the box set spans one, or "" with no year.
@@ -58,7 +58,7 @@ end function
 function BoxSet_cardCaption(bs as object) as string
     played = Int(Num_or(bs.played_count, 0))
     total = Int(Num_or(bs.movie_count, 0))
-    if played > 0 then return played.ToStr() + " / " + total.ToStr() + " watched"
+    if played > 0 then return TxF("{0} / {1} watched", [played, total])
     years = BoxSet_yearsLabel(bs)
     if years <> "" then return years
     return BoxSet_filmCount(total)
@@ -66,11 +66,11 @@ end function
 
 ' The box set page's facts: "Box set", the film count, the years, and watched progress once started.
 function BoxSet_heroFacts(bs as object) as object
-    facts = ["Box set", BoxSet_filmCount(bs.movie_count)]
+    facts = [Tx("Box set"), BoxSet_filmCount(bs.movie_count)]
     years = BoxSet_yearsLabel(bs)
     if years <> "" then facts.Push(years)
     played = Int(Num_or(bs.played_count, 0))
-    if played > 0 then facts.Push(played.ToStr() + " of " + Int(Num_or(bs.movie_count, 0)).ToStr() + " watched")
+    if played > 0 then facts.Push(TxF("{0} of {1} watched", [played, Int(Num_or(bs.movie_count, 0))]))
     return facts
 end function
 
@@ -119,8 +119,8 @@ function BoxSet_playLabel(bs as object, nextMovie as object) as string
     total = Int(Num_or(bs.movie_count, 0))
     started = played >= 1 and played < total
     title = Str_orEmpty(nextMovie.title)
-    if started or BoxSet_resumePosition(nextMovie) > 0 then return "Continue · " + title
-    return "Play " + title
+    if started or BoxSet_resumePosition(nextMovie) > 0 then return TxF("Continue · {0}", [title])
+    return TxF("Play {0}", [title])
 end function
 
 ' A search result's box set as a grid card. Search can return one collection from two libraries,

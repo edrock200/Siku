@@ -37,6 +37,8 @@ sub init()
     x = 0
     for i = 0 to m.chips.Count() - 1
         m.chips[i].observeField("buttonSelected", "onChipSelected")
+        ' Translated here, before the row is laid out (MainScene translates the tree after init).
+        m.chips[i].text = Tx(m.chips[i].text)
         m.chips[i].translation = [x, 0]
         x = x + m.chips[i].width + 16
     end for
@@ -108,8 +110,8 @@ sub onPerson(event as object)
     m.portrait.uri = Url_resolve(p.photo_url)
 
     badgeTexts = []
-    if not Str_isEmpty(p.birth_date) then badgeTexts.Push("Born " + prettyDate(p.birth_date))
-    if not Str_isEmpty(p.death_date) then badgeTexts.Push("Died " + prettyDate(p.death_date))
+    if not Str_isEmpty(p.birth_date) then badgeTexts.Push(TxF("Born {0}", [prettyDate(p.birth_date)]))
+    if not Str_isEmpty(p.death_date) then badgeTexts.Push(TxF("Died {0}", [prettyDate(p.death_date)]))
     if not Str_isEmpty(p.birthplace) then badgeTexts.Push(p.birthplace)
     m.badges.removeChildrenIndex(m.badges.getChildCount(), 0)
     x = 0
@@ -149,7 +151,7 @@ sub onPerson(event as object)
         m.bio.text = bioText
         m.bio.color = "0xEDEDEDBF"
     else if not hasBadges then
-        m.bio.text = "No biography or personal details are available yet."
+        m.bio.text = Tx("No biography or personal details are available yet.")
         m.bio.color = "0xEDEDED9E"
     else
         m.bio.text = ""
@@ -185,7 +187,7 @@ sub onFilmography(event as object)
     m.items = Arr_or(resp.data.items)
     ' Cells carry a 20 / 30 px inset so the focused card's zoom is not clipped at the grid's edge (pitfall 12).
     m.grid.content = Content_grid(m.items, "poster", 20, 30)
-    m.emptyLabel.text = "No titles found."
+    m.emptyLabel.text = Tx("No titles found.")
     m.emptyLabel.visible = m.items.Count() = 0
     buildZones()
     if zoneName() = "grid" and m.items.Count() = 0 then focusZone(zoneIndexOf("chips"))

@@ -133,7 +133,7 @@ sub showUnavailable()
     m.messageGroup.visible = true
     m.messageIcon.visible = false
     m.retryBtn.visible = false
-    m.messageLabel.text = "This box set isn't available. Box sets may be turned off for this library, or too few of its movies are here."
+    m.messageLabel.text = Tx("This box set isn't available. Box sets may be turned off for this library, or too few of its movies are here.")
     m.top.setFocus(true)
 end sub
 

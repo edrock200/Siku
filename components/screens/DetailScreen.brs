@@ -29,6 +29,15 @@ sub init()
     m.watchlistBtn = m.top.findNode("watchlistBtn")
     m.favBtn = m.top.findNode("favBtn")
     m.moreBtn = m.top.findNode("moreBtn")
+    ' DetailCircleButton's `label` field is not one I18n_translateTree reads (keep in step with the XML).
+    m.startOverBtn.label = Tx("Start Over")
+    m.trailerBtn.label = Tx("Trailer")
+    m.versionBtn.label = Tx("Version")
+    m.audioBtn.label = Tx("Audio")
+    m.subtitlesBtn.label = Tx("Subtitles")
+    m.watchlistBtn.label = Tx("Watchlist")
+    m.favBtn.label = Tx("Favorite")
+    m.moreBtn.label = Tx("More")
     m.body = m.top.findNode("body")
     m.episodesSection = m.top.findNode("episodesSection")
     m.chipsGroup = m.top.findNode("chips")
@@ -269,7 +278,7 @@ sub onItem(event as object)
         if seriesId <> "" then
             m.episodesSection.visible = true
             m.episodesMsg.visible = true
-            m.episodesMsg.text = "Loading episodes…"
+            m.episodesMsg.text = Tx("Loading episodes…")
             layoutBody()
             buildZones()
             loadSeasons()
@@ -415,7 +424,7 @@ sub renderHero()
     if lengthSec > 0 then tokens.Push(Time_runtime(lengthSec))
     if t = "series" and it.season_count <> invalid then
         sc = toInt(it.season_count)
-        if sc = 1 then tokens.Push("1 season") else tokens.Push(sc.ToStr() + " seasons")
+        if sc = 1 then tokens.Push(Tx("1 season")) else tokens.Push(TxF("{0} seasons", [sc]))
     end if
     genres = namesOf(it.genres)
     if genres.Count() > 0 then tokens.Push(joinNames(genres, 3))
@@ -437,9 +446,9 @@ sub renderHero()
 
     factParts = []
     cast = Arr_or(it.cast)
-    if cast.Count() > 0 then factParts.Push("Starring " + joinNames(namesOf(cast), 3))
+    if cast.Count() > 0 then factParts.Push(TxF("Starring {0}", [joinNames(namesOf(cast), 3)]))
     directors = crewNames("Director")
-    if directors.Count() > 0 then factParts.Push("Directed by " + joinNames(directors, 2))
+    if directors.Count() > 0 then factParts.Push(TxF("Directed by {0}", [joinNames(directors, 2)]))
     m.facts.text = Str_joinDots(factParts)
     m.facts.visible = m.facts.text <> ""
 
@@ -545,18 +554,20 @@ end function
 sub updatePrimary()
     t = m.itemType
     resume = 0.0
-    label = "Play"
+    label = Tx("Play")
     canPlay = true
     if t = "series" or t = "season" then
         ep = m.nextUp
         if ep <> invalid then
             resume = resumeOf(ep)
-            verb = "Play"
-            if resume > 0 then verb = "Resume"
+            sn = Str_orEmpty(ep.season_number)
+            en = Str_orEmpty(ep.episode_number)
             if t = "series" then
-                label = verb + " S" + Str_orEmpty(ep.season_number) + ":E" + Str_orEmpty(ep.episode_number)
+                label = TxF("Play S{0}:E{1}", [sn, en])
+                if resume > 0 then label = TxF("Resume S{0}:E{1}", [sn, en])
             else
-                label = verb + " E" + Str_orEmpty(ep.episode_number)
+                label = TxF("Play E{0}", [en])
+                if resume > 0 then label = TxF("Resume E{0}", [en])
             end if
         else
             canPlay = not Str_isEmpty(m.item.play_content_id) or m.episodes.Count() > 0
@@ -564,7 +575,7 @@ sub updatePrimary()
         m.playBtn.fixedWidth = 340
     else
         resume = resumeOf(m.item)
-        if resume > 0 then label = "Resume " + Time_clock(resume)
+        if resume > 0 then label = TxF("Resume {0}", [Time_clock(resume)])
         versions = Arr_or(m.item.versions)
         canPlay = versions.Count() > 0 or m.item.user_data <> invalid
     end if
@@ -655,16 +666,16 @@ function audioValueLabel(v as object) as string
     tracks = Arr_or(v.audio_tracks)
     if m.selAudio <> invalid and m.selAudio >= 0 and m.selAudio < tracks.Count() then return Tracks_audioSummary(tracks[m.selAudio], m.selAudio)
     o = Tracks_autoAudioOrdinal(v)
-    if o < 0 then return "Auto"
-    return "Auto · " + Tracks_audioSummary(tracks[o], o)
+    if o < 0 then return Tx("Auto")
+    return TxF("Auto · {0}", [Tracks_audioSummary(tracks[o], o)])
 end function
 
 function subtitleValueLabel(v as object) as string
     tracks = Arr_or(v.subtitle_tracks)
-    if m.selSubtitle = invalid then return "Auto"
-    if m.selSubtitle = -1 then return "Off"
+    if m.selSubtitle = invalid then return Tx("Auto")
+    if m.selSubtitle = -1 then return Tx("Off")
     o = Tracks_subtitleOrdinal(tracks, m.selSubtitle)
-    if o < 0 then return "On"
+    if o < 0 then return Tx("On")
     return Tracks_subtitleSummary(tracks[o], o)
 end function
 
@@ -674,15 +685,15 @@ sub updateSelectors()
     v = displayVersion()
     m.versionBtn.visible = versions.Count() > 1
     if v <> invalid then
-        compact = Tracks_versionCompact(v)
-        if m.selFileId = "" and compact <> "Auto" then compact = "Auto · " + compact
-        m.versionBtn.label = "Version · " + compact
+        compact = Tracks_versionCompact(v) ' Tx("Auto") when nothing is known
+        if m.selFileId = "" and compact <> Tx("Auto") then compact = TxF("Auto · {0}", [compact])
+        m.versionBtn.label = TxF("Version · {0}", [compact])
         audio = Arr_or(v.audio_tracks)
         m.audioBtn.visible = audio.Count() > 1
-        m.audioBtn.label = "Audio · " + audioValueLabel(v)
+        m.audioBtn.label = TxF("Audio · {0}", [audioValueLabel(v)])
         subs = Arr_or(v.subtitle_tracks)
         m.subtitlesBtn.visible = subs.Count() > 1
-        m.subtitlesBtn.label = "Subtitles · " + subtitleValueLabel(v)
+        m.subtitlesBtn.label = TxF("Subtitles · {0}", [subtitleValueLabel(v)])
     else
         m.audioBtn.visible = false
         m.subtitlesBtn.visible = false
@@ -699,32 +710,32 @@ sub openSelectorMenu(kind as string, title as string, acts as object)
 end sub
 
 sub onVersionButton()
-    acts = [{ id: "auto", label: "Auto", detail: "Best match for this device", checked: m.selFileId = "" }]
+    acts = [{ id: "auto", label: Tx("Auto"), detail: Tx("Best match for this device"), checked: m.selFileId = "" }]
     for each v in playVersions()
         fid = Str_orEmpty(v.file_id)
         acts.Push({ id: "v:" + fid, label: Tracks_versionShort(v), detail: Tracks_versionDetail(v), checked: fid = m.selFileId })
     end for
-    openSelectorMenu("version", "Version", acts)
+    openSelectorMenu("version", Tx("Version"), acts)
 end sub
 
 sub onAudioButton()
     v = displayVersion()
     if v = invalid then return
-    acts = [{ id: "auto", label: "Auto", detail: "Use your Playback audio preference", checked: m.selAudio = invalid }]
+    acts = [{ id: "auto", label: Tx("Auto"), detail: Tx("Use your Playback audio preference"), checked: m.selAudio = invalid }]
     tracks = Arr_or(v.audio_tracks)
     for i = 0 to tracks.Count() - 1
         t = tracks[i]
         acts.Push({ id: "a:" + i.ToStr(), label: Tracks_audioTitle(t, i), detail: Tracks_audioDetail(t), checked: m.selAudio = i })
     end for
-    openSelectorMenu("audio", "Audio", acts)
+    openSelectorMenu("audio", Tx("Audio"), acts)
 end sub
 
 sub onSubtitlesButton()
     v = displayVersion()
     if v = invalid then return
     acts = [
-        { id: "auto", label: "Auto", detail: "Use your subtitle preferences", checked: m.selSubtitle = invalid }
-        { id: "off", label: "Off", detail: "Start without subtitles", checked: m.selSubtitle = -1 }
+        { id: "auto", label: Tx("Auto"), detail: Tx("Use your subtitle preferences"), checked: m.selSubtitle = invalid }
+        { id: "off", label: Tx("Off"), detail: Tx("Start without subtitles"), checked: m.selSubtitle = -1 }
     ]
     tracks = Arr_or(v.subtitle_tracks)
     comb = Tracks_subtitleCombined(tracks)
@@ -733,12 +744,12 @@ sub onSubtitlesButton()
         if Tracks_subtitleUnplayable(t) then
             ' A track the server has no way to show (Silo Android #776): listed, never chosen, so
             ' it never goes into the start request.
-            acts.Push({ id: "na:" + comb[i].ToStr(), label: Tracks_subtitleTitle(t, i), detail: "Unsupported format", checked: false })
+            acts.Push({ id: "na:" + comb[i].ToStr(), label: Tracks_subtitleTitle(t, i), detail: Tx("Unsupported format"), checked: false })
         else
             acts.Push({ id: "s:" + comb[i].ToStr(), label: Tracks_subtitleTitle(t, i), detail: Tracks_subtitleDetail(t), checked: m.selSubtitle = comb[i] })
         end if
     end for
-    openSelectorMenu("subtitle", "Subtitles", acts)
+    openSelectorMenu("subtitle", Tx("Subtitles"), acts)
 end sub
 
 sub onSelectorChosen(kind as string, id as string)
@@ -762,7 +773,7 @@ sub onSelectorChosen(kind as string, id as string)
         else if Left(id, 2) = "s:" then
             m.selSubtitle = Int(Val(Mid(id, 3)))
         else if Left(id, 3) = "na:" then
-            m.global.toast = "This subtitle track's format isn't supported, so it can't be shown."
+            m.global.toast = Tx("This subtitle track's format isn't supported, so it can't be shown.")
             return
         end if
         rememberSeriesSubtitle()
@@ -964,7 +975,7 @@ sub onSeasons(event as object)
     resp = Api_result(event)
     if not resp.ok or resp.data = invalid or Type(resp.data) <> "roAssociativeArray" then
         m.seasonsFailed = true
-        showEpisodesRetry("Couldn't load seasons")
+        showEpisodesRetry(Tx("Couldn't load seasons"))
         return
     end if
     m.seasons = Arr_or(resp.data.items)
@@ -993,16 +1004,16 @@ sub onSeasons(event as object)
     if returnSeason >= 0 then sel = returnSeason
     if sel = invalid then
         hideEpisodesRetry()
-        m.episodesMsg.text = "No episodes available"
+        m.episodesMsg.text = Tx("No episodes available")
         return
     end if
     selectSeason(toInt(sel))
 end sub
 
 function seasonLabel(s as object) as string
-    if s.is_specials = true or (s.season_number <> invalid and toInt(s.season_number) = 0) then return "Specials"
+    if s.is_specials = true or (s.season_number <> invalid and toInt(s.season_number) = 0) then return Tx("Specials")
     if not Str_isEmpty(s.title) then return s.title
-    return "Season " + Str_orEmpty(s.season_number)
+    return TxF("Season {0}", [Str_orEmpty(s.season_number)])
 end function
 
 sub buildChips()
@@ -1055,7 +1066,7 @@ sub loadEpisodes(n as integer)
     if sid = "" then return
     if m.episodes.Count() = 0 then
         m.episodesMsg.visible = true
-        m.episodesMsg.text = "Loading episodes…"
+        m.episodesMsg.text = Tx("Loading episodes…")
     end if
     m.episodesRequestSeason = n
     Api_get("/api/v2/catalog/series/" + Str_urlEncode(sid) + "/seasons/" + n.ToStr() + "/episodes", Artwork_query({ image_size: "medium" }, "episodes"), "onEpisodes")
@@ -1079,7 +1090,7 @@ sub onEpisodes(event as object)
         m.episodes = []
         m.episodeRow.content = invalid
         m.episodesShownSeason = invalid
-        showEpisodesRetry("Couldn't load episodes")
+        showEpisodesRetry(Tx("Couldn't load episodes"))
         return
     end if
     m.episodes = Arr_or(resp.data.items)
@@ -1087,7 +1098,7 @@ sub onEpisodes(event as object)
     hideEpisodesRetry()
     if m.episodes.Count() = 0 then
         m.episodesMsg.visible = true
-        m.episodesMsg.text = "No episodes available"
+        m.episodesMsg.text = Tx("No episodes available")
         m.episodeRow.content = invalid
         buildZones()
         return
@@ -1407,7 +1418,7 @@ sub onSimilar(event as object)
     items = Arr_or(resp.data.items)
     m.similar = items
     if items.Count() = 0 then return
-    if m.itemType = "series" then m.relatedHeader.text = "Recommended Series" else m.relatedHeader.text = "Related Movies"
+    if m.itemType = "series" then m.relatedHeader.text = Tx("Recommended Series") else m.relatedHeader.text = Tx("Related Movies")
     m.relatedRow.content = Content_rows([{ id: "similar", title: "", style: "poster", items: items }], 32)
     m.relatedSection.visible = true
     layoutBody()
@@ -1536,7 +1547,7 @@ sub renderBoxSetRow()
     explore.itemType = "explore_all"
     explore.cardStyle = "poster"
     explore.cardInsetY = 32
-    explore.title = "Explore all"
+    explore.title = Tx("Explore all")
     explore.description = Str_orEmpty(bsd.title)
     m.boxSetRow.rowItemSize = [[w, 396]]
     focused = -1
@@ -1647,7 +1658,7 @@ sub openYouTube(e as object)
     if m.ytTask <> invalid then return
     m.ytEntry = e
     Diag_log("[siku-trailer] open YouTube video=" + e.videoId)
-    m.global.toast = "Opening YouTube…"
+    m.global.toast = Tx("Opening YouTube…")
     task = CreateObject("roSGNode", "YouTubeLaunchTask")
     task.request = { videoId: e.videoId, title: e.title }
     task.observeField("result", "onYouTubeResult")
@@ -1662,9 +1673,9 @@ sub onYouTubeResult(event as object)
     m.ytTask = invalid
     e = m.ytEntry
     if e = invalid or Type(r) <> "roAssociativeArray" then return
-    msg = "Siku couldn't open the YouTube channel on this Roku."
-    if r.outcome = "not_installed" then msg = "The YouTube channel isn't installed on this Roku."
-    msg = msg + " Scan the code or open the link on your phone to watch it."
+    msg = Tx("Siku couldn't open the YouTube channel on this Roku.")
+    if r.outcome = "not_installed" then msg = Tx("The YouTube channel isn't installed on this Roku.")
+    msg = msg + " " + Tx("Scan the code or open the link on your phone to watch it.")
     m.ytDialog.videoTitle = e.title
     m.ytDialog.message = msg
     m.ytDialog.url = Trailer_watchUrl(e.videoId)
@@ -1681,24 +1692,24 @@ sub renderDetails()
     it = m.item
     rows = []
     d = crewNames("Director")
-    if d.Count() > 0 then rows.Push(["Director", joinNames(d, 4)])
+    if d.Count() > 0 then rows.Push([Tx("Director"), joinNames(d, 4)])
     w = crewNames("Writer")
-    label = "Writer"
+    label = Tx("Writer")
     if w.Count() = 0 then
         w = crewNames("Screenplay")
-        label = "Written by"
+        label = Tx("Written by")
     end if
     if w.Count() > 0 then rows.Push([label, joinNames(w, 4)])
     s = namesOf(it.studios)
-    if s.Count() > 0 then rows.Push(["Studio", joinNames(s, 3)])
+    if s.Count() > 0 then rows.Push([Tx("Studio"), joinNames(s, 3)])
     n = namesOf(it.networks)
-    if n.Count() > 0 then rows.Push(["Network", joinNames(n, 3)])
+    if n.Count() > 0 then rows.Push([Tx("Network"), joinNames(n, 3)])
     c = namesOf(it.countries)
-    if c.Count() > 0 then rows.Push(["Country", joinNames(c, 3)])
+    if c.Count() > 0 then rows.Push([Tx("Country"), joinNames(c, 3)])
     g = namesOf(it.genres)
-    if g.Count() > 0 then rows.Push(["Genres", joinNames(g, 6)])
+    if g.Count() > 0 then rows.Push([Tx("Genres"), joinNames(g, 6)])
     ' A date that cannot be read leaves its row out instead of showing an empty value.
-    for each pair in [["Released", it.release_date], ["First Aired", it.first_air_date], ["Last Aired", it.last_air_date]]
+    for each pair in [[Tx("Released"), it.release_date], [Tx("First Aired"), it.first_air_date], [Tx("Last Aired"), it.last_air_date]]
         dateText = airDateText(pair[1])
         if dateText <> "" then rows.Push([pair[0], dateText])
     end for
@@ -1760,7 +1771,7 @@ end function
 sub onPlay()
     id = playTargetId()
     if id = "" then
-        m.global.toast = "Nothing to play yet"
+        m.global.toast = Tx("Nothing to play yet")
         return
     end if
     params = { itemId: id, title: playTitle() }
@@ -1882,20 +1893,24 @@ end sub
 
 function membershipToast(kind as string, value as boolean) as string
     if kind = "watchlist" then
-        if value then return "Added to Watchlist"
-        return "Removed from Watchlist"
+        if value then return Tx("Added to Watchlist")
+        return Tx("Removed from Watchlist")
     end if
-    if value then return "Added to Favorites"
-    return "Removed from Favorites"
+    if value then return Tx("Added to Favorites")
+    return Tx("Removed from Favorites")
 end function
 
 ' "Couldn't add to Watchlist. <the server's reason>" (or "Try again.").
 function membershipFailureText(kind as string, value as boolean, resp as dynamic) as string
-    listName = "Favorites"
-    if kind = "watchlist" then listName = "Watchlist"
-    verb = "remove from "
-    if value then verb = "add to "
-    return "Couldn't " + verb + listName + ". " + Api_reasonText(resp, "Try again.")
+    head = Tx("Couldn't remove from Favorites.")
+    if kind = "watchlist" and value then
+        head = Tx("Couldn't add to Watchlist.")
+    else if kind = "watchlist" then
+        head = Tx("Couldn't remove from Watchlist.")
+    else if value then
+        head = Tx("Couldn't add to Favorites.")
+    end if
+    return head + " " + Api_reasonText(resp, Tx("Try again."))
 end function
 
 function isPlayed() as boolean
@@ -1904,12 +1919,21 @@ function isPlayed() as boolean
     return false
 end function
 
-function typeNoun() as string
-    if m.itemType = "series" then return "Series"
-    if m.itemType = "season" then return "Season"
-    if m.itemType = "episode" then return "Episode"
-    if m.itemType = "movie" then return "Movie"
-    return ""
+' "Mark Movie Watched" / "Mark Series Unwatched" (whole phrases, so each language words them).
+function markItemLabel(watched as boolean) as string
+    t = m.itemType
+    if watched then
+        if t = "series" then return Tx("Mark Series Watched")
+        if t = "season" then return Tx("Mark Season Watched")
+        if t = "episode" then return Tx("Mark Episode Watched")
+        if t = "movie" then return Tx("Mark Movie Watched")
+        return Tx("Mark Watched")
+    end if
+    if t = "series" then return Tx("Mark Series Unwatched")
+    if t = "season" then return Tx("Mark Season Unwatched")
+    if t = "episode" then return Tx("Mark Episode Unwatched")
+    if t = "movie" then return Tx("Mark Movie Unwatched")
+    return Tx("Mark Unwatched")
 end function
 
 ' The selected season's entry in m.seasons, or invalid.
@@ -1932,51 +1956,50 @@ end function
 
 sub onMore()
     acts = []
-    noun = typeNoun()
     ' Shuffle leads the menu (shuffle-api-v2.md): the series, then the season on screen.
     if seriesIdOf() <> "" and Shuffle_supports("series") then
-        acts.Push({ id: "shuffle_series", label: "Shuffle Series" })
+        acts.Push({ id: "shuffle_series", label: Tx("Shuffle Series") })
     end if
     season = selectedSeasonEntry()
     if season <> invalid and not Str_isEmpty(season.content_id) and Shuffle_supports("season") and canShuffleSeason() then
-        acts.Push({ id: "shuffle_season", label: "Shuffle " + seasonLabel(season) })
+        acts.Push({ id: "shuffle_season", label: TxF("Shuffle {0}", [seasonLabel(season)]) })
     end if
     if isPlayed() then
-        acts.Push({ id: "unwatched", label: ("Mark " + noun + " Unwatched").Replace("  ", " ").Trim() })
+        acts.Push({ id: "unwatched", label: markItemLabel(false) })
     else
-        acts.Push({ id: "watched", label: ("Mark " + noun + " Watched").Replace("  ", " ").Trim() })
+        acts.Push({ id: "watched", label: markItemLabel(true) })
     end if
     ' A series page also marks the season on screen (Android TV TvItemDetailScreen "season-watched":
     ' "Mark Season 2 Watched" for the selected season when it has episodes).
     if m.itemType = "series" and season <> invalid and not Str_isEmpty(season.content_id) and seasonHasEpisodes(season) then
         if seasonPlayed(season) then
-            acts.Push({ id: "season_unwatched", label: "Mark " + seasonLabel(season) + " Unwatched" })
+            acts.Push({ id: "season_unwatched", label: TxF("Mark {0} Unwatched", [seasonLabel(season)]) })
         else
-            acts.Push({ id: "season_watched", label: "Mark " + seasonLabel(season) + " Watched" })
+            acts.Push({ id: "season_watched", label: TxF("Mark {0} Watched", [seasonLabel(season)]) })
         end if
     end if
     if membershipOn("favorite") then
-        acts.Push({ id: "favorite", label: "Remove from Favorites" })
+        acts.Push({ id: "favorite", label: Tx("Remove from Favorites") })
     else
-        acts.Push({ id: "favorite", label: "Add to Favorites" })
+        acts.Push({ id: "favorite", label: Tx("Add to Favorites") })
     end if
     if membershipOn("watchlist") then
-        acts.Push({ id: "watchlist", label: "Remove from Watchlist" })
+        acts.Push({ id: "watchlist", label: Tx("Remove from Watchlist") })
     else
-        acts.Push({ id: "watchlist", label: "Add to Watchlist" })
+        acts.Push({ id: "watchlist", label: Tx("Add to Watchlist") })
     end if
     if m.itemType = "episode" then
         seasonId = ""
         for each s in m.seasons
             if toInt(s.season_number) = toInt(m.item.season_number) then seasonId = Str_orEmpty(s.content_id)
         end for
-        if seasonId <> "" then acts.Push({ id: "season", label: "Go to Season " + Str_orEmpty(m.item.season_number) })
+        if seasonId <> "" then acts.Push({ id: "season", label: TxF("Go to Season {0}", [Str_orEmpty(m.item.season_number)]) })
     end if
     if (m.itemType = "episode" or m.itemType = "season") and not Str_isEmpty(m.item.series_id) then
-        acts.Push({ id: "series", label: "Go to Series" })
+        acts.Push({ id: "series", label: Tx("Go to Series") })
     end if
     m.menuKind = "more"
-    m.menu.title = "More Actions"
+    m.menu.title = Tx("More Actions")
     m.menu.actions = acts
     m.menu.visible = true
     m.menu.setFocus(true)
@@ -2040,11 +2063,11 @@ sub openEpisodeMenu()
     if m.episodeMenuId = "" then return
     acts = []
     if playedFlag(ep) then
-        acts.Push({ id: "ep_unwatched", label: "Mark Episode Unwatched" })
+        acts.Push({ id: "ep_unwatched", label: Tx("Mark Episode Unwatched") })
     else
-        acts.Push({ id: "ep_watched", label: "Mark Episode Watched" })
+        acts.Push({ id: "ep_watched", label: Tx("Mark Episode Watched") })
     end if
-    acts.Push({ id: "ep_open", label: "Go to Episode" })
+    acts.Push({ id: "ep_open", label: Tx("Go to Episode") })
     m.menuKind = "episode"
     m.menu.title = Str_joinDots([Content_seShort(ep.season_number, ep.episode_number), Str_orEmpty(ep.title)])
     m.menu.actions = acts
@@ -2128,15 +2151,15 @@ sub onWatchedWritten(event as object)
     resp = Api_result(event)
     if not resp.ok then
         if resp.error <> invalid then print "[Api] "; resp.status; " "; resp.error.title
-        action = "unwatched"
-        if resp.context <> invalid and resp.context.watched = true then action = "watched"
+        head = Tx("Couldn't mark as unwatched.")
+        if resp.context <> invalid and resp.context.watched = true then head = Tx("Couldn't mark as watched.")
         if not m.global.hasField("toastSeconds") then m.global.addFields({ toastSeconds: 0.0 })
         m.global.toastSeconds = 5.0
-        m.global.toast = "Couldn't mark as " + action + ". " + Api_reasonText(resp, "Try again.")
+        m.global.toast = head + " " + Api_reasonText(resp, Tx("Try again."))
     else if resp.context <> invalid and resp.context.watched = true then
-        m.global.toast = "Marked as Watched"
+        m.global.toast = Tx("Marked as Watched")
     else
-        m.global.toast = "Marked as Unwatched"
+        m.global.toast = Tx("Marked as Unwatched")
     end if
     if m.item <> invalid then refreshUserState()
 end sub
@@ -2169,7 +2192,7 @@ end sub
 
 ' Retry: the seasons when they never loaded, else the selected season's episodes.
 sub retryEpisodes()
-    m.episodesMsg.text = "Loading episodes…"
+    m.episodesMsg.text = Tx("Loading episodes…")
     if m.seasonsFailed or m.selectedSeason = invalid then
         loadSeasons()
     else
