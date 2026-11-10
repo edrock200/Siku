@@ -111,7 +111,7 @@ end function
 
 function Subs_languageName(code as dynamic) as string
     c = LCase(Str_orEmpty(code)).Trim()
-    if c = "" then return "Unknown"
+    if c = "" then return Tx("Unknown")
     n = Tracks_languageName(c)
     if n = "" then return UCase(c)
     return n
@@ -211,11 +211,11 @@ end function
 
 ' "Embedded" / "External" / "Downloaded" ("In stream" for an HLS rendition), for the picker's detail.
 function Subs_sourceLabel(t as object) as string
-    if not Str_isEmpty(t.rendition) then return "In stream"
+    if not Str_isEmpty(t.rendition) then return Tx("In stream")
     rank = Subs_autoSourceRank(t)
-    if rank = 2 then return "Downloaded"
-    if rank = 1 then return "External"
-    if LCase(Str_orEmpty(t.source)) = "embedded" then return "Embedded"
+    if rank = 2 then return Tx("Downloaded")
+    if rank = 1 then return Tx("External")
+    if LCase(Str_orEmpty(t.source)) = "embedded" then return Tx("Embedded")
     return ""
 end function
 
@@ -227,13 +227,13 @@ function Subs_trackLabel(t as object) as string
     aiKind = Tracks_aiSubtitleKind(t.label)
     label = ""
     if not Str_isEmpty(t.language) then label = Subs_languageName(t.language)
-    if (label = "" or label = "Unknown") and aiKind <> "" then label = Tracks_aiSubtitleSourceLabel(t.label)
-    if label = "" or label = "Unknown" then label = Str_orEmpty(t.label)
-    if label = "" then label = "Unknown"
+    if (label = "" or label = Tx("Unknown")) and aiKind <> "" then label = Tracks_aiSubtitleSourceLabel(t.label)
+    if label = "" or label = Tx("Unknown") then label = Str_orEmpty(t.label)
+    if label = "" then label = Tx("Unknown")
     if aiKind <> "" then label = label + " (" + aiKind + ")"
-    if t.forced = true then label = label + " (Forced)"
-    if t.hearing_impaired = true then label = label + " (SDH)"
-    if Subs_storedIdOf(t) <> "" and Instr(1, label, "(") = 0 then label = label + " (Downloaded)"
+    if t.forced = true then label = TxF("{0} (Forced)", [label])
+    if t.hearing_impaired = true then label = TxF("{0} (SDH)", [label])
+    if Subs_storedIdOf(t) <> "" and Instr(1, label, "(") = 0 then label = TxF("{0} (Downloaded)", [label])
     return label
 end function
 
@@ -422,13 +422,13 @@ end function
 function Subs_inventoryLabel(t as object) as string
     label = ""
     if not Str_isEmpty(t.language) then label = Subs_languageName(t.language)
-    if label = "" or label = "Unknown" then label = Str_orEmpty(t.label)
-    if label = "" then label = "Unknown"
+    if label = "" or label = Tx("Unknown") then label = Str_orEmpty(t.label)
+    if label = "" then label = Tx("Unknown")
     codec = UCase(Str_orEmpty(t.codec))
     if codec = "HDMV_PGS_SUBTITLE" then codec = "PGS"
     if codec = "DVD_SUBTITLE" then codec = "VobSub"
     if codec <> "" then label = label + " · " + codec
-    if t.forced = true then label = label + " (Forced)"
+    if t.forced = true then label = TxF("{0} (Forced)", [label])
     return label
 end function
 
@@ -522,16 +522,16 @@ end sub
 sub Subs_appendHudRows(rows as object)
     delayValue = Subs_delayLabel(Subs_delayMs())
     delayOn = Subs_delayEnabled()
-    if not delayOn then delayValue = "Unavailable for this track"
-    rows.Push({ id: "subdelay", label: "Delay", value: delayValue, actionable: delayOn })
+    if not delayOn then delayValue = Tx("Unavailable for this track")
+    rows.Push({ id: "subdelay", label: Tx("Delay"), value: delayValue, actionable: delayOn })
     timing = Subs_timingActions()
     if timing <> invalid then
-        rows.Push({ id: "subtiming", label: "Timing", value: Subs_timingValue(timing), actionable: not timing.forbidden and timing.actionsEnabled and (timing.canSync or timing.canReset) })
+        rows.Push({ id: "subtiming", label: Tx("Timing"), value: Subs_timingValue(timing), actionable: not timing.forbidden and timing.actionsEnabled and (timing.canSync or timing.canReset) })
         detail = Subs_timingDetail(timing)
         if detail.text <> "" then rows.Push({ id: "subtimingdetail", label: detail.text, value: "", actionable: false, muted: true, color: detail.color })
     end if
-    if m.fileId <> "" then rows.Push({ id: "subsearch", label: "Search subtitles", value: "", actionable: true })
-    if Subs_aiAvailable() then rows.Push({ id: "subai", label: "Translate with AI", value: "", actionable: true })
+    if m.fileId <> "" then rows.Push({ id: "subsearch", label: Tx("Search subtitles"), value: "", actionable: true })
+    if Subs_aiAvailable() then rows.Push({ id: "subai", label: Tx("Translate with AI"), value: "", actionable: true })
 end sub
 
 ' True when a HUD row id belongs to this suite and was handled.
@@ -652,7 +652,7 @@ sub Subs_openDelay()
     for each v in values
         rows.Push({ kind: "option", id: v.ToStr(), label: Subs_delayLabel(v), checked: v = current })
     end for
-    Subs_showDialog("delay", "Subtitle Delay", rows)
+    Subs_showDialog("delay", Tx("Subtitle Delay"), rows)
 end sub
 
 sub Subs_setDelay(ms as integer)
@@ -682,7 +682,7 @@ sub Subs_onDelaySaved(event as object)
     if not resp.ok then
         if ctx.isDelete = true and resp.status = 404 then return
         Diag_log("[siku-playback] subtitle delay not saved: status=" + Str_orEmpty(resp.status))
-        if ctx.isDelete <> true then m.global.toast = "Couldn't save the subtitle delay: " + Api_errorText(resp)
+        if ctx.isDelete <> true then m.global.toast = TxF("Couldn't save the subtitle delay: {0}", [Api_errorText(resp)])
         return
     end if
     if ctx.clearDevice = true then Settings_delete("player.subtitle_sync_ms", "profile_device", "Subs_onDelaySaved", { isDelete: true })
@@ -817,14 +817,14 @@ sub Subs_announceSync(state as object, timing as object)
     name = Subs_languageName(state.language)
     if st = "synced" then
         if Subs_timingIsIdentity(timing) then
-            m.global.toast = name + " subtitles: original timing kept"
+            m.global.toast = TxF("{0} subtitles: original timing kept", [name])
         else
-            m.global.toast = name + " subtitles synced to the audio: " + Subs_describeTiming(timing)
+            m.global.toast = TxF("{0} subtitles synced to the audio: {1}", [name, Subs_describeTiming(timing)])
         end if
     else if st = "already_synced" then
-        m.global.toast = name + " subtitles already match the audio."
+        m.global.toast = TxF("{0} subtitles already match the audio.", [name])
     else if st = "no_match" then
-        m.global.toast = name + " subtitles don't match this video's audio."
+        m.global.toast = TxF("{0} subtitles don't match this video's audio.", [name])
     else if st = "failed" then
         m.global.toast = Subs_failureMessage(job.failure)
     end if
@@ -859,9 +859,9 @@ function Subs_timingActions() as dynamic
     note = ""
     if not entry.forbidden and canSync and not entry.inProgress and result = invalid then
         if Str_orEmpty(entry.state.source) = "external" then
-            note = "Matches the timing to the audio for everyone. The file itself isn't changed."
+            note = Tx("Matches the timing to the audio for everyone. The file itself isn't changed.")
         else
-            note = "Matches the timing to the audio for everyone watching."
+            note = Tx("Matches the timing to the audio for everyone watching.")
         end if
     end if
     return {
@@ -882,11 +882,11 @@ function Subs_timingActions() as dynamic
 end function
 
 function Subs_timingValue(timing as object) as string
-    if timing.forbidden then return "Not allowed"
-    if timing.busy then return "Working…"
+    if timing.forbidden then return Tx("Not allowed")
+    if timing.busy then return Tx("Working…")
     if timing.error <> "" then return timing.error
     if timing.statusLabel <> "" then return timing.statusLabel
-    return "Not synced"
+    return Tx("Not synced")
 end function
 
 ' What the Timing row cannot fit: progress and phase, the last result, what a sync does, or why
@@ -894,11 +894,11 @@ end function
 function Subs_timingDetail(timing as object) as object
     if timing.inProgress then
         parts = []
-        if timing.percent >= 0 then parts.Push("Syncing " + timing.percent.ToStr() + "%")
+        if timing.percent >= 0 then parts.Push(TxF("Syncing {0}%", [timing.percent]))
         if timing.phaseLabel <> "" then parts.Push(timing.phaseLabel)
         return { text: Str_joinDots(parts), color: "" }
     end if
-    if timing.forbidden then return { text: "This server doesn't allow changing subtitle timing.", color: "" }
+    if timing.forbidden then return { text: Tx("This server doesn't allow changing subtitle timing."), color: "" }
     if timing.error <> "" then return { text: timing.error, color: "0xFCA5A5FF" }
     if timing.result <> invalid then
         color = ""
@@ -931,8 +931,8 @@ function Subs_describeScale(scale as float) as string
     while Right(frac, 1) = "0" and Len(frac) > 0
         frac = Left(frac, Len(frac) - 1)
     end while
-    if frac = "" then return "×" + whole.ToStr() + " speed"
-    return "×" + whole.ToStr() + "." + frac + " speed"
+    if frac = "" then return TxF("×{0} speed", [whole])
+    return TxF("×{0} speed", [whole.ToStr() + "." + frac])
 end function
 
 function Subs_describeTiming(timing as object) as string
@@ -955,17 +955,17 @@ end function
 function Subs_phaseLabel(job as dynamic) as string
     if not Subs_jobInProgress(job) then return ""
     ph = Str_orEmpty(job.phase)
-    if ph = "matching" then return "Matching lines to speech…"
-    if ph = "analyzing" then return "Listening to the audio…"
-    return "Waiting to start…"
+    if ph = "matching" then return Tx("Matching lines to speech…")
+    if ph = "analyzing" then return Tx("Listening to the audio…")
+    return Tx("Waiting to start…")
 end function
 
 function Subs_failureMessage(failure as dynamic) as string
     f = Str_orEmpty(failure)
-    if f = "subtitle_changed" then return "The subtitle changed while it was syncing. Try again."
-    if f = "no_audio" then return "This video has no audio Silo can read."
-    if f = "unavailable" then return "The server is busy. Try again in a few minutes."
-    return "Sync failed. Try again."
+    if f = "subtitle_changed" then return Tx("The subtitle changed while it was syncing. Try again.")
+    if f = "no_audio" then return Tx("This video has no audio Silo can read.")
+    if f = "unavailable" then return Tx("The server is busy. Try again in a few minutes.")
+    return Tx("Sync failed. Try again.")
 end function
 
 ' One short line describing a subtitle's timing, or "" when there is nothing to say.
@@ -974,20 +974,20 @@ function Subs_statusLabel(timing as object, job as dynamic) as string
     if job <> invalid then st = Str_orEmpty(job.status)
     if st = "pending" or st = "running" then
         pct = Subs_progressPercent(job)
-        if pct > 0 then return "Syncing… " + pct.ToStr() + "%"
-        return "Syncing…"
+        if pct > 0 then return TxF("Syncing… {0}%", [pct])
+        return Tx("Syncing…")
     else if st = "no_match" then
-        return "Doesn't match this video"
+        return Tx("Doesn't match this video")
     else if st = "failed" then
-        return "Sync failed"
+        return Tx("Sync failed")
     else if st = "already_synced" then
-        if Subs_timingIsIdentity(timing) then return "Already in sync"
+        if Subs_timingIsIdentity(timing) then return Tx("Already in sync")
     else if st = "synced" then
-        if Subs_timingIsIdentity(timing) then return "Original timing"
-        if job.result <> invalid and Subs_timingEquals(Subs_timing({ timing: job.result }), timing) then return "Synced " + Subs_describeTiming(timing)
+        if Subs_timingIsIdentity(timing) then return Tx("Original timing")
+        if job.result <> invalid and Subs_timingEquals(Subs_timing({ timing: job.result }), timing) then return TxF("Synced {0}", [Subs_describeTiming(timing)])
     end if
     if Subs_timingIsIdentity(timing) then return ""
-    return "Timing adjusted " + Subs_describeTiming(timing)
+    return TxF("Timing adjusted {0}", [Subs_describeTiming(timing)])
 end function
 
 ' The sync status of a track in the picker (its detail line), or "".
@@ -1004,11 +1004,11 @@ function Subs_resultLine(timing as object, job as dynamic) as dynamic
     st = Str_orEmpty(job.status)
     if st = "synced" then
         if Subs_timingIsIdentity(timing) then return invalid
-        return { text: "Synced to the audio: " + Subs_describeTiming(timing), warning: false }
+        return { text: TxF("Synced to the audio: {0}", [Subs_describeTiming(timing)]), warning: false }
     else if st = "already_synced" then
-        return { text: "Already matches the audio.", warning: false }
+        return { text: Tx("Already matches the audio."), warning: false }
     else if st = "no_match" then
-        return { text: "Doesn't match this video's audio; probably for another release.", warning: true }
+        return { text: Tx("Doesn't match this video's audio; probably for another release."), warning: true }
     else if st = "failed" then
         return { text: Subs_failureMessage(job.failure), warning: true }
     end if
@@ -1019,10 +1019,10 @@ sub Subs_openTiming()
     timing = Subs_timingActions()
     if timing = invalid or timing.forbidden or not timing.actionsEnabled or not (timing.canSync or timing.canReset) then return
     acts = []
-    if timing.canSync then acts.Push({ id: "sync", label: "Sync to audio", checked: false })
-    if timing.canReset then acts.Push({ id: "reset", label: "Reset timing", checked: false })
+    if timing.canSync then acts.Push({ id: "sync", label: Tx("Sync to audio"), checked: false })
+    if timing.canReset then acts.Push({ id: "reset", label: Tx("Reset timing"), checked: false })
     m.pickerKind = "subtiming"
-    m.picker.title = "Subtitle Timing"
+    m.picker.title = Tx("Subtitle Timing")
     m.picker.actions = acts
     m.picker.visible = true
     m.picker.setFocus(true)
@@ -1066,7 +1066,7 @@ sub Subs_onSyncStarted(event as object)
         if entry <> invalid then entry.busy = false
         Subs_startPolling()
     else
-        Subs_syncFail(key, resp, "Sync failed")
+        Subs_syncFail(key, resp, Tx("Sync failed"))
     end if
     Subs_refreshHud()
 end sub
@@ -1094,7 +1094,7 @@ sub Subs_onSyncReadForReset(event as object)
     if m.closing or not Subs_sameFile(resp) then return
     key = Str_orEmpty(resp.context.key)
     if not resp.ok or resp.data = invalid or resp.data.subtitle = invalid then
-        Subs_syncFail(key, resp, "Couldn't reset timing")
+        Subs_syncFail(key, resp, Tx("Couldn't reset timing"))
         Subs_refreshHud()
         return
     end if
@@ -1103,7 +1103,7 @@ sub Subs_onSyncReadForReset(event as object)
         entry = Subs_entry(key)
         if entry <> invalid then
             entry.busy = false
-            entry.error = "Couldn't read the subtitle's current version."
+            entry.error = Tx("Couldn't read the subtitle's current version.")
         end if
         Subs_refreshHud()
         return
@@ -1120,7 +1120,7 @@ sub Subs_onTimingSet(event as object)
         entry = Subs_entry(key)
         if entry <> invalid then entry.busy = false
     else
-        Subs_syncFail(key, resp, "Couldn't reset timing")
+        Subs_syncFail(key, resp, Tx("Couldn't reset timing"))
     end if
     Subs_refreshHud()
 end sub
@@ -1134,9 +1134,9 @@ sub Subs_syncFail(key as string, resp as object, fallback as string)
         entry.error = ""
     else if resp.status = 422 then
         entry.unsupported = true
-        entry.error = "This format can't be synced."
+        entry.error = Tx("This format can't be synced.")
     else if resp.status = 412 then
-        entry.error = "The subtitle changed. Try again."
+        entry.error = Tx("The subtitle changed. Try again.")
     else
         msg = ""
         if resp.error <> invalid then msg = Str_orEmpty(resp.error.title)
@@ -1215,22 +1215,22 @@ sub Subs_renderSearch()
     sr = m.subs.search
     rows = []
     opts = Subs_languageOptions()
-    rows.Push({ kind: "cycler", id: "lang", label: "Language", value: opts[Subs_languageIndex(sr.language)].name })
-    label = "Search"
-    if sr.searching then label = "Searching…"
+    rows.Push({ kind: "cycler", id: "lang", label: Tx("Language"), value: opts[Subs_languageIndex(sr.language)].name })
+    label = Tx("Search")
+    if sr.searching then label = Tx("Searching…")
     rows.Push({ kind: "action", id: "search", label: label, disabled: sr.searching or sr.downloadingKey <> "" })
     if sr.error <> "" then rows.Push({ kind: "text", text: sr.error, color: "0xEF4444FF" })
     for each w in sr.warnings
         rows.Push({ kind: "text", text: Str_orEmpty(w), color: "0xFBBF24FF" })
     end for
     if sr.hasSearched and not sr.searching and sr.results.Count() = 0 and sr.error = "" then
-        rows.Push({ kind: "text", text: "No subtitles found", color: "0xEDEDED8F" })
+        rows.Push({ kind: "text", text: Tx("No subtitles found"), color: "0xEDEDED8F" })
     end if
     for each r in sr.results
         key = Str_orEmpty(r.provider) + ":" + Str_orEmpty(r.id)
         rows.Push({ kind: "result", id: "r:" + key, score: r.score, releaseName: Str_orEmpty(r.release_name), provider: Str_orEmpty(r.provider), hearingImpaired: r.hearing_impaired = true, downloads: r.downloads, languageName: Subs_languageName(r.language), busy: sr.downloadingKey = key })
     end for
-    Subs_showDialog("search", "Search subtitles", rows)
+    Subs_showDialog("search", Tx("Search subtitles"), rows)
 end sub
 
 sub Subs_searchCycled(id as string, direction as integer)
@@ -1276,7 +1276,7 @@ sub Subs_onSearch(event as object)
         sr.warnings = Arr_or(resp.data.warnings)
     else
         ' No capability probe exists: "no providers configured" arrives as a plain server error.
-        sr.error = Subs_errorText(resp, "Subtitle search failed")
+        sr.error = Subs_errorText(resp, Tx("Subtitle search failed"))
     end if
     if m.subs.dialog = "search" then Subs_renderSearch()
 end sub
@@ -1322,7 +1322,7 @@ sub Subs_onDownloaded(event as object)
         Subs_adoptStored(Str_orEmpty(stored.id), "search")
     else
         sr.downloadingKey = ""
-        sr.error = Subs_errorText(resp, "Subtitle download failed")
+        sr.error = Subs_errorText(resp, Tx("Subtitle download failed"))
         if m.subs.dialog = "search" then Subs_renderSearch()
     end if
 end sub
@@ -1335,12 +1335,12 @@ end sub
 ' and the plan is remounted at the current position with that track selected.
 sub Subs_adoptStored(storedId as string, origin as string)
     if m.plan = invalid or m.sessionId = "" or storedId = "" then
-        Subs_adoptFailed(origin, "The subtitle list could not be refreshed.")
+        Subs_adoptFailed(origin, Tx("The subtitle list could not be refreshed."))
         return
     end if
     inst = installationId()
     if inst = "" then
-        Subs_adoptFailed(origin, "The subtitle list could not be refreshed.")
+        Subs_adoptFailed(origin, Tx("The subtitle list could not be refreshed."))
         return
     end if
     m.subs.adoptId = storedId
@@ -1371,7 +1371,7 @@ sub Subs_onAdoptReplan(event as object)
     end if
     ok = resp.ok and resp.data <> invalid and resp.data.outcome = "playable" and resp.data.playback_plan <> invalid and PlaybackCaps_planProblem(resp.data) = ""
     if not ok then
-        Subs_adoptFailed(origin, Subs_adoptPrefix(origin) + ", but the subtitle list could not be refreshed.")
+        Subs_adoptFailed(origin, Subs_adoptFailedText(origin))
         return
     end if
     PlaybackCaps_notePlanFeatures(resp.data)
@@ -1389,12 +1389,12 @@ sub Subs_onAdoptReplan(event as object)
         end for
     end if
     if trackId = "" then
-        Subs_adoptFailed(origin, Subs_adoptPrefix(origin) + ", but the subtitle list could not be refreshed.")
+        Subs_adoptFailed(origin, Subs_adoptFailedText(origin))
         return
     end if
     if not renderable then
         ' Stored on the server, listed in the inventory, but not a WebVTT/SRT sidecar.
-        m.global.toast = "Subtitle saved on the server, but Roku can't show this format."
+        m.global.toast = Tx("Subtitle saved on the server, but Roku can't show this format.")
         trackId = Subs_selectedTrackId()
     end if
     if origin = "ai" then AiLive_onAdopting()
@@ -1404,9 +1404,10 @@ sub Subs_onAdoptReplan(event as object)
     Subs_adoptDone(origin)
 end sub
 
-function Subs_adoptPrefix(origin as string) as string
-    if origin = "ai" then return "Translated"
-    return "Downloaded"
+' "Translated, but …" / "Downloaded, but …" as whole sentences, so each translates as one.
+function Subs_adoptFailedText(origin as string) as string
+    if origin = "ai" then return Tx("Translated, but the subtitle list could not be refreshed.")
+    return Tx("Downloaded, but the subtitle list could not be refreshed.")
 end function
 
 sub Subs_adoptFailed(origin as string, message as string)
@@ -1470,7 +1471,7 @@ function Subs_aiSubtitleLabel(t as object, position as integer) as string
     if Str_isEmpty(t.language) then
         name = Str_orEmpty(t.label)
         if aiKind <> "" then name = Tracks_aiSubtitleSourceLabel(t.label)
-        if name = "" then name = "Track " + (position + 1).ToStr()
+        if name = "" then name = TxF("Track {0}", [position + 1])
     end if
     codec = Tracks_subtitleCodec(t.codec)
     if codec <> "" then name = name + " " + codec
@@ -1478,9 +1479,9 @@ function Subs_aiSubtitleLabel(t as object, position as integer) as string
     if aiKind <> "" then
         name = name + " (" + aiKind + ")"
     else if src = "external" then
-        name = name + " (External)"
+        name = TxF("{0} (External)", [name])
     else if src = "downloaded" then
-        name = name + " (Downloaded)"
+        name = TxF("{0} (Downloaded)", [name])
     end if
     return name
 end function
@@ -1524,10 +1525,10 @@ end sub
 
 function Subs_quotaPeriod(period as string) as string
     p = LCase(period)
-    if p = "day" then return "today"
-    if p = "week" then return "this week"
-    if p = "month" then return "this month"
-    return "this " + period
+    if p = "day" then return Tx("today")
+    if p = "week" then return Tx("this week")
+    if p = "month" then return Tx("this month")
+    return TxF("this {0}", [period])
 end function
 
 function Subs_quotaExhausted() as boolean
@@ -1550,50 +1551,50 @@ sub Subs_renderAi()
         pct = Int(ai.progress * 100)
         if pct < 0 then pct = 0
         if pct > 100 then pct = 100
-        rows.Push({ kind: "progress", title: "Translating… " + pct.ToStr() + "%", percent: pct, message: ai.message })
-        rows.Push({ kind: "action", id: "cancel", label: "Cancel" })
+        rows.Push({ kind: "progress", title: TxF("Translating… {0}%", [pct]), percent: pct, message: ai.message })
+        rows.Push({ kind: "action", id: "cancel", label: Tx("Cancel") })
     else if ai.phase = "submitting" then
-        rows.Push({ kind: "text", text: "Submitting…", color: "0xEDEDEDB8" })
+        rows.Push({ kind: "text", text: Tx("Submitting…"), color: "0xEDEDEDB8" })
     else if not subsOk and not audioOk then
-        rows.Push({ kind: "text", text: "No translatable subtitle tracks, and audio transcription is not available on this server.", color: "0xEDEDEDA8" })
-        rows.Push({ kind: "action", id: "close", label: "Close" })
+        rows.Push({ kind: "text", text: Tx("No translatable subtitle tracks, and audio transcription is not available on this server."), color: "0xEDEDEDA8" })
+        rows.Push({ kind: "action", id: "close", label: Tx("Close") })
     else
         if subsOk and audioOk then
-            modeLabel = "From subtitles"
-            if ai.mode = "audio" then modeLabel = "From audio"
-            rows.Push({ kind: "cycler", id: "mode", label: "Mode", value: modeLabel })
+            modeLabel = Tx("From subtitles")
+            if ai.mode = "audio" then modeLabel = Tx("From audio")
+            rows.Push({ kind: "cycler", id: "mode", label: Tx("Mode"), value: modeLabel })
         end if
         if ai.mode = "subtitles" then
             if ai.subPos >= subSources.Count() then ai.subPos = 0
-            rows.Push({ kind: "cycler", id: "source", label: "Source subtitle", value: Subs_aiSubtitleLabel(subSources[ai.subPos], ai.subPos) })
+            rows.Push({ kind: "cycler", id: "source", label: Tx("Source subtitle"), value: Subs_aiSubtitleLabel(subSources[ai.subPos], ai.subPos) })
         else
             if ai.audioPos >= audioSources.Count() then ai.audioPos = 0
-            rows.Push({ kind: "cycler", id: "source", label: "Source audio", value: Tracks_audioSummary(audioSources[ai.audioPos], ai.audioPos) })
+            rows.Push({ kind: "cycler", id: "source", label: Tx("Source audio"), value: Tracks_audioSummary(audioSources[ai.audioPos], ai.audioPos) })
         end if
         if ai.targetPos < 0 or ai.targetPos >= opts.Count() then ai.targetPos = 0
         if ai.mode = "subtitles" or Subs_aiCanTranslateTranscript() then
-            rows.Push({ kind: "cycler", id: "target", label: "Target language", value: opts[ai.targetPos].name })
+            rows.Push({ kind: "cycler", id: "target", label: Tx("Target language"), value: opts[ai.targetPos].name })
         else
             ' A server can offer transcription without translation (Silo Android #547): the audio
             ' job then stays in the spoken language, so there is no target to pick.
-            rows.Push({ kind: "text", text: "Subtitles are written in the spoken language. AI translation is turned off on this server.", color: "0xEDEDEDA8" })
+            rows.Push({ kind: "text", text: Tx("Subtitles are written in the spoken language. AI translation is turned off on this server."), color: "0xEDEDEDA8" })
         end if
         ' Quota applies to the transcribe kinds only; exempt callers (admins) get limited=false.
         if ai.mode = "audio" and ai.quota <> invalid and ai.quota.limited = true then
             q = ai.quota
             period = Subs_quotaPeriod(Str_orEmpty(q.period))
             if Subs_quotaExhausted() then
-                rows.Push({ kind: "text", text: "Transcription quota exhausted (" + Str_orEmpty(q.used) + " of " + Str_orEmpty(q.limit) + " used " + period + ")", color: "0xF59E0BFF" })
+                rows.Push({ kind: "text", text: TxF("Transcription quota exhausted ({0} of {1} used {2})", [Str_orEmpty(q.used), Str_orEmpty(q.limit), period]), color: "0xF59E0BFF" })
             else
-                rows.Push({ kind: "text", text: Str_orEmpty(q.remaining) + " of " + Str_orEmpty(q.limit) + " transcriptions left " + period, color: "0xEDEDEDA8" })
+                rows.Push({ kind: "text", text: TxF("{0} of {1} transcriptions left {2}", [Str_orEmpty(q.remaining), Str_orEmpty(q.limit), period]), color: "0xEDEDEDA8" })
             end if
         end if
         if ai.phase = "failed" and ai.error <> "" then rows.Push({ kind: "text", text: ai.error, color: "0xEF4444FF" })
-        label = "Translate"
-        if ai.mode = "audio" then label = "Transcribe"
+        label = Tx("Translate")
+        if ai.mode = "audio" then label = Tx("Transcribe")
         rows.Push({ kind: "action", id: "submit", label: label, disabled: Subs_quotaExhausted() })
     end if
-    Subs_showDialog("ai", "Translate with AI", rows)
+    Subs_showDialog("ai", Tx("Translate with AI"), rows)
 end sub
 
 sub Subs_aiCycled(id as string, direction as integer)
@@ -1707,7 +1708,7 @@ sub Subs_onAiCreated(event as object)
         ai.progress = 0.0
         if job.progress <> invalid then ai.progress = job.progress * 1.0
         ai.message = Str_orEmpty(job.progress_message)
-        if ai.message = "" and resp.data.live_delivery_attached <> true then ai.message = "Processing in background"
+        if ai.message = "" and resp.data.live_delivery_attached <> true then ai.message = Tx("Processing in background")
         AiLive_onJobCreated(job)
         Subs_applyAiJob(job)
         if ai.phase = "running" then m.subsAiTimer.control = "start"
@@ -1715,7 +1716,7 @@ sub Subs_onAiCreated(event as object)
         ' 429 = quota exhausted: refresh the quota so the dialog flips to the exhausted state.
         if resp.status = 429 then Api_get("/api/v2/subtitles/ai/quota", invalid, "Subs_onAiQuota", { fileId: m.fileId })
         ai.phase = "failed"
-        ai.error = Subs_errorText(resp, "Translation failed")
+        ai.error = Subs_errorText(resp, Tx("Translation failed"))
         AiLive_onJobEnded()
     end if
     if m.subs.dialog = "ai" then Subs_renderAi()
@@ -1743,7 +1744,7 @@ sub Subs_onAiJob(event as object)
     else if resp.status = 404 then
         m.subsAiTimer.control = "stop"
         ai.phase = "failed"
-        ai.error = "The translation job is gone."
+        ai.error = Tx("The translation job is gone.")
         AiLive_onJobEnded()
     end if
     ' Ordinary transport failures keep polling.
@@ -1763,7 +1764,7 @@ sub Subs_applyAiJob(job as object)
         resultId = Str_orEmpty(job.result_subtitle_id)
         if resultId = "" then
             ai.phase = "failed"
-            ai.error = "Translated, but the server named no subtitle."
+            ai.error = Tx("Translated, but the server named no subtitle.")
             AiLive_onJobEnded()
             return
         end if
@@ -1772,14 +1773,14 @@ sub Subs_applyAiJob(job as object)
         m.subsAiTimer.control = "stop"
         ai.phase = "failed"
         ai.error = Str_orEmpty(job.error_message)
-        if ai.error = "" then ai.error = "Translation failed"
+        if ai.error = "" then ai.error = Tx("Translation failed")
         AiLive_onJobEnded()
         ' The dialog may have been closed while the job ran (Silo Android #545): say why in the
         ' player, long enough to read a full sentence on a TV. Reopening the dialog shows it too.
         if m.subs.dialog <> "ai" then
             if not m.global.hasField("toastSeconds") then m.global.addFields({ toastSeconds: 0.0 })
             m.global.toastSeconds = 10.0
-            m.global.toast = "AI subtitles failed. " + ai.error
+            m.global.toast = TxF("AI subtitles failed. {0}", [ai.error])
         end if
     else if st = "cancelled" then
         m.subsAiTimer.control = "stop"

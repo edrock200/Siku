@@ -882,8 +882,8 @@ end function
 
 ' Validation the Android client performs before handing a plan to the player.
 function PlaybackCaps_planProblem(decision as object) as string
-    if decision = invalid then return "The server sent an empty playback plan."
-    if decision.protocol_version <> 3 then return "The server answered with an unsupported playback protocol."
+    if decision = invalid then return Tx("The server sent an empty playback plan.")
+    if decision.protocol_version <> 3 then return Tx("The server answered with an unsupported playback protocol.")
     features = Arr_or(decision.server_features)
     hasPlan = false
     hasNeutral = false
@@ -891,12 +891,12 @@ function PlaybackCaps_planProblem(decision as object) as string
         if f = "playback_plan_v3" then hasPlan = true
         if f = "neutral_playback_v3_contract_v1" then hasNeutral = true
     end for
-    if not hasPlan or not hasNeutral then return "The server's playback contract is not supported."
+    if not hasPlan or not hasNeutral then return Tx("The server's playback contract is not supported.")
     plan = decision.playback_plan
-    if plan = invalid then return "The server sent no playback plan."
-    if Str_isEmpty(plan.plan_attempt_key) then return "The playback plan is incomplete."
-    if plan.stream = invalid or Str_isEmpty(plan.stream.url) then return "The playback plan has no stream."
-    if plan.stream.header_refresh = "refresh_endpoint" then return "This stream needs header refresh, which Roku can't do."
+    if plan = invalid then return Tx("The server sent no playback plan.")
+    if Str_isEmpty(plan.plan_attempt_key) then return Tx("The playback plan is incomplete.")
+    if plan.stream = invalid or Str_isEmpty(plan.stream.url) then return Tx("The playback plan has no stream.")
+    if plan.stream.header_refresh = "refresh_endpoint" then return Tx("This stream needs header refresh, which Roku can't do.")
     return ""
 end function
 
@@ -1068,9 +1068,9 @@ end function
 function PlaybackCaps_deliveryLabel(delivery as dynamic) as string
     d = LCase(Str_orEmpty(delivery))
     if d = "" then return ""
-    if d = "original_http" then return "Direct Play"
-    if Instr(1, d, "transcode") > 0 then return "Transcode"
-    if Instr(1, d, "remux") > 0 then return "Remux"
+    if d = "original_http" then return Tx("Direct Play")
+    if Instr(1, d, "transcode") > 0 then return Tx("Transcode")
+    if Instr(1, d, "remux") > 0 then return Tx("Remux")
     return d
 end function
 
@@ -1113,9 +1113,9 @@ function PlaybackCaps_channelsLabel(channels as dynamic, layout as dynamic) as s
     l = LCase(Str_orEmpty(layout))
     label = ""
     if n = 1 then
-        label = "Mono"
+        label = Tx("Mono")
     else if n = 2 then
-        label = "Stereo"
+        label = Tx("Stereo")
     else if n = 6 then
         label = "5.1"
     else if n = 8 then
@@ -1123,9 +1123,9 @@ function PlaybackCaps_channelsLabel(channels as dynamic, layout as dynamic) as s
     else if n > 0 then
         label = n.ToStr() + "ch"
     else if l = "stereo" then
-        label = "Stereo"
+        label = Tx("Stereo")
     else if l = "mono" then
-        label = "Mono"
+        label = Tx("Mono")
     else if l <> "" then
         label = l
     end if

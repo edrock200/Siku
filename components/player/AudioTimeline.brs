@@ -35,7 +35,7 @@ function AudioTimeline_build(versions as dynamic, serverTotal as dynamic, prefer
     AudioTimeline_sortBy(chapters, "start")
     for i = 0 to chapters.Count() - 1
         chapters[i].index = i
-        if chapters[i].title = "" then chapters[i].title = "Chapter " + (i + 1).ToStr()
+        if chapters[i].title = "" then chapters[i].title = TxF("Chapter {0}", [i + 1])
     end for
     return { tracks: tracks, chapters: chapters, total: total, isSingle: tracks.Count() <= 1 }
 end function

@@ -220,8 +220,8 @@ sub Bufq_drain()
         if o.type = "replan" then
             Bufq_sendReplan(o)
         else if o.type = "notice" then
-            if o.key = "lowered" then m.global.toast = "Quality lowered to stop buffering"
-            if o.key = "cant_lower" then m.global.toast = "Can't lower quality for this video"
+            if o.key = "lowered" then m.global.toast = Tx("Quality lowered to stop buffering")
+            if o.key = "cant_lower" then m.global.toast = Tx("Can't lower quality for this video")
         else if o.type = "summary" then
             s = o.summary
             Diag_log("[siku-playback] buffering plan=" + Str_orEmpty(s.planId) + " played_ms=" + Str_orEmpty(s.playedMs) + " stalls=" + Str_orEmpty(s.stallCount) + " stall_ms=" + Str_orEmpty(s.stallTotalMs) + " longest_ms=" + Str_orEmpty(s.stallLongestMs) + " delivered_kbps=" + Str_orEmpty(s.deliveredKbps) + " mode=" + s.mode + " action=" + s.action)
@@ -311,13 +311,13 @@ sub Bufq_renderPill()
     end if
     secs = BQ_pillSecondsLeft(m.bq, Bufq_now())
     if kind = "prompt" then
-        m.bufqTitle.text = "Playback keeps buffering"
-        m.bufqPrimary.text = "Lower quality"
-        m.bufqSecondary.text = "Keep quality"
+        m.bufqTitle.text = Tx("Playback keeps buffering")
+        m.bufqPrimary.text = Tx("Lower quality")
+        m.bufqSecondary.text = Tx("Keep quality")
         m.bufqSecondary.visible = true
     else
-        m.bufqTitle.text = "Quality lowered to stop buffering"
-        m.bufqPrimary.text = "Restore quality"
+        m.bufqTitle.text = Tx("Quality lowered to stop buffering")
+        m.bufqPrimary.text = Tx("Restore quality")
         m.bufqSecondary.visible = false
     end if
     m.bufqCount.text = secs.ToStr()

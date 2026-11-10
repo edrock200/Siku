@@ -12,31 +12,31 @@
 ' Plain-language text for each number (the server's own message is shown instead when it has one).
 function PlaybackError_text(number as string) as string
     t = {
-        "1001": "This title has no playable file."
-        "1004": "Couldn't open this title."
-        "2001": "Playback couldn't be prepared. Check the connection to your server and try again."
-        "2002": "The server has no playable source for this title."
-        "2003": "No other version of this title can play here."
-        "2004": "The server can't prepare this HDR or Dolby Vision format."
-        "2005": "The server can't prepare this audio format."
-        "2006": "The server can't prepare these subtitles."
-        "2007": "This server's playback protocol isn't supported. The server may need an update."
-        "2008": "The server sent a stream format Roku can't play."
-        "2009": "The server has video conversion turned off for this playback."
-        "2010": "A conversion tool the server needs is unavailable."
-        "2011": "The server needs more information about this file's format."
-        "2012": "The server couldn't read this file."
-        "2013": "The server can't meet the bitrate limit for this playback."
-        "2014": "The server has no other way left to play this title."
-        "2015": "No playback route was found for this Roku."
-        "2016": "The server couldn't start converting this title."
-        "3001": "This Roku couldn't play the stream. Try another version or a lower quality."
-        "3002": "Playback didn't start or stopped moving for too long. Check the connection and try a lower quality."
-        "3003": "Siku tried every other way to play this title and none worked."
-        "3004": "The playback session changed on the server. Start playback again."
+        "1001": Tx("This title has no playable file.")
+        "1004": Tx("Couldn't open this title.")
+        "2001": Tx("Playback couldn't be prepared. Check the connection to your server and try again.")
+        "2002": Tx("The server has no playable source for this title.")
+        "2003": Tx("No other version of this title can play here.")
+        "2004": Tx("The server can't prepare this HDR or Dolby Vision format.")
+        "2005": Tx("The server can't prepare this audio format.")
+        "2006": Tx("The server can't prepare these subtitles.")
+        "2007": Tx("This server's playback protocol isn't supported. The server may need an update.")
+        "2008": Tx("The server sent a stream format Roku can't play.")
+        "2009": Tx("The server has video conversion turned off for this playback.")
+        "2010": Tx("A conversion tool the server needs is unavailable.")
+        "2011": Tx("The server needs more information about this file's format.")
+        "2012": Tx("The server couldn't read this file.")
+        "2013": Tx("The server can't meet the bitrate limit for this playback.")
+        "2014": Tx("The server has no other way left to play this title.")
+        "2015": Tx("No playback route was found for this Roku.")
+        "2016": Tx("The server couldn't start converting this title.")
+        "3001": Tx("This Roku couldn't play the stream. Try another version or a lower quality.")
+        "3002": Tx("Playback didn't start or stopped moving for too long. Check the connection and try a lower quality.")
+        "3003": Tx("Siku tried every other way to play this title and none worked.")
+        "3004": Tx("The playback session changed on the server. Start playback again.")
     }
     if t.DoesExist(number) then return t[number]
-    return "Something went wrong."
+    return Tx("Something went wrong.")
 end function
 
 ' The number for a terminal decision or a failed start: the server's terminal reason first, then
@@ -194,5 +194,5 @@ sub PlaybackError_onReported(event as object)
     if not accepted or m.closing then return
     ' The dialog may have been dismissed or replaced by another error meanwhile.
     if sent.ticket <> m.errTicket or not m.errorGroup.visible then return
-    m.errorReport.text = "Report sent to your server."
+    m.errorReport.text = Tx("Report sent to your server.")
 end sub

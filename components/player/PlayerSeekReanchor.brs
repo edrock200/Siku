@@ -207,7 +207,7 @@ sub onSeekReanchor(event as object)
         setBuffering(false)
         m.scrubber.position = m.position
         if not m.reanchorWasPaused then m.video.control = "resume"
-        m.global.toast = "Couldn't jump there on this stream"
+        m.global.toast = Tx("Couldn't jump there on this stream")
         m.reanchorQueued = -1.0
         return
     end if

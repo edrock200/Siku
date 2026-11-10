@@ -137,7 +137,7 @@ sub startPipeline()
     end if
     m.contentId = Str_orEmpty(p.itemId)
     if m.contentId = "" then
-        showError("Nothing to play.")
+        showError(Tx("Nothing to play."))
         return
     end if
     Api_get("/api/v2/catalog/items/" + Str_urlEncode(m.contentId), { image_size: "large" }, "onItem")
@@ -211,7 +211,7 @@ sub setupQueue(q as object, p as object)
         if entry.contentId <> "" or entry.fileId <> "" then m.queue.Push(entry)
     end for
     if m.queue.Count() = 0 then
-        showError("Nothing to play.")
+        showError(Tx("Nothing to play."))
         return
     end if
     idx = 0
@@ -234,8 +234,8 @@ sub setupQueue(q as object, p as object)
         idx = 0
     end if
     m.qIndex = idx
-    m.eyebrow.text = "NOW PLAYING"
-    m.listBtn.text = "Up Next"
+    m.eyebrow.text = Tx("NOW PLAYING")
+    m.listBtn.text = Tx("Up Next")
     m.listBtn.iconUri = "pkg:/images/icons/list.png"
     m.backBtn.iconUri = "pkg:/images/icons/rewind.png"
     m.fwdBtn.iconUri = "pkg:/images/icons/forward.png"
@@ -290,7 +290,7 @@ sub onTrackItem(event as object)
         showMusicInfo()
     end if
     if e.fileId = "" then
-        trackFailed("This track has no playable file.")
+        trackFailed(Tx("This track has no playable file."))
         return
     end if
     startFile(e.fileId, ctx.startAt, "server")
@@ -299,13 +299,13 @@ end sub
 sub showMusicInfo()
     e = m.queue[m.qIndex]
     title = e.title
-    if title = "" then title = "Unknown track"
+    if title = "" then title = Tx("Unknown track")
     m.titleLabel.text = title
     m.line2.text = e.artist
     m.line3.text = e.album
     m.line3.color = "0xEDEDEDBF"
     n = m.queue.Count()
-    if n > 1 then m.eyebrow.text = "NOW PLAYING · " + (m.qIndex + 1).ToStr() + " OF " + n.ToStr() else m.eyebrow.text = "NOW PLAYING"
+    if n > 1 then m.eyebrow.text = TxF("NOW PLAYING · {0} OF {1}", [m.qIndex + 1, n]) else m.eyebrow.text = Tx("NOW PLAYING")
     setCover(e.posterUrl)
     m.ticks.removeChildrenIndex(m.ticks.getChildCount(), 0)
     m.prevBtn.opacity = 1.0
@@ -340,7 +340,7 @@ sub setupAudiobook(it as object)
         ' No tagged parts: fall back to the first file as a single-part book.
         versions = Arr_or(it.versions)
         if versions.Count() = 0 then
-            showError("No playable audiobook file is available.")
+            showError(Tx("No playable audiobook file is available."))
             return
         end if
         v = versions[0]
@@ -352,7 +352,7 @@ sub setupAudiobook(it as object)
         m.timeline = { tracks: [{ index: 0, fileId: Str_orEmpty(v.file_id), duration: dur, offset: 0.0 }], chapters: chapters, total: dur, isSingle: true }
     end if
 
-    m.eyebrow.text = "AUDIOBOOK"
+    m.eyebrow.text = Tx("AUDIOBOOK")
     authors = []
     for each a in Arr_or(ab.authors)
         authors.Push(Str_orEmpty(a.name))
@@ -365,7 +365,7 @@ sub setupAudiobook(it as object)
     m.titleLabel.text = Str_orEmpty(it.title)
     m.line2.text = Str_joinDots(authors, ", ")
     m.line3.color = "0xEDEDEDFF"
-    m.listBtn.text = "Chapters"
+    m.listBtn.text = Tx("Chapters")
     m.listBtn.iconUri = "pkg:/images/icons/chapters.png"
     m.listBtn.visible = m.timeline.chapters.Count() > 1
     m.backBtn.iconUri = "pkg:/images/icons/rewind_30.png"
@@ -453,7 +453,7 @@ sub startFile(fileId as string, localStart as float, persistence as string)
     m.pending = { fileId: fileId, localStart: localStart, persistence: persistence, gen: m.loadGen }
     ' The centered spinner is for the first load only; afterwards the status line says it.
     m.spinner.visible = not m.main.visible
-    m.statusLabel.text = "Loading…"
+    m.statusLabel.text = Tx("Loading…")
     ensureFreshToken()
 end sub
 
@@ -521,7 +521,7 @@ sub onCapabilities(event as object)
         if f = "sequenced_progress_v1" then hasSeq = true
     end for
     if caps.state <> "available" or caps.allowed <> true or not hasV3 or not hasSeq or Str_isEmpty(caps.installation_id) then
-        showError("Playback isn't available on this server.")
+        showError(Tx("Playback isn't available on this server."))
         return
     end if
     entry = { installation_id: caps.installation_id, features: Arr_or(caps.features), fetchedAt: Time_nowSeconds() }
@@ -562,7 +562,7 @@ sub onStart(event as object)
         return
     end if
     if resp.status = 426 then
-        showError("This server needs an update before it can stream to Roku.")
+        showError(Tx("This server needs an update before it can stream to Roku."))
         return
     end if
     if not resp.ok or resp.data = invalid then
@@ -573,7 +573,7 @@ sub onStart(event as object)
     if d.outcome <> "playable" then
         msg = ""
         if d.terminal <> invalid then msg = Str_orEmpty(d.terminal.message)
-        if msg = "" then msg = "This can't be played right now."
+        if msg = "" then msg = Tx("This can't be played right now.")
         failFile(msg)
         return
     end if
@@ -739,7 +739,7 @@ sub leaveServerEndedSession()
     m.isPaused = true
     m.playBtn.iconUri = "pkg:/images/icons/play.png"
     m.statusLabel.text = ""
-    showError("An administrator ended this playback session.")
+    showError(Tx("An administrator ended this playback session."))
 end sub
 
 ' DELETE the current session with a final file-local sample. Safe to call twice.
@@ -800,10 +800,10 @@ sub showError(msg as string)
     canRetry = AudioSession_canRetry(true, m.endedByServer, m.closing)
     m.retryBtn.visible = canRetry
     if canRetry then
-        m.errorTitle.text = "Something went wrong"
+        m.errorTitle.text = Tx("Something went wrong")
         m.errorCloseBtn.translation = [990, 680]
     else
-        m.errorTitle.text = "Playback ended"
+        m.errorTitle.text = Tx("Playback ended")
         m.errorCloseBtn.translation = [Int((1920 - Num_or(m.errorCloseBtn.width, 160)) / 2), 680]
     end if
     m.errorGroup.visible = true
@@ -817,7 +817,7 @@ sub onAudioState()
     print "[AudioPlayer] state "; st
     if st = "buffering" then
         m.spinner.visible = false
-        m.statusLabel.text = "Buffering…"
+        m.statusLabel.text = Tx("Buffering…")
     else if st = "playing" then
         m.spinner.visible = false
         m.statusLabel.text = ""
@@ -831,7 +831,7 @@ sub onAudioState()
     else if st = "paused" then
         m.spinner.visible = false
         m.isPaused = true
-        m.statusLabel.text = "Paused"
+        m.statusLabel.text = Tx("Paused")
         m.playBtn.iconUri = "pkg:/images/icons/play.png"
         sendProgress()
         syncBookProgress()
@@ -839,7 +839,7 @@ sub onAudioState()
         onFinished()
     else if st = "error" then
         msg = Str_orEmpty(m.audio.errorMsg)
-        if msg = "" then msg = "This could not be played."
+        if msg = "" then msg = Tx("This could not be played.")
         ' The Audio node's text can quote the signed stream URL: masked on the console.
         print "[AudioPlayer] audio error "; m.audio.errorCode; " "; CreateObject("roRegex", "[a-z][a-z0-9+.-]*://[^\s]*", "i").ReplaceAll(msg, "<url>")
         m.progressTimer.control = "stop"
@@ -888,7 +888,7 @@ sub onFinished()
         syncBookProgress()
         stopSession(true)
         m.isPaused = true
-        m.statusLabel.text = "Finished"
+        m.statusLabel.text = Tx("Finished")
         m.playBtn.iconUri = "pkg:/images/icons/replay.png"
         updateProgressUi()
         return
@@ -900,7 +900,7 @@ sub onFinished()
         setSleep("off")
         m.isPaused = true
         m.playBtn.iconUri = "pkg:/images/icons/play.png"
-        m.statusLabel.text = "Sleep timer ended"
+        m.statusLabel.text = Tx("Sleep timer ended")
         return
     end if
     if m.qIndex < m.queue.Count() - 1 then
@@ -970,14 +970,14 @@ sub updateProgressUi()
                 ch = m.timeline.chapters[ci]
                 n = m.timeline.chapters.Count()
                 label = ch.title
-                if n > 1 then label = label + "  ·  " + (ci + 1).ToStr() + " of " + n.ToStr()
+                if n > 1 then label = label + "  ·  " + TxF("{0} of {1}", [ci + 1, n])
                 m.line3.text = label
             else if m.timeline.tracks.Count() > 1 then
-                m.line3.text = "Part " + (m.trackIdx + 1).ToStr() + " of " + m.timeline.tracks.Count().ToStr()
+                m.line3.text = TxF("Part {0} of {1}", [m.trackIdx + 1, m.timeline.tracks.Count()])
             end if
         end if
         if m.chapterIdx < 0 and m.timeline.tracks.Count() > 1 and m.trackIdx >= 0 then
-            m.line3.text = "Part " + (m.trackIdx + 1).ToStr() + " of " + m.timeline.tracks.Count().ToStr()
+            m.line3.text = TxF("Part {0} of {1}", [m.trackIdx + 1, m.timeline.tracks.Count()])
         end if
     else
         total = m.fileDuration
@@ -1101,7 +1101,7 @@ sub openListPanel()
             ch = m.timeline.chapters[i]
             rows.Push({ id: i.ToStr(), title: ch.title, number: (i + 1).ToStr(), trailing: Time_clock(ch.start), isCurrent: i = cur })
         end for
-        openPanel("chapters", "Chapters", rows)
+        openPanel("chapters", Tx("Chapters"), rows)
     else
         for i = 0 to m.queue.Count() - 1
             e = m.queue[i]
@@ -1109,21 +1109,21 @@ sub openListPanel()
             if e.durationSeconds > 0 then trailing = Time_clock(e.durationSeconds)
             rows.Push({ id: i.ToStr(), title: e.title, number: (i + 1).ToStr(), subtitle: e.artist, trailing: trailing, isCurrent: i = m.qIndex })
         end for
-        openPanel("queue", "Up Next", rows)
+        openPanel("queue", Tx("Up Next"), rows)
     end if
 end sub
 
 sub openSleepPanel()
-    opts = [{ id: "off", title: "Off" }, { id: "15", title: "15 minutes" }, { id: "30", title: "30 minutes" }, { id: "60", title: "60 minutes" }]
+    opts = [{ id: "off", title: Tx("Off") }, { id: "15", title: TxP("1 minute", "{0} minutes", 15) }, { id: "30", title: TxP("1 minute", "{0} minutes", 30) }, { id: "60", title: TxP("1 minute", "{0} minutes", 60) }]
     if m.mode = "audiobook" then
-        if m.timeline.chapters.Count() > 0 then opts.Push({ id: "chapter", title: "End of chapter" })
+        if m.timeline.chapters.Count() > 0 then opts.Push({ id: "chapter", title: Tx("End of chapter") })
     else
-        opts.Push({ id: "track", title: "End of track" })
+        opts.Push({ id: "track", title: Tx("End of track") })
     end if
     for each o in opts
         o.isCurrent = o.id = m.sleepMode
     end for
-    openPanel("sleep", "Sleep timer", opts)
+    openPanel("sleep", Tx("Sleep timer"), opts)
 end sub
 
 sub openPanel(kind as string, title as string, rows as object)
@@ -1181,14 +1181,14 @@ sub setSleep(mode as string)
 end sub
 
 sub updateSleepLabel()
-    t = "Sleep Timer"
+    t = Tx("Sleep Timer")
     if m.sleepMode = "chapter" then
-        t = "Sleep: End of chapter"
+        t = Tx("Sleep: End of chapter")
     else if m.sleepMode = "track" then
-        t = "Sleep: End of track"
+        t = Tx("Sleep: End of track")
     else if m.sleepMode <> "off" then
         mins = Int((m.sleepRemaining + 59) / 60)
-        t = "Sleep: " + mins.ToStr() + " min"
+        t = TxF("Sleep: {0} min", [mins])
     end if
     if m.sleepBtn.text <> t then m.sleepBtn.text = t
 end sub
@@ -1206,7 +1206,7 @@ end sub
 sub sleepNow()
     setSleep("off")
     if m.audio.state = "playing" or m.audio.state = "buffering" then m.audio.control = "pause"
-    m.global.toast = "Sleep timer ended"
+    m.global.toast = Tx("Sleep timer ended")
 end sub
 
 ' ---------- Focus and keys ----------
