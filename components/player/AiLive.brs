@@ -221,7 +221,7 @@ sub AiLive_handle(ev as object)
         ai = m.subs.ai
         if ai.phase = "running" then
             if a.total > 0 and a.done / a.total > ai.progress then ai.progress = a.done / a.total
-            ai.message = "Showing translated lines as they arrive"
+            ai.message = Tx("Showing translated lines as they arrive")
             if m.subs.dialog = "ai" then Subs_renderAi()
         end if
         AiLive_activate()

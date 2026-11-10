@@ -303,7 +303,7 @@ sub startPipeline()
     m.focusSink.setFocus(true)
     m.titleLabel.text = Str_orEmpty(p.title)
     if m.itemId = "" then
-        PlaybackError_show("1004", { detail: "Nothing to play." })
+        PlaybackError_show("1004", { detail: Tx("Nothing to play.") })
         return
     end if
     ' Naming the file makes the server fill that version's on-demand markers (Silo Android #527).
@@ -581,7 +581,7 @@ sub onCapabilities(event as object)
     if caps.state <> "available" or caps.allowed <> true or not hasV3 or not hasSeq or Str_isEmpty(caps.installation_id) then
         number = "2001"
         if not hasV3 or not hasSeq then number = "2007"
-        PlaybackError_show(number, { detail: "Playback isn't available on this server." })
+        PlaybackError_show(number, { detail: Tx("Playback isn't available on this server.") })
         return
     end if
     ' deliveries: PlaybackCaps offers the MPEG-TS copy only to a server listing server_remux_hls.
@@ -694,7 +694,7 @@ sub onStart(event as object)
         return
     end if
     if resp.status = 426 then
-        PlaybackError_show("2007", { detail: "This server needs an update before it can stream to Roku." })
+        PlaybackError_show("2007", { detail: Tx("This server needs an update before it can stream to Roku.") })
         return
     end if
     if not resp.ok or resp.data = invalid then
@@ -711,7 +711,7 @@ sub onStart(event as object)
             msg = Str_orEmpty(d.terminal.message)
             reason = Str_orEmpty(d.terminal.reason)
         end if
-        if msg = "" then msg = "This title can't be played right now."
+        if msg = "" then msg = Tx("This title can't be played right now.")
         PlaybackError_show(PlaybackError_serverNumber(reason, ""), { detail: msg, reason: reason, decision: d })
         return
     end if
@@ -771,7 +771,7 @@ sub warnForcedDolby(plan as object)
     codec = LCase(Str_orEmpty(plan.effective_recipe.audio_codec))
     if p.forcedAudio = invalid or not PlaybackCaps_has(p.forcedAudio, codec) then return
     m.forcedDolbyWarned = true
-    m.global.toast = "Dolby audio is sent as-is because Force Dolby Audio Passthrough is on. Your TV reports no Dolby support: if there is no sound, turn that setting off."
+    m.global.toast = Tx("Dolby audio is sent as-is because Force Dolby Audio Passthrough is on. Your TV reports no Dolby support: if there is no sound, turn that setting off.")
 end sub
 
 ' Roku's HLS player ignores audio muxed into fMP4 segments, and Silo's HLS remux (server_remux_hls)
@@ -784,7 +784,7 @@ sub maybeRecoverSilentRemux(plan as object)
     ' The MPEG-TS copy (hls_copy_mpegts_v1) is the packaging Roku plays audio from: keep it.
     if PlaybackCaps_isTsRemux(plan) then return
     if m.remuxRecoveryTried then
-        m.global.toast = "No sound expected: this file needs Silo's HLS remux, whose format Roku can't play audio from yet"
+        m.global.toast = Tx("No sound expected: this file needs Silo's HLS remux, whose format Roku can't play audio from yet")
         return
     end if
     m.remuxRecoveryTried = true
@@ -1072,7 +1072,7 @@ sub onVideoState()
         Recovery_notePlaying()
         Launch_ready("playing")
         applyPlannedAudioTrack()
-        if not Recovery_reconnecting() then m.bufferLabel.text = "Buffering"
+        if not Recovery_reconnecting() then m.bufferLabel.text = Tx("Buffering")
         m.isPaused = false
         m.playPauseBtn.iconUri = "pkg:/images/icons/pause.png"
         pausing = m.pauseAfterStart
@@ -1117,8 +1117,8 @@ end sub
 ' be invalid or partial. The label is full-width and centered, so no measuring is needed.
 sub onBufferingStatus()
     st = m.video.bufferingStatus
-    text = "Buffering"
-    if Recovery_reconnecting() then text = "Reconnecting"
+    text = Tx("Buffering")
+    if Recovery_reconnecting() then text = Tx("Reconnecting")
     if st <> invalid and Type(st) = "roAssociativeArray" then
         pct = Int(Num_or(st.percentage, -1))
         if pct >= 0 and pct <= 100 then text = text + " " + pct.ToStr() + "%"
@@ -1197,7 +1197,7 @@ sub onFinished()
         if not m.upNext.visible then showUpNext()
         if m.countdown < 0 and m.shuffle = invalid then
             ' No auto-play: wait for the user on the overlay.
-            m.unEyebrow.text = "FINISHED"
+            m.unEyebrow.text = Tx("FINISHED")
         end if
         return
     end if
@@ -1294,7 +1294,7 @@ sub leaveServerEndedSession()
     Diag_log("[siku-playback] the server ended this playback session; leaving playback")
     m.sessionId = ""
     m.progressTimer.control = "stop"
-    m.global.toast = "An administrator ended this playback session."
+    m.global.toast = Tx("An administrator ended this playback session.")
     exitPlayer()
 end sub
 
@@ -1669,9 +1669,9 @@ end sub
 ' ---------- Skip intro / credits ----------
 
 function markerLabel(kind as string) as string
-    if kind = "credits" then return "Skip Credits"
-    if kind = "recap" then return "Skip Recap"
-    return "Skip Intro"
+    if kind = "credits" then return Tx("Skip Credits")
+    if kind = "recap" then return Tx("Skip Recap")
+    return Tx("Skip Intro")
 end function
 
 sub checkMarkers()
@@ -1712,12 +1712,12 @@ sub checkMarkers()
 end sub
 
 sub showSkippedCaption(mk as object)
-    kindText = "Intro skipped"
-    if mk.kind = "recap" then kindText = "Recap skipped"
+    kindText = Tx("Intro skipped")
+    if mk.kind = "recap" then kindText = Tx("Recap skipped")
     m.skippedCaption.text = kindText
     m.skippedCaption.visible = true
-    m.skipBtn.text = "Watch Intro"
-    if mk.kind = "recap" then m.skipBtn.text = "Watch Recap"
+    m.skipBtn.text = Tx("Watch Intro")
+    if mk.kind = "recap" then m.skipBtn.text = Tx("Watch Recap")
     m.skipBtn.visible = true
     m.skipGroup.visible = true
     m.skipShownFor = "watch:" + Str_orEmpty(mk.start)
@@ -1970,7 +1970,7 @@ sub advanceShuffle()
     m.shuffleAdvancing = true
     m.countdownTimer.control = "stop"
     m.countdown = -1
-    m.unPlayBtn.text = "Play Now"
+    m.unPlayBtn.text = Tx("Play Now")
     Api_send("POST", shufflePath() + "/advance", { from_content_id: m.itemId }, "onShuffleAdvanced", { forItem: m.itemId })
 end sub
 
@@ -1986,7 +1986,7 @@ sub onShuffleAdvanced(event as object)
     else if m.shuffle.exhausted then
         publishShuffleNext()
     else
-        m.global.toast = "Couldn't continue the shuffle."
+        m.global.toast = Tx("Couldn't continue the shuffle.")
     end if
 end sub
 
@@ -1996,19 +1996,19 @@ sub pickAnother()
     if sh = invalid or sh.latest = invalid or sh.latest["next"] = invalid then return
     if m.shufflePicking or m.shuffleAdvancing then return
     m.shufflePicking = true
-    m.unPickBtn.text = "Picking…"
+    m.unPickBtn.text = Tx("Picking…")
     Api_send("POST", shufflePath() + "/skip", { next_content_id: Str_orEmpty(sh.latest["next"].content_id) }, "onShufflePicked", { forItem: m.itemId })
 end sub
 
 sub onShufflePicked(event as object)
     resp = Api_result(event)
     m.shufflePicking = false
-    m.unPickBtn.text = "Pick Another"
+    m.unPickBtn.text = Tx("Pick Another")
     if m.closing or m.shuffle = invalid then return
     if resp.context <> invalid and resp.context.forItem <> m.itemId then return
     shuffleRecord(resp)
     if not resp.ok and not m.shuffle.exhausted then
-        m.global.toast = "Couldn't pick another."
+        m.global.toast = Tx("Couldn't pick another.")
         return
     end if
     publishShuffleNext()
@@ -2064,7 +2064,7 @@ end function
 
 sub startCountdown()
     m.countdown = 10
-    m.unPlayBtn.text = "Play Now · " + m.countdown.ToStr()
+    m.unPlayBtn.text = TxF("Play Now · {0}", [m.countdown])
     m.countdownTimer.control = "stop"
     m.countdownTimer.control = "start"
 end sub
@@ -2089,7 +2089,7 @@ sub showUpNext()
     else
         if stillWatchingDue() then m.autoAdvances = 0
         m.countdown = -1
-        m.unPlayBtn.text = "Play Now"
+        m.unPlayBtn.text = Tx("Play Now")
     end if
     renderUpNext()
     m.upNext.visible = true
@@ -2161,7 +2161,7 @@ sub renderUpNext()
     if sh <> invalid then scopeLabel = Shuffle_scopeLabel(sh.latest)
     m.unScope.visible = scopeLabel <> ""
     if scopeLabel <> "" then
-        m.unScopeLabel.text = "Shuffling " + scopeLabel
+        m.unScopeLabel.text = TxF("Shuffling {0}", [scopeLabel])
         m.unScopeLabel.width = 0
         w = Int(Label_width(m.unScopeLabel)) + 48 + 16
         if w > 640 then w = 640
@@ -2171,18 +2171,18 @@ sub renderUpNext()
 
     if ep = invalid then
         ' Nothing follows.
-        if m.finished then m.unEyebrow.text = "FINISHED" else m.unEyebrow.text = "MORE TO WATCH"
+        if m.finished then m.unEyebrow.text = Tx("FINISHED") else m.unEyebrow.text = Tx("MORE TO WATCH")
         m.unSeries.visible = false
-        if m.finished then m.unEpisode.text = "End of playback" else m.unEpisode.text = "Almost finished"
+        if m.finished then m.unEpisode.text = Tx("End of playback") else m.unEpisode.text = Tx("Almost finished")
         m.unMeta.text = ""
-        if sh <> invalid then m.unOverview.text = "Nothing else in this shuffle can play." else m.unOverview.text = "No next episode is available."
+        if sh <> invalid then m.unOverview.text = Tx("Nothing else in this shuffle can play.") else m.unOverview.text = Tx("No next episode is available.")
     else
         if sh <> invalid then
-            m.unEyebrow.text = "UP NEXT AT RANDOM"
+            m.unEyebrow.text = Tx("UP NEXT AT RANDOM")
         else if m.finished and m.countdown >= 0 then
-            m.unEyebrow.text = "PLAYING NEXT"
+            m.unEyebrow.text = Tx("PLAYING NEXT")
         else
-            m.unEyebrow.text = "UP NEXT"
+            m.unEyebrow.text = Tx("UP NEXT")
         end if
         title = Str_orEmpty(ep.title)
         if m.nextIsEpisode then
@@ -2191,7 +2191,7 @@ sub renderUpNext()
             m.unSeries.text = series
             m.unSeries.visible = series <> ""
             tag = Content_seShort(ep.season_number, ep.episode_number).Replace(" · ", "·")
-            if title = "" then title = "Next Episode"
+            if title = "" then title = Tx("Next Episode")
             m.unEpisode.text = Str_joinDots([tag, title], "  ")
         else
             ' A shuffled movie has no series line; its own title heads the panel.
@@ -2199,7 +2199,7 @@ sub renderUpNext()
             m.unEpisode.text = title
         end if
         meta = ""
-        if Content_num(ep.runtime) > 0 then meta = Int(Content_num(ep.runtime)).ToStr() + " min"
+        if Content_num(ep.runtime) > 0 then meta = TxF("{0} min", [Int(Content_num(ep.runtime))])
         m.unMeta.text = meta
         m.unOverview.text = upNextOverviewText(ep)
     end if
@@ -2257,7 +2257,7 @@ sub onCountdownTick()
         playNext()
         return
     end if
-    m.unPlayBtn.text = "Play Now · " + m.countdown.ToStr()
+    m.unPlayBtn.text = TxF("Play Now · {0}", [m.countdown])
 end sub
 
 sub restoreVideoPane()
@@ -2328,6 +2328,13 @@ function hudTabNames() as object
     return names
 end function
 
+' The shown name of a panel tab (hudTabNames keeps English ids that the code compares).
+function hudTabLabel(name as string) as string
+    labels = { "Info": Tx("Info"), "Video": Tx("Video"), "Audio": Tx("Audio"), "Subtitles": Tx("Subtitles"), "Chapters": Tx("Chapters") }
+    if labels.DoesExist(name) then return labels[name]
+    return name
+end function
+
 sub openHud(tabIndex as integer)
     A11y_reset()
     hideControlsNow()
@@ -2341,7 +2348,7 @@ sub openHud(tabIndex as integer)
     x = 0
     for i = 0 to names.Count() - 1
         chip = m.hudTabsGroup.createChild("DetailChip")
-        chip.text = names[i]
+        chip.text = hudTabLabel(names[i])
         chip.height = 76
         chip.padX = 36
         chip.fontSize = 27
@@ -2394,7 +2401,7 @@ end sub
 function currentAudioName() as string
     if useServerAudioList() then
         tracks = serverAudioTracks()
-        if m.pendingAudioIndex >= 0 and m.pendingAudioIndex < tracks.Count() then return Tracks_audioTitle(tracks[m.pendingAudioIndex], m.pendingAudioIndex) + " · Applying…"
+        if m.pendingAudioIndex >= 0 and m.pendingAudioIndex < tracks.Count() then return TxF("{0} · Applying…", [Tracks_audioTitle(tracks[m.pendingAudioIndex], m.pendingAudioIndex)])
         idx = currentServerAudioIndex()
         if idx >= 0 then return Tracks_audioTitle(tracks[idx], idx)
     end if
@@ -2404,7 +2411,7 @@ function currentAudioName() as string
     end for
     tracks = Arr_or(m.video.availableAudioTracks)
     if tracks.Count() > 0 then return audioTrackLabel(tracks[0])
-    return "Default"
+    return Tx("Default")
 end function
 
 function audioTrackLabel(t as object) as string
@@ -2413,17 +2420,17 @@ function audioTrackLabel(t as object) as string
     if n <> "" and l <> "" and LCase(n) <> LCase(l) then return n + " (" + l + ")"
     if n <> "" then return n
     if l <> "" then return l
-    return "Track"
+    return Tx("Track")
 end function
 
 function currentSubtitleName() as string
     if m.pendingSubtitleTrackId <> "" then
         ' Chosen, but the player hasn't started yet (a remount or a fresh plan): "Label · Applying…".
         for each t in m.subtitleTracks
-            if t.trackId = m.pendingSubtitleTrackId then return t.label + " · Applying…"
+            if t.trackId = m.pendingSubtitleTrackId then return TxF("{0} · Applying…", [t.label])
         end for
     end if
-    if m.subtitleIndex < 0 or m.subtitleIndex >= m.subtitleTracks.Count() then return "Off"
+    if m.subtitleIndex < 0 or m.subtitleIndex >= m.subtitleTracks.Count() then return Tx("Off")
     return m.subtitleTracks[m.subtitleIndex].label
 end function
 
@@ -2448,8 +2455,8 @@ function qualityMenu() as object
     end for
     if out.Count() = 0 then return out
     ' A learned limit (buffering quality, Silo Android #636) held Auto down for this plan.
-    autoName = "Auto"
-    if m.plan.bandwidth_limit <> invalid and Type(m.plan.bandwidth_limit) = "roAssociativeArray" then autoName = "Auto · limited after buffering"
+    autoName = Tx("Auto")
+    if m.plan.bandwidth_limit <> invalid and Type(m.plan.bandwidth_limit) = "roAssociativeArray" then autoName = Tx("Auto · limited after buffering")
     out.Unshift({ id: "auto", name: autoName, bitrate: "" })
     return out
 end function
@@ -2548,69 +2555,69 @@ function hudRowSpecs() as object
     tabName = names[m.hudTab]
     rows = []
     if tabName = "Info" then
-        rows.Push({ id: "np", label: "Now Playing", value: m.titleLabel.text, actionable: false })
-        if m.epTag.text <> "" then rows.Push({ id: "ep", label: "Episode", value: m.epTag.text, actionable: false })
+        rows.Push({ id: "np", label: Tx("Now Playing"), value: m.titleLabel.text, actionable: false })
+        if m.epTag.text <> "" then rows.Push({ id: "ep", label: Tx("Episode"), value: m.epTag.text, actionable: false })
         ' TvPlayerHud HudInfoPane: the route, then the stream that actually plays (the plan's
         ' effective_recipe, labelled as Android does: "HEVC", "E-AC3", "Dolby Vision", "4K"), and
         ' the source file's own facts when they differ (a remux or transcode changed something).
         if m.plan <> invalid then
             route = PlaybackCaps_deliveryLabel(m.plan.delivery)
-            if route <> "" then rows.Push({ id: "route", label: "Stream", value: route, actionable: false })
+            if route <> "" then rows.Push({ id: "route", label: Tx("Stream"), value: route, actionable: false })
             r = m.plan.effective_recipe
             if r <> invalid then
                 video = Str_joinDots([PlaybackCaps_videoCodecLabel(r.video_codec), PlaybackCaps_resolutionLabel(r.width, r.height), effectiveRangeLabel()])
-                if video <> "" then rows.Push({ id: "video", label: "Video", value: video, actionable: false })
+                if video <> "" then rows.Push({ id: "video", label: Tx("Video"), value: video, actionable: false })
                 audio = Str_joinDots([PlaybackCaps_audioCodecLabel(r.audio_codec), PlaybackCaps_channelsLabel(r.audio_channels, r.audio_layout)], " ")
-                if audio <> "" then rows.Push({ id: "audio_info", label: "Audio", value: audio, actionable: false })
+                if audio <> "" then rows.Push({ id: "audio_info", label: Tx("Audio"), value: audio, actionable: false })
             end if
         end if
         src = sourceFactsLabel()
-        if src <> "" then rows.Push({ id: "file", label: "Source file", value: src, actionable: false })
+        if src <> "" then rows.Push({ id: "file", label: Tx("Source file"), value: src, actionable: false })
     else if tabName = "Video" then
         ' HudVideoPane: Quality, HDR, Dolby Vision (both as on Android TV's Playback column), the
         ' auto toggles, and the dynamic range the plan promises.
         ' The quality menu exists whenever the plan lists a rung: even a single one shows Auto + it.
-        if qualityMenu().Count() > 0 then rows.Push({ id: "quality", label: "Quality", value: qualityLabel(), actionable: true })
-        if displayHasHdr() then rows.Push({ id: "hdr", label: "HDR", value: onOffLabel(Settings_hdrEnabled()), actionable: true })
-        if displayHasDolbyVision() then rows.Push({ id: "dolbyvision", label: "Dolby Vision", value: onOffLabel(Settings_dolbyVision()), actionable: true })
-        rows.Push({ id: "autoplay", label: "Auto-play next", value: onOffLabel(autoPlayNext()), actionable: true })
+        if qualityMenu().Count() > 0 then rows.Push({ id: "quality", label: Tx("Quality"), value: qualityLabel(), actionable: true })
+        if displayHasHdr() then rows.Push({ id: "hdr", label: Tx("HDR"), value: onOffLabel(Settings_hdrEnabled()), actionable: true })
+        if displayHasDolbyVision() then rows.Push({ id: "dolbyvision", label: Tx("Dolby Vision"), value: onOffLabel(Settings_dolbyVision()), actionable: true })
+        rows.Push({ id: "autoplay", label: Tx("Auto-play next"), value: onOffLabel(autoPlayNext()), actionable: true })
         range = effectiveRangeLabel()
         if range <> "" then
             srcRange = ""
             if m.plan <> invalid and m.plan.source <> invalid then srcRange = PlaybackCaps_rangeLabel(m.plan.source.dynamic_range)
-            if srcRange <> "" and srcRange <> range then range = range + " (file: " + srcRange + ")"
-            rows.Push({ id: "range", label: "Dynamic range", value: range, actionable: false })
+            if srcRange <> "" and srcRange <> range then range = TxF("{0} (file: {1})", [range, srcRange])
+            rows.Push({ id: "range", label: Tx("Dynamic range"), value: range, actionable: false })
         end if
     else if tabName = "Audio" then
-        rows.Push({ id: "audio", label: "Track", value: currentAudioName(), actionable: true })
+        rows.Push({ id: "audio", label: Tx("Track"), value: currentAudioName(), actionable: true })
         if m.plan <> invalid and m.plan.effective_recipe <> invalid then
             r = m.plan.effective_recipe
             codec = PlaybackCaps_audioCodecLabel(r.audio_codec)
-            if codec <> "" then rows.Push({ id: "acodec", label: "Codec", value: codec, actionable: false })
+            if codec <> "" then rows.Push({ id: "acodec", label: Tx("Codec"), value: codec, actionable: false })
             ch = PlaybackCaps_channelsLabel(r.audio_channels, r.audio_layout)
-            if ch <> "" then rows.Push({ id: "ach", label: "Channels", value: ch, actionable: false })
-            if m.plan.claims <> invalid and m.plan.claims.audio <> invalid and m.plan.claims.audio.passthrough = true then rows.Push({ id: "apass", label: "Output", value: "Passthrough", actionable: false })
+            if ch <> "" then rows.Push({ id: "ach", label: Tx("Channels"), value: ch, actionable: false })
+            if m.plan.claims <> invalid and m.plan.claims.audio <> invalid and m.plan.claims.audio.passthrough = true then rows.Push({ id: "apass", label: Tx("Output"), value: Tx("Passthrough"), actionable: false })
         end if
     else if tabName = "Subtitles" then
-        rows.Push({ id: "subtitle", label: "Track", value: currentSubtitleName(), actionable: true })
-        if m.subtitleTracks.Count() = 0 then rows.Push({ id: "nosub", label: "No text subtitles for this stream", value: "", actionable: false })
+        rows.Push({ id: "subtitle", label: Tx("Track"), value: currentSubtitleName(), actionable: true })
+        if m.subtitleTracks.Count() = 0 then rows.Push({ id: "nosub", label: Tx("No text subtitles for this stream"), value: "", actionable: false })
         ' Delay, Timing (Sync to audio / Reset timing), Search subtitles, Translate with AI.
         Subs_appendHudRows(rows)
     else if tabName = "Chapters" then
         for i = 0 to m.chapters.Count() - 1
             ch = m.chapters[i]
             t = Str_orEmpty(ch.title)
-            if t = "" then t = "Chapter " + (i + 1).ToStr()
+            if t = "" then t = TxF("Chapter {0}", [i + 1])
             rows.Push({ id: "chapter:" + i.ToStr(), label: t, value: Time_clock(Content_num(ch.start_seconds)), actionable: true })
         end for
-        if rows.Count() = 0 then rows.Push({ id: "noch", label: "No chapters in this title", value: "", actionable: false })
+        if rows.Count() = 0 then rows.Push({ id: "noch", label: Tx("No chapters in this title"), value: "", actionable: false })
     end if
     return rows
 end function
 
 function onOffLabel(v as boolean) as string
-    if v then return "On"
-    return "Off"
+    if v then return Tx("On")
+    return Tx("Off")
 end function
 
 ' The dynamic range the plan promises ("Dolby Vision", "HDR10", "SDR"), from the validated video
@@ -2759,7 +2766,7 @@ sub hudAnnounce()
     else
         names = hudTabNames()
         if m.hudTab < 0 or m.hudTab >= names.Count() then return
-        A11y_say("hud:tab:" + m.hudTab.ToStr(), names[m.hudTab], "tab", m.hudTab, names.Count(), m.hud)
+        A11y_say("hud:tab:" + m.hudTab.ToStr(), hudTabLabel(names[m.hudTab]), "tab", m.hudTab, names.Count(), m.hud)
     end if
 end sub
 
@@ -2815,10 +2822,10 @@ sub openPicker(kind as string)
                 acts.Push({ id: i.ToStr(), label: audioTrackLabel(t), checked: Str_orEmpty(t.Track) = cur or (cur = "" and i = 0) })
             end for
         end if
-        if acts.Count() = 0 then acts.Push({ id: "-1", label: "Default", checked: true })
-        m.picker.title = "Audio"
+        if acts.Count() = 0 then acts.Push({ id: "-1", label: Tx("Default"), checked: true })
+        m.picker.title = Tx("Audio")
     else if kind = "subtitle" then
-        acts.Push({ id: "-1", label: "Off", checked: m.subtitleIndex < 0 })
+        acts.Push({ id: "-1", label: Tx("Off"), checked: m.subtitleIndex < 0 })
         for i = 0 to m.subtitleTracks.Count() - 1
             ' The detail line: where the track comes from (an embedded and an external track of one
             ' language otherwise read the same), then its sync status ("Syncing… 40%", "Synced +2.3 s").
@@ -2835,12 +2842,12 @@ sub openPicker(kind as string)
         for i = 0 to inv.Count() - 1
             t = inv[i]
             if t <> invalid and Type(t) = "roAssociativeArray" and not offered.DoesExist(Str_orEmpty(t.track_id)) then
-                detail = "Image or styled format: Roku can't show it"
-                if Tracks_subtitleUnplayable(t) then detail = "Unsupported format"
+                detail = Tx("Image or styled format: Roku can't show it")
+                if Tracks_subtitleUnplayable(t) then detail = Tx("Unsupported format")
                 acts.Push({ id: "na:" + i.ToStr(), label: Subs_inventoryLabel(t), detail: detail, checked: false })
             end if
         end for
-        m.picker.title = "Subtitles"
+        m.picker.title = Tx("Subtitles")
     else if kind = "quality" then
         ' Auto first, then the server's entries in its order with their bitrate, the delivered row checked.
         menu = qualityMenu()
@@ -2848,7 +2855,7 @@ sub openPicker(kind as string)
         for each o in menu
             acts.Push({ id: o.id, label: o.name, trailing: o.bitrate, checked: active <> "" and o.id = active })
         end for
-        m.picker.title = "Quality"
+        m.picker.title = Tx("Quality")
     end if
     m.picker.actions = acts
     m.picker.visible = true
@@ -2896,9 +2903,9 @@ sub onPickerChosen()
             naIdx = Int(Val(Mid(id, 4)))
             inv = m.subs.subtitleInventory
             if naIdx >= 0 and naIdx < inv.Count() and Tracks_subtitleUnplayable(inv[naIdx]) then
-                m.global.toast = "This subtitle track's format isn't supported, so it can't be shown."
+                m.global.toast = Tx("This subtitle track's format isn't supported, so it can't be shown.")
             else
-                m.global.toast = "Roku can't display image-based or styled subtitles (PGS, VobSub, ASS). A text version (SRT) would work."
+                m.global.toast = Tx("Roku can't display image-based or styled subtitles (PGS, VobSub, ASS). A text version (SRT) would work.")
             end if
         else
             AiLive_onUserSubtitle()
@@ -3078,7 +3085,7 @@ sub failHlsRendition()
     m.renditionTimer.control = "stop"
     Diag_log("[siku-playback] hls subtitle rendition not found; listed=" + listedSubtitlesForLog())
     if m.renditionRecoveryTried or m.plan = invalid or m.sessionId = "" then
-        m.global.toast = "Couldn't show these subtitles"
+        m.global.toast = Tx("Couldn't show these subtitles")
         return
     end if
     m.renditionRecoveryTried = true
@@ -3129,7 +3136,7 @@ end sub
 
 sub onHudSettingWritten(event as object)
     resp = Api_result(event)
-    if not resp.ok then m.global.toast = "Couldn't save the setting: " + Api_errorText(resp)
+    if not resp.ok then m.global.toast = TxF("Couldn't save the setting: {0}", [Api_errorText(resp)])
 end sub
 
 ' POST /playback/{session}/replan at the current position; onReplan swaps the plan in.
@@ -3191,11 +3198,11 @@ sub onReplan(event as object)
         leaveServerEndedSession()
         return
     end if
-    failText = "Couldn't change the quality"
-    if m.replanKind = "output" then failText = "Couldn't change the video output"
-    if m.replanKind = "audio" then failText = "Couldn't change the audio track"
-    if m.replanKind = "subtitle" then failText = "Couldn't show these subtitles"
-    if m.replanKind = "recovery" then failText = "No sound expected: the server has no other way to stream this file to a Roku"
+    failText = Tx("Couldn't change the quality")
+    if m.replanKind = "output" then failText = Tx("Couldn't change the video output")
+    if m.replanKind = "audio" then failText = Tx("Couldn't change the audio track")
+    if m.replanKind = "subtitle" then failText = Tx("Couldn't show these subtitles")
+    if m.replanKind = "recovery" then failText = Tx("No sound expected: the server has no other way to stream this file to a Roku")
     if m.replanKind = "bq" then failText = "" ' the buffering controller's own lowering: it re-arms by itself
     if m.replanKind = "reconnect" then failText = ""
     if not resp.ok or resp.data = invalid or resp.data.outcome <> "playable" or resp.data.playback_plan = invalid then
@@ -3480,7 +3487,7 @@ function handleUpNextKey(key as string) as boolean
             m.onDeckRow.setFocus(true)
         end if
         m.countdownTimer.control = "stop"
-        m.unPlayBtn.text = "Play Now"
+        m.unPlayBtn.text = Tx("Play Now")
         m.countdown = -1
     else if key = "up" then
         if m.upNextIndex > 0 then m.upNextIndex = m.upNextIndex - 1

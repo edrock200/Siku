@@ -185,7 +185,7 @@ sub HoldSeek_stop()
 end sub
 
 function HoldSeek_rateText(rate as integer) as string
-    if rate = 0 then return "Paused"
+    if rate = 0 then return Tx("Paused")
     sign = ""
     if rate < 0 then sign = "-"
     return sign + Abs(rate).ToStr() + Chr(215)

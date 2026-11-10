@@ -364,7 +364,7 @@ sub Subs_onProbe(event as object)
     stillSelected = Subs_selectedTrackId() = p.trackId
     if action = "failed" then
         Diag_log("[siku-playback] subtitle load failed track=" + p.trackId + " status=" + Str_orEmpty(resp.status) + " after " + secs + "s")
-        if stillSelected and p.shown then m.global.toast = "Couldn't load these subtitles."
+        if stillSelected and p.shown then m.global.toast = Tx("Couldn't load these subtitles.")
         return
     end if
     m.subsReadyIds[p.trackId] = true

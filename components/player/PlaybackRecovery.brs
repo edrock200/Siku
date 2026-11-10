@@ -275,7 +275,7 @@ function Recovery_reconnect(code as dynamic) as boolean
     m.recDebugTimer.control = "stop"
     m.video.control = "stop"
     setBuffering(true)
-    m.bufferLabel.text = "Reconnecting"
+    m.bufferLabel.text = Tx("Reconnecting")
     m.rec.waiting = true
     Diag_log("[siku-playback] reconnect " + m.rec.tries.ToStr() + " in " + Str(delay).Trim() + " s")
     m.reconnectTimer.control = "stop"
@@ -314,7 +314,7 @@ sub Recovery_notePlaying()
         Diag_log("[siku-playback] reconnected after " + Int(Recovery_now() - m.rec.outageAt).ToStr() + " s tries=" + m.rec.tries.ToStr())
         m.rec.outageAt = -1.0
         m.rec.tries = 0
-        m.bufferLabel.text = "Buffering"
+        m.bufferLabel.text = Tx("Buffering")
     end if
 end sub
 
