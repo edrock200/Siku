@@ -1,7 +1,4 @@
 {
- "&#8592; &#8594; speed  &#183;  OK play  &#183;  Back cancel": [
-  "components/player/PlayerScreen.xml:123"
- ],
  ".com": [
   "components/screens/ServerConnectScreen.xml:52"
  ],
@@ -311,9 +308,6 @@
  "Enter the address you use for Silo in a browser or the Silo app, like media.example.com. Or open Silo on a phone or tablet on this network: it offers to set up this Roku.": [
   "components/screens/ServerConnectScreen.xml:80"
  ],
- "Enter your&#10;server address": [
-  "components/screens/ServerConnectScreen.xml:39"
- ],
  "Experimental: MPEG-TS Copy": [
   "components/screens/settings/SettingsScreen.brs:255"
  ],
@@ -409,7 +403,7 @@
  "Loading settings from the server…": [
   "components/screens/settings/SettingsScreen.brs:657"
  ],
- "Loading subtitles&#8230;": [
+ "Loading subtitles…": [
   "components/player/PlayerScreen.xml:167"
  ],
  "Loading tracks…": [
@@ -730,9 +724,6 @@
  ],
  "Sign in with your phone": [
   "components/screens/LoginScreen.xml:68"
- ],
- "Sign in with&#10;a password": [
-  "components/screens/LoginScreen.xml:106"
  ],
  "Signing in {0} on {1}.": [
   "components/remote/PhonePairing.brs:272"
@@ -1220,6 +1211,9 @@
  ],
  "{0}, unavailable": [
   "components/widgets/AuthTextField.brs:96"
+ ],
+ "← → speed  ·  OK play  ·  Back cancel": [
+  "components/player/PlayerScreen.xml:123"
  ],
  "↑ More above": [
   "components/screens/ChangeAccountScreen.xml:35",

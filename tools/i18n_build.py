@@ -15,6 +15,7 @@ i18n/siku/<language>.json ({"English": "translation"}), which also overrides a c
   python3 tools/i18n_build.py --check    fail when locale/ is out of date or text is untranslated
 """
 import argparse
+import html
 import json
 import os
 import re
@@ -68,7 +69,7 @@ def source_strings():
                                     add(unescape_brs(g), "%s:%d" % (rel, i))
                     elif name.endswith(".xml") and 'i18n="no"' not in line:
                         for m in XML_ATTRS.finditer(line):
-                            text = m.group(1).replace("&amp;", "&").replace("&quot;", '"').replace("&apos;", "'")
+                            text = html.unescape(m.group(1))
                             if not text.startswith(("pkg:", "font:", "#", "0x")) and not re.fullmatch(r"[\d\s.:,/%x-]+", text):
                                 add(text, "%s:%d" % (rel, i))
     return found
