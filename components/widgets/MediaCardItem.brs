@@ -23,6 +23,7 @@ sub init()
     m.exploreCircle = m.top.findNode("exploreCircle")
     m.exploreIcon = m.top.findNode("exploreIcon")
     m.exploreLabel = m.top.findNode("exploreLabel")
+    m.exploreLabel.text = Tx("Explore all")
     m.isExplore = false
     m.sleeves = m.top.findNode("sleeves")
     m.sleeveBack = m.top.findNode("sleeveBack")
@@ -83,7 +84,7 @@ sub onContent()
     if not m.isExplore and c.hasField("markedBadge") then marked = c.markedBadge
     m.isMarked = marked <> ""
     m.boxPill.visible = m.isBoxSet or m.isMarked
-    if m.isMarked then m.boxPillLabel.text = marked else m.boxPillLabel.text = "BOX SET"
+    if m.isMarked then m.boxPillLabel.text = marked else m.boxPillLabel.text = Tx("BOX SET")
     m.cornerTag.visible = false
     if m.isBoxSet and c.hasField("cornerLabel") then
         m.cornerTagLabel.text = c.cornerLabel

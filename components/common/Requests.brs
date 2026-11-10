@@ -107,24 +107,24 @@ end function
 
 function Req_label(d as object) as string
     k = d.kind
-    if k = "pending" then return "Pending"
-    if k = "ontheway" then return "On the way"
-    if k = "inlibrary" then return "In library"
-    if k = "attention" then return "Needs attention"
-    return "Unavailable"
+    if k = "pending" then return Tx("Pending")
+    if k = "ontheway" then return Tx("On the way")
+    if k = "inlibrary" then return Tx("In library")
+    if k = "attention" then return Tx("Needs attention")
+    return Tx("Unavailable")
 end function
 
 function Req_attentionTitle(d as object) as string
-    if d.attention = "declined" then return "Declined"
-    return "Request failed"
+    if d.attention = "declined" then return Tx("Declined")
+    return Tx("Request failed")
 end function
 
 ' The detail page's status line.
 function Req_detailTitle(d as object) as string
     k = d.kind
-    if k = "pending" then return "Requested · Pending"
-    if k = "ontheway" then return "On the way"
-    if k = "inlibrary" then return "In your library"
+    if k = "pending" then return Tx("Requested · Pending")
+    if k = "ontheway" then return Tx("On the way")
+    if k = "inlibrary" then return Tx("In your library")
     if k = "attention" then
         copy = Req_reasonCopy(d.reason)
         if copy <> "" then return Req_attentionTitle(d) + " · " + copy
@@ -132,7 +132,7 @@ function Req_detailTitle(d as object) as string
     end if
     copy = Req_reasonCopy(d.reason)
     if copy <> "" then return copy
-    return "Unavailable"
+    return Tx("Unavailable")
 end function
 
 ' Status colors (RequestColors): amber, sky, emerald, rose; neutral = secondary text.
@@ -157,23 +157,23 @@ end function
 ' Steps: 0 Requested, 1 Approved, 2 Downloading, 3 In your library.
 
 function Req_steps() as object
-    return ["Requested", "Approved", "Downloading", "In your library"]
+    return [Tx("Requested"), Tx("Approved"), Tx("Downloading"), Tx("In your library")]
 end function
 
 function Req_progress(d as object, state as string, status as string) as object
     k = d.kind
-    if k = "pending" then return Req_mkProgress(d, 1, 1, "Pending", "Waiting for approval")
+    if k = "pending" then return Req_mkProgress(d, 1, 1, Tx("Pending"), Tx("Waiting for approval"))
     if k = "ontheway" then
-        if state = "partially_available" then return Req_mkProgress(d, 3, 3, "Partly in library", "Partly in your library")
-        if status = "downloading" then return Req_mkProgress(d, 2, 2, "Downloading", "Downloading")
-        if status = "completed" then return Req_mkProgress(d, 3, 3, "Adding to library", "Adding to your library")
-        if status = "approved" or status = "queued" then return Req_mkProgress(d, 2, 2, "Queued", "Queued for download")
-        return Req_mkProgress(d, 2, 2, "On the way", "On the way")
+        if state = "partially_available" then return Req_mkProgress(d, 3, 3, Tx("Partly in library"), Tx("Partly in your library"))
+        if status = "downloading" then return Req_mkProgress(d, 2, 2, Tx("Downloading"), Tx("Downloading"))
+        if status = "completed" then return Req_mkProgress(d, 3, 3, Tx("Adding to library"), Tx("Adding to your library"))
+        if status = "approved" or status = "queued" then return Req_mkProgress(d, 2, 2, Tx("Queued"), Tx("Queued for download"))
+        return Req_mkProgress(d, 2, 2, Tx("On the way"), Tx("On the way"))
     end if
-    if k = "inlibrary" then return Req_mkProgress(d, 4, -1, "In library", "In your library")
+    if k = "inlibrary" then return Req_mkProgress(d, 4, -1, Tx("In library"), Tx("In your library"))
     if k = "attention" then
-        if d.attention = "declined" then return Req_mkProgress(d, 1, 1, "Declined", "Declined")
-        return Req_mkProgress(d, 2, 2, "Failed", "Request failed")
+        if d.attention = "declined" then return Req_mkProgress(d, 1, 1, Tx("Declined"), Tx("Declined"))
+        return Req_mkProgress(d, 2, 2, Tx("Failed"), Tx("Request failed"))
     end if
     return Req_mkProgress(d, 0, -1, Req_label(d), Req_detailTitle(d))
 end function
@@ -199,15 +199,15 @@ end function
 function Req_reasonCopy(token as dynamic) as string
     v = Str_orEmpty(token).Trim()
     if v = "" then return ""
-    if v = "already_requested" then return "Already requested"
-    if v = "already_available" then return "Already in your library"
-    if v = "quota_exceeded" or v = "limit_reached" then return "Request limit reached"
-    if v = "requests_disabled" then return "Requests are turned off"
-    if v = "blocked" or v = "requesting_blocked" then return "You can't request media right now"
-    if v = "validation_failed" then return "That request couldn't be submitted"
-    if v = "invalid_state" then return "This request can no longer be changed"
-    if v = "not_found" then return "This title is no longer available"
-    if v = "request_unconfirmed" then return "Not confirmed yet"
+    if v = "already_requested" then return Tx("Already requested")
+    if v = "already_available" then return Tx("Already in your library")
+    if v = "quota_exceeded" or v = "limit_reached" then return Tx("Request limit reached")
+    if v = "requests_disabled" then return Tx("Requests are turned off")
+    if v = "blocked" or v = "requesting_blocked" then return Tx("You can't request media right now")
+    if v = "validation_failed" then return Tx("That request couldn't be submitted")
+    if v = "invalid_state" then return Tx("This request can no longer be changed")
+    if v = "not_found" then return Tx("This title is no longer available")
+    if v = "request_unconfirmed" then return Tx("Not confirmed yet")
     ' An unknown code ([a-z0-9_]+) shows nothing; a server sentence shows as written.
     re = CreateObject("roRegex", "^[a-z0-9_]+$", "")
     if re.IsMatch(v) then return ""
@@ -216,9 +216,9 @@ end function
 
 function Req_mediaTypeLabel(mt as dynamic) as string
     v = Str_orEmpty(mt)
-    if v = "movie" then return "Movie"
-    if v = "series" then return "Series"
-    return "Title"
+    if v = "movie" then return Tx("Movie")
+    if v = "series" then return Tx("Series")
+    return Tx("Title")
 end function
 
 ' "1080p downloading · 4K queued" for multi-target requests; "" otherwise.
@@ -229,19 +229,21 @@ function Req_targetSummary(targets as dynamic) as string
     for each tg in list
         q = Str_orEmpty(tg.quality)
         st = Str_orEmpty(tg.status)
-        word = ""
-        if st = "completed" then
-            word = "done"
+        part = ""
+        if q = "" then
+            part = ""
+        else if st = "completed" then
+            part = TxF("{0} done", [q])
         else if st = "downloading" then
-            word = "downloading"
+            part = TxF("{0} downloading", [q])
         else if st = "queued" or st = "approved" then
-            word = "queued"
+            part = TxF("{0} queued", [q])
         else if st = "pending" then
-            word = "pending"
+            part = TxF("{0} pending", [q])
         else if st = "failed" then
-            word = "failed"
+            part = TxF("{0} failed", [q])
         end if
-        if q <> "" and word <> "" then parts.Push(q + " " + word)
+        if part <> "" then parts.Push(part)
     end for
     return Str_joinDots(parts)
 end function
@@ -274,7 +276,7 @@ function Req_day(ts as dynamic) as string
     if d = invalid then return ""
     ' A date without a time is already a calendar day; shifting it to local time would move it.
     if not Time_isDateOnly(ts) then d.ToLocalTime()
-    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    months = [Tx("Jan"), Tx("Feb"), Tx("Mar"), Tx("Apr"), Tx("May"), Tx("Jun"), Tx("Jul"), Tx("Aug"), Tx("Sep"), Tx("Oct"), Tx("Nov"), Tx("Dec")]
     mo = d.GetMonth()
     if mo < 1 or mo > 12 then return ""
     return months[mo - 1] + " " + d.GetDayOfMonth().ToStr()
@@ -301,9 +303,9 @@ end function
 function Req_failureText(resp as object, fallback as string) as string
     if resp = invalid or resp.error = invalid then return fallback
     code = Str_orEmpty(resp.error.code)
-    if code = "validation_failed" then return "That request couldn't be submitted"
-    if code = "capability_disabled" or code = "capability_not_configured" or code = "capability_unsupported" then return "Requests are turned off"
-    if resp.status = 0 then return "Can't reach the server. Check your connection and try again."
+    if code = "validation_failed" then return Tx("That request couldn't be submitted")
+    if code = "capability_disabled" or code = "capability_not_configured" or code = "capability_unsupported" then return Tx("Requests are turned off")
+    if resp.status = 0 then return Tx("Can't reach the server. Check your connection and try again.")
     if not Str_isEmpty(resp.error.detail) then return resp.error.detail
     if not Str_isEmpty(resp.error.title) then return resp.error.title
     return fallback
@@ -335,11 +337,11 @@ function Req_canRemove(rec as dynamic, supported as boolean, busy as boolean) as
 end function
 
 function Req_removeConfirmTitle() as string
-    return "Remove this request?"
+    return Tx("Remove this request?")
 end function
 
 function Req_removeConfirmMessage(title as dynamic) as string
-    return "Your failed request for " + Chr(34) + Str_orEmpty(title) + Chr(34) + " will be deleted. You can request the title again later."
+    return TxF("Your failed request for ""{0}"" will be deleted. You can request the title again later.", [Str_orEmpty(title)])
 end function
 
 ' What a DELETE /api/v2/requests/{id} answer means (MyRequestsViewModel.removeFailed):
@@ -350,18 +352,18 @@ end function
 ' capability_disabled, which reads as a plain failure.
 function Req_removeOutcome(resp as dynamic) as object
     if resp = invalid then return { kind: "uncertain", toast: Req_unconfirmedRemoveText() }
-    if Req_flag(resp.ok) then return { kind: "removed", toast: "Request removed" }
+    if Req_flag(resp.ok) then return { kind: "removed", toast: Tx("Request removed") }
     status = Int(Num_or(resp.status, 0))
     code = ""
     if Type(resp.error) = "roAssociativeArray" then code = Str_orEmpty(resp.error.code)
     if status = 404 then return { kind: "gone", toast: "" }
-    if status = 409 and code = "conflict" then return { kind: "conflict", toast: "This request changed since the list loaded, so it wasn't removed." }
+    if status = 409 and code = "conflict" then return { kind: "conflict", toast: Tx("This request changed since the list loaded, so it wasn't removed.") }
     if Req_isUncertain(resp) then return { kind: "uncertain", toast: Req_unconfirmedRemoveText() }
-    return { kind: "failed", toast: Req_failureText(resp, "Couldn't remove the request") }
+    return { kind: "failed", toast: Req_failureText(resp, Tx("Couldn't remove the request")) }
 end function
 
 function Req_unconfirmedRemoveText() as string
-    return "We couldn't confirm the removal. Refresh your requests to check it."
+    return Tx("We couldn't confirm the removal. Refresh your requests to check it.")
 end function
 
 ' Search/discover results once the server deleted `rec` (applyingRemoval): the title whose
@@ -536,8 +538,8 @@ end function
 function Req_mergeDiscover(sections as object) as object
     out = []
     pairs = [
-        { key: "trending", title: "Trending now", movies: "trending_movies", series: "trending_series" },
-        { key: "popular", title: "Crowd favorites", movies: "popular_movies", series: "popular_series" }
+        { key: "trending", title: Tx("Trending now"), movies: "trending_movies", series: "trending_series" },
+        { key: "popular", title: Tx("Crowd favorites"), movies: "popular_movies", series: "popular_series" }
     ]
     for each pr in pairs
         mv = []

@@ -2,6 +2,10 @@
 
 sub init()
     m.feed = m.top.findNode("feed")
+    ' The layout's empty-state copy in the interface language (these fields are not translated with the tree).
+    m.feed.emptyTitle = Tx("Nothing here yet")
+    m.feed.emptyBody = Tx("Use Search to find a movie or series to request")
+    m.feed.emptyAction = Tx("Refresh")
     m.marquee = m.top.findNode("reqMarquee")
     m.mqTitle = m.top.findNode("mqTitle")
     m.mqMeta = m.top.findNode("mqMeta")
@@ -124,7 +128,7 @@ end sub
 sub render()
     ' Request administration (approve, decline, retry) stays in web admin, as on Android TV.
     rows = []
-    if m.mine.Count() > 0 then rows.Push(rowSpec("mine", "Your requests", "record", m.mine))
+    if m.mine.Count() > 0 then rows.Push(rowSpec("mine", Tx("Your requests"), "record", m.mine))
     for each s in m.discover
         rows.Push(rowSpec("discover:" + s.key, s.title, "result", s.results))
     end for
@@ -134,7 +138,7 @@ sub render()
         m.lastSig = ""
         m.marquee.visible = false
         if m.hubError <> invalid then
-            m.feed.errorText = Req_failureText(m.hubError, "Failed to load requests")
+            m.feed.errorText = Req_failureText(m.hubError, Tx("Failed to load requests"))
             m.feed.state = "error"
         else
             m.feed.rows = []
@@ -203,7 +207,7 @@ sub showMarquee(rowIndex as integer, itemIndex as integer)
         progress = Req_progressOfRecord(data)
         statusText = Req_statusLine(data, progress)
         day = Req_day(data.created_at)
-        if day <> "" then meta.Push("Requested " + day)
+        if day <> "" then meta.Push(TxF("Requested {0}", [day]))
     end if
     m.mqTitle.text = Str_orEmpty(data.title)
     m.mqMeta.text = Str_joinDots(meta)
@@ -282,9 +286,9 @@ function actionsFor(card as object) as object
     data = card.req
     if data = invalid or m.busy.DoesExist(Str_orEmpty(data.id)) then return out
     if card.req_kind = "record" then
-        if Req_displayOfRecord(data).kind = "pending" then out.Push({ id: "cancel", label: "Cancel Request", icon: "close" })
+        if Req_displayOfRecord(data).kind = "pending" then out.Push({ id: "cancel", label: Tx("Cancel Request"), icon: "close" })
         ' A failed request that delivered nothing, on a server that takes removals (Silo Android #792).
-        if Req_canRemove(data, Req_removeFailedSupported(), false) then out.Push({ id: "remove", label: "Remove request", icon: "close" })
+        if Req_canRemove(data, Req_removeFailedSupported(), false) then out.Push({ id: "remove", label: Tx("Remove request"), icon: "close" })
     end if
     return out
 end function
@@ -298,7 +302,7 @@ sub onItemOptions()
     m.menuTarget = opt.card
     m.menuMode = "actions"
     ' Close first, so a stray press doesn't cancel the request.
-    rows = [{ id: "close", label: "Close" }]
+    rows = [{ id: "close", label: Tx("Close") }]
     rows.Append(acts)
     m.menu.title = Str_orEmpty(opt.card.req.title)
     m.menu.actions = rows
@@ -342,11 +346,11 @@ sub onMutation(event as object)
     end if
     if Req_isUncertain(resp) then
         ' Never resend: re-read to see where the request stands.
-        m.global.toast = "We couldn't confirm the cancellation. Refresh your requests to check it."
+        m.global.toast = Tx("We couldn't confirm the cancellation. Refresh your requests to check it.")
         load()
         return
     end if
-    m.global.toast = Req_failureText(resp, "Couldn't cancel the request")
+    m.global.toast = Req_failureText(resp, Tx("Couldn't cancel the request"))
 end sub
 
 ' ---------- Remove a failed request (Silo Android #792, TvRequestsPage removeTarget) ----------
@@ -364,7 +368,7 @@ sub askRemove(rec as object)
         dlg.title = Req_removeConfirmTitle()
         dlg.message = Req_removeConfirmMessage(rec.title)
     end if
-    dlg.buttons = ["Keep request", "Remove request"]
+    dlg.buttons = [Tx("Keep request"), Tx("Remove request")]
     dlg.observeField("buttonSelected", "onRemoveButton")
     dlg.observeField("wasClosed", "onRemoveClosed")
     m.removeDialog = dlg
@@ -475,5 +479,5 @@ sub settleRemoveCheck()
     print "[siku-requests] removed id="; chk.id; " confirmed by the re-read"
     dropRemoved(chk.rec)
     m.global.homeDirty = true
-    m.global.toast = "Request removed"
+    m.global.toast = Tx("Request removed")
 end sub

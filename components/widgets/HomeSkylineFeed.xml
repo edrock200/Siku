@@ -91,7 +91,7 @@
       <Font role="rowLabelFont" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
     </RowList>
     <Group id="rowTitles" translation="[88, 540]" visible="false" />
-    <Label id="labelProbe" text="Ag" visible="false">
+    <Label id="labelProbe" text="Ag" visible="false"> <!-- i18n="no": a measuring probe -->
       <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
     </Label>
 

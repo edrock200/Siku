@@ -240,7 +240,7 @@ sub buildResult(node as object, spec as object, rowW as integer, h as integer)
     sc.color = "0xFFFFFFFF"
 
     name = Str_orEmpty(spec.releaseName)
-    if name = "" then name = "Unnamed release"
+    if name = "" then name = Tx("Unnamed release")
     lbl = node.createChild("Label")
     lbl.id = "label"
     lbl.text = name
@@ -284,10 +284,10 @@ sub buildResult(node as object, spec as object, rowW as integer, h as integer)
     meta.id = "detail"
     downloads = 0
     if spec.downloads <> invalid then downloads = Int(spec.downloads)
-    metaText = downloads.ToStr() + " downloads"
+    metaText = TxF("{0} downloads", [downloads])
     lang = Str_orEmpty(spec.languageName)
     if lang <> "" then metaText = metaText + " · " + lang
-    if spec.busy = true then metaText = "Downloading…"
+    if spec.busy = true then metaText = Tx("Downloading…")
     meta.text = metaText
     meta.translation = [x, 64]
     meta.width = rowW - x - 28
@@ -435,20 +435,20 @@ sub announce()
     spec = e.spec
     if e.kind = "cycler" then
         label = A11y_join([spec.label, spec.value])
-        role = "adjustable"
+        role = Tx("adjustable")
     else if e.kind = "option" then
         label = A11y_join([spec.label, spec.detail])
-        role = "option"
-        if A11y_isTrue(spec.checked) then role = "option, selected"
+        role = Tx("option")
+        if A11y_isTrue(spec.checked) then role = Tx("option, selected")
     else if e.kind = "result" then
         busy = ""
-        if A11y_isTrue(spec.busy) then busy = "Downloading"
+        if A11y_isTrue(spec.busy) then busy = Tx("Downloading")
         label = A11y_join([spec.releaseName, spec.language, busy])
-        role = "option"
+        role = Tx("option")
     else
         label = A11y_clean(spec.label)
-        role = "button"
-        if A11y_isTrue(spec.disabled) then role = "button, unavailable"
+        role = Tx("button")
+        if A11y_isTrue(spec.disabled) then role = Tx("button, unavailable")
     end if
     if m.a11yIntro then
         title = A11y_clean(m.top.title)

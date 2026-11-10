@@ -13,24 +13,24 @@ function CardActions_build(card as object, rowId as string) as object
     us = card.user_state
     if us = invalid then us = {}
     if Content_num(card.position_seconds) > 0 then
-        actions.Push({ id: "resume", label: "Resume", icon: "play" })
+        actions.Push({ id: "resume", label: Tx("Resume"), icon: "play" })
     else
-        actions.Push({ id: "play", label: "Play", icon: "play" })
+        actions.Push({ id: "play", label: Tx("Play"), icon: "play" })
     end if
     if us.played = true then
-        actions.Push({ id: "unwatched", label: "Mark as Unwatched", icon: "watched" })
+        actions.Push({ id: "unwatched", label: Tx("Mark as Unwatched"), icon: "watched" })
     else
-        actions.Push({ id: "watched", label: "Mark as Watched", icon: "check_circle" })
+        actions.Push({ id: "watched", label: Tx("Mark as Watched"), icon: "check_circle" })
     end if
     if us.is_favorite = true then
-        actions.Push({ id: "unfavorite", label: "Remove from Favorites", icon: "heart_filled" })
+        actions.Push({ id: "unfavorite", label: Tx("Remove from Favorites"), icon: "heart_filled" })
     else
-        actions.Push({ id: "favorite", label: "Add to Favorites", icon: "heart" })
+        actions.Push({ id: "favorite", label: Tx("Add to Favorites"), icon: "heart" })
     end if
     if us.in_watchlist = true then
-        actions.Push({ id: "unwatchlist", label: "Remove from Watchlist", icon: "bookmark_filled" })
+        actions.Push({ id: "unwatchlist", label: Tx("Remove from Watchlist"), icon: "bookmark_filled" })
     else
-        actions.Push({ id: "watchlist", label: "Add to Watchlist", icon: "bookmark" })
+        actions.Push({ id: "watchlist", label: Tx("Add to Watchlist"), icon: "bookmark" })
     end if
     if CardActions_isProgressRow(rowId) then
         d = CardActions_dismissal(card)
@@ -74,9 +74,9 @@ end function
 ' gets no remove action.
 function CardActions_dismissal(card as object) as dynamic
     anchor = Str_orEmpty(card.progress_updated_at)
-    if anchor <> "" then return { surface: "continue_watching", body: { progress_updated_at: anchor }, label: "Remove from Continue Watching", toast: "Removed from Continue Watching" }
+    if anchor <> "" then return { surface: "continue_watching", body: { progress_updated_at: anchor }, label: Tx("Remove from Continue Watching"), toast: Tx("Removed from Continue Watching") }
     sid = Str_orEmpty(card.series_id)
-    if sid <> "" then return { surface: "next_up", body: { series_id: sid }, label: "Remove from Next Up", toast: "Removed from Next Up" }
+    if sid <> "" then return { surface: "next_up", body: { series_id: sid }, label: Tx("Remove from Next Up"), toast: Tx("Removed from Next Up") }
     return invalid
 end function
 
@@ -108,22 +108,22 @@ function CardActions_perform(actionId as string, card as object, rowId as string
     else if actionId = "favorite" then
         Api_fire("PUT", "/api/v2/favorites/" + enc)
         m.global.homeDirty = true
-        m.global.toast = "Added to Favorites"
+        m.global.toast = Tx("Added to Favorites")
         return { favorite: true }
     else if actionId = "unfavorite" then
         Api_fire("DELETE", "/api/v2/favorites/" + enc)
         m.global.homeDirty = true
-        m.global.toast = "Removed from Favorites"
+        m.global.toast = Tx("Removed from Favorites")
         return { favorite: false }
     else if actionId = "watchlist" then
         Api_fire("PUT", "/api/v2/watchlist/" + enc)
         m.global.homeDirty = true
-        m.global.toast = "Added to Watchlist"
+        m.global.toast = Tx("Added to Watchlist")
         return { inWatchlist: true }
     else if actionId = "unwatchlist" then
         Api_fire("DELETE", "/api/v2/watchlist/" + enc)
         m.global.homeDirty = true
-        m.global.toast = "Removed from Watchlist"
+        m.global.toast = Tx("Removed from Watchlist")
         return { inWatchlist: false }
     else if actionId = "dismiss" then
         d = CardActions_dismissal(card)
@@ -165,9 +165,9 @@ end function
 ' Toast for a refused watched write: the server's reason, or a generic "Try again." (Android:
 ' "Couldn't mark as watched. <errorMessage("Try again.")>").
 function CardActions_watchedFailureText(watched as boolean, resp as dynamic) as string
-    action = "unwatched"
-    if watched then action = "watched"
-    return "Couldn't mark as " + action + ". " + Api_reasonText(resp, "Try again.")
+    reason = Api_reasonText(resp, Tx("Try again."))
+    if watched then return TxF("Couldn't mark as watched. {0}", [reason])
+    return TxF("Couldn't mark as unwatched. {0}", [reason])
 end function
 
 sub CardActions_onWatchedAnswer(event as object)
@@ -179,9 +179,9 @@ sub CardActions_onWatchedAnswer(event as object)
     if resp.ok then
         m.global.homeDirty = true
         if ctx.watched = true then
-            m.global.toast = "Marked as watched"
+            m.global.toast = Tx("Marked as watched")
         else
-            m.global.toast = "Marked as unwatched"
+            m.global.toast = Tx("Marked as unwatched")
         end if
         return
     end if

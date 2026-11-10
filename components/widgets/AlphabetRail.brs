@@ -19,7 +19,7 @@ sub init()
         bg.id = "bg"
         lbl = g.createChild("Label")
         lbl.id = "label"
-        lbl.text = m.letters[i]
+        if i = 0 then lbl.text = Tx("All") else lbl.text = m.letters[i]
         lbl.horizAlign = "center"
         lbl.vertAlign = "center"
         lbl.maxLines = 1

@@ -9,7 +9,7 @@ import unittest
 
 from brs import check_cases as _check_cases
 
-FILES = ["components/common/Overlays.brs", "tests/overlays_io.brs"]
+FILES = ["components/common/Overlays.brs", "tests/overlays_io.brs", "components/common/Utils.brs"]
 CONTENT = ["components/common/Content.brs", "components/common/Utils.brs", "components/common/Overlays.brs", "tests/overlays_io.brs"]
 REF = "a" * 63 + "1.webp"
 COPY = {"multiAudio": "Multi-Audio", "subtitles": "CC", "returning": "Returning", "ended": "Ended",

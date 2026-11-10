@@ -57,7 +57,7 @@
             </Label>
           </Group>
           <Group id="fieldRequested" translation="[308, 0]">
-            <Label text="REQUESTED" color="0xFFFFFF7A">
+            <Label id="fieldRequestedLabel" text="REQUESTED" color="0xFFFFFF7A"> <!-- i18n="no": set as UCase(Tx("Requested")) -->
               <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="24" />
             </Label>
             <Label id="fieldRequestedValue" translation="[0, 34]" width="290" maxLines="1" color="0xFFFFFFE6">

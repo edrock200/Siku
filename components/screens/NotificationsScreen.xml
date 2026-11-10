@@ -15,7 +15,7 @@
     <Rectangle id="bg" width="1920" height="1080" color="0x000000FF" />
     <Group id="list" translation="[80, 329]" />
     <Rectangle id="headerBg" width="1920" height="329" color="0x000000FF" />
-    <Label id="eyebrow" text="NOTIFICATIONS" translation="[80, 188]" color="0xEDEDEDEB">
+    <Label id="eyebrow" text="NOTIFICATIONS" translation="[80, 188]" color="0xEDEDEDEB"> <!-- i18n="no": set as UCase(Tx("Notifications")) -->
       <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="28" />
     </Label>
     <Label id="heading" text="Your Inbox" translation="[80, 238]" color="0xEDEDEDFF">

@@ -19,6 +19,7 @@ sub init()
     m.kidsFont = CreateObject("roSGNode", "Font")
     m.kidsFont.uri = "pkg:/fonts/Inter-black.otf"
     m.kidsLabel.font = m.kidsFont
+    m.kidsLabel.text = Tx("KIDS")
     m.image.observeField("loadStatus", "onImageStatus")
     layout()
 end sub

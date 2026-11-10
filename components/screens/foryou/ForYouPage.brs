@@ -2,6 +2,10 @@
 
 sub init()
     m.feed = m.top.findNode("feed")
+    ' The layout's empty-state copy in the interface language (these fields are not translated with the tree).
+    m.feed.emptyTitle = Tx("Not enough data yet")
+    m.feed.emptyBody = Tx("Watch and rate more content to unlock personalized recommendations.")
+    m.feed.emptyAction = Tx("Check again")
     m.menu = m.top.findNode("menu")
     m.feed.observeField("itemSelected", "onItemSelected")
     m.feed.observeField("itemOptions", "onItemOptions")
@@ -72,7 +76,7 @@ sub onDiscover(event as object)
                 rid = Str_orEmpty(r.key)
                 if rid = "" then rid = Str_orEmpty(r.type)
                 title = Str_orEmpty(r.title)
-                if title = "" then title = "Recommended for You"
+                if title = "" then title = Tx("Recommended for You")
                 rows.Push({ id: rid, title: title, style: "poster", items: items })
             end if
         end for

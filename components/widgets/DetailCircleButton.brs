@@ -75,7 +75,7 @@ sub applyState()
         label = m.top.a11yLabel
         if label = "" then label = m.top.label
         p = A11y_position(m.top, ["PillButton", "DetailCircleButton"])
-        A11y_say(A11y_id(), label, "button", p.idx, p.count)
+        A11y_say(A11y_id(), label, Tx("button"), p.idx, p.count)
     else
         A11y_blur(A11y_id())
     end if

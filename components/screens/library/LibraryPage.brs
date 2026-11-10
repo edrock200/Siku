@@ -51,12 +51,12 @@ sub init()
     m.top.observeField("params", "onParams")
 
     m.sortOptions = [
-        { id: "title", label: "Title", defaultDesc: false },
-        { id: "added_at", label: "Date Added", defaultDesc: true },
-        { id: "release_date", label: "Release Date", defaultDesc: true },
-        { id: "year", label: "Year", defaultDesc: true },
-        { id: "rating_imdb", label: "Rating", defaultDesc: true },
-        { id: "runtime", label: "Runtime", defaultDesc: true }
+        { id: "title", label: Tx("Title"), defaultDesc: false },
+        { id: "added_at", label: Tx("Date Added"), defaultDesc: true },
+        { id: "release_date", label: Tx("Release Date"), defaultDesc: true },
+        { id: "year", label: Tx("Year"), defaultDesc: true },
+        { id: "rating_imdb", label: Tx("Rating"), defaultDesc: true },
+        { id: "runtime", label: Tx("Runtime"), defaultDesc: true }
     ]
     m.sortField = "title"
     m.sortDesc = false
@@ -204,8 +204,8 @@ function groupBy() as string
 end function
 
 function groupsLabel() as string
-    if m.mode = "authors" then return "Authors"
-    return "Series"
+    if m.mode = "authors" then return Tx("Authors")
+    return Tx("Series")
 end function
 
 function inGroupDrill() as boolean
@@ -224,16 +224,16 @@ function currentTitle() as string
     t = Str_orEmpty(prm("title"))
     if t <> "" then return t
     if m.drill <> invalid then return Str_orEmpty(m.drill.title)
-    if m.mode = "favorites" then return "Favorites"
-    if m.mode = "watchlist" then return "Watchlist"
-    if m.mode = "history" then return "Watch History"
+    if m.mode = "favorites" then return Tx("Favorites")
+    if m.mode = "watchlist" then return Tx("Watchlist")
+    if m.mode = "history" then return Tx("Watch History")
     if m.mode = "collection" then return Str_orEmpty(prm("collectionTitle"))
     if m.mode = "person" then return Str_orEmpty(prm("personName"))
     name = Str_orEmpty(prm("libraryName"))
     suffix = ""
-    if m.mode = "collections" then suffix = "Collections"
+    if m.mode = "collections" then suffix = Tx("Collections")
     if m.mode = "alphabet" then suffix = "A-Z"
-    if m.mode = "genres" then suffix = "Genres"
+    if m.mode = "genres" then suffix = Tx("Genres")
     if isGroupsMode() then suffix = groupsLabel()
     if suffix <> "" then
         if name <> "" then return name + " · " + suffix
@@ -557,12 +557,12 @@ sub readPaging(data as object)
     end if
 end sub
 
-sub showCount(data as object, singular as string, plural as string)
+' one / other: the count's TxP forms ("1 title", "{0} titles").
+sub showCount(data as object, one as string, other as string)
     if data = invalid or data.total = invalid then return
     n = Int(Content_num(data.total))
-    txt = n.ToStr() + " " + plural
-    if n = 1 then txt = "1 " + singular
-    if data.total_exact = false then txt = "About " + txt
+    txt = TxP(one, other, n)
+    if data.total_exact = false then txt = TxF("About {0}", [txt])
     m.countLabel.text = txt
     m.countLabel.visible = n > 0
 end sub
@@ -613,7 +613,7 @@ sub onPage(event as object)
     end if
     ' A group drill keeps the group's own "3 books · 2h" line; a row's page shows none (its total
     ' would count cards a Movies / Series view hides).
-    if not isMore and not inGroupDrill() and m.mode <> "section" then showCount(data, "title", "titles")
+    if not isMore and not inGroupDrill() and m.mode <> "section" then showCount(data, Tx("1 title"), Tx("{0} titles"))
     if isMore then
         start = m.cards.Count()
         appendCards(items)
@@ -814,7 +814,7 @@ end sub
 ' along the last rows does not re-request and toast on every key press.
 sub moreFailed(resp as object)
     m.refresh = invalid
-    m.global.toast = "Couldn't load more. " + Api_errorText(resp)
+    m.global.toast = TxF("Couldn't load more. {0}", [Api_errorText(resp)])
     m.hasMore = true
     m.moreFailures = m.moreFailures + 1
     m.moreRetryAt = Time_nowSeconds() + Library_moreRetryDelay(m.moreFailures)
@@ -869,9 +869,9 @@ sub onGroups(event as object)
     readPaging(data)
     if not isMore then
         if m.mode = "authors" then
-            showCount(data, "author", "authors")
+            showCount(data, Tx("1 author"), Tx("{0} authors"))
         else
-            showCount(data, "series", "series")
+            showCount(data, Tx("1 series"), Tx("{0} series"))
         end if
     end if
     if isMore then
@@ -892,7 +892,7 @@ sub enterGroup(card as object)
     saveParentGrid()
     m.sortField = "title"
     m.sortDesc = false
-    m.backPill.text = "All " + groupsLabel()
+    if m.mode = "authors" then m.backPill.text = Tx("All Authors") else m.backPill.text = Tx("All Series")
     m.countLabel.text = m.drill.subtitle
     m.countLabel.visible = m.drill.subtitle <> ""
     layoutPage()
@@ -986,7 +986,7 @@ sub onCollections(event as object)
         node.cardInsetY = m.insetY
         if c.item_count <> invalid then
             n = Int(Content_num(c.item_count))
-            if n = 1 then node.subtitle = "1 item" else node.subtitle = n.ToStr() + " items"
+            node.subtitle = TxP("1 item", "{0} items", n)
             node.description = node.subtitle ' read by the screen reader
         end if
         root.appendChild(node)
@@ -1002,7 +1002,7 @@ sub showError(msg as string)
     m.refresh = invalid
     m.grid.visible = false
     m.status.visible = true
-    m.statusTitle.text = "Something went wrong"
+    m.statusTitle.text = Tx("Something went wrong")
     m.statusBody.text = msg
     m.retryBtn.visible = true
     ' Retry resends the same query, so a saved filter the server rejects would keep Browse failing
@@ -1025,35 +1025,35 @@ sub showEmpty()
     m.errClearBtn.visible = false
     body = ""
     if m.mode = "favorites" then
-        title = "No favorites yet"
-        body = "Titles you favorite will show up here."
+        title = Tx("No favorites yet")
+        body = Tx("Titles you favorite will show up here.")
     else if m.mode = "watchlist" then
-        title = "Your watchlist is empty"
-        body = "Add titles to your watchlist to find them here."
+        title = Tx("Your watchlist is empty")
+        body = Tx("Add titles to your watchlist to find them here.")
     else if m.mode = "history" then
-        title = "No watch history yet"
-        body = "Things you watch will show up here."
+        title = Tx("No watch history yet")
+        body = Tx("Things you watch will show up here.")
     else if m.mode = "collections" and m.drill = invalid then
-        title = "No collections"
-        body = "This library has no collections yet."
+        title = Tx("No collections")
+        body = Tx("This library has no collections yet.")
     else if isGroupsMode() and m.drill = invalid then
-        title = "No audiobook " + LCase(groupsLabel()) + " found."
+        if m.mode = "authors" then title = Tx("No audiobook authors found.") else title = Tx("No audiobook series found.")
         body = ""
     else if m.mode = "section" then
-        title = "This row has no titles right now."
+        title = Tx("This row has no titles right now.")
         body = ""
     else if m.mode = "browse" and m.libraryHasItems = false then
-        title = "No titles found"
-        body = "This library is empty."
+        title = Tx("No titles found")
+        body = Tx("This library is empty.")
     else if m.namePrefix <> "" and railAvailable() then
-        title = "No titles match"
-        body = "Try another letter."
+        title = Tx("No titles match")
+        body = Tx("Try another letter.")
     else if filtersActive() then
-        title = "No titles match"
-        body = "Try clearing a filter."
+        title = Tx("No titles match")
+        body = Tx("Try clearing a filter.")
     else
-        title = "No titles found"
-        body = "This library is empty."
+        title = Tx("No titles found")
+        body = Tx("This library is empty.")
     end if
     m.statusTitle.text = title
     m.statusBody.text = body
@@ -1075,7 +1075,7 @@ sub showSectionGone()
     m.status.visible = true
     m.retryBtn.visible = false
     m.errClearBtn.visible = false
-    m.statusTitle.text = "This row is no longer available."
+    m.statusTitle.text = Tx("This row is no longer available.")
     m.statusBody.text = ""
     if m.top.hasFocus() or m.grid.hasFocus() then m.top.setFocus(true)
 end sub
@@ -1234,7 +1234,7 @@ sub buildChips()
         pill.fontSize = 24
         pill.padX = 28
         pill.scaleOnFocus = 1.04
-        if i = 0 then pill.text = "All" else pill.text = m.chipValues[i]
+        if i = 0 then pill.text = Tx("All") else pill.text = m.chipValues[i]
         pill.selectedState = m.chipValues[i] = m.genre
         pill.translation = [x, 0]
         pill.observeField("buttonSelected", "onChipSelected")
@@ -1288,38 +1288,38 @@ end function
 
 function directionLabel() as string
     f = m.sortField
-    if f = "" then return "Default"
+    if f = "" then return Tx("Default")
     if f = "title" then
         if m.sortDesc then return "Z–A"
         return "A–Z"
     else if f = "runtime" then
-        if m.sortDesc then return "Longest"
-        return "Shortest"
+        if m.sortDesc then return Tx("Longest")
+        return Tx("Shortest")
     else if f = "rating_imdb" then
-        if m.sortDesc then return "Highest"
-        return "Lowest"
+        if m.sortDesc then return Tx("Highest")
+        return Tx("Lowest")
     end if
-    if m.sortDesc then return "Newest"
-    return "Oldest"
+    if m.sortDesc then return Tx("Newest")
+    return Tx("Oldest")
 end function
 
 sub updateSortPill()
     o = sortOption(m.sortField)
     if o = invalid then
-        lbl = "Recently Saved"
-        if m.mode = "collection" or (m.drill <> invalid and m.drill.kind = "collection") then lbl = "Collection Order"
+        lbl = Tx("Recently Saved")
+        if m.mode = "collection" or (m.drill <> invalid and m.drill.kind = "collection") then lbl = Tx("Collection Order")
     else
         lbl = o.label
     end if
-    m.sortPill.text = "Sort · " + lbl + " · " + directionLabel()
+    m.sortPill.text = TxF("Sort · {0} · {1}", [lbl, directionLabel()])
     m.clearPill.visible = filtersActive() and m.mode = "browse"
     if filtersActive() then
         n = LibF_activeCount(m.facetSel)
         if m.genre <> "" then n = n + 1
-        m.filterPill.text = "Filter · " + n.ToStr()
+        m.filterPill.text = TxF("Filter · {0}", [n])
         m.filterPill.selectedState = true
     else
-        m.filterPill.text = "Filter"
+        m.filterPill.text = Tx("Filter")
         m.filterPill.selectedState = false
     end if
     layoutPills()
@@ -1329,13 +1329,13 @@ sub openSortPanel()
     rows = []
     personal = m.mode = "favorites" or m.mode = "watchlist"
     collectionLike = m.mode = "collection" or (m.drill <> invalid and m.drill.kind = "collection")
-    if personal then rows.Push({ id: "__list", label: "Recently Saved", trailing: trailingFor("") })
-    if collectionLike then rows.Push({ id: "__list", label: "Collection Order", trailing: trailingFor("") })
+    if personal then rows.Push({ id: "__list", label: Tx("Recently Saved"), trailing: trailingFor("") })
+    if collectionLike then rows.Push({ id: "__list", label: Tx("Collection Order"), trailing: trailingFor("") })
     for each o in m.sortOptions
         rows.Push({ id: o.id, label: o.label, trailing: trailingFor(o.id), "sub": subFor(o.id) })
     end for
-    m.sortPanel.header = "SORT BY"
-    m.sortPanel.footer = "Press again to flip the direction · Menu closes"
+    m.sortPanel.header = UCase(Tx("Sort by"))
+    m.sortPanel.footer = Tx("Press again to flip the direction · Menu closes")
     m.sortPanel.rows = rows
     m.sortPanel.translation = [80 + m.sortPill.translation[0], m.controls.translation[1] + 64]
     m.sortPanel.visible = true
@@ -1383,8 +1383,8 @@ sub openFilterPanel()
     loadFacets()
     m.draftSel = LibF_copy(m.facetSel)
     m.draftMatch = m.matchAll
-    m.filterPanel.header = "FILTER BY"
-    m.filterPanel.footer = "→ picks values · Back applies"
+    m.filterPanel.header = UCase(Tx("Filter by"))
+    m.filterPanel.footer = Tx("→ picks values · Back applies")
     m.filterPanel.maxRows = 9 ' ends above the title-safe bottom edge
     m.filterPanel.focusIndex = 0
     renderFilterMain()
@@ -1413,14 +1413,14 @@ sub renderFilterMain()
     for each d in filterFacets()
         rows.Push({ id: "facet:" + d.id, label: d.label, trailing: "chevron", "sub": LibF_summary(d, m.draftSel, m.facets) })
     end for
-    if m.facets = invalid and m.facetsLoading = true then rows.Push({ id: "", label: "Loading filters…" })
+    if m.facets = invalid and m.facetsLoading = true then rows.Push({ id: "", label: Tx("Loading filters…") })
     rows.Push({ id: "-" })
-    rows.Push({ id: "match_all", label: "Match all selected filters", trailing: checkIf(m.draftMatch) })
-    rows.Push({ id: "match_any", label: "Match any selected filter", trailing: checkIf(not m.draftMatch) })
+    rows.Push({ id: "match_all", label: Tx("Match all selected filters"), trailing: checkIf(m.draftMatch) })
+    rows.Push({ id: "match_any", label: Tx("Match any selected filter"), trailing: checkIf(not m.draftMatch) })
     rows.Push({ id: "-" })
-    rows.Push({ id: "preserve", label: "Preserve sort & filters", trailing: checkIf(preserveFilters()) })
-    rows.Push({ id: "reset", label: "Reset filters" })
-    rows.Push({ id: "done", label: "Done" })
+    rows.Push({ id: "preserve", label: Tx("Preserve sort & filters"), trailing: checkIf(preserveFilters()) })
+    rows.Push({ id: "reset", label: Tx("Reset filters") })
+    rows.Push({ id: "done", label: Tx("Done") })
     idx = m.filterPanel.focusIndex
     m.filterPanel.rows = rows
     if idx >= 0 and idx < rows.Count() then m.filterPanel.focusIndex = idx
@@ -1473,12 +1473,12 @@ sub showFlyFor(facet as string)
     opts = LibF_options(def, m.facets)
     if opts.Count() = 0 then
         if m.facetsLoading = true then
-            rows.Push({ id: "", label: "Loading…" })
+            rows.Push({ id: "", label: Tx("Loading…") })
         else
-            rows.Push({ id: "", label: "No values" })
+            rows.Push({ id: "", label: Tx("No values") })
         end if
     else
-        rows.Push({ id: "__clear", label: "Any", trailing: checkIf(LibF_selected(m.draftSel, facet).Count() = 0) })
+        rows.Push({ id: "__clear", label: Tx("Any"), trailing: checkIf(LibF_selected(m.draftSel, facet).Count() = 0) })
         for each o in opts
             rows.Push({ id: "v:" + o.id, label: o.label, trailing: checkIf(LibF_isSelected(m.draftSel, facet, o.id)) })
         end for

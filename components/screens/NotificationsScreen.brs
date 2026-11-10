@@ -9,6 +9,8 @@
 
 sub init()
     m.list = m.top.findNode("list")
+    ' One key for "Notifications" in any case: Roku table lookups ignore case (I18n in Utils.brs).
+    m.top.findNode("eyebrow").text = UCase(Tx("Notifications"))
     m.headerBg = m.top.findNode("headerBg")
     m.errorCard = m.top.findNode("errorCard")
     m.spinner = m.top.findNode("spinner")
@@ -89,7 +91,7 @@ sub refreshPartDone()
         m.readCutoff = Str_orEmpty(page.data.read_cutoff)
     end if
     if not page.ok or not count.ok then
-        m.errorText = "Notifications could not be refreshed. Retry when connected."
+        m.errorText = Tx("Notifications could not be refreshed. Retry when connected.")
     end if
     m.refreshing = false
     m.loaded = true
@@ -118,7 +120,7 @@ sub onMorePage(event as object)
     if resp.context = invalid or resp.context.cursor <> m.nextCursor or resp.context.seq <> m.refreshSeq then return
     if not resp.ok or resp.data = invalid then
         m.moreFailed = true
-        m.errorText = "Older notifications could not be loaded. Retry to continue."
+        m.errorText = Tx("Older notifications could not be loaded. Retry to continue.")
         rebuild()
         return
     end if
@@ -150,7 +152,7 @@ end function
 sub markAllRead()
     ' Mark all read sends the exact read_cutoff of the displayed list, then rereads.
     if m.readCutoff = "" then
-        m.errorText = "Refresh the inbox before marking it read."
+        m.errorText = Tx("Refresh the inbox before marking it read.")
         rebuild()
         return
     end if
@@ -162,7 +164,7 @@ sub onMarkedAllRead(event as object)
     resp = Api_result(event)
     if not resp.ok then
         m.pendingMarkAllRefocus = false
-        m.errorText = "Mark all read could not be confirmed. Refresh before trying again."
+        m.errorText = Tx("Mark all read could not be confirmed. Refresh before trying again.")
         rebuild()
         return
     end if
@@ -186,7 +188,7 @@ end sub
 sub onMarkedRead(event as object)
     resp = Api_result(event)
     if not resp.ok then
-        m.errorText = "Notification read status could not be confirmed."
+        m.errorText = Tx("Notification read status could not be confirmed.")
         rebuild()
         return
     end if
@@ -237,7 +239,7 @@ function cardModel(row as object, nowSec as integer) as object
     title = ""
     if isEpisode then
         title = seriesTitle
-        if title = "" then title = "New episode available"
+        if title = "" then title = Tx("New episode available")
     else
         title = fallbackTitleForType(rawType)
     end if
@@ -261,13 +263,13 @@ function numText(v as dynamic) as string
 end function
 
 function fallbackTitleForType(rawType as string) as string
-    if rawType = "request.fulfilled" then return "Request fulfilled"
-    if rawType = "webhook.auto_disabled" then return "Webhook disabled"
+    if rawType = "request.fulfilled" then return Tx("Request fulfilled")
+    if rawType = "webhook.auto_disabled" then return Tx("Webhook disabled")
     head = rawType
     dot = Instr(1, head, ".")
     if dot > 0 then head = Left(head, dot - 1)
     head = head.Replace("_", " ")
-    if head.Trim() = "" then return "Notification"
+    if head.Trim() = "" then return Tx("Notification")
     return UCase(Left(head, 1)) + head.Mid(1)
 end function
 
@@ -277,12 +279,12 @@ function relativeTime(createdAt as string, nowSec as integer) as string
     if d = invalid then return ""
     delta = nowSec - d.AsSeconds()
     if delta < 0 then delta = 0
-    if delta < 60 then return "now"
-    if delta < 3600 then return Int(delta / 60).ToStr() + "m"
-    if delta < 86400 then return Int(delta / 3600).ToStr() + "h"
-    if delta < 7 * 86400 then return Int(delta / 86400).ToStr() + "d"
+    if delta < 60 then return Tx("now")
+    if delta < 3600 then return TxF("{0}m", [Int(delta / 60)])
+    if delta < 86400 then return TxF("{0}h", [Int(delta / 3600)])
+    if delta < 7 * 86400 then return TxF("{0}d", [Int(delta / 86400)])
     d.ToLocalTime()
-    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    months = [Tx("Jan"), Tx("Feb"), Tx("Mar"), Tx("Apr"), Tx("May"), Tx("Jun"), Tx("Jul"), Tx("Aug"), Tx("Sep"), Tx("Oct"), Tx("Nov"), Tx("Dec")]
     return months[d.GetMonth() - 1] + " " + d.GetDayOfMonth().ToStr()
 end function
 
@@ -305,7 +307,7 @@ sub rebuild()
     ' Error card ("<error> Retry"), above the list.
     listTop = m.listTopBase
     if m.errorText <> "" then
-        m.errorCard.card = { kind: "error", title: m.errorText + " Retry" }
+        m.errorCard.card = { kind: "error", title: m.errorText + " " + Tx("Retry") }
         m.errorCard.visible = true
         listTop = listTop + m.errorCard.rowHeight + 16
     else
@@ -321,7 +323,7 @@ sub rebuild()
     y = 0
     if m.rows.Count() > 0 and m.unreadCount > 0 then
         node = m.list.createChild("NotificationRow")
-        node.card = { kind: "markAll", title: "Mark all read" }
+        node.card = { kind: "markAll", title: Tx("Mark all read") }
         node.translation = [0, y]
         m.items.Push({ kind: "markAll", id: "mark-all-read", node: node, top: y, height: node.rowHeight })
         y = y + node.rowHeight + m.rowGap

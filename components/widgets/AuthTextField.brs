@@ -40,7 +40,7 @@ sub render()
     t = m.top.text
     empty = (t = "")
     if empty then
-        m.value.text = m.top.placeholder
+        m.value.text = Tx(m.top.placeholder)
     else if m.top.secure and not m.top.revealed then
         dots = ""
         for i = 1 to Len(t)
@@ -79,16 +79,22 @@ sub announce(focused as boolean)
         A11y_blur(A11y_id())
         return
     end if
-    name = A11y_clean(m.top.a11yLabel)
+    name = A11y_clean(Tx(m.top.a11yLabel))
     if name = "" then
         name = A11y_clean(m.top.placeholder)
         ' "media.example.com" is an example value, not the field's name.
-        if Instr(1, name, " ") = 0 and (Instr(1, name, ".") > 0 or Instr(1, name, ":") > 0) then name = "Address"
+        if Instr(1, name, " ") = 0 and (Instr(1, name, ".") > 0 or Instr(1, name, ":") > 0) then name = Tx("Address") else name = Tx(name)
     end if
-    if name = "" then name = "Text field"
-    role = "text field"
-    if m.top.secure then role = "secure text field"
-    if m.top.disabled then role = role + ", unavailable"
+    role = Tx("text field")
+    if m.top.secure then role = Tx("secure text field")
+    ' A field with no name says its kind alone ("text field"), not "Text field, text field".
+    if name = "" then
+        name = role
+        role = ""
+    end if
+    if m.top.disabled then
+        if role = "" then role = Tx("unavailable") else role = TxF("{0}, unavailable", [role])
+    end if
     A11y_say(A11y_id(), name, role, -1, 0)
 end sub
 
@@ -108,9 +114,9 @@ sub openKeyboard()
     dlg = CreateObject("roSGNode", "StandardKeyboardDialog")
     if dlg <> invalid then
         m.dialogKind = "standard"
-        dlg.title = m.top.placeholder
+        dlg.title = Tx(m.top.placeholder)
         dlg.text = m.top.text
-        dlg.buttons = ["OK", "Cancel"]
+        dlg.buttons = [Tx("OK"), Tx("Cancel")]
         if m.top.secure then
             dlg.keyboardDomain = "password"
             editBox = dlg.textEditBox
@@ -120,9 +126,9 @@ sub openKeyboard()
         dlg = CreateObject("roSGNode", "KeyboardDialog")
         if dlg = invalid then return
         m.dialogKind = "legacy"
-        dlg.title = m.top.placeholder
+        dlg.title = Tx(m.top.placeholder)
         dlg.text = m.top.text
-        dlg.buttons = ["OK", "Cancel"]
+        dlg.buttons = [Tx("OK"), Tx("Cancel")]
         if m.top.secure and dlg.keyboard <> invalid and dlg.keyboard.textEditBox <> invalid then
             dlg.keyboard.textEditBox.secureMode = not m.top.revealed
         end if

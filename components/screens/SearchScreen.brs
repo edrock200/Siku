@@ -8,6 +8,7 @@ sub init()
     m.fieldText = m.top.findNode("fieldText")
     m.clearBtn = m.top.findNode("clearBtn")
     m.clearBtn.observeField("buttonSelected", "onClearSelected")
+    m.clearBtn.a11yLabel = Tx("Clear search")
     m.chips = m.top.findNode("chips")
     m.statusLine = m.top.findNode("statusLine")
     m.people = m.top.findNode("people")
@@ -23,13 +24,13 @@ sub init()
     m.reqRow = m.top.findNode("reqRow")
 
     m.chipDefs = [
-        { id: "all", label: "All", scope: "video" },
-        { id: "movie", label: "Movies", scope: "movie" },
-        { id: "series", label: "Series", scope: "series" }
+        { id: "all", label: Tx("All"), scope: "video" },
+        { id: "movie", label: Tx("Movies"), scope: "movie" },
+        { id: "series", label: Tx("Series"), scope: "series" }
     ]
     prefs = m.global.prefs
     if prefs <> invalid and prefs.showAudiobooks = true then
-        m.chipDefs.Push({ id: "audiobook", label: "Audiobooks", scope: "audiobook" })
+        m.chipDefs.Push({ id: "audiobook", label: Tx("Audiobooks"), scope: "audiobook" })
     end if
     m.chipIndex = 0
     m.chipFocus = 0
@@ -77,9 +78,8 @@ sub init()
 end sub
 
 function placeholder() as string
-    names = "movies and series"
-    if m.chipDefs.Count() > 3 then names = "movies, series and audiobooks"
-    return "Search " + names
+    if m.chipDefs.Count() > 3 then return Tx("Search movies, series and audiobooks")
+    return Tx("Search movies and series")
 end function
 
 sub onScreenShown()
@@ -165,7 +165,7 @@ sub applyFocusVisuals()
         m.fieldBg.blendColor = "0x15171CCC"
         m.fieldRing.blendColor = "0xFFFFFFF0"
         m.fieldIcon.blendColor = c.ink
-        A11y_say("search:field", "Search", "text field", -1, 0, m.field)
+        A11y_say("search:field", Tx("Search"), Tx("text field"), -1, 0, m.field)
     else
         A11y_blur("search:field")
         m.fieldBg.blendColor = "0xFFFFFF0E"
@@ -217,9 +217,9 @@ end sub
 
 sub openKeyboard()
     kb = CreateObject("roSGNode", "KeyboardDialog")
-    kb.title = "Search"
+    kb.title = Tx("Search")
     kb.text = m.query
-    kb.buttons = ["Search", "Cancel"]
+    kb.buttons = [Tx("Search"), Tx("Cancel")]
     kb.observeField("text", "onKeyboardText")
     kb.observeField("buttonSelected", "onKeyboardButton")
     kb.observeField("wasClosed", "onKeyboardClosed")
@@ -279,7 +279,7 @@ sub runSearch()
     m.peopleItems = []
     m.searchedQuery = q
     m.status.visible = false
-    m.statusLine.text = "Searching…"
+    m.statusLine.text = Tx("Searching…")
     m.spinner.visible = not m.grid.visible and not m.people.visible
     chip = m.chipDefs[m.chipIndex]
     params = Artwork_query({ source: "query", q: q, limit: 40, image_size: "medium" }, "browse", Theme_posterScale())
@@ -378,8 +378,12 @@ sub showIdle()
     m.grid.visible = false
     m.statusLine.text = ""
     m.status.visible = true
-    m.statusTitle.text = "Search your library"
-    m.statusBody.text = "Find " + Mid(placeholder(), 8) + " in one place."
+    m.statusTitle.text = Tx("Search your library")
+    if m.chipDefs.Count() > 3 then
+        m.statusBody.text = Tx("Find movies, series and audiobooks in one place.")
+    else
+        m.statusBody.text = Tx("Find movies and series in one place.")
+    end if
     m.retryBtn.visible = false
     layoutRequests()
     ' The results are gone; do not leave focus on one of them.
@@ -403,7 +407,7 @@ sub renderResults()
         m.grid.visible = false
         m.statusLine.text = ""
         m.status.visible = true
-        m.statusTitle.text = "Search is unavailable"
+        m.statusTitle.text = Tx("Search is unavailable")
         m.statusBody.text = m.titlesError
         m.retryBtn.visible = true
         m.retryBtn.translation = [(1920 - m.retryBtn.width) / 2, 690]
@@ -415,10 +419,10 @@ sub renderResults()
     if not hasPeople and not hasTitles then
         m.people.visible = false
         m.grid.visible = false
-        m.statusLine.text = "No results"
+        m.statusLine.text = Tx("No results")
         m.status.visible = true
-        m.statusTitle.text = "No matches for “" + m.query.Trim() + "”"
-        m.statusBody.text = "Try a shorter title or a different filter."
+        m.statusTitle.text = TxF("No matches for “{0}”", [m.query.Trim()])
+        m.statusBody.text = Tx("Try a shorter title or a different filter.")
         m.retryBtn.visible = false
         if m.focusArea = "people" or m.focusArea = "grid" or m.focusArea = "retry" then focusArea("chips")
         return
@@ -429,15 +433,15 @@ sub renderResults()
         if m.titlesTotal <> invalid then n = Int(Content_num(m.titlesTotal))
         n = n + m.boxSets.Count()
         if m.titlesExact then
-            m.statusLine.text = n.ToStr() + " results"
+            m.statusLine.text = TxF("{0} results", [n])
         else
-            m.statusLine.text = "About " + n.ToStr() + " results"
+            m.statusLine.text = TxF("About {0} results", [n])
         end if
     else
-        m.statusLine.text = "No matching titles"
+        m.statusLine.text = Tx("No matching titles")
     end if
     if hasPeople then
-        m.people.content = Content_rows([{ id: "people", title: "People", style: "circle", items: m.peopleItems }], 20)
+        m.people.content = Content_rows([{ id: "people", title: Tx("People"), style: "circle", items: m.peopleItems }], 20)
         m.people.visible = true
         gridY = 740
     else
@@ -652,7 +656,7 @@ sub onRequestSearch(event as object)
     if not resp.ok or resp.data = invalid then
         if m.reqState = "ready" and m.reqResults.Count() > 0 then return
         m.reqState = "error"
-        m.reqError = Req_failureText(resp, "Search is unavailable")
+        m.reqError = Req_failureText(resp, Tx("Search is unavailable"))
         m.reqResults = []
         layoutRequests()
         return
@@ -712,11 +716,11 @@ sub layoutRequests()
     m.reqRow.visible = m.reqState = "ready" and m.reqResults.Count() > 0
     m.reqFeedback.visible = not m.reqRow.visible
     if m.reqState = "loading" then
-        m.reqFeedback.text = "Checking requestable titles..."
+        m.reqFeedback.text = Tx("Checking requestable titles...")
     else if m.reqState = "error" then
         m.reqFeedback.text = m.reqError
     else
-        m.reqFeedback.text = "No requestable matches found."
+        m.reqFeedback.text = Tx("No requestable matches found.")
     end if
     focused = m.focusArea = "requests" and m.reqRow.visible
     if focused then

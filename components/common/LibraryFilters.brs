@@ -12,27 +12,27 @@
 function LibF_facets(isAudiobook as boolean) as object
     if isAudiobook then
         return [
-            LibF_def("genre", "Genre", "genres", "genre", "contains")
-            LibF_def("author", "Author", "authors", "author", "is")
-            LibF_def("narrator", "Narrator", "narrators", "narrator", "is")
-            LibF_def("series_name", "Series", "series", "series", "is")
-            LibF_def("decade", "Decade", "", "year", "between")
-            LibF_def("status", "Watch Status", "", "", "is")
+            LibF_def("genre", Tx("Genre"), "genres", "genre", "contains")
+            LibF_def("author", Tx("Author"), "authors", "author", "is")
+            LibF_def("narrator", Tx("Narrator"), "narrators", "narrator", "is")
+            LibF_def("series_name", Tx("Series"), "series", "series", "is")
+            LibF_def("decade", Tx("Decade"), "", "year", "between")
+            LibF_def("status", Tx("Watch Status"), "", "", "is")
         ]
     end if
     return [
-        LibF_def("genre", "Genre", "genres", "genre", "contains")
-        LibF_def("decade", "Decade", "", "year", "between")
-        LibF_def("status", "Watch Status", "", "", "is")
-        LibF_def("content_rating", "Content Rating", "content_ratings", "content_rating", "is")
-        LibF_def("resolution", "Resolution", "resolutions", "resolution", "is")
-        LibF_def("dynamic_range", "Dynamic Range", "", "", "is")
-        LibF_def("studio", "Studio", "studios", "studio", "is")
-        LibF_def("network", "Network", "networks", "network", "is")
-        LibF_def("country", "Country", "countries", "country", "is")
-        LibF_def("audio_language", "Audio Language", "audio_languages", "audio_language", "is")
-        LibF_def("subtitle_language", "Subtitle Language", "subtitle_languages", "subtitle_language", "is")
-        LibF_def("original_language", "Original Language", "original_languages", "original_language", "is")
+        LibF_def("genre", Tx("Genre"), "genres", "genre", "contains")
+        LibF_def("decade", Tx("Decade"), "", "year", "between")
+        LibF_def("status", Tx("Watch Status"), "", "", "is")
+        LibF_def("content_rating", Tx("Content Rating"), "content_ratings", "content_rating", "is")
+        LibF_def("resolution", Tx("Resolution"), "resolutions", "resolution", "is")
+        LibF_def("dynamic_range", Tx("Dynamic Range"), "", "", "is")
+        LibF_def("studio", Tx("Studio"), "studios", "studio", "is")
+        LibF_def("network", Tx("Network"), "networks", "network", "is")
+        LibF_def("country", Tx("Country"), "countries", "country", "is")
+        LibF_def("audio_language", Tx("Audio Language"), "audio_languages", "audio_language", "is")
+        LibF_def("subtitle_language", Tx("Subtitle Language"), "subtitle_languages", "subtitle_language", "is")
+        LibF_def("original_language", Tx("Original Language"), "original_languages", "original_language", "is")
     ]
 end function
 
@@ -47,11 +47,11 @@ end function
 
 function LibF_watchOptions() as object
     return [
-        { id: "unwatched", label: "Unwatched" }
-        { id: "in_progress", label: "In Progress" }
-        { id: "watched", label: "Watched" }
-        { id: "favorited", label: "Favorited" }
-        { id: "watchlist", label: "Watchlist" }
+        { id: "unwatched", label: Tx("Unwatched") }
+        { id: "in_progress", label: Tx("In Progress") }
+        { id: "watched", label: Tx("Watched") }
+        { id: "favorited", label: Tx("Favorited") }
+        { id: "watchlist", label: Tx("Watchlist") }
     ]
 end function
 
@@ -90,7 +90,7 @@ function LibF_options(def as object, filters as dynamic) as object
     out = []
     if def.id = "decade" then
         for each y in [2020, 2010, 2000, 1990, 1980, 1970, 1960]
-            out.Push({ id: y.ToStr(), label: y.ToStr() + "s" })
+            out.Push({ id: y.ToStr(), label: TxF("{0}s", [y]) })
         end for
         return out
     end if
@@ -179,7 +179,7 @@ end function
 function LibF_summary(def as object, sel as dynamic, filters as dynamic) as string
     vals = LibF_selected(sel, def.id)
     if vals.Count() = 0 then return ""
-    if vals.Count() > 1 then return vals.Count().ToStr() + " selected"
+    if vals.Count() > 1 then return TxF("{0} selected", [vals.Count()])
     for each o in LibF_options(def, filters)
         if o.id = vals[0] then return o.label
     end for

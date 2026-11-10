@@ -152,7 +152,7 @@ sub addExploreCards(content as object, specs as object)
             node.contentId = exploreContentId()
             node.itemType = "explore_all"
             node.cardStyle = spec.style
-            node.title = "Explore all"
+            node.title = Tx("Explore all")
             title = spec.exploreTitle
             if title = "" then title = Str_orEmpty(spec.title)
             node.description = title
@@ -339,11 +339,11 @@ sub applyState()
     m.marquee.visible = s = "ready"
     showBackdropLayers(s = "ready")
     if s = "error" then
-        m.statusTitle.text = "Something went wrong"
+        m.statusTitle.text = Tx("Something went wrong")
         body = m.top.errorText
-        if Str_isEmpty(body) then body = "Could not load this page."
+        if Str_isEmpty(body) then body = Tx("Could not load this page.")
         m.statusBody.text = body
-        m.actionBtn.text = "Retry"
+        m.actionBtn.text = Tx("Retry")
     else if s = "empty" then
         m.statusTitle.text = m.top.emptyTitle
         m.statusBody.text = m.top.emptyBody

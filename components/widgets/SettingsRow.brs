@@ -93,9 +93,9 @@ sub announce()
     end if
     label = A11y_clean(m.top.label)
     v = m.top.value
-    role = "button"
+    role = Tx("button")
     if v = "✓" then
-        role = "button, selected"
+        role = Tx("button, selected")
     else
         v = A11y_clean(v)
         if v <> "" and label <> "" then label = label + ", " + v

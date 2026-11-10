@@ -49,7 +49,7 @@ function Http_send(method as string, url as string, headers as object, body as d
     else
         started = xfer.AsyncPostFromString("")
     end if
-    if not started then return { status: 0, text: "", data: invalid, error: { code: "network", title: "Could not start request" } }
+    if not started then return { status: 0, text: "", data: invalid, error: { code: "network", title: Tx("Could not start request") } }
 
     ' Only this transfer's completion counts; anything else on the port is skipped.
     clock = CreateObject("roTimespan")
@@ -66,7 +66,7 @@ function Http_send(method as string, url as string, headers as object, body as d
     end while
     if msg = invalid then
         xfer.AsyncCancel()
-        return { status: 0, text: "", data: invalid, error: { code: "timeout", title: "The server took too long to answer" } }
+        return { status: 0, text: "", data: invalid, error: { code: "timeout", title: Tx("The server took too long to answer") } }
     end if
 
     status = msg.GetResponseCode()
@@ -74,7 +74,7 @@ function Http_send(method as string, url as string, headers as object, body as d
     if text = invalid then text = ""
     if Len(text) > Http_maxBodyChars() then
         print "[Http] response body over the limit ("; Len(text); " chars) refused"
-        return { status: 0, text: "", data: invalid, error: { code: "too_large", title: "The server's answer was too large" } }
+        return { status: 0, text: "", data: invalid, error: { code: "too_large", title: Tx("The server's answer was too large") } }
     end if
     data = invalid
     if Len(text) > 0 then data = ParseJson(text)
@@ -103,7 +103,7 @@ function Http_download(url as string, headers as object, path as string, timeout
     end for
     files = CreateObject("roFileSystem")
     if files.Exists(path) then files.Delete(path)
-    if not xfer.AsyncGetToFile(path) then return { status: 0, text: "", data: invalid, error: { code: "network", title: "Could not start request" } }
+    if not xfer.AsyncGetToFile(path) then return { status: 0, text: "", data: invalid, error: { code: "network", title: Tx("Could not start request") } }
     clock = CreateObject("roTimespan")
     limitMs = timeoutSec * 1000
     msg = invalid
@@ -119,7 +119,7 @@ function Http_download(url as string, headers as object, path as string, timeout
     if msg = invalid then
         xfer.AsyncCancel()
         if files.Exists(path) then files.Delete(path)
-        return { status: 0, text: "", data: invalid, error: { code: "timeout", title: "The server took too long to answer" } }
+        return { status: 0, text: "", data: invalid, error: { code: "timeout", title: Tx("The server took too long to answer") } }
     end if
     status = msg.GetResponseCode()
     if status < 200 or status >= 300 or not files.Exists(path) then
@@ -147,9 +147,10 @@ function Http_problem(status as integer, data as dynamic, failure as dynamic) as
     end if
     if status <= 0 then
         code = "network"
-        title = "Can't reach the server"
+        title = Tx("Can't reach the server")
         if failure <> invalid then detail = failure
     end if
+    ' Stays English: Api_reasonText and ServerAddr_serverMessage recognise this stand-in by its prefix.
     if title = "" then title = "Something went wrong (" + status.ToStr() + ")"
     ' A temporary password (Silo Android #790): the server's detail is a protocol instruction, so
     ' every screen that shows the title or detail gets text a person can act on instead.
