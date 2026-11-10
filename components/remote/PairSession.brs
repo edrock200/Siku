@@ -111,6 +111,6 @@ end function
 
 ' "You're all set"'s detail: the last sign-in's server, or how many accounts signed in.
 function PairSession_completedText(count as integer, server as string) as string
-    if count > 1 then return count.ToStr() + " accounts are signed in. Next, choose which one to open."
-    return "Signed in to " + server + ". Taking you to your profiles" + Chr(8230)
+    if count > 1 then return TxF("{0} accounts are signed in. Next, choose which one to open.", [count])
+    return TxF("Signed in to {0}. Taking you to your profiles…", [server])
 end function

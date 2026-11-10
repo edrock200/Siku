@@ -39,20 +39,20 @@ function SignOut_title() as string
 end function
 
 function SignOut_titleFor(account as string, server as string) as string
-    if account <> "" and server <> "" then return "Sign out of " + account + " on " + server + "?"
-    if account <> "" then return "Sign out of " + account + "?"
-    if server <> "" then return "Sign out of " + server + "?"
-    return "Sign Out?"
+    if account <> "" and server <> "" then return TxF("Sign out of {0} on {1}?", [account, server])
+    if account <> "" then return TxF("Sign out of {0}?", [account])
+    if server <> "" then return TxF("Sign out of {0}?", [server])
+    return Tx("Sign Out?")
 end function
 
 function SignOut_message() as string
-    if SignOut_offersRemove() then return "This account's profiles and settings leave this Roku. Sign Out keeps the server saved, so you can sign in again; Sign Out & Remove Server removes it too."
-    return "This account's profiles and settings leave this Roku. The server and its other accounts stay saved, so you can sign in again."
+    if SignOut_offersRemove() then return Tx("This account's profiles and settings leave this Roku. Sign Out keeps the server saved, so you can sign in again; Sign Out & Remove Server removes it too.")
+    return Tx("This account's profiles and settings leave this Roku. The server and its other accounts stay saved, so you can sign in again.")
 end function
 
 function SignOut_buttons() as object
-    if SignOut_offersRemove() then return ["Cancel", "Sign Out", "Sign Out & Remove Server"]
-    return ["Cancel", "Sign Out"]
+    if SignOut_offersRemove() then return [Tx("Cancel"), Tx("Sign Out"), Tx("Sign Out & Remove Server")]
+    return [Tx("Cancel"), Tx("Sign Out")]
 end function
 
 sub SignOut_ask()
@@ -174,7 +174,7 @@ sub SignOut_onBorrowedWait()
     m.signOutTimer.unobserveField("fire")
     if Session_isTemporary(m.global.session) then
         print "[siku-servers] the phone's profile did not end in time; the server is kept"
-        m.global.toast = "Couldn't end remote playback. Try signing out again."
+        m.global.toast = Tx("Couldn't end remote playback. Try signing out again.")
     else
         SignOut_removeActive()
     end if

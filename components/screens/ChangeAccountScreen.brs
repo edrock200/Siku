@@ -137,7 +137,7 @@ sub buildRail()
             nm.text = serverLabel(m.groups[i].server)
         else
             icon.uri = "pkg:/images/icons/add.png"
-            nm.text = "Add server"
+            nm.text = Tx("Add server")
         end if
         m.railRows.Push({ group: g, bg: bg, ring: ring, icon: icon, name: nm })
     end for
@@ -225,7 +225,7 @@ sub buildPane()
             card = cards[i]
             a = card.account
             name = Str_orEmpty(a.username).Trim()
-            if name = "" then name = "Account"
+            if name = "" then name = Tx("Account")
             letter.text = UCase(Left(name, 1))
             nm.text = name
             line.text = Accounts_profileLine(a.profiles)
@@ -250,8 +250,8 @@ sub buildPane()
             tile.uri = "pkg:/images/ui/circle_ring.png"
             tile.blendColor = "0xEDEDED9E"
             icon.uri = "pkg:/images/icons/add.png"
-            nm.text = "Add an account"
-            line.text = "Sign in on " + serverLabel(grp.server)
+            nm.text = Tx("Add an account")
+            line.text = TxF("Sign in on {0}", [serverLabel(grp.server)])
             badge.visible = false
             badgeBg.visible = false
         end if

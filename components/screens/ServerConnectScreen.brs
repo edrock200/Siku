@@ -19,6 +19,9 @@ sub init()
     m.schemeButtons = [m.top.findNode("schemeAuto"), m.top.findNode("schemeHttps"), m.top.findNode("schemeHttp")]
     m.schemeIds = ["auto", "https", "http"]
     m.portField = m.top.findNode("portField")
+    ' AuthTextField's placeholder and screen-reader name are not translated with the layout.
+    m.portField.placeholder = Tx("Port: auto")
+    m.portField.a11yLabel = Tx("Port")
     m.scheme = "auto"
     m.showAdv = false
     m.manage = false
@@ -92,8 +95,8 @@ sub setupMode()
     if Type(p) = "roAssociativeArray" then m.manage = Lan_isTrue(p.manage)
     saved = Session_savedServers()
     if m.manage then
-        m.headline.text = "Choose a server"
-        m.body.text = "Switch to a saved server, or add another."
+        m.headline.text = Tx("Choose a server")
+        m.body.text = Tx("Switch to a saved server, or add another.")
         print "[siku-servers] manage servers: " + saved.Count().ToStr() + " saved"
     else if saved.Count() > 0 and saved[0].url <> invalid then
         ' Prefill with the last server, if one was used before.
@@ -218,7 +221,7 @@ sub renderScheme()
     for i = 0 to m.schemeButtons.Count() - 1
         m.schemeButtons[i].selectedState = m.schemeIds[i] = m.scheme
     end for
-    if m.showAdv then m.advToggle.text = "Hide advanced options" else m.advToggle.text = "Advanced options"
+    if m.showAdv then m.advToggle.text = Tx("Hide advanced options") else m.advToggle.text = Tx("Advanced options")
 end sub
 
 sub onAdvToggle()
@@ -302,11 +305,11 @@ end sub
 function savedBadge(srv as object) as string
     s = m.global.session
     if Str_orEmpty(srv.url) = Str_orEmpty(s.serverUrl) then
-        if Str_isEmpty(s.accessToken) and Str_isEmpty(s.refreshToken) then return "Current · Signed out"
-        return "Current"
+        if Str_isEmpty(s.accessToken) and Str_isEmpty(s.refreshToken) then return Tx("Current · Signed out")
+        return Tx("Current")
     end if
     if Session_serverSignedIn(Str_orEmpty(srv.url)) then return ""
-    return "Signed out"
+    return Tx("Signed out")
 end function
 
 function isCurrent(srv as object) as boolean
@@ -344,13 +347,13 @@ sub onFieldText()
     clearError()
     t = LCase(m.field.text.Trim())
     if m.scheme = "http" or (m.scheme = "auto" and Left(t, 7) = "http://") then
-        m.note.text = "This address uses unencrypted HTTP. Fine on a trusted home network; avoid it on public Wi-Fi."
+        m.note.text = Tx("This address uses unencrypted HTTP. Fine on a trusted home network; avoid it on public Wi-Fi.")
         m.note.color = "0xF4C869FF"
     else if m.scheme = "https" or Left(t, 8) = "https://" then
-        m.note.text = "Only secure HTTPS is tried."
+        m.note.text = Tx("Only secure HTTPS is tried.")
         m.note.color = "0xEDEDED66"
     else
-        m.note.text = "Secure HTTPS is tried automatically."
+        m.note.text = Tx("Secure HTTPS is tried automatically.")
         m.note.color = "0xEDEDED66"
     end if
     layout()
@@ -372,7 +375,7 @@ end sub
 
 sub setBusy(busy as boolean)
     m.busy = busy
-    if busy then m.connectButton.text = "Connecting…" else m.connectButton.text = "Connect"
+    if busy then m.connectButton.text = Tx("Connecting…") else m.connectButton.text = Tx("Connect")
     m.field.disabled = busy
     m.findButton.disabled = busy
     m.portField.disabled = busy
@@ -569,17 +572,17 @@ sub askRemove(i as integer)
             if nxt = invalid and Type(e) = "roAssociativeArray" and Str_orEmpty(e.url) <> Str_orEmpty(srv.url) then nxt = e
         end for
         who = name
-        if Accounts_countOn(Str_orEmpty(srv.url)) > 1 then who = "every account on " + name
+        if Accounts_countOn(Str_orEmpty(srv.url)) > 1 then who = TxF("every account on {0}", [name])
         if nxt <> invalid then
-            body = "You'll be signed out of " + who + ", and this Roku will switch to " + serverLabel(nxt) + "."
+            body = TxF("You'll be signed out of {0}, and this Roku will switch to {1}.", [who, serverLabel(nxt)])
         else
-            body = "You'll be signed out of " + who + ", and you'll need to enter a server address again."
+            body = TxF("You'll be signed out of {0}, and you'll need to enter a server address again.", [who])
         end if
     else
-        body = "Its accounts will be signed out on this Roku. You can add it again later."
+        body = Tx("Its accounts will be signed out on this Roku. You can add it again later.")
     end if
     m.removeTarget = srv
-    openConfirm("Remove " + name + "?", [body], ["Cancel", "Remove"], "onRemoveButton", "onRemoveClosed")
+    openConfirm(TxF("Remove {0}?", [name]), [body], [Tx("Cancel"), Tx("Remove")], "onRemoveButton", "onRemoveClosed")
 end sub
 
 function serverLabel(srv as object) as string
@@ -608,7 +611,7 @@ sub onRemoveButton()
     SignOut_revokeServerAccounts(Str_orEmpty(srv.url), "")
     Session_forgetServer(Str_orEmpty(srv.url))
     print "[siku-servers] removed current=false"
-    m.global.toast = serverLabel(srv) + " was removed."
+    m.global.toast = TxF("{0} was removed.", [serverLabel(srv)])
     buildSavedRows(Session_savedServers())
     layout()
     if m.rows.Count() = 0 then
@@ -664,9 +667,9 @@ sub probeNext()
     if m.candidateIndex >= m.candidates.Count() then
         setBusy(false)
         if m.updateNeeded then
-            showError("This server needs an update to work with Siku.")
+            showError(Tx("This server needs an update to work with Siku."))
         else if m.savedPick <> invalid then
-            showError("Couldn't reach " + serverLabel(m.savedPick) + ". Check that it's on and connected, then try again.")
+            showError(TxF("Couldn't reach {0}. Check that it's on and connected, then try again.", [serverLabel(m.savedPick)]))
         else
             showError(ServerAddr_unreachableText(m.scheme, m.lastServerMessage))
         end if
@@ -718,8 +721,8 @@ end sub
 ' ---------- Cleartext consent ----------
 
 sub askCleartext(base as string)
-    msg = "Your password and what you watch will be sent unencrypted to " + Url_host(base) + ". Only do this on a network you trust."
-    openConfirm("Connect without encryption?", [msg], ["Connect", "Cancel"], "onCleartextButton", "onCleartextClosed")
+    msg = TxF("Your password and what you watch will be sent unencrypted to {0}. Only do this on a network you trust.", [Url_host(base)])
+    openConfirm(Tx("Connect without encryption?"), [msg], [Tx("Connect"), Tx("Cancel")], "onCleartextButton", "onCleartextClosed")
 end sub
 
 sub openConfirm(title as string, lines as object, buttons as object, onButton as string, onClosed as string)
@@ -809,7 +812,7 @@ sub lookupDone()
         print "[siku-lan] found server's identity changed while connecting; not saved"
         m.expectedServerId = ""
         setBusy(false)
-        setScanNote("Its identity changed while connecting. Search again, or type its address.", true)
+        setScanNote(Tx("Its identity changed while connecting. Search again, or type its address."), true)
         applyFocus()
         return
     end if
@@ -901,7 +904,7 @@ sub startScan()
     ' If the scan never reports (no LAN task, or it stopped), the screen stops waiting.
     m.scanTimer.control = "stop"
     m.scanTimer.control = "start"
-    m.findButton.text = "Searching…"
+    m.findButton.text = Tx("Searching…")
     buildFoundRows()
 end sub
 
@@ -920,7 +923,7 @@ sub onScanTimeout()
     if m.scan = invalid or m.scan.status <> "scanning" then return
     print "[siku-lan] find servers: no word from the scan; showing what arrived"
     m.scan.status = "complete"
-    m.findButton.text = "Find servers again"
+    m.findButton.text = Tx("Find servers again")
     buildFoundRows()
 end sub
 
@@ -933,7 +936,7 @@ sub onDiscovery(event as object)
     m.scan.status = st
     m.scan.servers = Arr_or(d.servers)
     if st <> "scanning" then
-        m.findButton.text = "Find servers again"
+        m.findButton.text = Tx("Find servers again")
         print "[siku-lan] find servers: " + st + ", " + m.scan.servers.Count().ToStr() + " listed"
     end if
     buildFoundRows()
@@ -955,13 +958,13 @@ sub renderScanStatus()
     if sc.note <> "" then
         text = sc.note
     else if sc.status = "scanning" then
-        if n = 0 then text = "Looking for servers on this network…" else text = "Still looking. Pick one to check it and connect."
+        if n = 0 then text = Tx("Looking for servers on this network…") else text = Tx("Still looking. Pick one to check it and connect.")
     else if sc.status = "unavailable" then
-        text = "This Roku can't search the network now. Type the address instead."
+        text = Tx("This Roku can't search the network now. Type the address instead.")
     else if n = 0 then
-        text = "No servers found. Type the address instead, or search again."
+        text = Tx("No servers found. Type the address instead, or search again.")
     else
-        text = "Pick one to check it and connect."
+        text = Tx("Pick one to check it and connect.")
     end if
     m.foundStatus.text = text
     if sc.noteIsError then m.foundStatus.color = "0xFF6961FF" else m.foundStatus.color = "0xEDEDED9E"
@@ -1009,7 +1012,7 @@ sub buildFoundRows()
             nm.width = 434
             nm.height = 36
             name = Str_orEmpty(srv.name)
-            if name = "" then name = "Server"
+            if name = "" then name = Tx("Server")
             nm.text = name
             host = g.createChild("Label")
             host.font = hostFont
@@ -1017,7 +1020,7 @@ sub buildFoundRows()
             host.width = 434
             host.height = 28
             host.text = srv.url
-            if m.checking <> invalid and m.checking.url = srv.url then host.text = "Checking " + srv.url + "…"
+            if m.checking <> invalid and m.checking.url = srv.url then host.text = TxF("Checking {0}…", [srv.url])
             m.found.Push({ group: g, bg: bg, ring: ring, icon: icon, name: nm, host: host, server: srv })
         end if
     end for
@@ -1065,10 +1068,10 @@ sub pickFound(i as integer)
     if m.busy or i < 0 or i >= m.found.Count() then return
     srv = m.found[i].server
     name = Str_orEmpty(srv.name)
-    if name = "" then name = "This server"
-    lines = [name + " at " + srv.url, "Siku first checks that this address answers as the server it advertised. You can still type an address instead."]
+    if name = "" then name = Tx("This server")
+    lines = [TxF("{0} at {1}", [name, srv.url]), Tx("Siku first checks that this address answers as the server it advertised. You can still type an address instead.")]
     m.confirmFound = srv
-    openConfirm("Connect to this server?", lines, ["Continue", "Cancel"], "onFoundConfirmButton", "onFoundConfirmClosed")
+    openConfirm(Tx("Connect to this server?"), lines, [Tx("Continue"), Tx("Cancel")], "onFoundConfirmButton", "onFoundConfirmClosed")
 end sub
 
 sub onFoundConfirmButton()
@@ -1120,9 +1123,9 @@ sub onFoundIdentity(event as object)
     buildFoundRows()
     if not matched then
         if resp.status = 0 then
-            setScanNote("Couldn't reach that server. Type its address instead, or search again.", true)
+            setScanNote(Tx("Couldn't reach that server. Type its address instead, or search again."), true)
         else
-            setScanNote("That server didn't confirm its identity. Type its address, or search again.", true)
+            setScanNote(Tx("That server didn't confirm its identity. Type its address, or search again."), true)
         end if
         return
     end if

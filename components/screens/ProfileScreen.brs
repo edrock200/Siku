@@ -66,7 +66,7 @@ sub onScreenHidden()
 end sub
 
 sub renderSubtitle()
-    if m.accountName <> "" then m.subtitle.text = "Signed in as " + m.accountName else m.subtitle.text = " "
+    if m.accountName <> "" then m.subtitle.text = TxF("Signed in as {0}", [m.accountName]) else m.subtitle.text = " "
 end sub
 
 sub onAccount(event as object)
@@ -254,7 +254,7 @@ sub renderTiles()
             ' Screen reader: "Kids, PIN protected, button, 3 of 3".
             label = t.name.text
             if i < m.profiles.Count() then
-                if isTrue(m.profiles[i].has_pin) then label = label + ", PIN protected"
+                if isTrue(m.profiles[i].has_pin) then label = TxF("{0}, PIN protected", [label])
             end if
             A11y_say("profile:" + i.ToStr(), label, "button", i, m.tiles.Count())
         end if
@@ -401,10 +401,10 @@ sub showOffer(p as object)
     Label_setFont(m.offerTitleLabel, "bold", 36)
     w = 900
     m.offerTitleLabel.width = w - 96
-    m.offerTitleLabel.text = "Open " + name + " automatically?"
+    m.offerTitleLabel.text = TxF("Open {0} automatically?", [name])
     m.offerBodyLabel.width = w - 96
     ' Wording adapted from Silo-Server/silo-roku, AGPL-3.0 (locale/en_US/strings.json).
-    m.offerBodyLabel.text = "Siku can skip Who's watching and open this profile when it starts on this Roku. You can change this later in Settings > General > Profile Selection."
+    m.offerBodyLabel.text = Tx("Siku can skip Who's watching and open this profile when it starts on this Roku. You can change this later in Settings > General > Profile Selection.")
     titleH = Int(Label_height(m.offerTitleLabel))
     if titleH <= 0 then titleH = 44
     bodyH = Int(Label_height(m.offerBodyLabel))
@@ -533,11 +533,11 @@ sub onPinVerified(event as object)
         return
     end if
     if resp.status = 0 then
-        dlg.error = "Network error. Please try again."
+        dlg.error = Tx("Network error. Please try again.")
     else if resp.status = 429 then
-        dlg.error = "Too many attempts. Wait a moment, then try again."
+        dlg.error = Tx("Too many attempts. Wait a moment, then try again.")
     else if resp.ok or (resp.status >= 400 and resp.status < 500) then
-        dlg.error = "That PIN didn't work. Try again."
+        dlg.error = Tx("That PIN didn't work. Try again.")
     else
         dlg.error = Api_errorText(resp)
     end if

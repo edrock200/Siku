@@ -113,9 +113,23 @@ end sub
 
 ' Error message to show for a failed response.
 function Api_errorText(resp as object) as string
-    if resp = invalid or resp.error = invalid then return "Something went wrong"
-    if resp.status = 0 then return "Can't reach the server. Check your connection and try again."
-    return resp.error.title
+    if resp = invalid or resp.error = invalid then return Tx("Something went wrong")
+    if resp.status = 0 then return Tx("Can't reach the server. Check your connection and try again.")
+    return Api_titleText(resp.error.title)
+end function
+
+' A problem title for the screen: Http.brs's English stand-ins ("Can't reach the server",
+' "The server took too long to answer", "Something went wrong (500)") in the interface
+' language; a title the server wrote is shown as it came.
+function Api_titleText(title as dynamic) as string
+    t = Str_orEmpty(title)
+    if t = "Can't reach the server" or t = "The server took too long to answer" then return Tx(t)
+    pre = "Something went wrong ("
+    if Left(t, Len(pre)) = pre and Right(t, 1) = ")" then
+        code = Mid(t, Len(pre) + 1, Len(t) - Len(pre) - 1)
+        if code <> "" and Str(Val(code)).Trim() = code then return TxF("Something went wrong ({0})", [code])
+    end if
+    return t
 end function
 
 ' The server's reason for a failed write, for a toast after "Couldn't …": the problem's detail,
@@ -123,7 +137,7 @@ end function
 ' Http_problem's stand-in title ("Something went wrong (500)") is not a reason.
 function Api_reasonText(resp as dynamic, fallback as string) as string
     if resp = invalid or Type(resp) <> "roAssociativeArray" then return fallback
-    if Int(Num_or(resp.status, 0)) <= 0 then return "Can't reach the server. Check your connection."
+    if Int(Num_or(resp.status, 0)) <= 0 then return Tx("Can't reach the server. Check your connection.")
     err = resp.error
     if err = invalid or Type(err) <> "roAssociativeArray" then return fallback
     reason = Str_orEmpty(err.detail).Trim()

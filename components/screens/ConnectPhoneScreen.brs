@@ -63,11 +63,11 @@ sub render()
         st = t.status
     end if
     server = Str_orEmpty(m.global.session.serverName)
-    if server = "" then server = "your server"
-    m.body.text = "Control Siku from Silo's app on your phone or tablet: start a title, pause, seek, and change audio and subtitles. On the phone, sign in to " + server + ", tap the cast button, and choose this Roku, or scan this code with the phone's camera."
+    if server = "" then server = Tx("your server")
+    m.body.text = TxF("Control Siku from Silo's app on your phone or tablet: start a title, pause, seek, and change audio and subtitles. On the phone, sign in to {0}, tap the cast button, and choose this Roku, or scan this code with the phone's camera.", [server])
 
-    if m.prefs.enabled then m.enabledButton.text = "Remote Control: On" else m.enabledButton.text = "Remote Control: Off"
-    if m.prefs.sealed then m.sealedButton.text = "Require pairing: On" else m.sealedButton.text = "Require pairing: Off"
+    if m.prefs.enabled then m.enabledButton.text = Tx("Remote Control: On") else m.enabledButton.text = Tx("Remote Control: Off")
+    if m.prefs.sealed then m.sealedButton.text = Tx("Require pairing: On") else m.sealedButton.text = Tx("Require pairing: Off")
     m.sealedButton.visible = m.prefs.enabled
     m.resetButton.visible = m.prefs.enabled and m.prefs.sealed
     phones = []
@@ -78,28 +78,28 @@ sub render()
     end if
     m.disconnectButton.visible = m.prefs.enabled and phones.Count() > 0
     if phones.Count() = 1 then
-        m.disconnectButton.text = "Disconnect " + phones[0]
+        m.disconnectButton.text = TxF("Disconnect {0}", [phones[0]])
     else
-        m.disconnectButton.text = "Disconnect " + phones.Count().ToStr() + " phones"
+        m.disconnectButton.text = TxP("Disconnect {0} phone", "Disconnect {0} phones", phones.Count())
     end if
 
     status = ""
     ready = info <> invalid and Lan_flag(info.listening)
     if not m.prefs.enabled then
-        status = "Remote Control is off. Phones can't find or control this Roku."
+        status = Tx("Remote Control is off. Phones can't find or control this Roku.")
     else if not ready then
-        status = "Starting…"
+        status = Tx("Starting…")
     else
-        status = "Listening at " + Str_orEmpty(info.ip) + ":" + Str_orEmpty(info.port) + "."
+        status = TxF("Listening at {0}:{1}.", [Str_orEmpty(info.ip), Str_orEmpty(info.port)])
         if st <> invalid and Str_orEmpty(st.mdns) = "ok" then
-            status = status + " Phones on this network can find this Roku by themselves."
+            status = status + " " + Tx("Phones on this network can find this Roku by themselves.")
         else if st <> invalid and Str_orEmpty(st.mdns) = "unavailable" then
-            status = status + " This Roku can't announce itself on the network, so scan the code to add it."
+            status = status + " " + Tx("This Roku can't announce itself on the network, so scan the code to add it.")
         end if
         if m.prefs.sealed then
-            status = status + " Only a phone that scanned this code can connect."
+            status = status + " " + Tx("Only a phone that scanned this code can connect.")
         else
-            status = status + " Without pairing, any device on this network that names " + server + " can connect."
+            status = status + " " + TxF("Without pairing, any device on this network that names {0} can connect.", [server])
         end if
     end if
     m.statusLabel.text = status
@@ -113,7 +113,7 @@ sub render()
         if m.qr.text <> Str_orEmpty(info.link) then m.qr.text = Str_orEmpty(info.link)
         m.keyText.text = Str_orEmpty(info.keyText)
         m.addressText.text = Str_orEmpty(info.ip) + ":" + Str_orEmpty(info.port)
-        m.qrHint.text = "Scan with your phone's camera to add this Roku to Silo"
+        m.qrHint.text = Tx("Scan with your phone's camera to add this Roku to Silo")
     else
         m.qrHint.text = ""
     end if
@@ -165,7 +165,7 @@ end sub
 sub onResetPressed()
     t = RemoteControl_lanTask()
     if t <> invalid then t.command = { kind: "resetKey" }
-    m.global.toast = "New pairing code. Phones paired before have to scan it again."
+    m.global.toast = Tx("New pairing code. Phones paired before have to scan it again.")
 end sub
 
 sub onDisconnectPressed()

@@ -62,6 +62,9 @@ sub init()
     m.pwBody = m.top.findNode("pwBody")
     m.usernameField = m.top.findNode("usernameField")
     m.passwordField = m.top.findNode("passwordField")
+    ' AuthTextField's placeholders are not translated with the layout.
+    m.usernameField.placeholder = Tx("Username")
+    m.passwordField.placeholder = Tx("Password")
     m.revealButton = m.top.findNode("revealButton")
     m.pwError = m.top.findNode("pwError")
     m.pwActions = m.top.findNode("pwActions")
@@ -126,9 +129,9 @@ sub init()
     m.focusKey = ""
 
     renderServerCard()
-    m.codeHeadline.text = "Sign in to " + m.serverName
-    m.chooseHeadline.text = "Sign in to " + m.serverName
-    m.pwBody.text = "Use your " + m.serverName + " username and password."
+    m.codeHeadline.text = TxF("Sign in to {0}", [m.serverName])
+    m.chooseHeadline.text = TxF("Sign in to {0}", [m.serverName])
+    m.pwBody.text = TxF("Use your {0} username and password.", [m.serverName])
     renderCode()
     renderMode()
 
@@ -189,7 +192,7 @@ sub renderServerCard()
     initial = UCase(Left(m.serverName.Trim(), 1))
     m.scMarkInitial.text = initial
     if m.secure then
-        m.scPillLabel.text = "SECURE"
+        m.scPillLabel.text = Tx("SECURE")
         m.scPillLabel.color = "0xEDEDEDFF"
         m.scPillBg.blendColor = "0x00000073"
         m.scPillRing.blendColor = "0xFFFFFF24"
@@ -227,9 +230,9 @@ sub onBranding(event as object)
     name = Str_orEmpty(resp.data.server_name).Trim()
     if name <> "" and name <> m.serverName then
         m.serverName = name
-        m.codeHeadline.text = "Sign in to " + name
-        m.chooseHeadline.text = "Sign in to " + name
-        m.pwBody.text = "Use your " + name + " username and password."
+        m.codeHeadline.text = TxF("Sign in to {0}", [name])
+        m.chooseHeadline.text = TxF("Sign in to {0}", [name])
+        m.pwBody.text = TxF("Use your {0} username and password.", [name])
     end if
     markUrl = Str_orEmpty(resp.data.mark_url)
     if markUrl <> "" then
@@ -470,29 +473,29 @@ function isProblem(st as string) as boolean
 end function
 
 function statusText(st as string) as string
-    if st = "getting" then return "Getting a sign-in code…"
-    if st = "waiting" then return "Waiting for approval"
-    if st = "opened" then return "Continue on your phone"
-    if st = "newcode" then return "New code. Waiting for approval."
-    if st = "unreachable" then return "Can't reach " + m.host + ". Check this TV's connection."
-    if st = "toomany" then return "Too many sign-in attempts. Trying again shortly."
+    if st = "getting" then return Tx("Getting a sign-in code…")
+    if st = "waiting" then return Tx("Waiting for approval")
+    if st = "opened" then return Tx("Continue on your phone")
+    if st = "newcode" then return Tx("New code. Waiting for approval.")
+    if st = "unreachable" then return TxF("Can't reach {0}. Check this TV's connection.", [m.host])
+    if st = "toomany" then return Tx("Too many sign-in attempts. Trying again shortly.")
     if st = "signedin" then
-        if m.accountName <> "" then return "Signed in as " + m.accountName
-        return "Signed in"
+        if m.accountName <> "" then return TxF("Signed in as {0}", [m.accountName])
+        return Tx("Signed in")
     end if
-    if st = "couldntfinish" then return "Couldn't finish signing in on this TV."
+    if st = "couldntfinish" then return Tx("Couldn't finish signing in on this TV.")
     ' The TV cannot tell a phone's decline from a browser's (Silo Android TV #754).
-    if st = "denied" then return "Sign-in was declined."
-    if st = "paused" then return "Sign-in paused."
-    if st = "failed" then return "Couldn't get a sign-in code."
-    if st = "update" then return "This server needs an update before this TV can sign in."
+    if st = "denied" then return Tx("Sign-in was declined.")
+    if st = "paused" then return Tx("Sign-in paused.")
+    if st = "failed" then return Tx("Couldn't get a sign-in code.")
+    if st = "update" then return Tx("This server needs an update before this TV can sign in.")
     return ""
 end function
 
 ' "Try again" / "Show a new code" for states that need the person (or keep retrying).
 function actionLabel(st as string) as string
-    if st = "couldntfinish" or st = "failed" or st = "unreachable" or st = "toomany" then return "Try again"
-    if st = "denied" or st = "paused" then return "Show a new code"
+    if st = "couldntfinish" or st = "failed" or st = "unreachable" or st = "toomany" then return Tx("Try again")
+    if st = "denied" or st = "paused" then return Tx("Show a new code")
     return ""
 end function
 
@@ -543,16 +546,16 @@ sub renderCode()
 
     ' Body copy names the activate page.
     act = activateText()
-    if act = "" then act = "your server's /activate page"
+    if act = "" then act = Tx("your server's /activate page")
     if st = "denied" or st = "paused" then
         ' The code is gone: nothing left to scan (Silo Android TV #754; silo-roku's wording).
         if st <> "update" and not m.passwordOnly then
-            m.codeBody.text = "Show a new code to try again, or sign in with a password."
+            m.codeBody.text = Tx("Show a new code to try again, or sign in with a password.")
         else
-            m.codeBody.text = "Show a new code to try again."
+            m.codeBody.text = Tx("Show a new code to try again.")
         end if
     else
-        m.codeBody.text = "Scan the code with your phone's camera, or go to " + act + " and enter it. Approve on your phone and this TV signs in by itself."
+        m.codeBody.text = TxF("Scan the code with your phone's camera, or go to {0} and enter it. Approve on your phone and this TV signs in by itself.", [act])
     end if
 
     ' Action row: the state's action; no password button when an update is required.
@@ -959,20 +962,20 @@ sub renderMode()
     m.phoneCard.visible = not isCode
     m.usePhoneButton.visible = not m.passwordOnly
     if m.passwordOnly then
-        m.pwBody.text = "This server only supports password sign-in."
+        m.pwBody.text = Tx("This server only supports password sign-in.")
         m.phoneIcon.uri = "pkg:/images/icons/lock.png"
-        m.phoneTitle.text = "Sign in to " + m.serverName
-        m.phoneBody.text = "Siku sends your username and password only to " + m.host + "."
+        m.phoneTitle.text = TxF("Sign in to {0}", [m.serverName])
+        m.phoneBody.text = TxF("Siku sends your username and password only to {0}.", [m.host])
     else if isChoose then
         m.phoneIcon.uri = "pkg:/images/icons/phone.png"
-        m.phoneTitle.text = "Easier with a phone"
+        m.phoneTitle.text = Tx("Easier with a phone")
         ' silo-roku's nearby-phone hint (AGPL-3.0, locale/en_US/strings.json).
-        m.phoneBody.text = "Have Silo on your phone? Open it on the same Wi-Fi to sign in this TV, or choose " + Chr(8220) + "Sign in with your phone" + Chr(8221) + " to scan a code."
+        m.phoneBody.text = Tx("Have Silo on your phone? Open it on the same Wi-Fi to sign in this TV, or choose “Sign in with your phone” to scan a code.")
     else
-        m.pwBody.text = "Use your " + m.serverName + " username and password."
+        m.pwBody.text = TxF("Use your {0} username and password.", [m.serverName])
         m.phoneIcon.uri = "pkg:/images/icons/phone.png"
-        m.phoneTitle.text = "Easier with a phone"
-        m.phoneBody.text = "Choose " + Chr(8220) + "Use your phone instead" + Chr(8221) + " to scan a code and approve on your phone. Nothing to type with the remote."
+        m.phoneTitle.text = Tx("Easier with a phone")
+        m.phoneBody.text = Tx("Choose “Use your phone instead” to scan a code and approve on your phone. Nothing to type with the remote.")
     end if
     layout()
 end sub
@@ -1094,18 +1097,18 @@ sub onSignInPressed()
     username = m.usernameField.text.Trim()
     password = m.passwordField.text
     if username = "" then
-        showPwError("Username is required", true)
+        showPwError(Tx("Username is required"), true)
         focusOn("username")
         return
     end if
     if password = "" then
-        showPwError("Password is required")
+        showPwError(Tx("Password is required"))
         focusOn("password")
         return
     end if
     clearPwError()
     m.signingIn = true
-    m.signInButton.text = "Signing in…"
+    m.signInButton.text = Tx("Signing in…")
     m.usernameField.disabled = true
     m.passwordField.disabled = true
     Api_call({ method: "POST", path: "/api/v2/auth/login", body: { username: username, password: password }, auth: false, profile: false, timeout: 20 }, "onLogin")
@@ -1114,7 +1117,7 @@ end sub
 sub onLogin(event as object)
     resp = Api_result(event)
     m.signingIn = false
-    m.signInButton.text = "Sign in"
+    m.signInButton.text = Tx("Sign in")
     m.usernameField.disabled = false
     m.passwordField.disabled = false
     if resp.ok and resp.data <> invalid and Type(resp.data) = "roAssociativeArray" and not Str_isEmpty(resp.data.access_token) then
@@ -1131,14 +1134,14 @@ function loginErrorText(resp as object) as string
     code = ""
     if resp.error <> invalid then code = Str_orEmpty(resp.error.code)
     st = resp.status
-    if st = 0 then return "Network error. Check your connection."
-    if st = 401 then return "Incorrect username or password."
-    if code = "local_login_disabled" then return "Password sign-in is turned off on this server. Use your phone instead."
-    if code = "not_permitted" then return "Your account isn't allowed to use this server."
-    if code = "password_expired" then return "Your password has expired. Change it, then sign in again."
-    if code = "account_disabled" then return "Account is disabled"
-    if st = 429 then return "Too many attempts. Wait a moment, then try again."
-    if code = "provider_unavailable" or st = 503 then return "The sign-in service can't be reached right now. Try again later."
+    if st = 0 then return Tx("Network error. Check your connection.")
+    if st = 401 then return Tx("Incorrect username or password.")
+    if code = "local_login_disabled" then return Tx("Password sign-in is turned off on this server. Use your phone instead.")
+    if code = "not_permitted" then return Tx("Your account isn't allowed to use this server.")
+    if code = "password_expired" then return Tx("Your password has expired. Change it, then sign in again.")
+    if code = "account_disabled" then return Tx("Account is disabled")
+    if st = 429 then return Tx("Too many attempts. Wait a moment, then try again.")
+    if code = "provider_unavailable" or st = 503 then return Tx("The sign-in service can't be reached right now. Try again later.")
     return Api_errorText(resp)
 end function
 

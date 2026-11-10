@@ -12,14 +12,14 @@
 
 function ServerAddr_candidates(raw as dynamic, scheme as dynamic, port as dynamic) as object
     input = Str_orEmpty(raw).Trim()
-    if input = "" then return ServerAddr_fail("Please enter a server host.")
+    if input = "" then return ServerAddr_fail(Tx("Please enter a server host."))
     typedScheme = ""
     rest = input
     i = Instr(1, input, "://")
     if i > 0 then
         typedScheme = LCase(Left(input, i - 1))
         rest = Mid(input, i + 3)
-        if typedScheme <> "http" and typedScheme <> "https" then return ServerAddr_fail("Use an address that starts with https:// or http://.")
+        if typedScheme <> "http" and typedScheme <> "https" then return ServerAddr_fail(Tx("Use an address that starts with https:// or http://."))
     end if
     ' Authority, then an optional path (a server behind a reverse-proxy prefix).
     cut = Len(rest) + 1
@@ -34,7 +34,7 @@ function ServerAddr_candidates(raw as dynamic, scheme as dynamic, port as dynami
         path = Left(path, Len(path) - 1)
     end while
     if Instr(1, path, " ") > 0 or Instr(1, path, "?") > 0 or Instr(1, path, "#") > 0 then return ServerAddr_fail(ServerAddr_invalid())
-    if Instr(1, authority, "@") > 0 then return ServerAddr_fail("Remove the user name and password from the address.")
+    if Instr(1, authority, "@") > 0 then return ServerAddr_fail(Tx("Remove the user name and password from the address."))
     host = authority
     typedPort = ""
     if Left(authority, 1) = "[" then
@@ -89,11 +89,11 @@ function ServerAddr_fail(msg as string) as object
 end function
 
 function ServerAddr_invalid() as string
-    return "Enter a valid server address."
+    return Tx("Enter a valid server address.")
 end function
 
 function ServerAddr_portError() as string
-    return "Port must be a number between 1 and 65535."
+    return Tx("Port must be a number between 1 and 65535.")
 end function
 
 function ServerAddr_isDigits(s as string) as boolean
@@ -164,7 +164,7 @@ end function
 ' The address screen's message when no address answered as a Silo v2 server.
 function ServerAddr_unreachableText(scheme as dynamic, serverMessage as dynamic) as string
     msg = Str_orEmpty(serverMessage).Trim()
-    if msg <> "" then return "Could not reach server: " + msg
-    if LCase(Str_orEmpty(scheme)) = "https" then return "Could not reach a Silo server at that address over HTTPS."
-    return "Could not reach a Silo server at that address."
+    if msg <> "" then return TxF("Could not reach server: {0}", [msg])
+    if LCase(Str_orEmpty(scheme)) = "https" then return Tx("Could not reach a Silo server at that address over HTTPS.")
+    return Tx("Could not reach a Silo server at that address.")
 end function

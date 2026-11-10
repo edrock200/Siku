@@ -25,12 +25,12 @@ end function
 
 ' The profile picker's message (TV_PASSWORD_CHANGE_REQUIRED_MESSAGE in Silo Android TV).
 function PasswordChange_pickerMessage() as string
-    return "Your password needs to be reset. Use the Silo mobile app or website to set a new one, then come back."
+    return Tx("Your password needs to be reset. Use the Silo mobile app or website to set a new one, then come back.")
 end function
 
 ' What any other screen shows in place of the server's detail, which is a protocol instruction
 ' ("Change the temporary password with POST ..."). Android's phone wording says to sign in again
 ' to choose one; a TV cannot, so this says where to change it.
 function PasswordChange_message() as string
-    return "An admin set a temporary password for this account. Set a new one in the Silo mobile app or on the website, then sign in again."
+    return Tx("An admin set a temporary password for this account. Set a new one in the Silo mobile app or on the website, then sign in again.")
 end function

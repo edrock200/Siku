@@ -199,10 +199,6 @@ end sub
 
 ' ---------- The panel ----------
 
-function Pair_noun() as string
-    return "this TV"
-end function
-
 sub Pair_show(view as dynamic)
     if m.pairPanel = invalid then return
     if view = invalid then
@@ -239,54 +235,54 @@ sub Pair_view(name as string, extra = {} as object)
     v = invalid
     if name = "connected" then
         if login then
-            v = { eyebrow: "Phone or tablet connected", title: "Continue on your phone", detail: "Continue on your phone or tablet.", server: "On your phone", cardNote: "Approve the sign-in there.", busy: true, buttons: [{ id: "cancel", text: "Cancel" }] }
+            v = { eyebrow: Tx("Phone or tablet connected"), title: Tx("Continue on your phone"), detail: Tx("Continue on your phone or tablet."), server: Tx("On your phone"), cardNote: Tx("Approve the sign-in there."), busy: true, buttons: [{ id: "cancel", text: Tx("Cancel") }] }
         else
-            v = { eyebrow: "Phone or tablet connected", title: "Choose accounts on your phone", detail: "On your phone or tablet, choose which accounts " + Pair_noun() + " should sign in to.", server: "On your phone", cardNote: "Pick the accounts to bring over, then tap Continue.", busy: true, buttons: [{ id: "cancel", text: "Cancel" }] }
+            v = { eyebrow: Tx("Phone or tablet connected"), title: Tx("Choose accounts on your phone"), detail: Tx("On your phone or tablet, choose which accounts this TV should sign in to."), server: Tx("On your phone"), cardNote: Tx("Pick the accounts to bring over, then tap Continue."), busy: true, buttons: [{ id: "cancel", text: Tx("Cancel") }] }
         end if
     else if name = "consent" then
-        chip = "A nearby phone is setting up " + Pair_noun()
-        title = "Allow this setup?"
-        note = "Only allow it if you started setup on your own phone or tablet."
+        chip = Tx("A nearby phone is setting up this TV")
+        title = Tx("Allow this setup?")
+        note = Tx("Only allow it if you started setup on your own phone or tablet.")
         if login then
-            chip = "A nearby phone is signing in " + Pair_noun()
-            title = "Allow this sign-in?"
-            note = "Only allow it if you started this on your own phone or tablet."
+            chip = Tx("A nearby phone is signing in this TV")
+            title = Tx("Allow this sign-in?")
+            note = Tx("Only allow it if you started this on your own phone or tablet.")
         end if
-        detail = "A nearby phone or tablet wants to sign " + Pair_noun() + " in to " + server + "."
-        if Lan_isTrue(m.pair.unencrypted) then detail = detail + " Your password and what you watch will be sent unencrypted to " + Url_host(Lan_trimUrl(push.serverURL)) + ". Only do this on a network you trust."
-        v = { eyebrow: chip, title: title, detail: detail, server: server, cardNote: "After you allow it, a code appears here to compare with your phone.", buttons: [{ id: "allow", text: "Allow" }, { id: "deny", text: "Don" + Chr(8217) + "t Allow" }], note: note }
+        detail = TxF("A nearby phone or tablet wants to sign this TV in to {0}.", [server])
+        if Lan_isTrue(m.pair.unencrypted) then detail = detail + " " + TxF("Your password and what you watch will be sent unencrypted to {0}. Only do this on a network you trust.", [Url_host(Lan_trimUrl(push.serverURL))])
+        v = { eyebrow: chip, title: title, detail: detail, server: server, cardNote: Tx("After you allow it, a code appears here to compare with your phone."), buttons: [{ id: "allow", text: Tx("Allow") }, { id: "deny", text: Tx("Don’t Allow") }], note: note }
     else if name = "starting" then
-        title = "Signing in to " + server
+        title = TxF("Signing in to {0}", [server])
         account = Pair_accountLabel(push)
-        if account <> "" then title = "Signing in " + account + " on " + server
-        v = { eyebrow: "Getting a code", title: title, detail: "Getting " + Pair_noun() + Chr(8217) + "s sign-in code.", server: server, busy: true, buttons: [{ id: "cancel", text: "Cancel" }] }
+        if account <> "" then title = TxF("Signing in {0} on {1}", [account, server])
+        v = { eyebrow: Tx("Getting a code"), title: title, detail: Tx("Getting this TV’s sign-in code."), server: server, busy: true, buttons: [{ id: "cancel", text: Tx("Cancel") }] }
     else if name = "unreachable" then
-        detail = "This TV can" + Chr(8217) + "t reach " + server + " at " + Url_host(Lan_trimUrl(push.serverURL)) + ". Check its network connection and try again."
+        detail = TxF("This TV can’t reach {0} at {1}. Check its network connection and try again.", [server, Url_host(Lan_trimUrl(push.serverURL))])
         buttons = []
-        if not Str_isEmpty(extra.alternate) then buttons.Push({ id: "alternate", text: "Use " + Url_host(extra.alternate) })
-        buttons.Push({ id: "retry", text: "Try again" })
-        buttons.Push({ id: "cancel", text: "Cancel" })
-        v = { title: "Can" + Chr(8217) + "t reach " + server, detail: detail, server: "No answer", cardNote: "This TV couldn" + Chr(8217) + "t reach the address your phone sent.", buttons: buttons }
+        if not Str_isEmpty(extra.alternate) then buttons.Push({ id: "alternate", text: TxF("Use {0}", [Url_host(extra.alternate)]) })
+        buttons.Push({ id: "retry", text: Tx("Try again") })
+        buttons.Push({ id: "cancel", text: Tx("Cancel") })
+        v = { title: TxF("Can’t reach {0}", [server]), detail: detail, server: Tx("No answer"), cardNote: Tx("This TV couldn’t reach the address your phone sent."), buttons: buttons }
     else if name = "confirm" then
         cardNote = ""
         words = UCase(Str_orEmpty(extra.matchCode).Trim())
-        if words <> "" then cardNote = "Older phones show " + words + " instead."
-        detail = "Check that your phone or tablet shows this code, then approve."
+        if words <> "" then cardNote = TxF("Older phones show {0} instead.", [words])
+        detail = Tx("Check that your phone or tablet shows this code, then approve.")
         account = Pair_accountLabel(push)
-        if account <> "" then detail = "Signing in " + account + " on " + server + ". " + detail
-        v = { eyebrow: "Waiting for your phone", title: "Confirm on your phone", detail: detail, code: Pair_codeText(extra.userCode), server: server, cardNote: cardNote, busy: true, buttons: [{ id: "cancel", text: "Cancel" }] }
+        if account <> "" then detail = TxF("Signing in {0} on {1}.", [account, server]) + " " + detail
+        v = { eyebrow: Tx("Waiting for your phone"), title: Tx("Confirm on your phone"), detail: detail, code: Pair_codeText(extra.userCode), server: server, cardNote: cardNote, busy: true, buttons: [{ id: "cancel", text: Tx("Cancel") }] }
     else if name = "signedIn" then
-        detail = "Finishing up on your phone or tablet" + Chr(8230)
-        if m.pair.lastUser <> "" then detail = m.pair.lastUser + " is signed in on " + server + ". Finishing up" + Chr(8230)
-        v = { title: "Signed in", detail: detail, server: server, busy: true }
+        detail = Tx("Finishing up on your phone or tablet…")
+        if m.pair.lastUser <> "" then detail = TxF("{0} is signed in on {1}. Finishing up…", [m.pair.lastUser, server])
+        v = { title: Tx("Signed in"), detail: detail, server: server, busy: true }
         ' The server screen waits for more accounts; Done ends the session with what signed in.
-        if not login then v.buttons = [{ id: "finish", text: "Done" }]
+        if not login then v.buttons = [{ id: "finish", text: Tx("Done") }]
     else if name = "completed" then
-        v = { title: "You" + Chr(8217) + "re all set", detail: PairSession_completedText(m.pair.accounts.Count(), m.pair.signedIn), server: "Signed in", buttons: [{ id: "continue", text: "Continue" }] }
+        v = { title: Tx("You’re all set"), detail: PairSession_completedText(m.pair.accounts.Count(), m.pair.signedIn), server: Tx("Signed in"), buttons: [{ id: "continue", text: Tx("Continue") }] }
     else if name = "failed" then
-        title = "Setup didn" + Chr(8217) + "t finish"
-        if login then title = "Sign-in didn" + Chr(8217) + "t finish"
-        v = { title: title, detail: Pair_failureText(Str_orEmpty(extra.code), server), server: "Not finished", cardNote: server + " wasn" + Chr(8217) + "t signed in.", buttons: [{ id: "close", text: "OK" }] }
+        title = Tx("Setup didn’t finish")
+        if login then title = Tx("Sign-in didn’t finish")
+        v = { title: title, detail: Pair_failureText(Str_orEmpty(extra.code), server), server: Tx("Not finished"), cardNote: TxF("{0} wasn’t signed in.", [server]), buttons: [{ id: "close", text: Tx("OK") }] }
     end if
     Pair_show(v)
 end sub
@@ -298,15 +294,15 @@ function Pair_codeText(code as dynamic) as string
 end function
 
 function Pair_failureText(code as string, server as string) as string
-    if code = "denied" then return "The sign-in to " + server + " was declined. Try again from your phone or tablet."
-    if code = "expired" then return "The code for " + server + " expired before it was approved. Try again from your phone or tablet."
-    if code = "unreachable" then return "This TV can" + Chr(8217) + "t reach " + server + ". You can also add the server manually with its public address."
+    if code = "denied" then return TxF("The sign-in to {0} was declined. Try again from your phone or tablet.", [server])
+    if code = "expired" then return TxF("The code for {0} expired before it was approved. Try again from your phone or tablet.", [server])
+    if code = "unreachable" then return TxF("This TV can’t reach {0}. You can also add the server manually with its public address.", [server])
     if code = "identity_mismatch" then
-        if Pair_isLogin() then return "The phone or tablet offered " + server + ", which isn" + Chr(8217) + "t the server this TV uses. Choose this TV" + Chr(8217) + "s server on your phone or tablet, or sign in here with a password."
-        return "The phone or tablet sent an address for " + server + " that answered as a different server. Check the server on your phone or tablet, or add your server manually."
+        if Pair_isLogin() then return TxF("The phone or tablet offered {0}, which isn’t the server this TV uses. Choose this TV’s server on your phone or tablet, or sign in here with a password.", [server])
+        return TxF("The phone or tablet sent an address for {0} that answered as a different server. Check the server on your phone or tablet, or add your server manually.", [server])
     end if
-    if code = "update_required" then return server + " or this app needs an update before this TV can sign in."
-    return "Something went wrong signing in to " + server + ". Try again from your phone or tablet, or add your server manually."
+    if code = "update_required" then return TxF("{0} or this app needs an update before this TV can sign in.", [server])
+    return TxF("Something went wrong signing in to {0}. Try again from your phone or tablet, or add your server manually.", [server])
 end function
 
 sub Pair_onChosen()
