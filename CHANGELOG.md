@@ -3,6 +3,16 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.45
+
+Siku in more languages (November 10, 2026).
+
+**New**
+- **Siku speaks Spanish, German, French and Brazilian Portuguese.** Menus, buttons, settings, the player and messages now follow your Roku's language (Settings › System › Language on the Roku). Most of the wording comes from Silo's own apps, so the words match what you see on your phone; the rest was translated for Siku. Home row titles and the server's error messages are translated too when the server names them. Any other Roku language keeps English.
+- **App language setting.** Settings › General › Language lets a profile pick its own language for Siku ("Match device" is the default). The choice is saved on the server with the profile, so it follows the profile to your other TVs. This row appears on Silo servers that support the setting. Audio, subtitle and description languages are separate settings, as before.
+
+**Needs testing on a real Roku:** the longer German and French words on buttons and narrow labels (Up Next, error buttons, the calendar, the Kids badge) were checked in the simulator only.
+
 ## v0.1.44
 
 A fix asked for by a user (November 8, 2026).

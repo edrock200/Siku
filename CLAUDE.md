@@ -317,6 +317,12 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   a real roWebSocket, so the simulator runs the whole path.
 - Detail running time (v0.1.44, `detailLengthSeconds` in DetailScreen): the shown file's measured `duration`, else
   `runtime` minutes; 0 means unknown and hides it. Mock `--switch no_runtime=1` (runtime 0, files keep their duration).
+- Interface languages (v0.1.45, `Tx`/`TxF`/`TxP`/`TxKey` and `I18n_*` in `Utils.brs`): text is keyed by its English;
+  `locale/<es|de|fr|pt_BR>/strings.json` are built by `python3 tools/i18n_build.py` from Silo's catalogs in
+  `third_party/silo-translations/` plus Siku's own `i18n/siku/<lang>.json` (`--check` fails on stale files or untranslated
+  text; `i18n/missing.json` lists gaps). Server text: `TxKey("@home.section.*"|"error.*")`. MainScene prints
+  `[siku-i18n]` lines when it loads a language. Language: profile `ui.app_language` (mock: settings revision 28), else the
+  device locale; DEBUG builds take `debugLang=<tag>` (e.g. `de`). After adding user-visible text, rerun the build tool.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 
