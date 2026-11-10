@@ -61,15 +61,15 @@ function CalFmt_badgeLabels(badges as dynamic) as object
         s = LCase(Str_orEmpty(b))
         label = ""
         if s = "series_premiere" then
-            label = "PREMIERE"
+            label = Tx("PREMIERE")
         else if s = "season_premiere" then
-            label = "NEW SEASON"
+            label = Tx("NEW SEASON")
         else if s = "finale" or s = "season_finale" or s = "series_finale" then
-            label = "FINALE"
+            label = Tx("FINALE")
         else if s = "digital" then
-            label = "DIGITAL"
+            label = Tx("DIGITAL")
         else if s = "physical" then
-            label = "PHYSICAL"
+            label = Tx("PHYSICAL")
         end if
         if label <> "" and not seen.DoesExist(label) then
             seen[label] = true
@@ -124,8 +124,8 @@ end function
 ' "9:05 PM", or "21:05" on a 24-hour clock.
 function CalFmt_clockText(hour as integer, minute as integer, clock24 as boolean) as string
     if clock24 then return Str_padLeft(hour.ToStr(), 2) + ":" + Str_padLeft(minute.ToStr(), 2)
-    period = "AM"
-    if hour >= 12 then period = "PM"
+    period = Tx("AM")
+    if hour >= 12 then period = Tx("PM")
     shown = hour mod 12
     if shown = 0 then shown = 12
     return shown.ToStr() + ":" + Str_padLeft(minute.ToStr(), 2) + " " + period

@@ -102,7 +102,7 @@ sub Content_fillCard(node as object, card as object, style as string)
         if node.backdropUrl = "" then node.backdropUrl = Url_resolve(bs.backdrop_url)
         node.cornerLabel = BoxSet_filmCount(bs.movie_count)
         node.subtitle = BoxSet_cardCaption(bs)
-        node.description = "Box set, " + node.subtitle
+        node.description = TxF("Box set, {0}", [node.subtitle])
         node.progress = BoxSet_watchedFraction(bs)
         node.watched = false
     end if
@@ -303,9 +303,9 @@ function Content_episodeCaptionMeta(airDate as string, runtimeMinutes as integer
     if airDate <> "" then parts.Push(airDate)
     if runtimeMinutes > 0 then
         if runtimeMinutes >= 60 then
-            parts.Push((runtimeMinutes \ 60).ToStr() + "h " + (runtimeMinutes mod 60).ToStr() + "m")
+            parts.Push(TxF("{0}h {1}m", [runtimeMinutes \ 60, runtimeMinutes mod 60]))
         else
-            parts.Push(runtimeMinutes.ToStr() + "m")
+            parts.Push(TxF("{0}m", [runtimeMinutes]))
         end if
     end if
     return Str_joinDots(parts, "  ·  ")
@@ -376,13 +376,9 @@ end function
 function Content_groupSubtitle(group as object) as string
     parts = []
     n = Int(Content_num(group.item_count))
-    if n = 1 then
-        parts.Push("1 book")
-    else if n > 1 then
-        parts.Push(n.ToStr() + " books")
-    end if
+    if n >= 1 then parts.Push(TxP("1 book", "{0} books", n))
     if Content_num(group.total_duration_seconds) > 0 then parts.Push(Time_runtime(group.total_duration_seconds))
-    if Int(Content_num(group.in_progress_count)) > 0 then parts.Push(Str_orEmpty(group.in_progress_count) + " in progress")
+    if Int(Content_num(group.in_progress_count)) > 0 then parts.Push(TxF("{0} in progress", [Str_orEmpty(group.in_progress_count)]))
     return Str_joinDots(parts)
 end function
 
@@ -403,7 +399,7 @@ function Content_metaLine(card as object) as string
     if dur > 0 then parts.Push(Time_runtime(dur))
     if dur > 0 and Content_num(card.position_seconds) > 0 then
         remaining = dur - Content_num(card.position_seconds)
-        if remaining > 60 then parts.Push(Time_runtime(remaining) + " left")
+        if remaining > 60 then parts.Push(TxF("{0} left", [Time_runtime(remaining)]))
     end if
     if not Str_isEmpty(card.content_rating) then parts.Push(card.content_rating)
     return Str_joinDots(parts)

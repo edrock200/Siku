@@ -21,6 +21,10 @@ sub init()
     m.shuffleBtn = m.top.findNode("shuffleBtn")
     m.startOverBtn = m.top.findNode("startOverBtn")
     m.favBtn = m.top.findNode("favBtn")
+    ' DetailCircleButton's `label` field is not one I18n_translateTree reads (keep in step with the XML).
+    m.shuffleBtn.label = Tx("Shuffle")
+    m.startOverBtn.label = Tx("Start Over")
+    m.favBtn.label = Tx("Favorite")
     m.body = m.top.findNode("body")
     m.listSection = m.top.findNode("listSection")
     m.listHeader = m.top.findNode("listHeader")
@@ -161,7 +165,7 @@ sub render()
     m.railSection.visible = false
     m.startOverBtn.visible = false
     m.shuffleBtn.visible = false
-    m.playBtn.text = "Play"
+    m.playBtn.text = Tx("Play")
 
     if m.kind = "audiobook" then
         renderAudiobook()
@@ -177,8 +181,8 @@ end sub
 
 sub renderAlbum()
     it = m.item
-    if m.kind = "album" then m.eyebrowLabel.text = "ALBUM" else m.eyebrowLabel.text = UCase(m.kind)
-    if m.kind = "" then m.eyebrowLabel.text = "AUDIO"
+    if m.kind = "album" then m.eyebrowLabel.text = Tx("ALBUM") else m.eyebrowLabel.text = UCase(m.kind)
+    if m.kind = "" then m.eyebrowLabel.text = Tx("AUDIO")
     artist = albumArtist(it)
     m.subtitleLabel.text = artist
     m.shuffleBtn.visible = true
@@ -193,7 +197,7 @@ sub renderAlbum()
     fillTrackList()
     if m.tracks.Count() = 0 and m.kind = "album" then
         ' Not inline: try the generic child listing.
-        m.listMsg.text = "Loading tracks…"
+        m.listMsg.text = Tx("Loading tracks…")
         m.listMsg.visible = true
         Api_get("/api/v2/catalog/items/" + Str_urlEncode(Str_orEmpty(it.content_id)) + "/episodes", { image_size: "medium" }, "onChildren")
     end if
@@ -208,7 +212,7 @@ end sub
 
 sub fillTrackList()
     it = m.item
-    m.listHeader.text = "Tracks"
+    m.listHeader.text = Tx("Tracks")
     m.listSection.visible = true
     total = 0.0
     artist = albumArtist(it)
@@ -228,7 +232,7 @@ sub fillTrackList()
     end for
     m.list.content = root
     if m.tracks.Count() = 0 then
-        m.listMsg.text = "No tracks available"
+        m.listMsg.text = Tx("No tracks available")
         m.listMsg.visible = true
         m.list.visible = false
     else
@@ -238,7 +242,7 @@ sub fillTrackList()
     parts = []
     if it.year <> invalid then parts.Push(Str_orEmpty(it.year))
     if m.kind = "album" and m.tracks.Count() > 0 then
-        if m.tracks.Count() = 1 then parts.Push("1 track") else parts.Push(m.tracks.Count().ToStr() + " tracks")
+        if m.tracks.Count() = 1 then parts.Push(Tx("1 track")) else parts.Push(TxF("{0} tracks", [m.tracks.Count()]))
     end if
     if total <= 0 then total = AudioTimeline_num(it.duration_seconds)
     if total > 0 then parts.Push(Time_runtime(total))
@@ -249,7 +253,7 @@ end sub
 
 sub renderArtist()
     it = m.item
-    m.eyebrowLabel.text = "ARTIST"
+    m.eyebrowLabel.text = Tx("ARTIST")
     genres = Arr_or(it.genres)
     gs = []
     for i = 0 to genres.Count() - 1
@@ -258,12 +262,12 @@ sub renderArtist()
     m.subtitleLabel.text = Str_joinDots(gs)
     m.albums = Arr_or(it.albums)
     n = m.albums.Count()
-    if n = 1 then m.metaLabel.text = "1 album" else m.metaLabel.text = n.ToStr() + " albums"
+    if n = 1 then m.metaLabel.text = Tx("1 album") else m.metaLabel.text = TxF("{0} albums", [n])
     if n = 0 then m.metaLabel.text = ""
     m.shuffleBtn.visible = n > 0
     m.playBtn.disabled = n = 0
     if n > 0 then
-        m.railHeader.text = "Albums"
+        m.railHeader.text = Tx("Albums")
         cards = []
         for each a in m.albums
             c = AA_copy(a)
@@ -276,7 +280,7 @@ end sub
 
 sub renderAudiobook()
     it = m.item
-    m.eyebrowLabel.text = "AUDIOBOOK"
+    m.eyebrowLabel.text = Tx("AUDIOBOOK")
     ab = it.audiobook
     if ab = invalid then ab = {}
     m.subtitleLabel.text = personNames(ab.authors)
@@ -290,7 +294,7 @@ sub renderAudiobook()
 
     meta = []
     narr = personNames(ab.narrators)
-    if narr <> "" then meta.Push("Narrated by " + narr)
+    if narr <> "" then meta.Push(TxF("Narrated by {0}", [narr]))
     if total > 0 then meta.Push(Time_runtime(total))
     if it.year <> invalid then meta.Push(Str_orEmpty(it.year))
     if not Str_isEmpty(ab.publisher) then meta.Push(ab.publisher)
@@ -308,21 +312,21 @@ sub renderAudiobook()
     if m.resume > 0 then
         ci = AudioTimeline_chapterAt(chapters, m.resume)
         if chapters.Count() > 1 and ci >= 0 then
-            m.playBtn.text = "Resume Chapter " + (ci + 1).ToStr()
+            m.playBtn.text = TxF("Resume Chapter {0}", [ci + 1])
         else
-            m.playBtn.text = "Resume " + Time_clock(m.resume)
+            m.playBtn.text = TxF("Resume {0}", [Time_clock(m.resume)])
         end if
         m.startOverBtn.visible = true
     else if m.finished then
-        m.playBtn.text = "Play Again"
+        m.playBtn.text = Tx("Play Again")
     else
-        m.playBtn.text = "Play"
+        m.playBtn.text = Tx("Play")
     end if
     m.playBtn.disabled = m.timeline = invalid and Arr_or(it.versions).Count() = 0
 
     ' Chapters
     if chapters.Count() > 0 then
-        m.listHeader.text = "Chapters"
+        m.listHeader.text = Tx("Chapters")
         m.listSection.visible = true
         m.listMsg.visible = false
         m.list.visible = true
@@ -346,7 +350,7 @@ sub renderAudiobook()
         curTrack = -1
         if m.resume > 0 then curTrack = AudioTimeline_trackIndexAt(m.timeline, m.resume)
         for each tr in m.timeline.tracks
-            AudioList_rowNode(root, { id: tr.index.ToStr(), title: "Part " + (tr.index + 1).ToStr(), number: (tr.index + 1).ToStr(), subtitle: "Starts at " + Time_clock(tr.offset), trailing: Time_clock(tr.duration), isCurrent: tr.index = curTrack })
+            AudioList_rowNode(root, { id: tr.index.ToStr(), title: TxF("Part {0}", [tr.index + 1]), number: (tr.index + 1).ToStr(), subtitle: TxF("Starts at {0}", [Time_clock(tr.offset)]), trailing: Time_clock(tr.duration), isCurrent: tr.index = curTrack })
         end for
         m.parts.content = root
     end if
@@ -356,7 +360,7 @@ sub renderAudiobook()
     more = []
     if rel <> invalid then more = Arr_or(rel.also_by_author)
     if more.Count() > 0 then
-        m.railHeader.text = "More by " + firstPersonName(ab.authors, "Author")
+        m.railHeader.text = TxF("More by {0}", [firstPersonName(ab.authors, Tx("Author"))])
         cards = []
         for each r in more
             c = AA_copy(r)
@@ -632,10 +636,10 @@ sub onFavorite()
     m.favBtn.active = m.isFavorite
     if m.isFavorite then
         Api_fire("PUT", "/api/v2/favorites/" + Str_urlEncode(id))
-        m.global.toast = "Added to Favorites"
+        m.global.toast = Tx("Added to Favorites")
     else
         Api_fire("DELETE", "/api/v2/favorites/" + Str_urlEncode(id))
-        m.global.toast = "Removed from Favorites"
+        m.global.toast = Tx("Removed from Favorites")
     end if
     m.global.homeDirty = true
 end sub
@@ -665,7 +669,7 @@ end function
 sub playTracks(index as integer, shuffle as boolean)
     q = trackQueue(m.tracks, m.item)
     if q.Count() = 0 then
-        m.global.toast = "Nothing to play"
+        m.global.toast = Tx("Nothing to play")
         return
     end if
     if index >= q.Count() then index = 0
@@ -704,7 +708,7 @@ sub onArtistAlbum(event as object)
     end for
     m.artistTracks = invalid
     if q.Count() = 0 then
-        m.global.toast = "Nothing to play"
+        m.global.toast = Tx("Nothing to play")
         return
     end if
     openPlayer({ queue: q, index: 0, shuffle: m.artistShuffle })

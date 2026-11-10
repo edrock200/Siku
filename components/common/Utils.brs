@@ -127,11 +127,37 @@ function Time_runtime(seconds as dynamic) as string
     if seconds = invalid then return ""
     mins = Int(seconds / 60 + 0.5)
     if mins <= 0 then return ""
-    if mins < 60 then return mins.ToStr() + " min"
+    if mins < 60 then return TxF("{0} min", [mins])
     h = Int(mins / 60)
     r = mins mod 60
-    if r = 0 then return h.ToStr() + "h"
-    return h.ToStr() + "h " + r.ToStr() + "m"
+    if r = 0 then return TxF("{0}h", [h])
+    return TxF("{0}h {1}m", [h, r])
+end function
+
+' Month and weekday names in the interface language (English is the lookup key). index is 0-based:
+' 0 = January / Sunday (roDateTime.GetMonth() - 1, GetDayOfWeek()). "" when out of range.
+function Time_monthShort(index as integer) as string
+    months = [Tx("Jan"), Tx("Feb"), Tx("Mar"), Tx("Apr"), Tx("May"), Tx("Jun"), Tx("Jul"), Tx("Aug"), Tx("Sep"), Tx("Oct"), Tx("Nov"), Tx("Dec")]
+    if index < 0 or index > 11 then return ""
+    return months[index]
+end function
+
+function Time_monthLong(index as integer) as string
+    months = [Tx("January"), Tx("February"), Tx("March"), Tx("April"), Tx("May"), Tx("June"), Tx("July"), Tx("August"), Tx("September"), Tx("October"), Tx("November"), Tx("December")]
+    if index < 0 or index > 11 then return ""
+    return months[index]
+end function
+
+function Time_dayShort(index as integer) as string
+    days = [Tx("Sun"), Tx("Mon"), Tx("Tue"), Tx("Wed"), Tx("Thu"), Tx("Fri"), Tx("Sat")]
+    if index < 0 or index > 6 then return ""
+    return days[index]
+end function
+
+function Time_dayLong(index as integer) as string
+    days = [Tx("Sunday"), Tx("Monday"), Tx("Tuesday"), Tx("Wednesday"), Tx("Thursday"), Tx("Friday"), Tx("Saturday")]
+    if index < 0 or index > 6 then return ""
+    return days[index]
 end function
 
 function Time_nowSeconds() as integer
@@ -176,10 +202,9 @@ end function
 function Time_longDate(s as dynamic) as string
     dt = Time_parseIso(s)
     if dt = invalid then return ""
-    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     mi = dt.GetMonth() - 1
     if mi < 0 or mi > 11 then return ""
-    return months[mi] + " " + dt.GetDayOfMonth().ToStr() + ", " + dt.GetYear().ToStr()
+    return Time_monthShort(mi) + " " + dt.GetDayOfMonth().ToStr() + ", " + dt.GetYear().ToStr()
 end function
 
 ' ---------- Numbers ----------
