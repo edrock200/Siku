@@ -37,7 +37,7 @@ TR_CALLS = [
     re.compile(r'\bTxF\(\s*' + LIT + r'\s*,', re.I),
     re.compile(r'\bTxP\(\s*' + LIT + r'\s*,\s*' + LIT, re.I),
 ]
-XML_ATTRS = re.compile(r'\b(?:text|title|hintText|description)="([^"]*[A-Za-z][^"]*)"')
+XML_ATTRS = re.compile(r'\b(?:text|title|hintText|description|placeholder|a11yLabel|label)="([^"]*[A-Za-z][^"]*)"')
 
 
 def unescape_brs(s):
@@ -95,7 +95,7 @@ def to_positional(english, translated):
 
     def repl(m):
         ph = m.group(0)
-        if ph.startswith("{") and ph in named:
+        if ph in named and (ph.startswith("{") or m.group(1)):
             return "{%d}" % named[ph]
         if ph.startswith("%") and m.group(1):
             return "{%d}" % (int(m.group(1)[:-1]) - 1)
@@ -186,10 +186,20 @@ def build():
                 from_catalog += 1
             else:
                 miss.append(text)
-        built[lang] = table
+        built[lang] = case_merge(table)
         missing[lang] = miss
         stats[lang] = (len(strings), from_catalog, len(table) - from_catalog, len(miss))
     return strings, built, missing, stats
+
+
+def case_merge(table):
+    """One entry per text ignoring case (Roku's table keys do): mixed case wins over ALL CAPS, the
+    first otherwise. A screen that needs capitals uppercases the translation itself (UCase(Tx(..)))."""
+    out = {}
+    for k in sorted(table, key=lambda k: (k.isupper(), k)):
+        if not any(o.lower() == k.lower() for o in out):
+            out[k] = table[k]
+    return out
 
 
 def dump(obj):
