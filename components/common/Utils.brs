@@ -475,7 +475,8 @@ end function
 ' The interface text for English `text` in the applied language.
 function Tx(text as string) as string
     if text = "" then return ""
-    v = I18n_table()[text]
+    t = I18n_table()
+    v = t[text]
     if Type(v) = "roString" or Type(v) = "String" then
         if v <> "" then return v
     end if
