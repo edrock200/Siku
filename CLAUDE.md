@@ -283,7 +283,12 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   profile_doc=yes|no profile_enabled=on|off|unset` (or `config read failed status=N; keeping what applies`), `art drawn= hits=
   files= shared= sprites=<hits>/<misses> dropped= failed= queued=` per batch, `image kept|download failed status=|could not
   be kept|unreadable`, `drawing failed:`. Settings `ui.card_overlays` / `ui.card_overlays_enabled` (source `profile` only) +
-  GET `/api/v2/settings/overlay-config`. Mock: `--switch card_overlays=1|<preset>|rails|combined|off|404|500` (default off),
+  GET `/api/v2/settings/overlay-config`. Layout follows Silo Android #882 (the web's, silo-server #2765): three corners and two
+  rails (a stored top-right is the right rail; corners 3, rails 4), the poster's top-right is watch status whether or not badges
+  are on (emerald check node in MediaCardItem, 22 at the 185 px reference and 8 in; episodes left drawn in the overlay image;
+  landscape cards show neither), bottom corners share rows and wrap (`Ovl_bottomLayout`) and lift clear of the progress bar
+  (`Ovl_bottomInset`), text keeps the presets' letter spacing; host tests `tests/test_overlay_layout.py`. Mock:
+  `--switch card_overlays=1|<preset>[+rails|+corners|+combined]|off|404|500` (default off; on, it marks some titles watched and Orbital started),
   `overlay_profile=<preset>`, `overlay_profile_enabled=0|1`, `overlay_images=1|missing`; log `OVERLAY CONFIG`, `OVERLAY IMAGE`.
   The simulator draws translucent fills opaque (brs-engine ignores bitmap alpha); `scratchpad/pngfix.py` opens its PNGs.
 - Audiobook session expiry (Silo Android #708, `AudioSessionRecovery.brs`): `[siku-audio] session expired on the server

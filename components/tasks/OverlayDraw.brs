@@ -106,14 +106,11 @@ sub OvDraw_badges(c as object, spec as object, prefs as object, copy as object)
     c.look = look
     c.k = k
     c.inset = 8 * k
-    ' The bottom corners sit higher on wide cards (Android TV CardOverlayVariant.Wide 24 dp, the
-    ' episode card 12 dp, at TvCardOverlayScale) and over a poster's progress bar.
-    c.bottomInset = c.inset
-    if shape = "landscape" then c.bottomInset = 24 * k
-    if shape = "episode" then c.bottomInset = 12 * k
-    if shape = "poster" and Ovl_isTrue(spec.progress) and c.bottomInset < 22 then c.bottomInset = 22
-    ' The top row stops short of the watched check's corner.
-    reserve = spec.check.inset + spec.check.size + 8 * k
+    ' The bottom corners sit higher on wide cards (Android TV's Wide variant 24, the episode rail
+    ' 12) and lift clear of a progress bar (Silo Android #882; Siku's bar floats 18 px up).
+    c.bottomInset = Ovl_bottomInset(shape, k, Ovl_isTrue(spec.progress), OvDraw_barTop())
+    ' The top row stops short of the watch-status corner (none on a landscape card).
+    reserve = Ovl_topRowEnd(spec.check.inset, spec.check.size, k)
     if look.band then
         OvDraw_bandTop(c, resolved.topLeft, c.width - reserve)
         both = []
@@ -161,41 +158,44 @@ sub OvDraw_rail(c as object, list as object, inset as float, side as string)
     end for
 end sub
 
-' The bottom corners a row per level from the bottom up; a pair too wide to share its row wraps,
-' the right badge onto a line under the left.
+' The bottom corners a row per level from the bottom; a pair too wide to share its row wraps, the
+' right badge onto a line under the left (Ovl_bottomLayout).
 sub OvDraw_bottomRows(c as object, lt as object, rt as object)
-    rows = Ovl_bottomRows(lt, rt)
-    gap = c.look.stackGap * c.k
-    edgeGap = 8 * c.k
+    if lt.Count() = 0 and rt.Count() = 0 then return
     available = c.width - 2 * c.inset
-    ground = c.height - c.bottomInset
-    for i = rows.Count() - 1 to 0 step -1
-        row = rows[i]
-        l = invalid
-        r = invalid
-        if row.lt <> invalid then l = OvDraw_measure(c, row.lt, available, "")
-        if row.rt <> invalid then r = OvDraw_measure(c, row.rt, available, "")
-        wraps = false
-        if l <> invalid and r <> invalid then wraps = l.w + edgeGap + r.w > available
-        if wraps then
-            OvDraw_paintBadge(c, r, c.width - c.inset - r.w, ground - r.h)
-            ground = ground - r.h - gap
-            OvDraw_paintBadge(c, l, c.inset, ground - l.h)
-            ground = ground - l.h - gap
-        else
-            lineHeight = 0.0
-            if l <> invalid then
-                OvDraw_paintBadge(c, l, c.inset, ground - l.h)
-                lineHeight = l.h
-            end if
-            if r <> invalid then
-                OvDraw_paintBadge(c, r, c.width - c.inset - r.w, ground - r.h)
-                if r.h > lineHeight then lineHeight = r.h
-            end if
-            ground = ground - lineHeight - gap
-        end if
+    lp = []
+    rp = []
+    lw = []
+    lh = []
+    rw = []
+    rh = []
+    for each b in lt
+        plan = OvDraw_measure(c, b, available, "")
+        lp.Push(plan)
+        lw.Push(plan.w)
+        lh.Push(plan.h)
+    end for
+    for each b in rt
+        plan = OvDraw_measure(c, b, available, "")
+        rp.Push(plan)
+        rw.Push(plan.w)
+        rh.Push(plan.h)
+    end for
+    at = Ovl_bottomLayout(lw, lh, rw, rh, available, 8 * c.k, c.look.stackGap * c.k)
+    top = c.height - c.bottomInset - at.h
+    for i = 0 to lp.Count() - 1
+        OvDraw_paintBadge(c, lp[i], c.inset + at.lx[i], top + at.ly[i])
+    end for
+    for i = 0 to rp.Count() - 1
+        OvDraw_paintBadge(c, rp[i], c.inset + at.rx[i], top + at.ry[i])
     end for
 end sub
+
+' How far above the card's bottom edge its progress bar's top sits (MediaCardItem.layout: a 6 px
+' bar 12 px up).
+function OvDraw_barTop() as float
+    return 18.0
+end function
 
 sub OvDraw_bandTop(c as object, list as object, limit as float)
     if list.Count() = 0 then return
@@ -316,7 +316,7 @@ function OvDraw_measure(c as object, b as object, maxWidth as float, rail as str
     Ovl_finish(b, look, iconImage <> invalid)
     colors = Ovl_paint(look, b.accent)
     fontSize = OvDraw_textSize(look.fontSize * k)
-    plan = { kind: "badge", badge: b, colors: colors, rail: rail, font: OvDraw_font(look.weight, fontSize), fontSize: fontSize }
+    plan = { kind: "badge", badge: b, colors: colors, rail: rail, font: OvDraw_font(look.weight, fontSize), fontSize: fontSize, spacing: OvDraw_spacing(look, fontSize) }
     border = 0.0
     if colors.border <> "" then
         if Ovl_parseColor(colors.border).a > 0 then border = look.borderWidth * k
@@ -326,12 +326,11 @@ function OvDraw_measure(c as object, b as object, maxWidth as float, rail as str
     lead = { kind: "", w: 0.0, h: 0.0, txt: "", icon: "", color: "" }
     if iconImage <> invalid then
         lead = { kind: "image", image: iconImage, h: OvDraw_whole(iconSize), w: OvDraw_whole(iconSize * iconImage.GetWidth() / iconImage.GetHeight()), txt: "", icon: "", color: "" }
-        if lead.w > maxWidth then lead.w = OvDraw_whole(maxWidth)
     else if b.chip <> "" then
         chipColor = b.accent
         if chipColor = "" then chipColor = "#FFFFFF"
         lead = { kind: "chip", txt: b.chip, color: Ovl_opaque(chipColor), ink: Ovl_readableOn(chipColor), icon: "" }
-        lead.w = OvDraw_textWidth(plan.font, b.chip) + 0.7 * fontSize
+        lead.w = OvDraw_trackedWidth(plan.font, b.chip, plan.spacing) + 0.7 * fontSize
         lead.h = fontSize * 1.3
     else if b.markText <> "" then
         units = 10
@@ -343,7 +342,7 @@ function OvDraw_measure(c as object, b as object, maxWidth as float, rail as str
     end if
     txt = b.txt
     width = 0.0
-    if txt <> "" then width = OvDraw_textWidth(plan.font, txt)
+    if txt <> "" then width = OvDraw_trackedWidth(plan.font, txt, plan.spacing)
     contentHeight = fontSize * 1.0
     if lead.h > contentHeight then contentHeight = lead.h
     gap = 0.0
@@ -355,12 +354,18 @@ function OvDraw_measure(c as object, b as object, maxWidth as float, rail as str
     if look.accentLeft > 0 and colors.accentLeft <> "" and rail <> "left" then padL = look.accentLeft * k
     padX = look.padX * k
     padY = look.padY * k
+    ' An uploaded icon image is at most the badge's content width (Silo Android #882).
+    if lead.kind = "image" then
+        content = OvDraw_whole(maxWidth - padL - padR - 2 * padX)
+        if content < 1 then content = 1
+        if lead.w > content then lead.w = content
+    end if
     w = padL + padX + lead.w + gap + width + padX + padR
     ' A bare score never truncates; any other label does, with an ellipsis.
     if w > maxWidth and width > 0 and not b.scoreOnly then
-        txt = OvDraw_fit(plan.font, txt, width - (w - maxWidth))
+        txt = OvDraw_fit(plan.font, txt, width - (w - maxWidth), plan.spacing)
         width = 0
-        if txt <> "" then width = OvDraw_textWidth(plan.font, txt)
+        if txt <> "" then width = OvDraw_trackedWidth(plan.font, txt, plan.spacing)
         w = maxWidth
     end if
     plan.Append({ lead: lead, txt: txt, textWidth: width, gap: gap, border: border, padL: padL, padX: padX, padY: padY, contentHeight: contentHeight, w: w, h: border + padY + contentHeight + padY + border })
@@ -378,7 +383,7 @@ sub OvDraw_paintBadge(c as object, plan as object, x as float, y as float)
         ref = plan.badge.image
         valueRef = plan.badge.valueImage
     end if
-    key = FormatJson({ kind: plan.kind, w: OvDraw_whole(plan.w), h: OvDraw_whole(plan.h), rail: plan.rail, txt: plan.txt, font: plan.fontSize, border: plan.border, padL: plan.padL, padX: plan.padX, padY: plan.padY, content: plan.contentHeight, gap: plan.gap, lead: [lead.kind, lead.txt, lead.icon, lead.w, lead.h, lead.color], colors: plan.colors, look: [c.look.id, c.look.weight, c.look.radius, c.look.accentLeft, c.look.boxShadow, c.look.textShadow, c.k], images: [ref, valueRef] })
+    key = FormatJson({ kind: plan.kind, w: OvDraw_whole(plan.w), h: OvDraw_whole(plan.h), rail: plan.rail, txt: plan.txt, font: plan.fontSize, spacing: plan.spacing, border: plan.border, padL: plan.padL, padX: plan.padX, padY: plan.padY, content: plan.contentHeight, gap: plan.gap, lead: [lead.kind, lead.txt, lead.icon, lead.w, lead.h, lead.color], colors: plan.colors, look: [c.look.id, c.look.weight, c.look.radius, c.look.accentLeft, c.look.boxShadow, c.look.textShadow, c.k], images: [ref, valueRef] })
     margin = OvDraw_whole(8 * c.k) + 2
     sprite = OvDraw_sprite(c, key, plan.w, plan.h, margin, plan)
     x0 = OvDraw_whole(x)
@@ -483,7 +488,7 @@ sub OvDraw_paintBadgeAt(c as object, plan as object, x as float, y as float)
         chipHeight = OvDraw_whole(lead.h)
         chipRadius = plan.fontSize * 0.2
         OvDraw_shape(c, OvDraw_whole(cx), OvDraw_whole(ly), OvDraw_whole(lead.w), chipHeight, [chipRadius, chipRadius, chipRadius, chipRadius], OvDraw_colorOf(lead.color), 0, "")
-        OvDraw_text(c, lead.txt, cx + 0.35 * plan.fontSize, ly + (lead.h - plan.fontSize) / 2, plan.fontSize, plan.font, OvDraw_colorOf(lead.ink))
+        OvDraw_trackedText(c, lead.txt, cx + 0.35 * plan.fontSize, ly + (lead.h - plan.fontSize) / 2, plan.fontSize, plan.font, OvDraw_colorOf(lead.ink), plan.spacing)
     else if lead.kind = "mark" then
         OvDraw_text(c, lead.txt, cx, ly, lead.h, lead.font, OvDraw_colorOf(colors.ink))
     end if
@@ -495,9 +500,9 @@ sub OvDraw_paintBadgeAt(c as object, plan as object, x as float, y as float)
             if offset < 1 then offset = 1
             shadowColor = OvDraw_colorOf(textShadow.color)
             shadowColor.a = shadowColor.a * 0.6
-            OvDraw_text(c, plan.txt, textX + textShadow.x * c.k, cy + offset, plan.contentHeight, plan.font, shadowColor)
+            OvDraw_trackedText(c, plan.txt, textX + textShadow.x * c.k, cy + offset, plan.contentHeight, plan.font, shadowColor, plan.spacing)
         end if
-        OvDraw_text(c, plan.txt, textX, cy, plan.contentHeight, plan.font, OvDraw_colorOf(colors.ink))
+        OvDraw_trackedText(c, plan.txt, textX, cy, plan.contentHeight, plan.font, OvDraw_colorOf(colors.ink), plan.spacing)
     end if
 end sub
 
@@ -518,14 +523,14 @@ end sub
 
 ' ---------- The watch-status corner ----------
 
-' The episodes left on a dark disc the check's size, in its place (the web's CardWatchStatus):
-' black 65% with a 1 px white 20% ring and the number in Bold at half the disc, widening for
-' more digits.
+' The episodes left on a dark capsule the check's size, in its place (the web's CardWatchStatus,
+' Silo Android #882): black 65% with a 1 px white 20% ring and the number in Bold at half its height
+' (11 at the reference width), 0.4 em padded and 1 px bordered each side, never narrower than tall.
 sub OvDraw_countDisc(c as object, spec as object)
     size = Int(spec.check.size)
     label = Int(spec.remaining).ToStr()
     numberFont = OvDraw_font(700, Int(size / 2))
-    width = OvDraw_textWidth(numberFont, label) + 0.8 * size / 2
+    width = OvDraw_textWidth(numberFont, label) + 0.8 * Int(size / 2) + 2
     if width < size then width = size
     w = OvDraw_whole(width)
     if c.look = invalid then c.look = Ovl_presetLook("classic")
@@ -770,12 +775,41 @@ function OvDraw_textWidth(face as dynamic, value as string) as float
     return face.GetOneLineWidth(value, 100000)
 end function
 
+' The letter spacing look's text takes at size px (the web's tracking-wide / tracking-widest), or 0
+' when it would round away: under a third of a pixel each letter is drawn as one string.
+function OvDraw_spacing(look as object, size as integer) as float
+    t = look.tracking
+    if t = invalid then return 0.0
+    spacing = t * size
+    if spacing < 0.34 then return 0.0
+    return spacing
+end function
+
+' value's width with spacing after every letter, as CSS letter-spacing measures it.
+function OvDraw_trackedWidth(face as dynamic, value as string, spacing as float) as float
+    if value = "" then return 0
+    return OvDraw_textWidth(face, value) + spacing * Len(value)
+end function
+
+' Text as OvDraw_text, spacing px after each letter: each letter at the width of the text before it
+' (keeping the face's own advances) plus the spacing so far.
+sub OvDraw_trackedText(c as object, value as string, x as float, y as float, height as float, face as object, tint as object, spacing as float)
+    if spacing <= 0 or Len(value) < 2 then
+        OvDraw_text(c, value, x, y, height, face, tint)
+        return
+    end if
+    for i = 1 to Len(value)
+        ch = Mid(value, i, 1)
+        if ch <> " " then OvDraw_text(c, ch, x + OvDraw_textWidth(face, Left(value, i - 1)) + (i - 1) * spacing, y, height, face, tint)
+    end for
+end sub
+
 ' value cut to fit width with an ellipsis, "" when not even that fits.
-function OvDraw_fit(face as object, value as string, width as float) as string
-    if OvDraw_textWidth(face, value) <= width then return value
+function OvDraw_fit(face as object, value as string, width as float, spacing as float) as string
+    if OvDraw_trackedWidth(face, value, spacing) <= width then return value
     for count = Len(value) - 1 to 1 step -1
         cut = Left(value, count).Trim() + "…"
-        if OvDraw_textWidth(face, cut) <= width then return cut
+        if OvDraw_trackedWidth(face, cut, spacing) <= width then return cut
     end for
     return ""
 end function

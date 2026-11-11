@@ -36,15 +36,30 @@ function CardOverlay_hasProgress(c as object) as boolean
     return p > 0.01 and p < 0.995
 end function
 
-' The watched check's corner on a card of shape, w px wide (MediaCardItem.layout; the episode
-' still's fixed 44 px disc 12 px in): { size, inset }. The top row stops short of it and the
-' episodes-left disc takes its place.
+' The watch-status corner on a card of shape, w px wide (Silo Android #882, the web's
+' CardWatchStatus): { size, inset }. Poster-shaped art (posters, square cards) draws it at the web's
+' 22 and 8 at the 185 px reference poster width; landscape cards never draw it (size 0); the episode
+' rail keeps its own 44 px check 12 px in (DetailEpisodeItem). The top badge row stops short of it
+' and the episodes-left count takes its place.
 function CardOverlay_check(shape as string, w as integer) as object
     if shape = "episode" then return { size: 44, inset: 12 }
-    bs = Int(w * 0.24)
-    if bs < 40 then bs = 40
-    if bs > 64 then bs = 64
-    return { size: bs, inset: Int(w * 0.06) }
+    if shape = "landscape" or w <= 0 then return { size: 0, inset: 0 }
+    unit = w / 185.0
+    return { size: Int(22 * unit + 0.5), inset: Int(8 * unit + 0.5) }
+end function
+
+' What a card's top-right corner shows (Silo Android #882 CardWatchStatus.of): "check" on a watched
+' title, "count" for the episodes a started, unfinished series or season has left (remaining, from
+' Content_episodesLeft), "" for nothing. Only poster-shaped art (portrait or square) shows it, whether
+' or not badges are on.
+function CardOverlay_status(watched as dynamic, remaining as dynamic, portrait as boolean) as string
+    if not portrait then return ""
+    if (Type(watched) = "Boolean" or Type(watched) = "roBoolean") and watched then return "check"
+    n = 0
+    t = Type(remaining)
+    if t = "roInt" or t = "Integer" or t = "roInteger" or t = "LongInteger" or t = "roFloat" or t = "Float" then n = remaining
+    if n > 0 then return "count"
+    return ""
 end function
 
 ' The key of item c's overlay image on a card of shape, w x h, "" for nothing to draw: the
@@ -60,7 +75,7 @@ function CardOverlay_keyFor(c as object, shape as string, w as integer, h as int
         if c.markedBadge <> "" then return ""
     end if
     count = 0
-    if shape = "poster" and c.watched <> true then count = c.remaining
+    if CardOverlay_status(c.watched, c.remaining, shape = "poster") = "count" then count = c.remaining
     doc = "none"
     if c.overlayKey <> "" then
         d = CardOverlay_docKey()
@@ -78,7 +93,7 @@ end function
 ' those that are).
 function CardOverlay_requestFor(c as object, key as string, shape as string, w as integer, h as integer, progress as boolean, prefetch as boolean) as object
     count = 0
-    if shape = "poster" and c.watched <> true then count = c.remaining
+    if CardOverlay_status(c.watched, c.remaining, shape = "poster") = "count" then count = c.remaining
     doc = Mid(key, 3, Instr(1, key, "_") - 3)
     return { key: key, doc: doc, data: c.overlayData, w: w, h: h, shape: shape, progress: progress, remaining: count, radius: 16, check: CardOverlay_check(shape, w), prefetch: prefetch }
 end function
