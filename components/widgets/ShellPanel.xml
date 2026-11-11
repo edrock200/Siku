@@ -4,10 +4,11 @@
   panel with a hairline, an uppercase header, focus-inverting rows and a footer hint.
   Fields:
     header    uppercase header text ("MOVIE LIBRARIES", "FOR YOU", "SORT BY")
-    rows      array of {id, label, icon?, trailing?: "check"|"chevron"|"", sub?} ; id "-" draws a divider
+    rows      array of {id, label, icon?, trailing?: "check"|"chevron"|"", sub?, destructive?} ; id "-" draws a
+              divider; destructive draws the label and icon in the error red at rest
     footer    hint text under the rows ("Press opens the section · Menu closes")
     width     panel width (460 default; 300 for a flyout; 480 for the profile menu)
-    profile   optional {name, sub, avatar} header block (profile dropdown)
+    profile   optional {name, sub, avatar} header block (profile dropdown), no divider under it
     focusIndex  (in/out) focused row index
     maxRows   when > 0, at most this many rows are drawn; the window follows the focus and the
               header shows "↑" / "↓" when rows are hidden above / below (long filter lists)

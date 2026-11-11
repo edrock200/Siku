@@ -461,7 +461,7 @@ sub openProfilePanel()
     if role = "" then role = "member"
     server = Str_orEmpty(s.serverName)
     if server = "" then server = Url_host(Str_orEmpty(s.serverUrl))
-    ' With several accounts on this server, "role · server" does not say whose profile it is: the
+    ' With several accounts on this server, "server · role" does not say whose profile it is: the
     ' account's username replaces the role (Silo Android #795).
     if not Session_isTemporary(s) and Accounts_countOn(Str_orEmpty(s.serverUrl)) > 1 then
         name = Accounts_username(s)
@@ -473,7 +473,8 @@ sub openProfilePanel()
     m.panelMain.width = 480
     m.panelMain.header = ""
     m.panelMain.footer = ""
-    m.panelMain.profile = { name: Str_orEmpty(s.profileName), "sub": role + " · " + server, avatar: Str_orEmpty(s.profileAvatar) }
+    ' The server first, then the role or username (Silo Android #883, as tvOS and Roku).
+    m.panelMain.profile = { name: Str_orEmpty(s.profileName), "sub": server + " · " + role, avatar: Str_orEmpty(s.profileAvatar) }
     m.panelMain.rows = profilePanelRows()
     m.panelMain.focusIndex = 0
     m.panelMain.translation = [1920 - 88 - 480, 132]
@@ -484,10 +485,10 @@ sub openProfilePanel()
     m.panelMain.setFocus(true)
 end sub
 
-' The profile menu's rows (Silo Android #881, Android TV's TvProfileDropdown): History,
+' The profile menu's rows (Silo Android #881/#883, Android TV's TvProfileDropdown): History,
 ' Requests (while the server enables it, Silo Android #782), Notifications (a Siku addition), then
 ' Settings, Connect a Phone (a Siku addition), the profile row, Change Account directly under it,
-' and Sign Out. Watchlist and Favorites live under For You (Silo Android
+' and Sign Out in the destructive red. Watchlist and Favorites live under For You (Silo Android
 ' #786). Focus opens on the first row.
 function profilePanelRows() as object
     rows = [{ id: "history", label: Tx("History"), icon: "history" }]
@@ -503,7 +504,7 @@ function profilePanelRows() as object
         rows.Push({ id: "add_profile", label: Tx("Add Profile"), icon: "person_add" })
     end if
     rows.Push({ id: "change_account", label: Tx("Change Account"), icon: "person" })
-    rows.Push({ id: "sign_out", label: Tx("Sign Out"), icon: "logout" })
+    rows.Push({ id: "sign_out", label: Tx("Sign Out"), icon: "logout", destructive: true })
     return rows
 end function
 

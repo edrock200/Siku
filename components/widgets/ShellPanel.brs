@@ -97,9 +97,10 @@ sub rebuild()
         m.profileSub.text = UCase(Str_orEmpty(prof["sub"]))
         m.profileSub.translation = [84, 36]
         m.profileSub.width = w - m.padX * 2 - 84
-        m.profileDivider.translation = [0, 84]
-        m.profileDivider.width = w - m.padX * 2
-        y = y + 100
+        ' No divider between the header and the first row (Silo Android #883, as tvOS and Roku):
+        ' the rows' own divider splits the two groups.
+        m.profileDivider.visible = false
+        y = y + 92
     else
         m.profileHead.visible = false
     end if
@@ -243,7 +244,7 @@ function drawRow(g as object, r as object, y as integer, w as integer) as intege
             trailing.visible = false
         end if
         trailing.translation = [w - m.padX * 2 - 16 - 28, (m.rowH - 28) / 2]
-        m.rowMeta.Push({ divider: false, id: Str_orEmpty(r.id) })
+        m.rowMeta.Push({ divider: false, id: Str_orEmpty(r.id), destructive: Panel_isTrue(r.destructive) })
         y = y + m.rowH + 4
     end if
     return y
@@ -283,9 +284,13 @@ sub applyFocus()
                 trailing.blendColor = Theme().colors.onInk
                 sub1.color = "0x000000B3"
             else
-                lbl.color = Theme().colors.ink
+                ' A destructive row (Sign Out) is the error red at rest and inverts like the
+                ' others on focus (Silo Android #883).
+                ink = Theme().colors.ink
+                if Panel_isTrue(m.rowMeta[i].destructive) then ink = Theme().colors.error
+                lbl.color = ink
                 Label_setFont(lbl, "medium", 26)
-                icon.blendColor = Theme().colors.ink
+                icon.blendColor = ink
                 trailing.blendColor = "0xEDEDED9E"
                 sub1.color = "0xEDEDED9E"
             end if
@@ -311,6 +316,13 @@ sub moveFocus(delta as integer)
         m.top.rowFocused = i
     end if
 end sub
+
+' A row flag that may be missing (pitfall 16: comparing invalid with a boolean throws on a Roku).
+function Panel_isTrue(v as dynamic) as boolean
+    t = Type(v)
+    if t = "Boolean" or t = "roBoolean" then return v
+    return false
+end function
 
 ' Initials for an avatar fallback: "Ed Smith" -> "ES".
 function Shell_initials(name as string) as string
