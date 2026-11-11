@@ -155,14 +155,19 @@ clears one); GET /mock/switch lists them.
                                  A start or replan that names it logs SUBTITLE requested unplayable
   credits_twice=1                every version's marker_segments carry two credits ranges (duration-600..-420
                                  and duration-300..end; the singular credits field the first), Silo Android #694
-  card_overlays=1|<preset>|rails|combined|off|404|500
+  card_overlays=1|<preset>[+<variant>]|<variant>|off|404|500
                                  GET /api/v2/settings/overlay-config (Siku's card overlays): without the
                                  switch the server default is off ({"enabled": false}); 1 turns it on with
                                  the classic look, a preset name (minimal, classic, vibrant, pill, square,
-                                 plate, band) picks that look, rails adds IMDb on the left edge, show status
-                                 on the right edge and year/runtime/content rating at the bottom, combined
-                                 turns on resolution_hdr_audio (hiding resolution, hdr and audio), off sends
-                                 enabled false, 404 an older server without the endpoint, 500 a failure.
+                                 plate, band) picks that look, a variant the badges (combine: plate+rails):
+                                 rails adds IMDb and RT on the left edge, show status and TMDB on the right
+                                 edge and year/runtime/content rating at the bottom; corners long badges in
+                                 both bottom corners (rows wrap) and IMDb stored top-right (the right rail);
+                                 combined turns on resolution_hdr_audio (hiding resolution, hdr and audio),
+                                 off sends enabled false, 404 an older server without the endpoint, 500 a
+                                 failure. Switched on, it also marks Northern Lights, The Quiet Harbor, Iron
+                                 Orchard and all of Harbor Lane watched (the check) and Orbital S1E1-2 (its
+                                 poster's episodes left).
                                  With the switch on, movies carry a fuller overlay_summary (release type,
                                  HDR/DV, Atmos, codecs) and ratings, and series a watched/unplayed count
                                  (the started-series poster's episodes left). Log: OVERLAY CONFIG <variant>
@@ -376,6 +381,13 @@ def overlay_document(preset, variant=""):
         items.update({"rating_imdb": {"enabled": True, "position": "left-edge"}, "rating_rt": {"enabled": True, "position": "left-edge"},
                       "show_status": {"enabled": True, "position": "right-edge"}, "year": {"enabled": True, "position": "bottom-left"},
                       "runtime": {"enabled": True, "position": "bottom-left"}, "content_rating": {"enabled": True, "position": "bottom-right"}})
+    if variant == "rails":
+        items.update({"rating_tmdb": {"enabled": True, "position": "right-edge"}})
+    if variant == "corners":
+        # Long badges in both bottom corners, so rows wrap; a stored top-right reads as the right rail.
+        items.update({"studio": {"enabled": True, "position": "bottom-right"}, "original_language": {"enabled": True, "position": "bottom-left"},
+                      "year": {"enabled": True, "position": "bottom-left"}, "content_rating": {"enabled": True, "position": "bottom-right"},
+                      "rating_imdb": {"enabled": True, "position": "top-right"}, "rating_rt": {"enabled": True, "position": "left-edge"}})
     if variant == "combined":
         items.update({"resolution_hdr_audio": {"enabled": True, "position": "top-left"}, "rating_imdb": {"enabled": True, "position": "bottom-right"}})
     if variant == "profile":
@@ -385,6 +397,39 @@ def overlay_document(preset, variant=""):
         items.setdefault("resolution", {"enabled": True, "position": "top-left"})
         items["resolution"]["valueImages"] = {"4K": OVERLAY_IMAGE_REF}
     return {"version": 2, "preset": preset, "order": [], "items": items}
+
+
+OVERLAY_PRESETS = ("minimal", "classic", "vibrant", "pill", "square", "plate", "band")
+OVERLAY_VARIANTS = ("rails", "combined", "corners")
+# With card_overlays on, these titles start watched (the poster's check) and Orbital has two episodes
+# watched (its poster shows the episodes left); Harbor Lane is watched to the end (a check).
+OVERLAY_WATCHED_MOVIES = ("movie:northern-lights", "movie:the-quiet-harbor", "movie:iron-orchard")
+
+
+def overlay_switch_parts(value):
+    """card_overlays=<preset>[+<variant>] (or <variant>[+<preset>]): the look and the badge set."""
+    variant, preset = "", "classic"
+    for part in str(value or "").split("+"):
+        part = part.strip()
+        if part in OVERLAY_VARIANTS:
+            variant = part
+        elif part in OVERLAY_PRESETS:
+            preset = part
+    return variant, preset
+
+
+def overlay_seed_watched():
+    """Marks the overlay switch's watched titles and episodes (once a run, when the switch is on)."""
+    if not overlays_on() or STATE.get("overlay_seeded"):
+        return
+    STATE["overlay_seeded"] = True
+    STATE["watched"].update(OVERLAY_WATCHED_MOVIES)
+    for title, seasons, eps in SERIES:
+        cid = "series:%s" % title.lower().replace(" ", "-")
+        if title == "Orbital":
+            STATE["watched"].update({episode_id(cid, 1, 1), episode_id(cid, 1, 2)})
+        if title == "Harbor Lane":
+            STATE["watched"].update(episode_id(cid, sn, e) for sn in range(1, seasons + 1) for e in range(1, eps + 1))
 
 
 def overlay_config(handler):
@@ -397,8 +442,7 @@ def overlay_config(handler):
         return handler.problem(500, "internal", "Overlay config failed")
     if not overlays_on():
         return handler.send(200, {"enabled": False, "defaults": None, "images": []})
-    variant = v if v in ("rails", "combined") else ""
-    preset = v if v in ("minimal", "classic", "vibrant", "pill", "square", "plate", "band") else "classic"
+    variant, preset = overlay_switch_parts(v)
     images = [{"ref": OVERLAY_IMAGE_REF, "width": 96, "height": 40}] if STATE["switches"].get("overlay_images") else []
     return handler.send(200, {"enabled": True, "defaults": json.dumps(overlay_document(preset, variant)), "images": images})
 
@@ -2507,6 +2551,7 @@ class Handler(BaseHTTPRequestHandler):
                         STATE["switches"].pop(k, None)
                     else:
                         STATE["switches"][k] = v
+                overlay_seed_watched()
                 print("SWITCHES", json.dumps(STATE["switches"]), flush=True)
             return self.send(200, STATE["switches"])
         if re.match(r"^/api/v2/stream/[^/]+/subtitles/\d+\.vtt$", p):
@@ -3916,6 +3961,7 @@ def main():
     for sw in args.switch:
         k, _, v = sw.partition("=")
         STATE["switches"][k.strip()] = v.strip() or "1"
+    overlay_seed_watched()
     if args.theme_music:
         d = SETTINGS_DEFS["ui.theme_music_enabled"]
         SETTINGS_DEFS["ui.theme_music_enabled"] = (d[0], True) + tuple(d[2:])
