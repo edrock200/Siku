@@ -3,6 +3,20 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.46
+
+Four changes from Silo's Android TV app (November 11, 2026).
+
+**New**
+- **Shared Rokus start at Change Account.** When Siku asks who's watching at each start (Profile Selection set to Every time, or a timed choice that ran out) and more than one account is saved on this Roku, it now opens Change Account instead of the last account's profiles, so the next person doesn't land in someone else's account. Choosing an account opens its only profile, or its profile picker. With one saved account, or Profile Selection set to Automatic, nothing changes.
+- **Add Profile.** The profile menu now shows Switch Profile only when the account has more than one profile. With a single profile it offers Add Profile instead (unless the server allows just one), which asks the main profile's PIN if it has one and then lets you name the new profile, give it a PIN and mark it as a child profile. Change Account now sits right under it.
+
+**Better**
+- **Watched marks like Silo's.** A poster's top-right corner shows a small green check on a watched title, or how many episodes are left on a show you've started, whether or not badges are on. Badges along the bottom wrap onto a second row when both corners are full and stay clear of the progress bar, and badge text uses each style's letter spacing. Wide Continue Watching cards no longer show the check.
+- **Profile menu.** The line under your name names the server first, Sign Out is shown in red, and the extra divider under the header is gone.
+
+**Needs testing on a real Roku:** creating a profile from the new form (the simulator can't type on the Roku keyboard), the new check and episode count at TV distance, the red Sign Out and the new Add Profile icon, and starting at Change Account with a content link.
+
 ## v0.1.45
 
 Siku in more languages (November 10, 2026).
