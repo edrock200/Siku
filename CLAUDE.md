@@ -251,7 +251,7 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   change and sign-out answers 403; log `PASSWORD_CHANGE_REQUIRED 403 <method> <path>`); clear it with
   `curl -X POST -d '{"password_change_required": null}' localhost:<port>/mock/switch`, then Retry shows the profiles.
 - Accounts (Silo Android #795, `Accounts.brs`, `ChangeAccountScreen`; registry layout 2: `session` + `accountId`,
-  `servers` [{url,name,id}], `accounts` [{id,url,userid,username,profiles,added,used,expired,session?}], at most 12 / 9000
+  `servers` [{url,name,id}], `accounts` [{id,url,userid,username,profiles,maxprofiles?,added,used,expired,session?}], at most 12 / 9000
   bytes, LRU accounts lose their stored sign-in first): `[siku-accounts] migration layout=1->2 accounts= active= servers=`
   (or `migration failed: … did not read back; layout 1 kept`), `added an account on this server (accounts=N)`, `switched
   account=signed_in|sign_in_again|none profile=kept|ask|none accounts_on_server=N`, `signed out of an account; accounts left
@@ -323,6 +323,18 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   text; `i18n/missing.json` lists gaps). Server text: `TxKey("@home.section.*"|"error.*")`. MainScene prints
   `[siku-i18n]` lines when it loads a language. Language: profile `ui.app_language` (mock: settings revision 28), else the
   device locale; DEBUG builds take `debugLang=<tag>` (e.g. `de`). After adding user-visible text, rerun the build tool.
+- Change Account at launch and the profile menu's profile row (Silo Android #880/#881/#883; adapted from silo-roku
+  4a22785 / 431c1f1): a launch that asks (Every Time, a lapsed timer) with two or more saved accounts shows Change
+  Account in the picker's place (`ProfileLaunch_startScreen`; params `root` + `chooseAccount`; the CURRENT account then
+  opens like any other): `[siku-accounts] launch asks: change_account|picker (accounts=N link_waiting=)`, `launch choice:
+  the open account`. A held content link keeps the picker route. The menu's row follows the open account's cached
+  `profiles` / `maxprofiles` (`Accounts_profileMenuRow`; refreshed by ShellScreen each time a profile opens):
+  `[siku-profiles] menu row=switch_profile|add_profile|none profiles=<n|unknown> max=<n|unknown> handoff=`. Add Profile
+  opens `NewProfileScreen` (primary profile's PIN first): `[siku-profiles] add profile: asking the primary profile's PIN`,
+  `form shown`, `PIN cancelled`, `no primary profile; showing the picker`, `create sent child= pin=`, `create outcome=
+  created|unconfirmed|verify|refused|failed status=` (never the name or PIN). Mock: `--switch max_profiles=<n>|none`
+  (default 6), `profiles=1`, `primary_pin=1` (log `PROFILE CREATE as= token= child= pin= answer=`). Roku has no
+  background, so "return from the background" is not ported; the simulator cannot type in the form's keyboard.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 
