@@ -369,7 +369,8 @@ end function
 ' The status the contract's value keys use: Returning, Ended, Cancelled or Upcoming, else the value
 ' as sent, "" for none.
 function Ovl_showStatusKey(value as dynamic) as string
-    status = Ovl_text(value).Trim()
+    ' Matched as sent, untrimmed, as the web and Silo Android #882 do.
+    status = Ovl_text(value)
     lo = LCase(status)
     if lo = "" then return ""
     if Ovl_has(["returning", "returning series", "continuing", "in_production", "in production"], lo) then return "Returning"
@@ -689,22 +690,86 @@ function Ovl_resolve(prefs as object, data as object, look as object, copy as ob
     return out
 end function
 
-' The two bottom corners as rows from the top, each { lt, rt } (invalid where a corner has fewer),
-' so the shorter corner lines up with the bottom and a badge shares its width only with the one
-' beside it.
-function Ovl_bottomRows(lt as object, rt as object) as object
-    levels = lt.Count()
-    if rt.Count() > levels then levels = rt.Count()
-    rows = []
-    for level = 0 to levels - 1
-        rows.Push({ lt: Ovl_at(lt, level - levels + lt.Count()), rt: Ovl_at(rt, level - levels + rt.Count()) })
+' Where the two bottom corners' badges go (Silo Android #882 OverlayLayoutMath.bottomRows, the web's
+' BottomRows): one row per level counted from the bottom, so the shorter corner lines up with the
+' bottom and a badge shares its width only with the badge at the same height in the other corner.
+' A pair that fits (left + gap + right <= available) shares its line, both aligned to its bottom; a
+' pair that does not wraps, the left badge on a line above the right one, which stays at the end.
+' lw/lh and rw/rh are each corner's badge widths and heights, top to bottom, measured against
+' available. Gives { lx, ly, rx, ry, h }: each badge's offset from the block's top-left, and the
+' block's height.
+function Ovl_bottomLayout(lw as object, lh as object, rw as object, rh as object, available as float, gap as float, stackGap as float) as object
+    lc = lw.Count()
+    rc = rw.Count()
+    out = { lx: [], ly: [], rx: [], ry: [], h: 0.0 }
+    for i = 0 to lc - 1
+        out.lx.Push(0.0)
+        out.ly.Push(0.0)
     end for
-    return rows
+    for i = 0 to rc - 1
+        out.rx.Push(0.0)
+        out.ry.Push(0.0)
+    end for
+    levels = lc
+    if rc > levels then levels = rc
+    y = 0.0
+    for level = 0 to levels - 1
+        if level > 0 then y = y + stackGap
+        l = lc - levels + level
+        r = rc - levels + level
+        if l >= 0 and r >= 0 and not Ovl_fitsOneLine(lw[l], rw[r], available, gap) then
+            out.lx[l] = 0.0
+            out.ly[l] = y
+            y = y + lh[l] + stackGap
+            out.rx[r] = available - rw[r]
+            out.ry[r] = y
+            y = y + rh[r]
+        else
+            lineHeight = 0.0
+            if l >= 0 then lineHeight = lh[l]
+            if r >= 0 and rh[r] > lineHeight then lineHeight = rh[r]
+            if l >= 0 then
+                out.lx[l] = 0.0
+                out.ly[l] = y + lineHeight - lh[l]
+            end if
+            if r >= 0 then
+                out.rx[r] = available - rw[r]
+                out.ry[r] = y + lineHeight - rh[r]
+            end if
+            y = y + lineHeight
+        end if
+    end for
+    out.h = y
+    return out
 end function
 
-function Ovl_at(list as object, index as integer) as dynamic
-    if index < 0 or index >= list.Count() then return invalid
-    return list[index]
+' Whether a left and a right bottom badge share one row.
+function Ovl_fitsOneLine(leftWidth as float, rightWidth as float, available as float, gap as float) as boolean
+    return leftWidth + gap + rightWidth <= available + 0.01
+end function
+
+' How far a card's bottom badges sit from its bottom edge, in px, for shape at scale k (Silo Android
+' #882 overlayInsets): a poster the edge inset (8), a landscape card 24 (Android TV's Wide variant)
+' and an episode still 12 (its side inset and thin bar). Over a progress bar the row lifts one edge
+' step more (8), and at least that far clear of Siku's bar, which floats barTop px above the
+' bottom (MediaCardItem: 6 px tall, 12 px up); the episode rail never lifts, as on Android TV.
+function Ovl_bottomInset(shape as string, k as float, progress as boolean, barTop as float) as float
+    edge = 8 * k
+    base = edge
+    if shape = "landscape" then base = 24 * k
+    if shape = "episode" then return 12 * k
+    if not progress then return base
+    lifted = base + edge
+    if lifted < barTop + edge then lifted = barTop + edge
+    return lifted
+end function
+
+' How far the top badge row stops short of the right edge (Silo Android #882: EDGE_INSET +
+' WATCH_STATUS_RESERVE on posters): the watch-status corner's inset and size and an edge gap (8 at
+' scale k), or just the edge inset on a card that draws no status (checkSize 0).
+function Ovl_topRowEnd(checkInset as float, checkSize as float, k as float) as float
+    if checkSize <= 0 then return 8 * k
+    return checkInset + checkSize + 8 * k
 end function
 
 ' How many of a band's marks (widths in px, in order) fit whole in width with gap around a divider
@@ -724,7 +789,8 @@ end function
 ' ---------- Looks ----------
 
 ' A preset's look (web presets.ts) with the style's overrides (style.ts), at the reference width:
-' { id, band, sourceChips, weight, uppercase, fontSize, padX, padY, radius (-1 a capsule),
+' { id, band, sourceChips, weight, uppercase, tracking (letter spacing, a share of the font size:
+' Tailwind tracking-wide 0.025, minimal's and square's tracking-widest 0.1), fontSize, padX, padY, radius (-1 a capsule),
 ' borderWidth, accentLeft, textShadow, boxShadow, iconSize, iconGap, preferIcon, stackGap,
 ' strategy ("bg" | "border" | "text"), fill, textColor, borderColor, solid, styled }.
 function Ovl_lookOf(preset as string, st as dynamic) as object
@@ -778,12 +844,17 @@ end function
 
 function Ovl_presetLook(preset as string) as object
     shadow = { x: 0, y: 1, blur: 2, color: "#000000D9" }
-    if preset = "minimal" then return Ovl_preLook(preset, 600, 9, 4, 0, 8, 0, 10, 4, false, 2, "text", shadow, invalid)
+    if preset = "minimal" then
+        out = Ovl_preLook(preset, 600, 9, 4, 0, 8, 0, 10, 4, false, 2, "text", shadow, invalid)
+        out.tracking = 0.1
+        return out
+    end if
     if preset = "vibrant" then return Ovl_preLook(preset, 700, 10, 8, 2, 10, 0, 12, 4, true, 4, "bg", invalid, { x: 0, y: 1, blur: 2, color: "#00000040" })
     if preset = "pill" then return Ovl_preLook(preset, 600, 10, 10, 4, -1, 1, 12, 4, true, 4, "bg", invalid, invalid)
     if preset = "square" then
         out = Ovl_preLook(preset, 700, 9, 6, 2, 8, 0, 10, 4, false, 2, "border", invalid, invalid)
         out.accentLeft = 2
+        out.tracking = 0.1
         return out
     end if
     if preset = "plate" then
@@ -800,7 +871,7 @@ function Ovl_presetLook(preset as string) as object
 end function
 
 function Ovl_preLook(id as string, weight as integer, fontSize as float, padX as float, padY as float, radius as float, borderWidth as float, iconSize as float, iconGap as float, preferIcon as boolean, stackGap as float, strategy as string, textShadow as dynamic, boxShadow as dynamic) as object
-    return { id: id, band: false, sourceChips: false, weight: weight, uppercase: true, fontSize: fontSize, padX: padX, padY: padY, radius: radius, borderWidth: borderWidth, accentLeft: 0, textShadow: textShadow, boxShadow: boxShadow, iconSize: iconSize, iconGap: iconGap, preferIcon: preferIcon, stackGap: stackGap, strategy: strategy }
+    return { id: id, band: false, sourceChips: false, weight: weight, uppercase: true, tracking: 0.025, fontSize: fontSize, padX: padX, padY: padY, radius: radius, borderWidth: borderWidth, accentLeft: 0, textShadow: textShadow, boxShadow: boxShadow, iconSize: iconSize, iconGap: iconGap, preferIcon: preferIcon, stackGap: stackGap, strategy: strategy }
 end function
 
 ' Whether a look's rail badges sit flush against the card's edge as tabs: a filled look's do; bare

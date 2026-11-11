@@ -18,6 +18,7 @@ sub init()
     m.playGlyph = m.top.findNode("playGlyph")
     m.badgeBg = m.top.findNode("watchedBg")
     m.badgeIcon = m.top.findNode("watchedIcon")
+    m.badgeRing = m.top.findNode("watchedRing")
     m.border = m.top.findNode("border")
     m.explore = m.top.findNode("explore")
     m.exploreCircle = m.top.findNode("exploreCircle")
@@ -120,7 +121,6 @@ sub onContent()
     m.title.text = c.title
     ' Every card shows its title and details (the caption choice is retired, Silo Android #700).
     m.subtitle.text = c.subtitle
-    m.badge.visible = c.watched = true
     m.playGlyph.visible = c.hasField("playGlyph") and c.playGlyph = true
     ' A trailer card without an image keeps a plain tile behind its play button (the title is below).
     if m.playGlyph.visible then m.placeholderText.visible = false
@@ -268,17 +268,26 @@ sub layout()
         m.fill.height = 6
     end if
 
-    ' Watched badge: 24% of the width, clamped 40..64 px, inset 6%.
-    bs = Int(w * 0.24)
-    if bs < 40 then bs = 40
-    if bs > 64 then bs = 64
-    inset = Int(w * 0.06)
-    m.badge.translation = [w - bs - inset, inset]
-    m.badgeBg.width = bs
-    m.badgeBg.height = bs
-    m.badgeIcon.width = bs * 0.7
-    m.badgeIcon.height = bs * 0.7
-    m.badgeIcon.translation = [bs * 0.15, bs * 0.15]
+    ' Watch status (Silo Android #882, the web's CardWatchStatus): the check on a watched title,
+    ' 22 at the 185 px reference poster width and 8 in, on poster-shaped art only; a started
+    ' series' episodes left take its place in the overlay image (CardOverlayCard.brs).
+    watched = false
+    if c <> invalid then watched = c.watched = true
+    corner = CardOverlay_check(artAspect(), Int(w))
+    m.badge.visible = corner.size > 0 and CardOverlay_status(watched, 0, h >= w) = "check"
+    if m.badge.visible then
+        bs = corner.size
+        m.badge.translation = [w - bs - corner.inset, corner.inset]
+        m.badgeRing.width = bs
+        m.badgeRing.height = bs
+        m.badgeBg.width = bs - 2
+        m.badgeBg.height = bs - 2
+        m.badgeBg.translation = [1, 1]
+        icon = Int(bs * 0.62 + 0.5)
+        m.badgeIcon.width = icon
+        m.badgeIcon.height = icon
+        m.badgeIcon.translation = [Int((bs - icon) / 2), Int((bs - icon) / 2)]
+    end if
 
     if m.isBoxSet then layoutBoxSet(w, h)
     if m.isBoxSet or m.isMarked then layoutPill()

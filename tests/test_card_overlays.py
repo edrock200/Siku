@@ -164,11 +164,8 @@ class Document(unittest.TestCase):
              lambda v: v["topleft"] == ["audio_channels"] and v["leftedge"] == []),
         ])
 
-    def test_bottom_rows_and_band(self):
+    def test_band(self):
         check_cases(self, FILES, [
-            ("shorter corner lines up with the bottom", "Ovl_bottomRows", [["a", "b", "c"], ["x"]],
-             [{"lt": "a", "rt": None}, {"lt": "b", "rt": None}, {"lt": "c", "rt": "x"}]),
-            ("even rows", "Ovl_bottomRows", [["a"], ["x"]], [{"lt": "a", "rt": "x"}]),
             ("band fits two", "Ovl_bandFit", [[40, 40, 40], 100, 4, 1], 2),
             ("band keeps one that is too wide", "Ovl_bandFit", [[300], 100, 4, 1], 1),
             ("band empty", "Ovl_bandFit", [[], 100, 4, 1], 0),

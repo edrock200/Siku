@@ -18,7 +18,8 @@
   pill and the film count, and its progress bar is the share of its films watched (a full bar too).
   Card overlays (Silo Android TV TvMediaCard CardOverlays): posters and landscape cards carry the
   badges the profile's ui.card_overlays document picks, and a started series or season poster the
-  episodes left in the watched check's place; two Posters made on first use, between the art and the
+  episodes left in the watched check's place (poster-shaped art only: landscape cards show neither,
+  Silo Android #882); two Posters made on first use, between the art and the
   watched check (components/common/CardOverlayCard.brs). Explore all and marked cards carry none.
   markedBadge (optional string field on the content node): the card is outlined at rest and tagged
   with that text in the top-left pill (the movie on screen in a movie page's box set row: "THIS FILM").
@@ -79,9 +80,12 @@
         </Group>
         <!-- The type mark centred on the default artwork: film, TV or headphones, 13% white. -->
         <Poster id="defaultMark" blendColor="0xFFFFFF21" visible="false" />
+        <!-- The watched check (Silo Android #882, the web's CardWatchStatus): an emerald disc with a
+          1 px white 35% ring (drawn opaque: the ring colour over the disc) and a white check. -->
         <Group id="watchedBadge" visible="false">
-          <Poster id="watchedBg" uri="pkg:/images/ui/circle.png" blendColor="0xEDEDEDFF" />
-          <Poster id="watchedIcon" uri="pkg:/images/icons/check.png" blendColor="0x000000FF" />
+          <Poster id="watchedRing" uri="pkg:/images/ui/circle.png" blendColor="0x59D3AAFF" />
+          <Poster id="watchedBg" uri="pkg:/images/ui/circle.png" blendColor="0x00BC7DFF" />
+          <Poster id="watchedIcon" uri="pkg:/images/icons/check.png" blendColor="0xFFFFFFFF" />
         </Group>
         <!-- A box set's "BOX SET" pill (top left) and film count (bottom right), TvMediaCard badge / cornerLabel. -->
         <Group id="boxPill" visible="false">
