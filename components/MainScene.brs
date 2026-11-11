@@ -87,8 +87,12 @@ end sub
 ' shows and a protected profile needs its PIN again. The account stays signed in.
 sub applyLaunchProfileRule()
     s = m.global.session
-    if Str_isEmpty(s.accessToken) or Str_isEmpty(s.profileId) then return
+    if Str_isEmpty(s.accessToken) then return
     if not ProfileLaunch_requiresSelectionAtLaunch() then return
+    ' The launch asks: routeToStart may show Change Account in the picker's place (Silo Android #880),
+    ' also when no profile was left open.
+    m.launchAsks = true
+    if Str_isEmpty(s.profileId) then return
     ' Kept for a content deep link that launched the app: it skips Who's Watching (onLaunchArgs).
     m.launchRuleProfile = { profileId: s.profileId, profileToken: s.profileToken, profileName: s.profileName, profileAvatar: s.profileAvatar, accessToken: s.accessToken }
     c = AA_copy(s)
@@ -132,6 +136,27 @@ sub routeToStart(params = {} as object)
     else if Str_isEmpty(s.accessToken) then
         resetTo("LoginScreen", params)
     else if Str_isEmpty(s.profileId) then
+        ' A launch that asks, with two or more saved accounts: Change Account in the picker's place,
+        ' with no profile open (Silo Android #880, silo-roku 4a22785). Choosing an account, the
+        ' open one included, routes here again: its only profile without a PIN opens, else its
+        ' picker. A held content link waits there until a profile opens (resetTo ShellScreen).
+        if m.launchAsks = true then
+            m.launchAsks = false
+            count = Accounts_list().Count()
+            waiting = m.pendingDeepLink <> invalid
+            start = ProfileLaunch_startScreen(true, count, waiting)
+            shown = "picker"
+            if start = "ChangeAccountScreen" then shown = "change_account"
+            Diag_log("[siku-accounts] launch asks: " + shown + " (accounts=" + count.ToStr() + " link_waiting=" + Session_boolWord(waiting) + ")")
+            if start = "ChangeAccountScreen" then
+                m.askedAtLaunch = false
+                params = AA_copy(params)
+                params.root = true
+                params.chooseAccount = true
+                resetTo("ChangeAccountScreen", params)
+                return
+            end if
+        end if
         ' Asked by the launch rule: show the picker even for a one-profile household.
         if m.askedAtLaunch = true then
             m.askedAtLaunch = false
@@ -305,7 +330,7 @@ end sub
 
 sub Launch_onScreen(name as string)
     if m.launch.done then return
-    gate = name = "ServerConnectScreen" or name = "LoginScreen" or name = "ProfileScreen"
+    gate = name = "ServerConnectScreen" or name = "LoginScreen" or name = "ProfileScreen" or name = "ChangeAccountScreen"
     if gate and not m.launch.dialog then
         m.launch.dialog = true
         Launch_beacon("AppDialogInitiate")

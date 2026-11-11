@@ -63,6 +63,17 @@ function ProfileLaunch_requiresSelectionAtLaunch() as boolean
     return now - since >= b.awaySeconds
 end function
 
+' Where a launch that asks Who's watching starts (Silo Android #880; adapted from Silo-Server/
+' silo-roku 4a22785): with two or more saved accounts (every saved server's, signed in or not),
+' Change Account in the picker's place, so the next person picks their account first; with one,
+' the picker as before. A content link waiting for a profile keeps the picker route, which opens
+' a profile for it without a screen (DeepLink_profileFor). Pure: "ChangeAccountScreen" or
+' "ProfileScreen" (tests/test_account_launch.py).
+function ProfileLaunch_startScreen(asks as boolean, accountCount as integer, linkWaiting as boolean) as string
+    if asks and accountCount >= 2 and not linkWaiting then return "ChangeAccountScreen"
+    return "ProfileScreen"
+end function
+
 ' Choosing a behaviour answers the offer; Automatic keeps no away interval.
 sub ProfileLaunch_setBehavior(id as string)
     c = AA_copy(m.global.prefs)

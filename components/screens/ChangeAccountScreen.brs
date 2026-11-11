@@ -435,6 +435,14 @@ sub chooseAccount(card as object)
     expired = Accounts_isExpired(a) or not Accounts_hasSignIn(a)
     if card.current then
         s = ownSession()
+        if Accounts_signedIn(s) and isTrue(m.top.params.chooseAccount) then
+            ' Shown at launch in the picker's place (Silo Android #880): the open account is
+            ' chosen like any other, so its only profile without a PIN opens, else its picker.
+            Diag_log("[siku-accounts] launch choice: the open account")
+            m.busy = true
+            Nav_reset("@start")
+            return
+        end if
         if Accounts_signedIn(s) then
             ' The open account: its picker, as Android TV's Picker(switched = false).
             Diag_log("[siku-accounts] change account picked the open account")

@@ -15,9 +15,11 @@
   Reached from Who's watching's "Change account" and the profile menu's "Change Account" (where
   Change server / Switch Server were) and Settings > Server. With no account open while another
   has a session it is the start screen (params.root): Back goes from the accounts to the rail,
-  then leaves Siku.
-  Params: { root: bool, signIn: bool (push the sign-in screen once, for a switch that needs it),
-  username: string (with signIn) }
+  then leaves Siku. A launch that asks Who's watching with two or more saved accounts also starts
+  here (params.root + chooseAccount, Silo Android #880): no profile is open, and choosing the open
+  (CURRENT) account opens it like any other, its only profile without a PIN or its picker.
+  Params: { root: bool, chooseAccount: bool, signIn: bool (push the sign-in screen once, for a
+  switch that needs it), username: string (with signIn) }
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="ChangeAccountScreen" extends="BaseScreen">
