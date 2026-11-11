@@ -135,7 +135,8 @@ A screen is `<component name="XScreen" extends="BaseScreen">` (`components/BaseS
   - no server → `ServerConnectScreen`
   - no token, while another saved account has a session → `ChangeAccountScreen` (`root: true`)
   - no token → `LoginScreen`
-  - no profile → `ProfileScreen`
+  - no profile → `ProfileScreen`, or at a launch that asks Who's watching with two or more saved
+    accounts `ChangeAccountScreen` (`root` + `chooseAccount`, Silo Android #880; not with a held content link)
   - otherwise → `ShellScreen`
 - `Nav_close(result)` closes this screen.
 - `Nav_play({ itemId, ... })` opens the player.
@@ -149,7 +150,8 @@ A screen is `<component name="XScreen" extends="BaseScreen">` (`components/BaseS
 | `ServerConnectScreen` | none (`debugLanSelf: true` from the deep link `debugLanSelf=1`: Find servers also accepts this machine's own address, for `tools/silo_responder.py` in the simulator). Lists saved servers and the Silo servers found on this network; see "Phone features" › Find servers |
 | `LoginScreen` | none (`{ username }`: filled into the password form, for an account signing in again) |
 | `ProfileScreen` | `{ switching: bool }`. The open account's profiles only |
-| `ChangeAccountScreen` | `{ root: bool, signIn: bool, username }`. Saved servers on a rail, the focused server's accounts (CURRENT / SIGN IN AGAIN, profile count), Add an account, Add server (Silo Android #795). `signIn` pushes `LoginScreen` once (a switch that needs a sign-in rebuilds the stack with this screen at its root) |
+| `ChangeAccountScreen` | `{ root: bool, chooseAccount: bool, signIn: bool, username }`. Saved servers on a rail, the focused server's accounts (CURRENT / SIGN IN AGAIN, profile count), Add an account, Add server (Silo Android #795). `signIn` pushes `LoginScreen` once (a switch that needs a sign-in rebuilds the stack with this screen at its root) |
+| `NewProfileScreen` | none. The profile menu's Add Profile (Silo Android #881): the primary profile's PIN first when it has one, then Name, PIN (optional), Child Profile; `POST /api/v2/profiles` as the primary profile, then the picker with no profile open |
 | `ShellScreen` | none. Top bar and root tabs: Home, Movies, Series, Music, Audiobooks, For You, Calendar, Requests (only when `GET /api/v2/requests/status` enables it; page `RequestsPage`). Libraries listed in the profile's `ui.disabled_library_ids` setting are left out of the tabs and panels (`Settings_withoutHiddenLibraries`), re-filtered whenever the settings snapshot lands. A mixed library appears under both Movies and Series; its pages get `mediaType` (`movie`/`series`): Recommended (`HomePage`) filters each shelf to that type and refills short shelves from `GET /api/v2/catalog?source=section`, Browse and collections send `type`, and Shuffle is not offered there (a shuffle request carries no media type) |
 | `LibraryScreen` | `{ libraryId, libraryName, mode, section: "browse"\|"collections"\|..., title, source?, collectionId? }` |
 | `LibraryPage` (shell page) | `{ section, libraryId, libraryName, mode, mediaType?, ... }`. Sections: `browse`, `collections`, `alphabet` (A‑Z), `genres` (Music), `authors` / `series` (audiobook groups via `GET /api/v2/catalog/audiobook-groups`, drill-in through `POST /api/v2/catalog/query` with an `author`/`series` `is` rule), plus the personal lists. Browse and A‑Z show the right-edge `AlphabetRail` (`name_prefix`) |

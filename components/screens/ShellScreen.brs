@@ -46,6 +46,7 @@ sub init()
     Settings_load()
     ' Card overlays (CardOverlayState.brs): the overlay config, settled with the snapshot above.
     CardOverlays_read()
+    refreshAccountProfiles()
 end sub
 
 ' The settings snapshot changed (loaded here, edited in Settings, or reset by a profile switch):
@@ -473,26 +474,7 @@ sub openProfilePanel()
     m.panelMain.header = ""
     m.panelMain.footer = ""
     m.panelMain.profile = { name: Str_orEmpty(s.profileName), "sub": role + " · " + server, avatar: Str_orEmpty(s.profileAvatar) }
-    m.panelMain.rows = [
-        ' Watchlist and Favorites live under For You (Silo Android #786, silo-roku addf483).
-        { id: "switch_profile", label: Tx("Switch Profile"), icon: "people" },
-        { id: "history", label: Tx("History"), icon: "history" },
-        { id: "requests", label: Tx("Requests"), icon: "add" },
-        { id: "notifications", label: Tx("Notifications"), icon: "notifications" },
-        { id: "-" },
-        { id: "settings", label: Tx("Settings"), icon: "settings" },
-        { id: "connect_phone", label: Tx("Connect a Phone"), icon: "phone" },
-        { id: "change_account", label: Tx("Change Account"), icon: "person" },
-        { id: "sign_out", label: Tx("Sign Out"), icon: "logout" }
-    ]
-    ' Requests sits after History while the server enables it (Silo Android #782, silo-roku 5b296d7).
-    if Req_gate().enabled <> true then
-        rows = []
-        for each r in m.panelMain.rows
-            if r.id <> "requests" then rows.Push(r)
-        end for
-        m.panelMain.rows = rows
-    end if
+    m.panelMain.rows = profilePanelRows()
     m.panelMain.focusIndex = 0
     m.panelMain.translation = [1920 - 88 - 480, 132]
     m.panelMain.visible = true
@@ -500,6 +482,78 @@ sub openProfilePanel()
     m.bar.dimmed = false
     m.bar.activeTab = m.tabs.Count()
     m.panelMain.setFocus(true)
+end sub
+
+' The profile menu's rows (Silo Android #881, Android TV's TvProfileDropdown): History,
+' Requests (while the server enables it, Silo Android #782), Notifications (a Siku addition), then
+' Settings, Connect a Phone (a Siku addition), the profile row, Change Account directly under it,
+' and Sign Out. Watchlist and Favorites live under For You (Silo Android
+' #786). Focus opens on the first row.
+function profilePanelRows() as object
+    rows = [{ id: "history", label: Tx("History"), icon: "history" }]
+    if Req_gate().enabled = true then rows.Push({ id: "requests", label: Tx("Requests"), icon: "add" })
+    rows.Push({ id: "notifications", label: Tx("Notifications"), icon: "notifications" })
+    rows.Push({ id: "-" })
+    rows.Push({ id: "settings", label: Tx("Settings"), icon: "settings" })
+    rows.Push({ id: "connect_phone", label: Tx("Connect a Phone"), icon: "phone" })
+    row = profileMenuRow(true)
+    if row = "switch_profile" then
+        rows.Push({ id: "switch_profile", label: Tx("Switch Profile"), icon: "people" })
+    else if row = "add_profile" then
+        rows.Push({ id: "add_profile", label: Tx("Add Profile"), icon: "person_add" })
+    end if
+    rows.Push({ id: "change_account", label: Tx("Change Account"), icon: "person" })
+    rows.Push({ id: "sign_out", label: Tx("Sign Out"), icon: "logout" })
+    return rows
+end function
+
+' The profile row for the open account (Accounts_profileMenuRow): its cached profile count and
+' limit, which the picker's loads and refreshAccountProfiles keep current. A phone's borrowed
+' profile shows none. wantLog: print the [siku-profiles] line (menu opens).
+function profileMenuRow(wantLog as boolean) as string
+    s = m.global.session
+    handoff = Session_isTemporary(s)
+    count = invalid
+    limit = invalid
+    if not handoff then
+        e = Accounts_find(Accounts_list(), Str_orEmpty(s.accountId))
+        if e <> invalid then
+            count = e.profiles
+            limit = e.maxprofiles
+        end if
+    end if
+    row = Accounts_profileMenuRow(count, limit, handoff)
+    if wantLog then
+        cs = "unknown"
+        if count <> invalid and Accounts_int(count) >= 0 then cs = Accounts_int(count).ToStr()
+        ls = "unknown"
+        if limit <> invalid and Accounts_int(limit) >= 0 then ls = Accounts_int(limit).ToStr()
+        Diag_log("[siku-profiles] menu row=" + row + " profiles=" + cs + " max=" + ls + " handoff=" + Session_boolWord(handoff))
+    end if
+    return row
+end function
+
+' The open account's profiles and limit, read once per profile shown (Silo Android #881 refreshes
+' them at launch and on return): an account whose only profile opened without the picker never
+' read them there. Best effort; the cached values stand on a failure.
+sub refreshAccountProfiles()
+    s = m.global.session
+    if Session_isTemporary(s) or Str_isEmpty(s.accountId) or Str_isEmpty(s.accessToken) then return
+    Api_call({ method: "GET", path: "/api/v2/profiles", profile: false, timeout: 15, context: { accountId: Str_orEmpty(s.accountId) } }, "onAccountProfiles")
+end sub
+
+sub onAccountProfiles(event as object)
+    resp = Api_result(event)
+    if not resp.ok or resp.data = invalid or Type(resp.data) <> "roAssociativeArray" then return
+    id = Str_orEmpty(resp.context.accountId)
+    if id <> Str_orEmpty(m.global.session.accountId) or Session_isTemporary(m.global.session) then return
+    before = profileMenuRow(false)
+    Accounts_setProfiles(id, Arr_or(resp.data.items).Count(), Accounts_maxProfilesOf(resp.data))
+    ' An open menu follows (Android re-reads the row while it is open); focus returns to the first row.
+    if m.panelKind = "profile" and panelOpen() and profileMenuRow(false) <> before then
+        m.panelMain.rows = profilePanelRows()
+        m.panelMain.focusIndex = 0
+    end if
 end sub
 
 function panelOpen() as boolean
@@ -576,6 +630,12 @@ sub onProfileAction(id as string)
         closePanel()
         focusBar(avatarIndex)
         Nav_push("ProfileScreen", { switching: true })
+    else if id = "add_profile" then
+        ' Silo Android #881: the new-profile form, after the primary profile's PIN when it has one;
+        ' a new profile leads to the picker, Back returns here with focus on the avatar.
+        closePanel()
+        focusBar(avatarIndex)
+        Nav_push("NewProfileScreen", {})
     else if id = "notifications" then
         ' Siku addition: Android TV ships the inbox screen but has no entry point for it.
         closePanel()
@@ -646,6 +706,7 @@ sub onScreenShown()
         m.settingsSig = Settings_uiSignature()
         Settings_load()
         CardOverlays_read()
+        refreshAccountProfiles()
         focusBar(0)
         return
     end if

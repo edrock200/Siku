@@ -108,9 +108,10 @@ sub onProfiles(event as object)
         if p <> invalid and Type(p) = "roAssociativeArray" then items.Push(p)
     end for
     m.profiles = items
-    ' Change Account's card shows how many profiles each account has.
+    ' Change Account's card shows how many profiles each account has; the profile menu's row reads
+    ' the count and the account's limit (max_profiles, Silo Android #881).
     s = m.global.session
-    if not Session_isTemporary(s) then Accounts_setProfiles(Str_orEmpty(s.accountId), items.Count())
+    if not Session_isTemporary(s) then Accounts_setProfiles(Str_orEmpty(s.accountId), items.Count(), Accounts_maxProfilesOf(resp.data))
 
     ' One profile and no PIN: nothing to pick (unless the person asked to switch).
     params = m.top.params

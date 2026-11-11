@@ -34,6 +34,8 @@ ICONS = {
     "chapters": "format_list_numbered", "equalizer": "equalizer",
     # Notifications inbox empty state (NotificationsScreen)
     "notifications_none": "notifications_none", "notifications": "notifications",
+    # The profile menu's Add Profile (Silo Android #881)
+    "person_add": "person_add",
 }
 
 

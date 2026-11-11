@@ -11,11 +11,12 @@
 '              writes one key, as before.
 '   "servers"  saved servers [{url, name, id}], most recently used first (Session.brs).
 '   "accounts" one entry per saved account, every key lower case (pitfall 15):
-'              {id, url, userid, username, profiles, added, used, expired, session?}
+'              {id, url, userid, username, profiles, maxprofiles?, added, used, expired, session?}
 '              `session` is a stored sign-in (Session_storedSignIn) for an account that is not the
 '              active one; `expired` marks one the server refused ("Sign in again"): it stays saved
 '              with no tokens until someone signs in again or signs out of it. `profiles` is the
-'              profile count the picker last read (-1 unknown).
+'              profile count the picker last read (-1 unknown); `maxprofiles` the limit that list
+'              sent as `max_profiles` (-1 or absent: not said; Silo Android #881).
 ' The server's user id only finds a saved account again: a sign-in whose user id matches a saved
 ' account on that server refreshes it; an unknown identity (no user id either side) is a new
 ' account, as Android's commitAccountReplacement decides.
@@ -436,15 +437,112 @@ sub Accounts_store(prev as dynamic, s as object, firstHalf as boolean)
     Registry_write("accounts", nxt)
 end sub
 
-' Records how many profiles an account has (Change Account's cards).
-sub Accounts_setProfiles(id as string, count as integer)
+' Records how many profiles an account has (Change Account's cards) and its profile limit, the
+' profile list's `max_profiles` (-1: the server did not say; Silo Android #881). Both feed the
+' profile menu's row (Accounts_profileMenuRow). Writes only when something changed.
+sub Accounts_setProfiles(id as string, count as integer, maxProfiles = -1 as integer)
     if id = "" then return
     list = Accounts_list()
     e = Accounts_find(list, id)
-    if e = invalid or Accounts_int(e.profiles) = count then return
+    if e = invalid then return
+    if Accounts_int(e.profiles) = count and e.maxprofiles <> invalid and Accounts_int(e.maxprofiles) = maxProfiles then return
     e.profiles = count
+    e.maxprofiles = maxProfiles
     Registry_write("accounts", list)
 end sub
+
+' ---------- The profile menu's profile row (Silo Android #881, pure) ----------
+
+' The account's profile limit from a profile list answer: its `max_profiles`, or -1 when the
+' server did not send one (an older server, a handoff session) or sent something unreadable.
+function Accounts_maxProfilesOf(data as dynamic) as integer
+    if data = invalid or Type(data) <> "roAssociativeArray" then return -1
+    v = data["max_profiles"]
+    if v = invalid then return -1
+    t = Type(v)
+    if t = "String" or t = "roString" then
+        ' Digits only: Num_or reads "lots" as 0, which would hide the profile row.
+        txt = v.Trim()
+        if txt = "" then return -1
+        for i = 1 to Len(txt)
+            c = Asc(Mid(txt, i, 1))
+            if c < 48 or c > 57 then return -1
+        end for
+        return Int(Val(txt))
+    end if
+    n = Num_or(v, -1)
+    if n < 0 then return -1
+    return Int(n)
+end function
+
+' Which profile row the menu shows (Android's profileMenuRow, ProfileMenuRow.kt): "switch_profile"
+' while the account has several profiles or none were read yet (count -1 / invalid); "add_profile"
+' with one profile and room for another, or an unknown limit (the server's create stays the
+' check); "none" with one profile and a limit of one, and for a phone's borrowed (handoff) profile,
+' which can neither switch nor add.
+function Accounts_profileMenuRow(profileCount as dynamic, maxProfiles as dynamic, handoff as boolean) as string
+    if handoff then return "none"
+    if profileCount = invalid or Accounts_int(profileCount) <> 1 then return "switch_profile"
+    if maxProfiles = invalid then return "add_profile"
+    mx = Accounts_int(maxProfiles)
+    if mx < 0 or mx > 1 then return "add_profile"
+    return "none"
+end function
+
+' The household's primary profile, the one the server lets create profiles: the one marked
+' is_primary, else an only profile (silo-roku householdPrimary); invalid without one.
+function Accounts_householdPrimary(profiles as dynamic) as dynamic
+    items = Arr_or(profiles)
+    for i = 0 to items.Count() - 1
+        p = items[i]
+        if p <> invalid and Type(p) = "roAssociativeArray" then
+            v = p.is_primary
+            if (Type(v) = "Boolean" or Type(v) = "roBoolean") and v then return p
+        end if
+    end for
+    if items.Count() = 1 and items[0] <> invalid and Type(items[0]) = "roAssociativeArray" then return items[0]
+    return invalid
+end function
+
+' ---------- New Profile (the menu's Add Profile, NewProfileScreen; pure) ----------
+
+' What stops the form being sent: "" when nothing does, "name" (empty after trimming) or "pin"
+' (neither empty nor exactly four digits).
+function Accounts_newProfileProblem(name as string, pin as string) as string
+    if name.Trim() = "" then return "name"
+    if pin = "" then return ""
+    if Len(pin) <> 4 then return "pin"
+    for i = 1 to 4
+        c = Asc(Mid(pin, i, 1))
+        if c < 48 or c > 57 then return "pin"
+    end for
+    return ""
+end function
+
+' The POST /api/v2/profiles body (silo-roku's createProfile.body without the library allowlist):
+' the trimmed name, the PIN when there is one, and for a child profile is_child with the PG
+' ceiling Android TV and tvOS fill in. Members not set are left out (the server rejects null).
+function Accounts_newProfileBody(name as string, pin as string, child as boolean) as object
+    out = { "name": name.Trim() }
+    if pin <> "" then out["pin"] = pin
+    if child then
+        out["is_child"] = true
+        out["max_content_rating"] = "PG"
+    end if
+    return out
+end function
+
+' What a create answer means (silo-roku's createProfile.outcome; POST /profiles is never retried):
+' "created" (2xx), "unconfirmed" (no answer: it may exist, the picker shows), "verify" (403
+' profile_verification_required: the primary profile's PIN is needed again), "refused" (403, 409
+' or 422 with the server's reason) or "failed".
+function Accounts_createOutcome(status as integer, code as string) as string
+    if status >= 200 and status < 300 then return "created"
+    if status = 0 then return "unconfirmed"
+    if status = 403 and code = "profile_verification_required" then return "verify"
+    if status = 403 or status = 409 or status = 422 then return "refused"
+    return "failed"
+end function
 
 sub Accounts_remove(id as string)
     if id = "" then return

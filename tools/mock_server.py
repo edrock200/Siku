@@ -187,6 +187,16 @@ clears one); GET /mock/switch lists them.
                                  others u-<name>), and tokens stay tied to their user, so /account/me and
                                  /profiles answer per account (sam: Sam and Max). Debug tokens acc-debug-sam
                                  are sam's. Log: SIGNIN user=<name> id=<id>, LOGOUT ... user=<name>
+  max_profiles=<n>|none          the profile list's max_profiles (Silo Android #881; default 6, none leaves it
+                                 out as an older server does): the profile menu offers Add Profile with one
+                                 profile while the limit is above 1 or unknown, no profile row at 1
+  profiles=1                     every household lists only its primary profile (plus profiles added with
+                                 POST /api/v2/profiles), for the one-profile menu rows
+  primary_pin=1                  the primary profile (Laura, or <Name> for other users) has a PIN (1234); Add
+                                 Profile then asks it first. POST /api/v2/profiles needs X-Profile-Id = the
+                                 primary profile (and X-Profile-Token ptok-1 with primary_pin), answers 409 at
+                                 max_profiles or for a taken name. Log: PROFILE CREATE as= token= child= pin=
+                                 answer=
   device_user=<name>             device-code sign-ins are approved as that user (implies multi_user for
                                  the tokens it hands out); the simulator cannot type a password
   info_status=<code>[:<detail>]  GET /system/info answers that status: a problem with that detail, or
@@ -2751,18 +2761,16 @@ class Handler(BaseHTTPRequestHandler):
 
         if p == "/api/v2/account/me":
             return self.send(200, self.user() | {"password_change_required": False})
-        if p == "/api/v2/profiles" and self.user()["id"] != "1":
-            # multi_user: another account's household (Silo Android #795).
-            return self.send(200, {"items": [
-                {"id": "p-%s-main" % self.user()["id"], "name": self.user()["username"].title(), "avatar_url": "", "has_pin": False, "is_primary": True},
-                {"id": "p-%s-max" % self.user()["id"], "name": "Max", "avatar_url": "", "has_pin": False, "is_primary": False},
-            ]})
+        if p == "/api/v2/profiles" and method == "POST":
+            return create_profile(self, b)
         if p == "/api/v2/profiles":
-            return self.send(200, {"items": [
-                {"id": "p-owner", "name": "Laura", "avatar_url": img("avatar", "laura"), "has_pin": False, "is_primary": True},
-                {"id": "p-sam", "name": "Sam", "avatar_url": "", "has_pin": False, "is_primary": False},
-                {"id": "p-kids", "name": "Kids", "avatar_url": img("avatar", "kids"), "has_pin": True, "is_child": True},
-            ]})
+            # multi_user: another account's household (Silo Android #795); max_profiles: the
+            # account's profile limit (Silo Android #881).
+            body = {"items": household(self.user())}
+            limit = max_profiles_switch()
+            if limit is not None:
+                body["max_profiles"] = limit
+            return self.send(200, body)
         m = re.match(r"^/api/v2/profiles/([^/]+)/verify-pin$", p)
         if m:
             if b.get("pin") == "1234":
@@ -3863,6 +3871,80 @@ def user_record(username, distinct):
     role = "admin" if uid == "1" else "user"
     return {"id": uid, "username": username, "role": role, "permissions": []}
 
+
+
+def max_profiles_switch():
+    """--switch max_profiles=<n>|none: the profile list's max_profiles (default 6; none leaves it out,
+    as an older server does)."""
+    v = STATE["switches"].get("max_profiles")
+    if v is None or v == "":
+        return 6
+    if str(v).lower() == "none":
+        return None
+    try:
+        return int(v)
+    except ValueError:
+        return None
+
+
+def household(user):
+    """The profile list of `user`'s account: Laura / Sam / Kids for user 1, <Name> / Max for the
+    others (multi_user), only the primary with --switch profiles=1, plus profiles made with POST
+    /api/v2/profiles. --switch primary_pin=1 gives the primary profile a PIN (1234)."""
+    uid = user["id"]
+    primary_pin = bool(STATE["switches"].get("primary_pin"))
+    if uid == "1":
+        items = [
+            {"id": "p-owner", "name": "Laura", "avatar_url": img("avatar", "laura"), "has_pin": primary_pin, "is_primary": True},
+            {"id": "p-sam", "name": "Sam", "avatar_url": "", "has_pin": False, "is_primary": False},
+            {"id": "p-kids", "name": "Kids", "avatar_url": img("avatar", "kids"), "has_pin": True, "is_child": True},
+        ]
+    else:
+        items = [
+            {"id": "p-%s-main" % uid, "name": user["username"].title(), "avatar_url": "", "has_pin": primary_pin, "is_primary": True},
+            {"id": "p-%s-max" % uid, "name": "Max", "avatar_url": "", "has_pin": False, "is_primary": False},
+        ]
+    if str(STATE["switches"].get("profiles") or "") == "1":
+        items = items[:1]
+    return items + STATE.setdefault("created_profiles", {}).get(uid, [])
+
+
+def create_profile(h, b):
+    """POST /api/v2/profiles as the household's primary profile (X-Profile-Id, and X-Profile-Token
+    when it has a PIN). 403 profile_verification_required otherwise, 409 at max_profiles or for a
+    taken name, 422 without a name. Log: PROFILE CREATE as=<id> token=yes|no child= pin= answer=."""
+    user = h.user()
+    items = household(user)
+    primary = items[0]
+    as_id = h.headers.get("X-Profile-Id") or ""
+    token = h.headers.get("X-Profile-Token") or ""
+    name = str((b or {}).get("name") or "").strip()
+
+    def log(answer):
+        line = "PROFILE CREATE as=%s token=%s child=%s pin=%s answer=%s" % (
+            as_id or "-", "yes" if token else "no", "yes" if (b or {}).get("is_child") else "no",
+            "yes" if (b or {}).get("pin") else "no", answer)
+        print(line, flush=True)
+        LOG.append(line)
+
+    if as_id != primary["id"] or (primary["has_pin"] and token != "ptok-1"):
+        log(403)
+        return h.problem(403, "profile_verification_required", "Only the primary profile, with its PIN, can add profiles")
+    if not name:
+        log(422)
+        return h.problem(422, "validation_failed", "A profile needs a name.")
+    limit = max_profiles_switch()
+    if limit is not None and len(items) >= limit:
+        log(409)
+        return h.problem(409, "profile_limit_reached", "This account already has the most profiles it can have.")
+    if any(p["name"].lower() == name.lower() for p in items):
+        log(409)
+        return h.problem(409, "conflict", "A profile with that name already exists.")
+    made = {"id": "p-new-%d" % (len(items) + 1), "name": name, "avatar_url": "",
+            "has_pin": bool((b or {}).get("pin")), "is_primary": False, "is_child": bool((b or {}).get("is_child"))}
+    STATE.setdefault("created_profiles", {}).setdefault(user["id"], []).append(made)
+    log(201)
+    return h.send(201, made)
 
 def user_for_token(token):
     if token in TOKEN_USERS:

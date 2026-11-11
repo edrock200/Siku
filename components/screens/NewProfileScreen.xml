@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  New Profile: the profile menu's Add Profile (Silo Android #881), offered while the open account
+  has one profile and room for another. Household management acts as the account's primary profile
+  (Accounts_householdPrimary), as the picker's Add does on Android TV: when it has a PIN, its PIN
+  pad comes first (AuthPinDialog, POST /api/v2/profiles/{id}/verify-pin); Cancel there closes this
+  screen. With no primary known, the picker opens instead.
+  The form (silo-roku's New Profile without its avatars and library allowlist): Name and PIN
+  (optional, four digits), typed with the Roku keyboard, Child Profile (On sends is_child with the
+  PG ceiling), then Create Profile | Cancel. POST /api/v2/profiles as the primary profile, never
+  retried. A new profile (or a create that got no answer, which may exist) leads to the account's
+  picker with no profile open; a refusal shows the server's reason; Back or Cancel returns to the
+  screen the menu was on.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="NewProfileScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/screens/NewProfileScreen.brs" />
+  <children>
+    <AuthMarqueeChrome id="chrome" backdropUri="pkg:/images/marquee_profiles.jpg" showLogo="false" />
+    <Group id="form" visible="false">
+      <Label id="title" width="1920" translation="[0, 150]" horizAlign="center" color="0xEDEDEDFF" text="New Profile">
+        <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="55" />
+      </Label>
+      <Label id="subtitle" width="1920" translation="[0, 228]" horizAlign="center" color="0xEDEDED9E" text="Give it a name.">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+      </Label>
+      <AuthTextField id="nameField" fieldWidth="760" translation="[580, 310]" iconUri="pkg:/images/icons/person.png" />
+      <AuthTextField id="pinField" fieldWidth="760" translation="[580, 418]" iconUri="pkg:/images/icons/lock.png" secure="true" />
+      <PillButton id="childButton" variant="glass" fixedWidth="760" height="84" fontSize="25" translation="[580, 526]" iconUri="pkg:/images/icons/people.png" />
+      <Label id="error" width="1200" translation="[360, 634]" horizAlign="center" wrap="true" maxLines="3" color="0xFF6961FF" visible="false">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+      </Label>
+      <Group id="buttons" translation="[0, 760]">
+        <PillButton id="createButton" text="Create Profile" variant="glass" height="68" fontSize="24" padX="36" minWidth="300" />
+        <PillButton id="cancelButton" text="Cancel" variant="plain" height="68" fontSize="24" padX="36" />
+      </Group>
+    </Group>
+    <LoadingSpinner id="spinner" size="72" translation="[924, 504]" visible="false" />
+  </children>
+</component>
