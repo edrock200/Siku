@@ -443,6 +443,8 @@ sub seekGlobal(t as float, forceStart as boolean)
         m.localPos = localT
         startFile(tr.fileId, localT, "client")
     end if
+    ' "End of chapter" follows the chapter the book is now in (Next, a chapter pick, a skip).
+    if m.sleepMode = "chapter" then m.sleepChapterEnd = sleepChapterEndAt(t)
     updateProgressUi()
 end sub
 
@@ -989,6 +991,20 @@ sub onFinished()
     if m.mode = "audiobook" then
         tl = m.timeline
         if m.trackIdx >= 0 and m.trackIdx < tl.tracks.Count() - 1 then
+            cur = tl.tracks[m.trackIdx]
+            if m.sleepMode = "chapter" and m.sleepChapterEnd > 0 and m.sleepChapterEnd <= cur.offset + cur.duration + 1 then
+                ' The chapter the sleep timer waits for ends with this part: stop at the start of
+                ' the next part instead of starting it. Play starts it from there.
+                stopSession(true)
+                m.trackIdx = m.trackIdx + 1
+                nxt = tl.tracks[m.trackIdx]
+                m.fileDuration = nxt.duration
+                m.localPos = 0.0
+                m.globalPos = nxt.offset
+                sleepNow()
+                updateProgressUi()
+                return
+            end if
             ' Next part: a new session (playback is not gapless across parts, as on Android).
             m.localPos = tl.tracks[m.trackIdx].duration
             seekGlobal(tl.tracks[m.trackIdx + 1].offset, true)
@@ -1009,9 +1025,20 @@ sub onFinished()
     end if
     ' Music: auto-advance; the end of the queue (or a "End of track" sleep timer) stops.
     if m.sleepMode = "track" then
-        m.ended = true
         stopSession(true)
         setSleep("off")
+        if m.qIndex < m.queue.Count() - 1 then
+            ' Stop on the next track, so Play continues the queue instead of replaying this one.
+            m.qIndex = m.qIndex + 1
+            m.autoRetried = false
+            e = m.queue[m.qIndex]
+            m.fileDuration = e.durationSeconds
+            m.localPos = 0.0
+            m.globalPos = 0.0
+            showMusicInfo()
+        else
+            m.ended = true
+        end if
         m.isPaused = true
         m.playBtn.iconUri = "pkg:/images/icons/play.png"
         m.statusLabel.text = Tx("Sleep timer ended")
@@ -1282,17 +1309,24 @@ sub setSleep(mode as string)
         m.sleepRemaining = Int(Val(mode)) * 60
         m.sleepTimer.control = "start"
     else if mode = "chapter" then
-        ci = AudioTimeline_chapterAt(m.timeline.chapters, m.globalPos)
-        if ci >= 0 then
-            ch = m.timeline.chapters[ci]
-            m.sleepChapterEnd = ch["end"]
-            if m.sleepChapterEnd <= ch.start then
-                if ci < m.timeline.chapters.Count() - 1 then m.sleepChapterEnd = m.timeline.chapters[ci + 1].start else m.sleepChapterEnd = m.timeline.total
-            end if
-        end if
+        m.sleepChapterEnd = sleepChapterEndAt(m.globalPos)
     end if
     updateSleepLabel()
 end sub
+
+' Whole-book time where the chapter playing at t ends, or -1 without chapters.
+function sleepChapterEndAt(t as float) as float
+    if m.timeline = invalid then return -1.0
+    chapters = m.timeline.chapters
+    ci = AudioTimeline_chapterAt(chapters, t)
+    if ci < 0 then return -1.0
+    ch = chapters[ci]
+    chEnd = Num_or(ch["end"])
+    if chEnd <= ch.start then
+        if ci < chapters.Count() - 1 then chEnd = chapters[ci + 1].start else chEnd = m.timeline.total
+    end if
+    return chEnd
+end function
 
 sub updateSleepLabel()
     t = Tx("Sleep Timer")
@@ -1308,7 +1342,8 @@ sub updateSleepLabel()
 end sub
 
 sub onSleepTick()
-    if m.isPaused then return
+    ' The countdown runs only while a file plays (not paused, not between parts or tracks).
+    if m.isPaused or not m.fileActive then return
     m.sleepRemaining = m.sleepRemaining - 1
     if m.sleepRemaining <= 0 then
         sleepNow()
@@ -1319,8 +1354,26 @@ end sub
 
 sub sleepNow()
     setSleep("off")
-    if m.audio.state = "playing" or m.audio.state = "buffering" then m.audio.control = "pause"
+    st = m.audio.state
+    if not m.fileActive and not m.ended and m.mode <> "" then
+        ' Between files (a part or track change in flight): cancel it so nothing starts playing.
+        haltLoading()
+    else if st = "playing" or st = "buffering" then
+        m.audio.control = "pause"
+    end if
     m.global.toast = Tx("Sleep timer ended")
+end sub
+
+' Cancels the start or track lookup in flight (its answer turns stale and a session it created is
+' released) and leaves the player stopped where it is; Play starts again from there.
+sub haltLoading()
+    m.loadGen = m.loadGen + 1
+    m.pending = invalid
+    m.audio.control = "stop"
+    m.spinner.visible = false
+    m.isPaused = true
+    m.playBtn.iconUri = "pkg:/images/icons/play.png"
+    m.statusLabel.text = Tx("Sleep timer ended")
 end sub
 
 ' ---------- Focus and keys ----------
