@@ -170,14 +170,14 @@ sub handleDeepLink(args as dynamic)
     ' can overwrite the saved sign-in or open arbitrary screens over ECP in a release build.
     ' Release builds keep one field diagnostic the README points users to: the stream test
     ' screen with its built-in streams.
-    #if DEBUG
+#if DEBUG
         if handleDebugLink(args) then return
-    #else
+#else
         if Str_orEmpty(args.debugScreen) = "StreamTestScreen" then
             resetTo("StreamTestScreen", {})
             return
         end if
-    #end if
+#end if
     if Str_isEmpty(args.contentId) then return
     if Str_isEmpty(m.global.session.profileId) then return
     mediaType = LCase(Str_orEmpty(args.mediaType))
