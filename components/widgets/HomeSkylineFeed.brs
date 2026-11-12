@@ -680,29 +680,53 @@ sub setBackdrop(url as string)
     if url = m.currentBackdrop then return
     m.currentBackdrop = url
     if url = "" then
-        m.fadeAnim.control = "stop"
-        m.bdA.opacity = 0
-        m.bdB.opacity = 0
-        m.firstBackdrop = true
+        hideBackdrops()
         return
     end if
     ' Load into the back layer; the crossfade starts when it is ready.
-    if m.front = "A" then
-        m.imgB.uri = url
-    else
-        m.imgA.uri = url
+    if m.front = "A" then back = m.imgB else back = m.imgA
+    if back.uri = url then
+        ' The back layer still holds this image from the card before (focus went right, then
+        ' back left): assigning the same uri fires no loadStatus change, so act on the status
+        ' it already has.
+        st = back.loadStatus
+        if st = "ready" then
+            swapBackdrop()
+        else if st = "failed" then
+            hideBackdrops()
+        end if
+        return
     end if
+    back.uri = url
 end sub
 
 sub onBackdropLoaded(event as object)
     poster = event.getRoSGNode()
-    if poster.loadStatus <> "ready" then return
     if poster.uri <> m.currentBackdrop then return
-    if m.top.state <> "ready" then return
+    st = poster.loadStatus
     ' The front layer reloading its own image (artwork given back after a memory warning,
-    ' Memory.brs) must not flip the layers.
+    ' Memory.brs) must not flip or hide the layers.
     if m.front = "A" and poster.isSameNode(m.imgA) then return
     if m.front = "B" and poster.isSameNode(m.imgB) then return
+    if st = "failed" then
+        ' Do not leave the previous title's backdrop under this card's marquee.
+        hideBackdrops()
+        return
+    end if
+    if st <> "ready" then return
+    swapBackdrop()
+end sub
+
+sub hideBackdrops()
+    m.fadeAnim.control = "stop"
+    m.bdA.opacity = 0
+    m.bdB.opacity = 0
+    m.firstBackdrop = true
+end sub
+
+' Brings the back layer (which holds m.currentBackdrop, loaded) to the front.
+sub swapBackdrop()
+    if m.top.state <> "ready" then return
     if m.front = "A" then
         incoming = "bdB"
         outgoing = "bdA"
