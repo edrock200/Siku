@@ -418,6 +418,7 @@ end sub
 
 sub onRest()
     rf = m.pendingFocus
+    if rf = invalid then rf = m.rowList.rowItemFocused
     if rf = invalid or rf.Count() < 2 then return
     node = cardAt(rf[0], rf[1])
     if node = invalid then return
@@ -812,6 +813,14 @@ sub onItemPatch()
         if p.removeSeries <> invalid then dropped = p.removeSeries
         if dropped <> "" then removeShowFromProgressRows(dropped)
         removeEmptyRows()
+        ' The next card slides into the focused slot without a rowItemFocused change, so the
+        ' marquee and backdrop would keep the removed title: read the focus again once the
+        ' RowList has settled.
+        if m.top.hasRows then
+            m.pendingFocus = invalid
+            m.restTimer.control = "stop"
+            m.restTimer.control = "start"
+        end if
         return
     end if
     raw = AA_copy(node.raw)
