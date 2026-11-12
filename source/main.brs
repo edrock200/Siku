@@ -90,7 +90,11 @@ sub Main(args as dynamic)
         else if msgType = "roAppMemoryNotificationEvent" or msgType = "roDeviceInfoEvent"
             info = msg.GetInfo()
             pressure = MainEvents_memoryPressure(msgType, info)
-            if pressure >= 0 then scene.memoryPressure = pressure
+            if MainEvents_memoryReset(msgType, info) then
+                scene.memoryReset = true
+            else if pressure >= 0 then
+                scene.memoryPressure = pressure
+            end if
             if pressure >= 65 then calm = 0
             if msgType = "roDeviceInfoEvent" then
                 focused = MainEvents_appFocus(info)

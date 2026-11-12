@@ -396,6 +396,16 @@ sub onMemoryPressure()
     trimStack()
 end sub
 
+' The device says memory is normal again: back to level 0 at once (no usage samples follow on
+' firmware without roAppMemoryMonitor, so stepping down one level per sample would stop at trim).
+sub onMemoryReset()
+    prev = Memory_currentLevel()
+    if prev = 0 then return
+    Diag_log("[siku-memory] device memory normal level=normal was=" + Memory_levelName(prev))
+    m.global.memoryLevel = 0
+    m.global.memoryLow = false
+end sub
+
 ' Keeps the top screen and Memory_aliveBelow() screens under it whole; deeper ones give back their
 ' artwork and lists (Memory.brs) and get them back, state intact, when they are on top again.
 sub trimStack()
@@ -871,7 +881,13 @@ sub I18n_apply(folder as string, reason as string)
         end if
     end if
     m.global.strings = table
+    changed = I18n_locale() <> folder
     m.global.appLocale = folder
+    ' Card overlay images carry badge words in the language (CardOverlay_keyFor): views draw again.
+    if changed then
+        if not m.global.hasField("cardOverlaysRevision") then m.global.addFields({ cardOverlaysRevision: 0, cardOverlaysKey: "" })
+        m.global.cardOverlaysRevision = m.global.cardOverlaysRevision + 1
+    end if
     Diag_log("[siku-i18n] language " + folder + " (" + reason + ", " + table.Count().ToStr() + " strings)")
 end sub
 

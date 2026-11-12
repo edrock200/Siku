@@ -16,8 +16,10 @@
 ' host-tested (tests/test_home_cache.py). File I/O lives only in HomeCacheTask.
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
+' 2: sections keep title_key / title_args and cards their first studio and network (a schema-1 file
+' is a miss: its rows would show English titles and redraw every overlay).
 function HomeCache_schema() as integer
-    return 1
+    return 2
 end function
 
 ' A cached Home older than this is not drawn (it is deleted on the next write).
@@ -142,6 +144,11 @@ function HomeCache_trimCard(card as dynamic) as dynamic
         if genres.Count() < 2 and (Type(g) = "roString" or Type(g) = "String") then genres.Push(HomeCache_clip(g, 40))
     end for
     if genres.Count() > 0 then out.genres = genres
+    ' The first studio and network feed the card overlay badges (Content_overlayData).
+    for each k in ["studios", "networks"]
+        first = HomeCache_firstText(card[k])
+        if first <> "" then out[k] = [HomeCache_clip(first, 60)]
+    end for
     for each k in ["user_state", "user_data", "overlay_summary", "group"]
         sc = HomeCache_scalars(card[k])
         if sc <> invalid and sc.Count() > 0 then out[k] = sc
@@ -153,6 +160,17 @@ function HomeCache_trimCard(card as dynamic) as dynamic
     return out
 end function
 
+' The first non-blank string of values (an array), "" for none.
+function HomeCache_firstText(values as dynamic) as string
+    if Type(values) <> "roArray" then return ""
+    for each v in values
+        if Type(v) = "roString" or Type(v) = "String" then
+            if v.Trim() <> "" then return v.Trim()
+        end if
+    end for
+    return ""
+end function
+
 ' One Home section as stored: its metadata and its trimmed cards, unfiltered (hide-watched and
 ' this Roku's section order are applied again when the cache is drawn, so they follow the
 ' settings as they are then).
@@ -160,10 +178,13 @@ function HomeCache_trimSection(section as dynamic, items as dynamic) as dynamic
     if section = invalid or Type(section) <> "roAssociativeArray" then return invalid
     lim = HomeCache_limits()
     s = {}
-    for each k in ["id", "title", "section_type", "featured", "customized", "is_custom", "item_limit", "total_count"]
+    for each k in ["id", "title", "title_key", "section_type", "featured", "customized", "is_custom", "item_limit", "total_count"]
         v = section[k]
         if v <> invalid and HomeCache_isScalar(v) then s[k] = HomeCache_clip(v, lim.text)
     end for
+    ' The title's placeholders ({library}, {genre}, …) for TxKey.
+    args = HomeCache_scalars(section.title_args)
+    if args <> invalid and args.Count() > 0 then s.title_args = args
     cards = []
     for each c in Arr_or(items)
         if cards.Count() >= lim.items then exit for

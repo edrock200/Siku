@@ -22,7 +22,12 @@ sub init()
     m.top.focusable = true
 end sub
 
+sub onPageHidden()
+    m.feed.overlaysWatched = false
+end sub
+
 sub onPageShown()
+    m.feed.overlaysWatched = true
     if m.global.homeDirty = true or (not m.loaded and not m.loading) then
         load()
     else if not m.loading and Fresh_isStale(m.loadedAt, Time_nowSeconds()) then
@@ -75,7 +80,8 @@ sub onDiscover(event as object)
             if items.Count() > 0 then
                 rid = Str_orEmpty(r.key)
                 if rid = "" then rid = Str_orEmpty(r.type)
-                title = Str_orEmpty(r.title)
+                ' title_key: the server's own row name in the interface language (home.section.*).
+                title = TxKey(r.title_key, r.title_args, Str_orEmpty(r.title))
                 if title = "" then title = Tx("Recommended for You")
                 rows.Push({ id: rid, title: title, style: "poster", items: items })
             end if

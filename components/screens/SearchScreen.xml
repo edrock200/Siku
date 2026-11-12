@@ -11,6 +11,7 @@
 -->
 <component name="SearchScreen" extends="BaseScreen">
   <script type="text/brightscript" uri="pkg:/components/screens/SearchScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Paging.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Requests.brs" />
   <children>
     <Group id="field" translation="[88, 164]">
