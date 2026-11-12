@@ -224,7 +224,7 @@ function buildPane(catId as string) as object
         out.Push({ kind: "row", row: rowDef("skipCredits", "toggle", "Skip Credits") })
         out.Push({ kind: "row", row: rowDef("rewindOnResume", "choice", "Rewind on Resume") })
         out.Push({ kind: "row", row: rowDef("stillWatching", "choice", "Still Watching Prompt") })
-        out.Push({ kind: "footer", text: "Rewind on Resume skips back when you return to a partly watched title. Still Watching Prompt sets how many episodes play in a row before Silo asks whether you're still watching." })
+        out.Push({ kind: "footer", text: "Rewind on Resume skips back when you return to a partly watched title. Still Watching Prompt sets how many episodes play in a row before Siku asks whether you're still watching." })
 
         out.Push({ kind: "header", text: "Video" })
         out.Push({ kind: "row", row: rowDef("skipBack", "choice", "Skip Back") })

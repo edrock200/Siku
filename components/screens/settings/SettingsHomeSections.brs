@@ -165,7 +165,7 @@ sub Hs_render()
         if m.hsLoading then
             m.hsMessage.text = "Loading Home sections…"
         else if m.hsError <> "" then
-            m.hsMessage.text = "Silo couldn't refresh the Home rows. Try again when the server is reachable."
+            m.hsMessage.text = "Siku couldn't refresh the Home rows. Try again when the server is reachable."
         else
             m.hsMessage.text = "Home has no populated rows to arrange yet."
         end if
