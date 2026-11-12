@@ -68,3 +68,57 @@ end function
 function Paging_isStr(v as dynamic) as boolean
     return Type(v) = "String" or Type(v) = "roString"
 end function
+
+' Search results a TV shows (Android TV's visibleOnTv plus its audiobook filter): reading types
+' (ebooks, comics, manga; there is no reader on a TV) never, audiobooks only while the Audiobooks
+' tab is on. The All chip searches every type, as Android TV's does, so this runs on its answers.
+function Search_tvVisible(items as dynamic, showAudiobooks as boolean) as object
+    hidden = { ebook: true, ebooks: true, book: true, books: true, comic: true, comics: true, manga: true, reading: true }
+    out = []
+    if Type(items) <> "roArray" then return out
+    for each it in items
+        if Type(it) = "roAssociativeArray" then
+            t = LCase(Str_orEmpty(it["type"])).Trim()
+            if not hidden.DoesExist(t) and (showAudiobooks or (t <> "audiobook" and t <> "audiobooks")) then out.Push(it)
+        end if
+    end for
+    return out
+end function
+
+' People lists from several media scopes as one row (Android TV's mergePeopleSearchResults): one
+' list keeps the server's order; several are de-duplicated by id and ranked exact name matches
+' first, then by name, then id. At most `limit` people.
+function Search_mergePeople(lists as object, query as string, limit as integer) as object
+    if lists.Count() = 1 then
+        out = []
+        for each p in Arr_or(lists[0])
+            if out.Count() >= limit then exit for
+            out.Push(p)
+        end for
+        return out
+    end if
+    exact = LCase(query.Trim())
+    seen = {}
+    keyed = []
+    for each lst in lists
+        for each p in Arr_or(lst)
+            if Type(p) = "roAssociativeArray" then
+                id = Str_orEmpty(p.id)
+                if id = "" or not seen.DoesExist(id) then
+                    if id <> "" then seen[id] = true
+                    name = LCase(Str_orEmpty(p.name).Trim())
+                    rank = "1"
+                    if name = exact then rank = "0"
+                    keyed.Push({ k: rank + Chr(1) + name + Chr(1) + id, p: p })
+                end if
+            end if
+        end for
+    end for
+    keyed.SortBy("k")
+    out = []
+    for each e in keyed
+        if out.Count() >= limit then exit for
+        out.Push(e.p)
+    end for
+    return out
+end function
