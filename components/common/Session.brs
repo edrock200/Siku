@@ -615,8 +615,8 @@ function Prefs_default() as object
         quality: "auto"
         skipBack: 10
         skipForward: 30
-        hiddenSections: []         ' Home Sections editor: hidden row ids (per device, like Android TV)
-        sectionOrder: []           ' Home Sections editor: row ids in display order
+        hiddenSections: []         ' an older build's device-wide Home layout; now prefs.homeLayouts per server + profile (Settings_homeLayout)
+        sectionOrder: []           ' an older build's device-wide Home row order (taken over by Settings_saveHomeLayout)
         resumeRewind: 7            ' Rewind on Resume, seconds (contract client_local, 0 = off)
         passoutThreshold: 3        ' Still Watching Prompt: auto-advances before Up Next waits (0 = off)
         appLanguage: ""            ' the last profile ui.app_language applied ("" = the Roku's language)
