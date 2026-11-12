@@ -399,5 +399,7 @@
   "The server's answer was too large for this Roku.": "A resposta do servidor é grande demais para este Roku.",
   "The server took too long to answer.": "O servidor demorou demais para responder.",
   "The server's answer was too large.": "A resposta do servidor era grande demais.",
-  "{0}–{1} of {2}": "{0}–{1} de {2}"
+  "{0}–{1} of {2}": "{0}–{1} de {2}",
+  "Credits skipped": "Créditos pulados",
+  "Watch Credits": "Ver créditos"
 }

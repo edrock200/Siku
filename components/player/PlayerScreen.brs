@@ -1847,12 +1847,18 @@ sub checkMarkers()
 end sub
 
 sub showSkippedCaption(mk as object)
-    kindText = Tx("Intro skipped")
-    if mk.kind = "recap" then kindText = Tx("Recap skipped")
-    m.skippedCaption.text = kindText
+    ' Auto-skipped credits (playback.auto_skip_credits) name the credits, not the intro.
+    if mk.kind = "recap" then
+        m.skippedCaption.text = Tx("Recap skipped")
+        m.skipBtn.text = Tx("Watch Recap")
+    else if mk.kind = "credits" then
+        m.skippedCaption.text = Tx("Credits skipped")
+        m.skipBtn.text = Tx("Watch Credits")
+    else
+        m.skippedCaption.text = Tx("Intro skipped")
+        m.skipBtn.text = Tx("Watch Intro")
+    end if
     m.skippedCaption.visible = true
-    m.skipBtn.text = Tx("Watch Intro")
-    if mk.kind = "recap" then m.skipBtn.text = Tx("Watch Recap")
     m.skipBtn.visible = true
     m.skipGroup.visible = true
     m.skipShownFor = "watch:" + Str_orEmpty(mk.start)
