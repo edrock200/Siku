@@ -206,6 +206,7 @@ sub resetPlaybackState()
     ' never set it (the series page moves on to the next episode only after it).
     m.reachedCreditsOrEnd = false
     m.countdown = -1
+    m.countdownToEnd = false   ' the Up Next countdown is the playback time left (advances at the stream's end)
     m.scrubbing = false
     m.scrubPos = 0.0
     m.holdTicks = 0
@@ -1257,7 +1258,23 @@ sub onFinished()
         return
     end if
     if (m.isEpisode or m.shuffle <> invalid) and m.nextEpisode <> invalid then
-        if not m.upNext.visible then showUpNext()
+        if m.upNext.visible and m.countdownToEnd and m.countdown >= 0 then
+            ' The card's countdown was the time left in this item: it ran to the end of the stream.
+            cancelUpNextCountdown()
+            if m.autoAdvances = invalid then m.autoAdvances = 0
+            m.autoAdvances = m.autoAdvances + 1
+            playNext()
+            return
+        end if
+        if not m.upNext.visible then
+            showUpNext()
+        else if not m.upNextShown then
+            ' Opened by hand without a countdown: the end of the stream arms it now, as the credits
+            ' point would have (TvPlayerViewModel.onApproachingEnd after onUserRequestedNextUp).
+            m.upNextShown = true
+            armUpNextCountdown()
+            renderUpNext()
+        end if
         if m.countdown < 0 and m.shuffle = invalid then
             ' No auto-play: wait for the user on the overlay.
             m.unEyebrow.text = Tx("FINISHED")
@@ -1514,8 +1531,7 @@ sub showError(msg as string)
         m.subs.dialog = ""
         m.subsDialog.visible = false
     end if
-    m.countdownTimer.control = "stop"
-    m.countdown = -1
+    cancelUpNextCountdown()
     if m.upNext.visible then
         m.upNext.visible = false
         restoreVideoPane()
@@ -1665,7 +1681,7 @@ end sub
 sub onUpNextButton()
     if m.nextEpisode = invalid or m.shuffle <> invalid then return
     m.upNextDismissed = false
-    showUpNext()
+    showUpNext(true)
 end sub
 
 ' Scrubber: Left/Right nudge ±10 s; holding accelerates; OK commits.
@@ -2051,8 +2067,7 @@ sub publishShuffleNext()
     if m.upNext.visible then
         renderUpNext()
         if nxt = invalid then
-            m.countdownTimer.control = "stop"
-            m.countdown = -1
+            cancelUpNextCountdown()
         else if m.finished and m.countdown < 0 and autoPlayNext() then
             ' A new pick at the end restarts the countdown.
             startCountdown()
@@ -2067,8 +2082,7 @@ sub advanceShuffle()
     if m.shuffle = invalid or m.nextEpisode = invalid then return
     if m.shuffleAdvancing or m.shufflePicking then return
     m.shuffleAdvancing = true
-    m.countdownTimer.control = "stop"
-    m.countdown = -1
+    cancelUpNextCountdown()
     m.unPlayBtn.text = Tx("Play Now")
     Api_send("POST", shufflePath() + "/advance", { from_content_id: m.itemId }, "onShuffleAdvanced", { forItem: m.itemId })
 end sub
@@ -2144,6 +2158,14 @@ sub checkUpNext()
     ' A picker or subtitle dialog the viewer has open is left alone: the card shows on a later
     ' position tick once it closes (onFinished still closes it at the very end).
     if m.picker.visible or m.subsDialog.visible then return
+    if m.upNext.visible then
+        ' The viewer opened the card by hand (no countdown): the credits point arms it now, keeping
+        ' the viewer's focus on the card.
+        m.upNextShown = true
+        armUpNextCountdown()
+        renderUpNext()
+        return
+    end if
     showUpNext()
 end sub
 
@@ -2161,16 +2183,51 @@ function stillWatchingDue() as boolean
     return m.autoAdvances >= threshold
 end function
 
+' Two anchors, as Silo Android TV's startNextUpCountdown: a card raised at the end of the stream
+' counts 10 s down and then plays the next item; a card raised before the end (the prompt time or
+' the credits marker) shows the playback time left, so it freezes on pause and grows on a seek
+' back, and the next item starts when this one finishes (onFinished), never cutting the end off.
 sub startCountdown()
-    m.countdown = 10
-    m.unPlayBtn.text = TxF("Play Now · {0}", [m.countdown])
     m.countdownTimer.control = "stop"
+    m.countdownToEnd = not m.finished
+    if m.countdownToEnd then m.countdown = upNextSecondsLeft() else m.countdown = 10
+    m.unPlayBtn.text = TxF("Play Now · {0}", [m.countdown])
     m.countdownTimer.control = "start"
 end sub
 
-sub showUpNext()
+' Whole seconds of playback left in this item (rounded up), for a pre-end Up Next countdown.
+function upNextSecondsLeft() as integer
+    remain = m.duration - m.position
+    if remain <= 0 then return 0
+    n = Int(remain)
+    if n < remain then n = n + 1
+    return n
+end function
+
+sub cancelUpNextCountdown()
+    m.countdownTimer.control = "stop"
+    m.countdown = -1
+    m.countdownToEnd = false
+end sub
+
+' Starts the card's countdown when auto-play is on and the Still Watching Prompt is not due (it
+' then waits for a key and the count starts over), else shows a plain Play Now.
+sub armUpNextCountdown()
+    if m.nextEpisode <> invalid and autoPlayNext() and not stillWatchingDue() then
+        startCountdown()
+    else
+        if stillWatchingDue() then m.autoAdvances = 0
+        cancelUpNextCountdown()
+        m.unPlayBtn.text = Tx("Play Now")
+    end if
+end sub
+
+' userRequested: the transport's Up Next button. Someone who opened the card is choosing, so no
+' countdown starts (TvPlayerViewModel.onUserRequestedNextUp); the credits point or the end of the
+' stream still arms it later (m.upNextShown stays false until then).
+sub showUpNext(userRequested = false as boolean)
     if m.nextEpisode = invalid and m.shuffle = invalid then return
-    m.upNextShown = true
+    if not userRequested then m.upNextShown = true
     ' The end of the video (onFinished) does not wait for an open picker or subtitle dialog: it is
     ' closed so the card takes the keys (onKeyEvent gives an open dialog every key first).
     if m.picker.visible then m.picker.visible = false
@@ -2183,12 +2240,11 @@ sub showUpNext()
     m.skipGroup.visible = false
     layoutUpNext()
 
-    if m.nextEpisode <> invalid and autoPlayNext() and not stillWatchingDue() then
-        startCountdown()
-    else
-        if stillWatchingDue() then m.autoAdvances = 0
-        m.countdown = -1
+    if userRequested then
+        cancelUpNextCountdown()
         m.unPlayBtn.text = Tx("Play Now")
+    else
+        armUpNextCountdown()
     end if
     renderUpNext()
     m.upNext.visible = true
@@ -2348,6 +2404,12 @@ sub onCountdownTick()
         m.countdownTimer.control = "stop"
         return
     end if
+    if m.countdownToEnd then
+        ' The time left in the stream; the advance waits for the end (onFinished).
+        m.countdown = upNextSecondsLeft()
+        m.unPlayBtn.text = TxF("Play Now · {0}", [m.countdown])
+        return
+    end if
     m.countdown = m.countdown - 1
     if m.countdown <= 0 then
         m.countdownTimer.control = "stop"
@@ -2368,7 +2430,7 @@ sub restoreVideoPane()
 end sub
 
 sub keepWatching()
-    m.countdownTimer.control = "stop"
+    cancelUpNextCountdown()
     m.upNext.visible = false
     m.upNextDismissed = true
     restoreVideoPane()
@@ -3647,9 +3709,8 @@ function handleUpNextKey(key as string) as boolean
         else if onDeckShown() and m.onDeckGroup.visible then
             m.onDeckRow.setFocus(true)
         end if
-        m.countdownTimer.control = "stop"
+        cancelUpNextCountdown()
         m.unPlayBtn.text = Tx("Play Now")
-        m.countdown = -1
     else if key = "up" then
         if m.upNextIndex > 0 then m.upNextIndex = m.upNextIndex - 1
         focusUpNext()
