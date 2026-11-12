@@ -41,7 +41,7 @@ function rowNode(i as integer) as object
     icon.translation = [20, (m.rowH - 36) / 2]
     lbl = g.createChild("Label")
     lbl.id = "label"
-    Label_setFont(lbl, "medium", 27)
+    Label_setFontIfChanged(lbl, "medium", 27)
     lbl.vertAlign = "center"
     lbl.height = m.rowH
     lbl.width = m.width - 48 - 40
@@ -117,11 +117,11 @@ sub applyFocus()
         icon = Node_find(g, "icon")
         if isF then
             lbl.color = Theme().colors.onInk
-            Label_setFont(lbl, "semibold", 27)
+            Label_setFontIfChanged(lbl, "semibold", 27)
             icon.blendColor = Theme().colors.onInk
         else
             lbl.color = Theme().colors.ink
-            Label_setFont(lbl, "medium", 27)
+            Label_setFontIfChanged(lbl, "medium", 27)
             icon.blendColor = Theme().colors.ink
         end if
     end for

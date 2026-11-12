@@ -52,7 +52,7 @@ function tabNode(i as integer) as object
     lbl.height = m.tabH
     lbl.vertAlign = "center"
     lbl.horizAlign = "center"
-    Label_setFont(lbl, "semibold", 26)
+    Label_setFontIfChanged(lbl, "semibold", 26)
     m.tabNodes.Push(g)
     return g
 end function
@@ -71,7 +71,7 @@ sub rebuild()
     for i = 0 to tabs.Count() - 1
         g = tabNode(i)
         lbl = Node_find(g, "label")
-        Label_setFont(lbl, "semibold", 26)
+        Label_setFontIfChanged(lbl, "semibold", 26)
         lbl.text = Str_orEmpty(tabs[i].label)
         lbl.width = 0
         textWidths.Push(Int(Label_width(lbl)))
@@ -145,19 +145,19 @@ sub applyState()
             bg.blendColor = c.ink
             ring.visible = false
             lbl.color = c.onInk
-            Label_setFont(lbl, "semibold", 26)
+            Label_setFontIfChanged(lbl, "semibold", 26)
         else if isS then
             bg.visible = true
             bg.blendColor = c.selectedFill
             ring.visible = true
             ring.blendColor = c.selectedBorder
             lbl.color = c.ink
-            Label_setFont(lbl, "semibold", 26)
+            Label_setFontIfChanged(lbl, "semibold", 26)
         else
             bg.visible = false
             ring.visible = false
             lbl.color = c.inkMuted
-            Label_setFont(lbl, "medium", 26)
+            Label_setFontIfChanged(lbl, "medium", 26)
         end if
     end for
     ' Avatar ring.
