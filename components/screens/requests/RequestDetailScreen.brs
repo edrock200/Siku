@@ -496,6 +496,9 @@ end sub
 ' ---------- Focus ----------
 
 sub restoreFocus()
+    ' Reads keep landing after another screen was pushed on top ("Open in Library", a More card);
+    ' taking focus then leaves the visible screen dead. onScreenShown calls this again on return.
+    if m.top.active <> true then return
     if m.errorGroup.visible then
         m.errorRetry.setFocus(true)
         return
