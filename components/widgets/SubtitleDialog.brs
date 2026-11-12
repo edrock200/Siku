@@ -19,6 +19,7 @@ sub init()
     m.scrollY = 0
     m.top.focusable = true
     m.top.observeField("visible", "onVisible")
+    KeyRepeat_init()
     rebuild()
 end sub
 
@@ -439,17 +440,23 @@ function moveFocus(direction as integer) as boolean
     return false
 end function
 
+' KeyRepeat step while Up/Down is held.
+function onKeyRepeat(key as string) as boolean
+    if key = "up" then return moveFocus(-1)
+    return moveFocus(1)
+end function
+
 function onKeyEvent(key as string, press as boolean) as boolean
-    if not press then return true
+    if not press then
+        KeyRepeat_stop()
+        return true
+    end if
     if key = "back" then
         m.top.dismissed = true
         return true
     end if
-    if key = "up" then
-        moveFocus(-1)
-        return true
-    else if key = "down" then
-        moveFocus(1)
+    if key = "up" or key = "down" then
+        if onKeyRepeat(key) then KeyRepeat_start(key)
         return true
     end if
     if m.index < 0 or m.index >= m.entries.Count() then return true

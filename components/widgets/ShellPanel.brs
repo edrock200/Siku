@@ -18,11 +18,13 @@ sub init()
     m.footerDivider = m.top.findNode("footerDivider")
     m.footerLabel = m.top.findNode("footerLabel")
     m.rowNodes = []
+    m.rowWeights = []
     m.rowMeta = []
     m.padX = 32
     m.rowH = 64
     m.top.focusable = true
     m.top.observeField("focusedChild", "applyFocus")
+    KeyRepeat_init()
     rebuild()
 end sub
 
@@ -61,6 +63,7 @@ function rowNode(i as integer) as object
     trailing.width = 28
     trailing.height = 28
     m.rowNodes.Push(g)
+    m.rowWeights.Push("medium")
     return g
 end function
 
@@ -238,13 +241,13 @@ sub applyFocus()
             sub1 = Node_find(g, "sub")
             if isF then
                 lbl.color = Theme().colors.onInk
-                Label_setFont(lbl, "semibold", 26)
+                setRowWeight(i, lbl, "semibold")
                 icon.blendColor = Theme().colors.onInk
                 trailing.blendColor = Theme().colors.onInk
                 sub1.color = "0x000000B3"
             else
                 lbl.color = Theme().colors.ink
-                Label_setFont(lbl, "medium", 26)
+                setRowWeight(i, lbl, "medium")
                 icon.blendColor = Theme().colors.ink
                 trailing.blendColor = "0xEDEDED9E"
                 sub1.color = "0xEDEDED9E"
@@ -253,9 +256,18 @@ sub applyFocus()
     end for
 end sub
 
-sub moveFocus(delta as integer)
+' Gives row i's label the wanted weight, creating a Font node only when the weight changes
+' (applyFocus runs on every key press and after every rebuild).
+sub setRowWeight(i as integer, lbl as object, weight as string)
+    if m.rowWeights[i] = weight then return
+    Label_setFont(lbl, weight, 26)
+    m.rowWeights[i] = weight
+end sub
+
+' Moves the focus to the next selectable row; returns false when it did not move.
+function moveFocus(delta as integer) as boolean
     n = m.rowMeta.Count()
-    if n = 0 then return
+    if n = 0 then return false
     i = m.top.focusIndex
     tries = 0
     while tries < n
@@ -265,12 +277,18 @@ sub moveFocus(delta as integer)
         if not m.rowMeta[i].divider then exit while
         tries = tries + 1
     end while
-    if m.rowMeta[i].divider then return
-    if i <> m.top.focusIndex then
-        m.top.focusIndex = i
-        m.top.rowFocused = i
-    end if
-end sub
+    if m.rowMeta[i].divider then return false
+    if i = m.top.focusIndex then return false
+    m.top.focusIndex = i
+    m.top.rowFocused = i
+    return true
+end function
+
+' KeyRepeat step while Up/Down is held.
+function onKeyRepeat(key as string) as boolean
+    if key = "up" then return moveFocus(-1)
+    return moveFocus(1)
+end function
 
 ' Initials for an avatar fallback: "Ed Smith" -> "ES".
 function Shell_initials(name as string) as string
@@ -282,12 +300,12 @@ function Shell_initials(name as string) as string
 end function
 
 function onKeyEvent(key as string, press as boolean) as boolean
-    if not press then return false
-    if key = "up" then
-        moveFocus(-1)
-        return true
-    else if key = "down" then
-        moveFocus(1)
+    if not press then
+        KeyRepeat_stop()
+        return false
+    end if
+    if key = "up" or key = "down" then
+        if onKeyRepeat(key) then KeyRepeat_start(key)
         return true
     else if key = "OK" then
         fi = m.top.focusIndex

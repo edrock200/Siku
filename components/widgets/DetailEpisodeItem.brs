@@ -83,7 +83,8 @@ end sub
 
 sub onFocus()
     p = m.top.focusPercent
-    if not m.top.rowHasFocus then p = 0
+    ' RowList keeps rowHasFocus true on the focused row while the RowList itself is unfocused.
+    if not (m.top.rowHasFocus and m.top.rowListHasFocus) then p = 0
     m.focusRing.opacity = p
     if p > 0.5 then
         m.title.color = "0xEDEDEDFF"

@@ -121,7 +121,7 @@ function Content_rows(rows as object, insetY = 0 as integer) as object
     for each r in rows
         row = root.createChild("ContentNode")
         row.title = r.title
-        row.addFields({ rowId: Str_orEmpty(r.id), rowStyle: r.style, raw: r })
+        row.addFields({ rowId: Str_orEmpty(r.id), rowStyle: r.style })
         for each c in r.items
             node = Content_cardNode(c, r.style)
             if insetY > 0 then node.cardInsetY = insetY

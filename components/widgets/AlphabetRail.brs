@@ -30,6 +30,7 @@ sub init()
     m.expanded = false
     m.top.focusable = true
     m.top.observeField("focusedChild", "onFocusChange")
+    KeyRepeat_init()
     relayout()
 end sub
 
@@ -160,19 +161,26 @@ sub restyle()
     end for
 end sub
 
+' Moves the focus one entry; false at either end. Also the KeyRepeat step while Up/Down is held.
+function onKeyRepeat(key as string) as boolean
+    if key = "up" and m.focusIndex > 0 then
+        m.focusIndex = m.focusIndex - 1
+    else if key = "down" and m.focusIndex < m.letters.Count() - 1 then
+        m.focusIndex = m.focusIndex + 1
+    else
+        return false
+    end if
+    restyle()
+    return true
+end function
+
 function onKeyEvent(key as string, press as boolean) as boolean
-    if not press then return false
-    if key = "up" then
-        if m.focusIndex > 0 then
-            m.focusIndex = m.focusIndex - 1
-            restyle()
-        end if
-        return true
-    else if key = "down" then
-        if m.focusIndex < m.letters.Count() - 1 then
-            m.focusIndex = m.focusIndex + 1
-            restyle()
-        end if
+    if not press then
+        KeyRepeat_stop()
+        return false
+    end if
+    if key = "up" or key = "down" then
+        if onKeyRepeat(key) then KeyRepeat_start(key)
         return true
     else if key = "OK" then
         if m.focusIndex = 0 then

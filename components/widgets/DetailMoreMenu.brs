@@ -21,6 +21,7 @@ sub init()
     m.viewH = 0
     m.top.focusable = true
     m.top.observeField("visible", "onVisible")
+    KeyRepeat_init()
     rebuild()
 end sub
 
@@ -170,15 +171,26 @@ sub scrollToFocus()
     m.moreDown.visible = m.scrollY < m.listH - m.viewH
 end sub
 
+' Moves the focus one row; false at either end. Also the KeyRepeat step while Up/Down is held.
+function onKeyRepeat(key as string) as boolean
+    if key = "up" and m.index > 0 then
+        m.index = m.index - 1
+    else if key = "down" and m.index < m.rowNodes.Count() - 1 then
+        m.index = m.index + 1
+    else
+        return false
+    end if
+    applyFocus()
+    return true
+end function
+
 function onKeyEvent(key as string, press as boolean) as boolean
-    if not press then return true
-    n = m.rowNodes.Count()
-    if key = "up" then
-        if m.index > 0 then m.index = m.index - 1
-        applyFocus()
-    else if key = "down" then
-        if m.index < n - 1 then m.index = m.index + 1
-        applyFocus()
+    if not press then
+        KeyRepeat_stop()
+        return true
+    end if
+    if key = "up" or key = "down" then
+        if onKeyRepeat(key) then KeyRepeat_start(key)
     else if key = "OK" then
         acts = m.top.actions
         if acts <> invalid and m.index < acts.Count() then m.top.chosen = Str_orEmpty(acts[m.index].id)

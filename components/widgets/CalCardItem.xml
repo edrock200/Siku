@@ -12,6 +12,7 @@
     <field id="focusPercent" type="float" onChange="forward" />
     <field id="itemHasFocus" type="boolean" onChange="forward" />
     <field id="rowHasFocus" type="boolean" onChange="forward" />
+    <field id="rowListHasFocus" type="boolean" onChange="forward" />
     <field id="gridHasFocus" type="boolean" onChange="forward" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/CalCardItem.brs" />

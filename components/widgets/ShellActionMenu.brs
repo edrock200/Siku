@@ -7,6 +7,7 @@ sub init()
     m.titleLabel = m.top.findNode("titleLabel")
     m.rowsGroup = m.top.findNode("rowsGroup")
     m.rowNodes = []
+    m.rowWeights = []
     m.ids = []
     m.focusIndex = 0
     m.width = 640
@@ -46,6 +47,7 @@ function rowNode(i as integer) as object
     lbl.height = m.rowH
     lbl.width = m.width - 48 - 40
     m.rowNodes.Push(g)
+    m.rowWeights.Push("medium")
     return g
 end function
 
@@ -117,14 +119,21 @@ sub applyFocus()
         icon = Node_find(g, "icon")
         if isF then
             lbl.color = Theme().colors.onInk
-            Label_setFont(lbl, "semibold", 27)
+            setRowWeight(i, lbl, "semibold")
             icon.blendColor = Theme().colors.onInk
         else
             lbl.color = Theme().colors.ink
-            Label_setFont(lbl, "medium", 27)
+            setRowWeight(i, lbl, "medium")
             icon.blendColor = Theme().colors.ink
         end if
     end for
+end sub
+
+' Gives row i's label the wanted weight, creating a Font node only when the weight changes.
+sub setRowWeight(i as integer, lbl as object, weight as string)
+    if m.rowWeights[i] = weight then return
+    Label_setFont(lbl, weight, 27)
+    m.rowWeights[i] = weight
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean

@@ -16,6 +16,7 @@ sub init()
     m.dimAnim = m.top.findNode("dimAnim")
     m.dimInterp = m.top.findNode("dimInterp")
     m.tabNodes = []
+    m.tabWeights = []
     t = Theme()
     m.barTop = t.barTop
     m.barH = t.barHeight
@@ -54,6 +55,7 @@ function tabNode(i as integer) as object
     lbl.horizAlign = "center"
     Label_setFont(lbl, "semibold", 26)
     m.tabNodes.Push(g)
+    m.tabWeights.Push("semibold")
     return g
 end function
 
@@ -71,7 +73,7 @@ sub rebuild()
     for i = 0 to tabs.Count() - 1
         g = tabNode(i)
         lbl = Node_find(g, "label")
-        Label_setFont(lbl, "semibold", 26)
+        setTabWeight(i, lbl, "semibold")
         lbl.text = Str_orEmpty(tabs[i].label)
         lbl.width = 0
         textWidths.Push(Int(Label_width(lbl)))
@@ -145,19 +147,19 @@ sub applyState()
             bg.blendColor = c.ink
             ring.visible = false
             lbl.color = c.onInk
-            Label_setFont(lbl, "semibold", 26)
+            setTabWeight(i, lbl, "semibold")
         else if isS then
             bg.visible = true
             bg.blendColor = c.selectedFill
             ring.visible = true
             ring.blendColor = c.selectedBorder
             lbl.color = c.ink
-            Label_setFont(lbl, "semibold", 26)
+            setTabWeight(i, lbl, "semibold")
         else
             bg.visible = false
             ring.visible = false
             lbl.color = c.inkMuted
-            Label_setFont(lbl, "medium", 26)
+            setTabWeight(i, lbl, "medium")
         end if
     end for
     ' Avatar ring.
@@ -172,6 +174,15 @@ sub applyState()
         m.avatarRing.height = 60
         m.avatarRing.translation = [-2, -2]
     end if
+end sub
+
+' Gives tab i's label the wanted weight, creating a Font node only when the weight changes.
+' applyState runs on every focus move, so an unconditional Label_setFont would allocate a Font
+' per tab and re-lay out every label on each key press.
+sub setTabWeight(i as integer, lbl as object, weight as string)
+    if m.tabWeights[i] = weight then return
+    Label_setFont(lbl, weight, 26)
+    m.tabWeights[i] = weight
 end sub
 
 sub updateAvatar()
