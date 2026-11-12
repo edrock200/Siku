@@ -32,6 +32,11 @@ sub init()
     ' (onScreenShown runs right after init) and again only when stale (see refreshData).
     m.libsLoadedAt = 0
     m.libsLoading = false
+    ' A failed libraries request retries on its own (3 s, 10 s, then every 30 s), so the Movies /
+    ' Series tabs do not stay missing until another screen happens to be opened and closed.
+    m.libsRetries = 0
+    m.libsRetryTimer = m.top.findNode("libsRetryTimer")
+    m.libsRetryTimer.observeField("fire", "onLibsRetry")
     m.gateLoadedAt = 0
     m.gateLoading = false
     m.prefsSig = prefsSignature()
@@ -111,7 +116,20 @@ sub onLibraries(event as object)
     resp = Api_result(event)
     if resp.context = invalid or resp.context.profileId <> m.profileId then return
     m.libsLoading = false
-    if not resp.ok or resp.data = invalid then return
+    if not resp.ok or Type(resp.data) <> "roAssociativeArray" then
+        ' Keep the tabs already built (a refresh that failed); retry a first read that failed.
+        if m.libsLoadedAt = 0 then
+            delay = Shell_libsRetryDelay(m.libsRetries)
+            m.libsRetries = m.libsRetries + 1
+            Diag_log(Diag_join(["[siku-home] libraries read failed status=", Int(Num_or(resp.status, 0)), "; trying again in ", delay, " s"]))
+            m.libsRetryTimer.control = "stop"
+            m.libsRetryTimer.duration = delay
+            m.libsRetryTimer.control = "start"
+        end if
+        return
+    end if
+    m.libsRetries = 0
+    m.libsRetryTimer.control = "stop"
     m.libsLoadedAt = Time_nowSeconds()
     m.libraries = Arr_or(resp.data.items)
     ' Search asks for box sets only while some library has them on (Silo Android #646).
@@ -120,6 +138,17 @@ sub onLibraries(event as object)
     m.global.boxSetsAvailable = available
     buildTabs()
 end sub
+
+sub onLibsRetry()
+    if m.libsLoadedAt = 0 then loadLibraries()
+end sub
+
+' Seconds before the next try after `retries` failed reads of the libraries: 3, 10, then 30.
+function Shell_libsRetryDelay(retries as integer) as integer
+    if retries <= 0 then return 3
+    if retries = 1 then return 10
+    return 30
+end function
 
 ' Requests feature gate (RequestsFeatureStore): the tab and the search row appear only when the
 ' server enables requests for this profile. Request administration stays in web admin, so there is
@@ -209,6 +238,14 @@ sub buildTabs()
     if si < 0 then si = 0
     m.bar.selectedIndex = si
     if m.bar.focusIndex >= tabs.Count() then m.bar.focusIndex = si
+    ' The selected tab itself is gone (Show Audiobooks turned off, say) while its page is on
+    ' screen: that page goes too. Profile-menu pages stay.
+    if tabIndex(selectedId) < 0 and m.currentKey <> "home" and m.currentKey <> "requests" and Left(m.currentKey, 9) <> "personal:" then
+        if panelOpen() then closePanel()
+        m.currentLibraryId = ""
+        showHome()
+        if m.focusArea = "content" then focusContent()
+    end if
     ' The library on screen was just hidden (on this device or another): fall back to Home.
     if m.currentLibraryId <> "" and not visibleIds.DoesExist(m.currentLibraryId) then
         m.currentLibraryId = ""
@@ -698,6 +735,9 @@ sub onScreenShown()
         m.libraries = []
         m.bar.selectedIndex = 0
         m.libsLoading = false
+        m.libsLoadedAt = 0
+        m.libsRetries = 0
+        m.libsRetryTimer.control = "stop"
         m.gateLoading = false
         resetRequestsGate()
         buildTabs()
@@ -752,7 +792,10 @@ function onKeyEvent(key as string, press as boolean) as boolean
     barFocused = m.bar.hasFocus()
     if key = "back" then
         if barFocused then
-            if m.bar.selectedIndex <> 0 then
+            ' Decide from the page on screen as well as the tab: a profile-menu page (Watchlist,
+            ' Favorites, History, Requests) shows under the tab that was selected, often Home, and
+            ' Back returns Home from it instead of leaving the app.
+            if m.bar.selectedIndex <> 0 or m.currentKey <> "home" then
                 commitTab(0)
                 focusBar(0)
                 return true
