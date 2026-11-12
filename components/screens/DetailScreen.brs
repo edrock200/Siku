@@ -56,6 +56,9 @@ sub init()
     m.nextUp = invalid
     m.currentEpisodeId = ""
     m.episodesFailed = false
+    m.seasonsFailed = false
+    m.episodesSeq = 0
+    m.refreshNextUp = false
     m.zones = []
     m.zoneIndex = 0
     m.actionButtons = []
@@ -63,6 +66,7 @@ sub init()
     m.chips = []
     m.chipIndex = 0
     m.heroBottom = 690
+    m.top.focusable = true
     m.menuKind = "more"
     ' Playback selections for the title the selectors describe (the item, or a series' next-up episode).
     m.selFileId = ""            ' "" = Auto
@@ -148,7 +152,7 @@ sub onItem(event as object)
             m.episodesMsg.text = "Loading episodes…"
             layoutBody()
             buildZones()
-            Api_get("/api/v2/catalog/series/" + Str_urlEncode(seriesId) + "/seasons", { image_size: "medium", include_artwork: "false" }, "onSeasons")
+            loadSeasons()
         end if
     end if
     if m.itemType = "movie" or m.itemType = "series" then
@@ -169,10 +173,27 @@ end sub
 
 sub onItemRefreshed(event as object)
     resp = Api_result(event)
-    if not resp.ok or resp.data = invalid then return
+    if not resp.ok or resp.data = invalid or Type(resp.data) <> "roAssociativeArray" then return
     m.item = resp.data
     updatePrimary()
     updateToggles()
+    if m.seasonsFailed then loadSeasons()
+    if m.itemType = "series" or m.itemType = "season" then
+        ' Playback may have moved the next-up episode: recompute it from the refreshed
+        ' play_content_id when the episodes arrive, opening its season if that changed.
+        m.refreshNextUp = true
+        if m.itemType = "series" and m.item.play_season_number <> invalid and m.seasons.Count() > 0 then
+            ps = toInt(m.item.play_season_number)
+            if m.selectedSeason = invalid or ps <> m.selectedSeason then
+                for each s in m.seasons
+                    if s.season_number <> invalid and toInt(s.season_number) = ps then
+                        selectSeason(ps)
+                        return
+                    end if
+                end for
+            end if
+        end if
+    end if
     if m.selectedSeason <> invalid then loadEpisodes(m.selectedSeason)
 end sub
 
@@ -636,7 +657,11 @@ sub buildZones()
     if m.episodesSection.visible then
         sy = m.episodesSection.translation[1]
         if m.chips.Count() > 0 then zones.Push({ name: "chips", y: sy })
-        if m.episodes.Count() > 0 then zones.Push({ name: "episodes", y: sy })
+        if m.episodes.Count() > 0 then
+            zones.Push({ name: "episodes", y: sy })
+        else if m.seasonsFailed then
+            zones.Push({ name: "episodesRetry", y: sy })
+        end if
     end if
     if m.castSection.visible then zones.Push({ name: "cast", y: m.castSection.translation[1] })
     if m.relatedSection.visible then zones.Push({ name: "related", y: m.relatedSection.translation[1] })
@@ -664,6 +689,8 @@ sub focusZone(i as integer)
     changed = i <> m.zoneIndex
     m.zoneIndex = i
     z = m.zones[i]
+    ' The retry message brightens while it is the focused zone.
+    if z.name = "episodesRetry" then m.episodesMsg.color = "0xEDEDEDFF" else m.episodesMsg.color = "0xEDEDED9E"
     if z.name = "actions" then
         if changed then m.actionIndex = 0
         if m.actionButtons.Count() = 0 then layoutActions()
@@ -677,6 +704,9 @@ sub focusZone(i as integer)
             scrollChips()
         else if z.name = "episodes" then
             m.episodeRow.setFocus(true)
+        else if z.name = "episodesRetry" then
+            ' Nothing focusable is drawn there; the screen itself takes the keys (OK retries).
+            m.top.setFocus(true)
         else if z.name = "cast" then
             m.castRow.setFocus(true)
         else if z.name = "related" then
@@ -701,15 +731,26 @@ end sub
 
 ' ---------- Seasons and episodes ----------
 
+sub loadSeasons()
+    m.seasonsFailed = false
+    Api_get("/api/v2/catalog/series/" + Str_urlEncode(seriesIdOf()) + "/seasons", { image_size: "medium", include_artwork: "false" }, "onSeasons")
+end sub
+
 sub onSeasons(event as object)
     resp = Api_result(event)
-    if not resp.ok or resp.data = invalid then
-        m.episodesMsg.text = "Press again to retry"
-        m.episodesFailed = true
+    if not resp.ok or resp.data = invalid or Type(resp.data) <> "roAssociativeArray" then
+        ' No chips and no episodes exist yet, so the message itself becomes a focus zone
+        ' ("episodesRetry") where OK asks for the seasons again.
+        m.episodesMsg.text = "Episodes could not be loaded. Press OK to retry."
+        m.seasonsFailed = true
+        buildZones()
         return
     end if
     m.seasons = Arr_or(resp.data.items)
+    wasRetry = zoneName() = "episodesRetry"
     buildChips()
+    ' Retried from the message zone: focus is parked on the screen, so move it to the new chips.
+    if wasRetry then focusZone(m.zoneIndex)
 
     ' Initial season: the item's own season, else play_season_number, else the first regular season.
     sel = invalid
@@ -789,8 +830,10 @@ sub loadEpisodes(n as integer)
         m.episodesMsg.visible = true
         m.episodesMsg.text = "Loading episodes…"
     end if
-    m.episodesRequestSeason = n
-    Api_get("/api/v2/catalog/series/" + Str_urlEncode(sid) + "/seasons/" + n.ToStr() + "/episodes", { image_size: "medium" }, "onEpisodes")
+    ' Each request carries its own number; only the latest one is applied, so a slow answer for a
+    ' season chip the user has already left cannot overwrite the newer one.
+    m.episodesSeq = m.episodesSeq + 1
+    Api_get("/api/v2/catalog/series/" + Str_urlEncode(sid) + "/seasons/" + n.ToStr() + "/episodes", { image_size: "medium" }, "onEpisodes", { seq: m.episodesSeq })
 end sub
 
 function airDateText(d as dynamic) as string
@@ -804,8 +847,8 @@ end function
 
 sub onEpisodes(event as object)
     resp = Api_result(event)
-    if m.episodesRequestSeason <> m.selectedSeason then return
-    if not resp.ok or resp.data = invalid then
+    if resp.context = invalid or resp.context.seq <> m.episodesSeq then return
+    if not resp.ok or resp.data = invalid or Type(resp.data) <> "roAssociativeArray" then
         m.episodesMsg.visible = true
         m.episodesMsg.text = "Press again to retry"
         m.episodesFailed = true
@@ -824,9 +867,11 @@ sub onEpisodes(event as object)
     ' Which episode is "current": the episode page's own item, or the series/season next-up.
     if m.itemType = "episode" then
         m.currentEpisodeId = Str_orEmpty(m.item.content_id)
-    else if m.nextUp = invalid or m.itemType = "season" then
+    else if m.nextUp = invalid or m.itemType = "season" or m.refreshNextUp then
+        m.refreshNextUp = false
         playId = Str_orEmpty(m.item.play_content_id)
-        if m.itemType = "season" then
+        if m.itemType = "season" and playId = "" then
+            ' The season list is fetched once; the (refreshed) season item is fresher when it has one.
             for each s in m.seasons
                 if toInt(s.season_number) = m.selectedSeason and not Str_isEmpty(s.play_content_id) then playId = s.play_content_id
             end for
@@ -1276,6 +1321,11 @@ function onKeyEvent(key as string, press as boolean) as boolean
         ' Row lists handle their own horizontal movement; swallow the overflow.
         return true
     else if key = "OK" then
+        if z = "episodesRetry" then
+            m.episodesMsg.text = "Loading episodes…"
+            loadSeasons()
+            return true
+        end if
         if z = "episodes" and m.episodesFailed and m.selectedSeason <> invalid then
             loadEpisodes(m.selectedSeason)
             return true
