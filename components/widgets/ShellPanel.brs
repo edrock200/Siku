@@ -18,6 +18,7 @@ sub init()
     m.footerDivider = m.top.findNode("footerDivider")
     m.footerLabel = m.top.findNode("footerLabel")
     m.rowNodes = []
+    m.rowWeights = []
     m.rowMeta = []
     m.padX = 32
     m.rowH = 64
@@ -61,6 +62,7 @@ function rowNode(i as integer) as object
     trailing.width = 28
     trailing.height = 28
     m.rowNodes.Push(g)
+    m.rowWeights.Push("medium")
     return g
 end function
 
@@ -238,19 +240,27 @@ sub applyFocus()
             sub1 = Node_find(g, "sub")
             if isF then
                 lbl.color = Theme().colors.onInk
-                Label_setFont(lbl, "semibold", 26)
+                setRowWeight(i, lbl, "semibold")
                 icon.blendColor = Theme().colors.onInk
                 trailing.blendColor = Theme().colors.onInk
                 sub1.color = "0x000000B3"
             else
                 lbl.color = Theme().colors.ink
-                Label_setFont(lbl, "medium", 26)
+                setRowWeight(i, lbl, "medium")
                 icon.blendColor = Theme().colors.ink
                 trailing.blendColor = "0xEDEDED9E"
                 sub1.color = "0xEDEDED9E"
             end if
         end if
     end for
+end sub
+
+' Gives row i's label the wanted weight, creating a Font node only when the weight changes
+' (applyFocus runs on every key press and after every rebuild).
+sub setRowWeight(i as integer, lbl as object, weight as string)
+    if m.rowWeights[i] = weight then return
+    Label_setFont(lbl, weight, 26)
+    m.rowWeights[i] = weight
 end sub
 
 sub moveFocus(delta as integer)
