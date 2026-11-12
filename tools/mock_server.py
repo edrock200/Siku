@@ -216,6 +216,9 @@ clears one); GET /mock/switch lists them.
                                  answer=
   device_user=<name>             device-code sign-ins are approved as that user (implies multi_user for
                                  the tokens it hands out); the simulator cannot type a password
+  people_scope=0|fail            GET /api/v2/catalog/search/capabilities leaves people_media_scope out (an
+                                 older server: Search then asks no people at all, as Android TV) or answers
+                                 500 (the same). Default: advertised. Log: SEARCH CAPS people_media_scope=
   info_status=<code>[:<detail>]  GET /system/info answers that status: a problem with that detail, or
                                  a bare text error without one (the address screen's "Could not reach
                                  server: <detail>" / "Could not reach a Silo server at that address.")
@@ -3110,6 +3113,17 @@ class Handler(BaseHTTPRequestHandler):
                         print("EPISODES translation=%s" % season_translation_state(), flush=True)
                     return self.send(200, {"items": [episode(i, sn, e) for e in range(1, eps + 1)] if 1 <= sn <= seasons else []})
             return self.problem(404, "not_found", "Not found")
+        if p == "/api/v2/catalog/search/capabilities":
+            # --switch people_scope=0|fail: an older server without people_media_scope, or a failed read.
+            mode = str(STATE["switches"].get("people_scope") or "1")
+            print("SEARCH CAPS people_media_scope=%s" % mode, flush=True)
+            LOG.append("SEARCH CAPS people_media_scope=%s" % mode)
+            if mode == "fail":
+                return self.problem(500, "internal_error", "Search capabilities failed")
+            caps = {"revision": "mock-1", "state": "ready", "provider": "mock"}
+            if mode not in ("0", "off"):
+                caps["people_media_scope"] = True
+            return self.send(200, caps)
         if p == "/api/v2/catalog/people":
             text = q.get("q", [""])[0].lower()
             print("PEOPLE SEARCH media_scope=%s" % q.get("media_scope", ["-"])[0], flush=True)
