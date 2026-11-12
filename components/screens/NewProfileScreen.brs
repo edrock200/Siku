@@ -26,6 +26,12 @@ sub init()
     m.child = false
     m.primary = invalid
     m.primaryToken = ""
+    ' Opened from the picker's manage mode (Silo Android TV's Add profile tile): the primary profile
+    ' is already verified there, so its PIN is not asked again, and the picker (still in manage mode)
+    ' reloads its list when this screen closes.
+    ' (Read in onProfiles: MainScene sets params after init.)
+    m.fromPicker = false
+    m.manager = invalid
     m.pinDialog = invalid
     m.state = "loading"     ' loading | form | sending | done
     m.focusKey = "name"     ' name | pin | child | create | cancel
@@ -68,6 +74,17 @@ sub onProfiles(event as object)
         return
     end if
     m.primary = p
+    params = m.top.params
+    if params <> invalid and Type(params.manager) = "roAssociativeArray" then
+        m.fromPicker = true
+        m.manager = { id: Str_orEmpty(params.manager.id), token: Str_orEmpty(params.manager.token) }
+    end if
+    if m.manager <> invalid and m.manager.id = Str_orEmpty(p.id) and (m.manager.token <> "" or not isTrue(p.has_pin)) then
+        m.primaryToken = m.manager.token
+        Diag_log("[siku-profiles] add profile: form shown (manage mode)")
+        showForm()
+        return
+    end if
     if isTrue(p.has_pin) then
         Diag_log("[siku-profiles] add profile: asking the primary profile's PIN")
         openPin(p)
@@ -216,6 +233,8 @@ sub onCreated(event as object)
     else if outcome = "verify" then
         m.global.toast = Tx("Enter the primary profile's PIN again, then try again.")
         m.state = "done"
+        ' From manage mode: its token went stale; the picker leaves manage mode.
+        if m.fromPicker then m.top.result = { changed: true, manageEnded: true }
         Nav_close()
     else
         m.state = "form"
@@ -230,6 +249,11 @@ end sub
 ' (Android TV clears the active profile and opens ProfileSelection).
 sub openPicker()
     m.state = "done"
+    if m.fromPicker then
+        ' Back to the picker that opened this, still in manage mode: it reloads its list.
+        Nav_close({ changed: true })
+        return
+    end if
     s = m.global.session
     if not Accounts_isTemporary(s) then
         c = AA_copy(s)

@@ -11,6 +11,9 @@
   retried. A new profile (or a create that got no answer, which may exist) leads to the account's
   picker with no profile open; a refusal shows the server's reason; Back or Cancel returns to the
   screen the menu was on.
+  Params: { manager: { id, token } } when the picker's manage mode opens it (its Add profile tile):
+  the primary profile is already verified, so the form shows at once, and a create returns to the
+  picker (result { changed }) instead of resetting to it.
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="NewProfileScreen" extends="BaseScreen">
