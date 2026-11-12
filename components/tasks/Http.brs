@@ -7,7 +7,8 @@ function Http_maxBodyChars() as integer
     return 2097152
 end function
 
-' Performs a request and returns {status, text, data, error, headers}.
+' Performs a request and returns {status, text, data, error, headers}. status is 0 when no HTTP
+' answer arrived (timeout or transport failure; a transport failure also sets transportCode).
 function Http_send(method as string, url as string, headers as object, body as dynamic, timeoutSec as integer) as object
     xfer = CreateObject("roUrlTransfer")
     port = CreateObject("roMessagePort")
@@ -70,6 +71,12 @@ function Http_send(method as string, url as string, headers as object, body as d
     end if
 
     status = msg.GetResponseCode()
+    failure = Http_failureText(status, msg.GetFailureReason())
+    transportCode = invalid
+    if status < 0 then
+        transportCode = status
+        status = 0
+    end if
     text = msg.GetString()
     if text = invalid then text = ""
     if Len(text) > Http_maxBodyChars() then
@@ -77,12 +84,24 @@ function Http_send(method as string, url as string, headers as object, body as d
         return { status: 0, text: "", data: invalid, error: { code: "too_large", title: Tx("The server's answer was too large") } }
     end if
     data = invalid
-    if Len(text) > 0 then data = ParseJson(text)
+    if status > 0 and Len(text) > 0 then data = ParseJson(text)
     result = { status: status, text: text, data: data, error: invalid, headers: msg.GetResponseHeaders() }
+    if transportCode <> invalid then result.transportCode = transportCode
     if status < 200 or status >= 300 then
-        result.error = Http_problem(status, data, msg.GetFailureReason())
+        result.error = Http_problem(status, data, failure)
     end if
     return result
+end function
+
+' Roku reports DNS, connection, reset and TLS failures as a negative curl code, while every caller
+' tests `status = 0` for "the server did not answer". Http_send/Http_download clamp the code to 0;
+' this keeps the curl code in the failure text for the console (pure; tests/test_http_status.py).
+function Http_failureText(status as dynamic, failure as dynamic) as string
+    reason = Str_orEmpty(failure)
+    s = Int(Num_or(status, 0))
+    if s >= 0 then return reason
+    if reason <> "" then reason = reason + " "
+    return reason + "(curl " + s.ToStr() + ")"
 end function
 
 ' A GET whose body is saved to path (tmp: only; ApiTask checks), not parsed. Returns
@@ -122,9 +141,11 @@ function Http_download(url as string, headers as object, path as string, timeout
         return { status: 0, text: "", data: invalid, error: { code: "timeout", title: Tx("The server took too long to answer") } }
     end if
     status = msg.GetResponseCode()
+    failure = Http_failureText(status, msg.GetFailureReason())
+    if status < 0 then status = 0
     if status < 200 or status >= 300 or not files.Exists(path) then
         if files.Exists(path) then files.Delete(path)
-        return { status: status, text: "", data: invalid, error: Http_problem(status, invalid, msg.GetFailureReason()) }
+        return { status: status, text: "", data: invalid, error: Http_problem(status, invalid, failure) }
     end if
     return { status: status, text: "", data: { path: path }, error: invalid, headers: msg.GetResponseHeaders() }
 end function

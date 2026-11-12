@@ -95,3 +95,18 @@ class ProbeHeaders(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TransportStatus(unittest.TestCase):
+    """Http_send/Http_download clamp Roku's negative curl codes to status 0 (callers test
+    `status = 0` for "no answer") and keep the code in the failure text."""
+
+    def test_failure_text(self):
+        f = "Http_failureText"
+        check_cases(self, HTTP, [
+            ("curl code with a reason", f, [-6, "Couldn't resolve host name"], "Couldn't resolve host name (curl -6)"),
+            ("curl code without a reason", f, [-7, ""], "(curl -7)"),
+            ("curl code, reason missing", f, [-28, None], "(curl -28)"),
+            ("an HTTP answer keeps its reason", f, [502, "Bad Gateway"], "Bad Gateway"),
+            ("timeout path (status 0)", f, [0, ""], ""),
+        ])

@@ -19,7 +19,8 @@
   }
   response: { ok: bool, status: int, data: parsed JSON or invalid, text: raw body,
               error: {code, title, detail} or invalid, context }
-  status = 0 means a network failure. SPDX-License-Identifier: AGPL-3.0-or-later
+  status = 0 means no HTTP answer (timeout or transport failure; Roku's negative curl codes are
+  clamped to 0 and kept in transportCode). SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="ApiTask" extends="Task">
   <interface>
