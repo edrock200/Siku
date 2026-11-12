@@ -23,6 +23,7 @@
     <field id="dismissed" type="boolean" alwaysNotify="true" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/DetailMoreMenu.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/KeyRepeat.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/A11y.brs" />
   <children>

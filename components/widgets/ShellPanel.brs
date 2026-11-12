@@ -1,6 +1,7 @@
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
 sub init()
+    KeyRepeat_init()
     m.shadow = m.top.findNode("shadow")
     m.bg = m.top.findNode("bg")
     m.sheen = m.top.findNode("sheen")
@@ -298,9 +299,10 @@ sub applyFocus()
     end for
 end sub
 
-sub moveFocus(delta as integer)
+' Moves the focus to the next selectable row; false when it did not move.
+function moveFocus(delta as integer) as boolean
     n = m.rowMeta.Count()
-    if n = 0 then return
+    if n = 0 then return false
     i = m.top.focusIndex
     tries = 0
     while tries < n
@@ -310,12 +312,18 @@ sub moveFocus(delta as integer)
         if not m.rowMeta[i].divider then exit while
         tries = tries + 1
     end while
-    if m.rowMeta[i].divider then return
-    if i <> m.top.focusIndex then
-        m.top.focusIndex = i
-        m.top.rowFocused = i
-    end if
-end sub
+    if m.rowMeta[i].divider then return false
+    if i = m.top.focusIndex then return false
+    m.top.focusIndex = i
+    m.top.rowFocused = i
+    return true
+end function
+
+' KeyRepeat step while Up/Down is held.
+function onKeyRepeat(key as string) as boolean
+    if key = "up" then return moveFocus(-1)
+    return moveFocus(1)
+end function
 
 ' A row flag that may be missing (pitfall 16: comparing invalid with a boolean throws on a Roku).
 function Panel_isTrue(v as dynamic) as boolean
@@ -334,12 +342,12 @@ function Shell_initials(name as string) as string
 end function
 
 function onKeyEvent(key as string, press as boolean) as boolean
-    if not press then return false
-    if key = "up" then
-        moveFocus(-1)
-        return true
-    else if key = "down" then
-        moveFocus(1)
+    if not press then
+        KeyRepeat_stop()
+        return false
+    end if
+    if key = "up" or key = "down" then
+        if onKeyRepeat(key) then KeyRepeat_start(key)
         return true
     else if key = "OK" then
         fi = m.top.focusIndex
