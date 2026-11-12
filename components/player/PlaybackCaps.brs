@@ -278,7 +278,9 @@ function PlaybackCaps_truthy(v as dynamic) as boolean
     return false
 end function
 
-' client_features we advertise. We don't implement seek_reanchor or header refresh.
+' client_features we advertise. Header refresh is not implemented. seek_reanchor_v1 is not
+' declared: the player sends a seek_reanchor replan only for a plan whose timeline says it cannot
+' seek natively (PlayerScreen.seekNeedsReanchor), which the server accepts without the feature.
 function PlaybackCaps_clientFeatures() as object
     return ["playback_plan_v3"]
 end function

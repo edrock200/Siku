@@ -140,6 +140,7 @@ sub resetPlaybackState()
     m.forceSubtitlesOff = false
     m.explicitSubtitleId = ""
     m.remuxRecoveryTried = false
+    m.seekTarget = 0.0
     m.pendingAudioIndex = -1
     m.chosenAudioIndex = -1
     m.plannedAudioApplied = true
@@ -890,11 +891,39 @@ end function
 sub seekToSource(seconds as float)
     if seconds < 0 then seconds = 0
     if m.duration > 0 and seconds > m.duration - 1 then seconds = m.duration - 1
+    if seekNeedsReanchor(seconds) then
+        ' Outside what this stream can seek to (a copy remux or a growing transcode starts at its
+        ' origin and ends at what has been produced): the server re-anchors the stream there.
+        m.seekTarget = seconds
+        m.scrubber.position = seconds
+        sendReplan("seek_reanchor", "seek")
+        return
+    end if
+    seekNative(seconds)
+end sub
+
+sub seekNative(seconds as float)
     resetBuffered()
     m.video.seek = seconds - m.timelineOffset
     m.position = seconds
     m.scrubber.position = seconds
 end sub
+
+' timeline.can_seek_anywhere = false: only [seek_window_start, seek_window_end] is seekable in the
+' stream as mounted; an open end means up to what has been produced (the furthest buffered or
+' played point). Plans without the field, or that can seek anywhere, always seek natively.
+function seekNeedsReanchor(target as float) as boolean
+    if m.plan = invalid or m.sessionId = "" or m.plan.timeline = invalid then return false
+    tl = m.plan.timeline
+    if tl.can_seek_anywhere = invalid or PlaybackCaps_truthy(tl.can_seek_anywhere) then return false
+    windowStart = m.timelineOffset
+    if tl.seek_window_start_seconds <> invalid then windowStart = Content_num(tl.seek_window_start_seconds)
+    if target < windowStart then return true
+    if tl.seek_window_end_seconds <> invalid then return target > Content_num(tl.seek_window_end_seconds)
+    head = m.position
+    if m.bufferedEnd > head then head = m.bufferedEnd
+    return target > head
+end function
 
 sub onFinished()
     if m.finished then return
@@ -2379,7 +2408,9 @@ sub sendReplan(operation as string, kind as string, failure = invalid as dynamic
         if key <> "" and not known and m.attemptedPlanKeys.Count() < 8 then m.attemptedPlanKeys.Push(key)
         attempted = m.attemptedPlanKeys
     end if
-    body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, operation, m.qualityPref, m.position, selected, failure, attempted)
+    replanPos = m.position
+    if kind = "seek" then replanPos = m.seekTarget
+    body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, operation, m.qualityPref, replanPos, selected, failure, attempted)
     m.lastRequestBody = body
     m.replanKind = kind
     setBuffering(true)
@@ -2400,6 +2431,16 @@ sub onReplan(event as object)
         showError(m.errorRecoveryMsg)
         return
     end if
+    if failed and m.replanKind = "seek" then
+        ' The server could not re-anchor: seek as far as this stream allows.
+        setBuffering(false)
+        target = m.seekTarget
+        tl = m.plan.timeline
+        if tl <> invalid and tl.seek_window_start_seconds <> invalid and target < Content_num(tl.seek_window_start_seconds) then target = Content_num(tl.seek_window_start_seconds)
+        m.global.toast = "Couldn't jump there in this stream"
+        seekNative(target)
+        return
+    end if
     if not resp.ok or resp.data = invalid or resp.data.outcome <> "playable" or resp.data.playback_plan = invalid then
         setBuffering(false)
         m.global.toast = failText
@@ -2416,13 +2457,15 @@ sub onReplan(event as object)
     end if
     print PlaybackCaps_diagLine(m.lastRequestBody, plan)
     resumeAt = m.position
+    if m.replanKind = "seek" then resumeAt = m.seekTarget
     m.video.control = "stop"
     applyPlan(plan, { resumeAt: resumeAt, subtitleTrackId: currentSubtitleChoice() })
     if m.replanKind = "audio" and m.pendingAudioIndex >= 0 then m.chosenAudioIndex = m.pendingAudioIndex
     m.pendingAudioIndex = -1
     ' The overlay was rebuilt when the picker closed, before this answer: refresh it with the new plan.
     if m.hud.visible then buildHudRows()
-    maybeRecoverSilentRemux(plan)
+    ' A seek keeps the route; its remux answer was already recovered (or announced) once.
+    if m.replanKind <> "seek" then maybeRecoverSilentRemux(plan)
 end sub
 
 ' On a direct-played file the server names the track to play (client_selected_audio_track_v1) and
