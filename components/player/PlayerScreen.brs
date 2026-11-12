@@ -316,9 +316,43 @@ sub startPipeline()
 end sub
 
 sub retry()
+    ' Try again continues where playback stopped, in the file and with the tracks that were playing
+    ' (no second Rewind on Resume); an error before anything played keeps the launch parameters.
+    p = AA_copy(m.top.params)
+    if p = invalid then p = {}
+    if m.position > 0 then
+        p.startPosition = m.position
+        p.skipResumeRewind = true
+    end if
+    if m.fileId <> "" then p.fileId = m.fileId
+    if m.plan <> invalid and m.fileId <> "" then
+        sel = m.plan.selected_tracks
+        audioId = ""
+        if Type(sel) = "roAssociativeArray" and Type(sel.audio) = "roAssociativeArray" then
+            audioId = Str_orEmpty(sel.audio.id)
+            if audioId = "" and sel.audio.index <> invalid then audioId = Tracks_audioId(m.fileId, Int(Num_or(sel.audio.index, 0)))
+        end if
+        if m.chosenAudioIndex >= 0 then audioId = Tracks_audioId(m.fileId, m.chosenAudioIndex)
+        if audioId <> "" then
+            p.audioTrackId = audioId
+            p.audioTrackIndex = invalid
+        end if
+        keepSub = m.pendingSubtitleTrackId
+        if keepSub = "" then keepSub = Subs_selectedTrackId()
+        if keepSub <> "" then
+            p.subtitleTrackId = keepSub
+            p.subtitleTrackIndex = invalid
+        else if m.mountPlayed then
+            ' Subtitles were off on screen: they stay off.
+            p.subtitleTrackId = invalid
+            p.subtitleTrackIndex = -1
+        end if
+    end if
+    Diag_log("[siku-playback] try again at " + Int(m.position).ToStr() + " s file=" + m.fileId)
     m.errorGroup.visible = false
     stopSession()
     m.video.control = "stop"
+    m.top.params = p
     resetPlaybackState()
     startPipeline()
 end sub
@@ -621,7 +655,7 @@ sub startSession(installation as string)
     ' Rewind on Resume (Settings → Playback → Episodes): back up a few seconds when continuing a
     ' partly watched title. Only when the caller passed the resume position; a server-side resume
     ' (no start_position) cannot be adjusted here.
-    if startPos <> invalid and startPos > 0 then
+    if startPos <> invalid and startPos > 0 and not PlaybackCaps_truthy(p.skipResumeRewind) then
         rewind = Settings_resumeRewindSeconds()
         if rewind > 0 then
             startPos = startPos - rewind
