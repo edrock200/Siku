@@ -10,6 +10,7 @@
 -->
 <component name="DetailScreen" extends="BaseScreen">
   <script type="text/brightscript" uri="pkg:/components/screens/DetailScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/DataRevision.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Shuffle.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />
   <children>

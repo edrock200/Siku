@@ -12,6 +12,9 @@ sub init()
     m.loading = false
     m.rows = []
     m.pendingSections = 0
+    m.loadSeq = 0
+    m.loadedRev = -1        ' DataRev_current() when the rows were last requested
+    m.background = false    ' this load refreshes rows that stay on screen
     m.optionsTarget = invalid
     m.top.focusable = true
 end sub
@@ -23,12 +26,8 @@ function libraryId() as string
 end function
 
 sub onPageShown()
-    if m.global.homeDirty = true and libraryId() = "" then
-        m.global.homeDirty = false
-        load()
-    else if not m.loaded and not m.loading then
-        load()
-    end if
+    ' Reload after playback or a watched / favorite / watchlist change (any page, any library).
+    if DataRev_current() <> m.loadedRev or (not m.loaded and not m.loading) then load()
 end sub
 
 sub focusContent()
@@ -43,24 +42,41 @@ end sub
 
 sub load()
     m.loading = true
+    m.loadSeq = m.loadSeq + 1
+    m.loadedRev = DataRev_current()
+    ' Rows already on screen stay there while the new ones load (no spinner flash on return).
+    m.background = m.loaded and m.rows.Count() > 0 and m.feed.state = "ready"
+    if m.background then
+        requestSections()
+        return
+    end if
     ' Retry / Refresh hides with the status card: park focus on the page so the answer moves it
     ' to the rows (buildRows acts only while the page itself holds focus).
     if m.feed.state = "error" or m.feed.state = "empty" then
         if m.top.isInFocusChain() then m.top.setFocus(true)
     end if
     m.feed.state = "loading"
+    requestSections()
+end sub
+
+sub requestSections()
+    ctx = { seq: m.loadSeq }
     lib = libraryId()
     if lib <> "" then
-        Api_get("/api/v2/library/" + Str_urlEncode(lib) + "/sections", { image_size: "medium" }, "onSections")
+        Api_get("/api/v2/library/" + Str_urlEncode(lib) + "/sections", { image_size: "medium" }, "onSections", ctx)
     else
-        Api_get("/api/v2/home/sections", { image_size: "medium" }, "onSections")
+        Api_get("/api/v2/home/sections", { image_size: "medium" }, "onSections", ctx)
     end if
 end sub
 
 sub onSections(event as object)
     resp = Api_result(event)
+    ' Answers from an earlier load are dropped (each load gets a sequence number).
+    if resp.context = invalid or resp.context.seq <> m.loadSeq then return
     if not resp.ok then
         m.loading = false
+        ' A failed background refresh keeps the rows that are on screen.
+        if m.background then return
         m.feed.errorText = Api_errorText(resp)
         m.feed.state = "error"
         return
@@ -87,7 +103,7 @@ sub onSections(event as object)
             else
                 path = "/api/v2/home/sections/" + Str_urlEncode(sid) + "/items"
             end if
-            Api_get(path, { image_size: "medium" }, "onSectionItems", { index: idx })
+            Api_get(path, { image_size: "medium" }, "onSectionItems", { index: idx, seq: m.loadSeq })
         end if
     end for
     if m.pendingSections = 0 then buildRows()
@@ -96,7 +112,8 @@ end sub
 sub onSectionItems(event as object)
     resp = Api_result(event)
     ctx = resp.context
-    if resp.ok and resp.data <> invalid and ctx <> invalid then
+    if ctx = invalid or ctx.seq <> m.loadSeq then return
+    if resp.ok and resp.data <> invalid then
         idx = ctx.index
         if idx >= 0 and idx < m.sections.Count() then
             m.sections[idx].items = hideWatchedItems(m.sections[idx].section, Arr_or(resp.data.items))

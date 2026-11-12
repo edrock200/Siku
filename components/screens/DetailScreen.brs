@@ -59,6 +59,7 @@ sub init()
     m.seasonsFailed = false
     m.episodesSeq = 0
     m.refreshNextUp = false
+    m.loadedRev = -1        ' DataRev_current() when the item was last fetched
     m.zones = []
     m.zoneIndex = 0
     m.actionButtons = []
@@ -102,7 +103,7 @@ sub onScreenShown()
         if not m.loading then load()
         return
     end if
-    if m.global.homeDirty = true then refreshUserState()
+    if DataRev_current() <> m.loadedRev then refreshUserState()
     focusZone(m.zoneIndex)
 end sub
 
@@ -112,6 +113,7 @@ end function
 
 sub load()
     m.loading = true
+    m.loadedRev = DataRev_current()
     m.errorGroup.visible = false
     m.spinner.visible = true
     Api_get(itemPath(), { image_size: "large" }, "onItem")
@@ -168,6 +170,7 @@ end sub
 
 ' After playback or a state change elsewhere: refetch user state silently.
 sub refreshUserState()
+    m.loadedRev = DataRev_current()
     Api_get(itemPath(), { image_size: "large" }, "onItemRefreshed")
 end sub
 
