@@ -206,6 +206,9 @@ sub resetPlaybackState()
     ' never set it (the series page moves on to the next episode only after it).
     m.reachedCreditsOrEnd = false
     m.countdown = -1
+    m.markerPrefs = invalid        ' { mode, credits }: the skip settings, read at the first active marker
+    m.nextUpPromptSecs = invalid   ' playback.next_up_prompt_seconds, read at the first check (checkUpNext)
+    m.countdownToEnd = false   ' the Up Next countdown is the playback time left (advances at the stream's end)
     m.scrubbing = false
     m.scrubPos = 0.0
     m.holdTicks = 0
@@ -213,17 +216,21 @@ sub resetPlaybackState()
     m.transportIndex = 1
     m.hudTab = 0
     m.hudFocus = "tabs"
-    m.hudRow = 0
-    m.hudRows = []
+    m.hudRow = 0     ' the focused row: an index into m.hudSpecs (every row of the pane)
+    m.hudTop = 0     ' the first row shown: a pane shows at most hudMaxRows() rows and scrolls
+    m.hudRows = []   ' the row nodes shown, for m.hudSpecs[m.hudTop ..]
     m.hudTabs = []
     m.hudChoices = []
     m.pickerKind = ""
     m.closing = false
     m.finished = false
     m.resumeAfterStart = invalid
+    m.mountPlayed = false       ' the mounted plan has reported "playing" (onVideoPosition trusts readings then)
     m.pauseAfterStart = false   ' a re-anchored seek made while paused stays paused once the new plan plays
     m.watchBackTarget = invalid
     m.waitingForToken = false
+    m.tokenAction = ""
+    m.mountToken = ""
     m.renewals = 0        ' new sessions started for this playback after the server lost one
     m.renew = invalid     ' the renewal being started: { at, audioId, subtitleTrackId, paused }
     SeekReanchor_reset()
@@ -314,9 +321,43 @@ sub startPipeline()
 end sub
 
 sub retry()
+    ' Try again continues where playback stopped, in the file and with the tracks that were playing
+    ' (no second Rewind on Resume); an error before anything played keeps the launch parameters.
+    p = AA_copy(m.top.params)
+    if p = invalid then p = {}
+    if m.position > 0 then
+        p.startPosition = m.position
+        p.skipResumeRewind = true
+    end if
+    if m.fileId <> "" then p.fileId = m.fileId
+    if m.plan <> invalid and m.fileId <> "" then
+        sel = m.plan.selected_tracks
+        audioId = ""
+        if Type(sel) = "roAssociativeArray" and Type(sel.audio) = "roAssociativeArray" then
+            audioId = Str_orEmpty(sel.audio.id)
+            if audioId = "" and sel.audio.index <> invalid then audioId = Tracks_audioId(m.fileId, Int(Num_or(sel.audio.index, 0)))
+        end if
+        if m.chosenAudioIndex >= 0 then audioId = Tracks_audioId(m.fileId, m.chosenAudioIndex)
+        if audioId <> "" then
+            p.audioTrackId = audioId
+            p.audioTrackIndex = invalid
+        end if
+        keepSub = m.pendingSubtitleTrackId
+        if keepSub = "" then keepSub = Subs_selectedTrackId()
+        if keepSub <> "" then
+            p.subtitleTrackId = keepSub
+            p.subtitleTrackIndex = invalid
+        else if m.mountPlayed then
+            ' Subtitles were off on screen: they stay off.
+            p.subtitleTrackId = invalid
+            p.subtitleTrackIndex = -1
+        end if
+    end if
+    Diag_log("[siku-playback] try again at " + Int(m.position).ToStr() + " s file=" + m.fileId)
     m.errorGroup.visible = false
     stopSession()
     m.video.control = "stop"
+    m.top.params = p
     resetPlaybackState()
     startPipeline()
 end sub
@@ -521,29 +562,60 @@ sub adoptFileMarkers(fileId as string)
     reconcileMarkers()
 end sub
 
-' Refresh the token first when it is about to expire: the Video node can't refresh headers mid-stream.
+' Refresh the token first when it would run out during the title: the Video node can't change its
+' headers mid-stream (a media 401/403 later is handled by Recovery_authRefresh).
 sub ensureFreshToken()
     s = m.global.session
-    if not Str_isEmpty(s.refreshToken) and s.expiresAt > 0 and s.expiresAt - Time_nowSeconds() < 300 then
-        auth = m.global.authTask
-        if auth <> invalid then
-            m.waitingForToken = true
-            auth.observeField("generation", "onTokenRefreshed")
-            m.refreshTimeout.control = "start"
-            auth.refreshRequest = { token: s.accessToken }
-            return
-        end if
+    expiresAt = Num_or(s.expiresAt, 0)
+    if not Str_isEmpty(s.refreshToken) and expiresAt > 0 and expiresAt - Time_nowSeconds() < playbackTokenMargin() then
+        if startTokenRefresh("start") then return
     end if
     fetchCapabilities()
 end sub
+
+' Seconds the access token must still last at the start: the rest of the title plus 10 minutes
+' (pauses, buffering), or 5 minutes when the length is unknown.
+function playbackTokenMargin() as integer
+    if m.duration <= 0 then return 300
+    startAt = 0.0
+    p = m.top.params
+    if p <> invalid and p.startPosition <> invalid then
+        startAt = Num_or(p.startPosition, 0)
+    else if m.watch <> invalid and Type(m.watch.user_data) = "roAssociativeArray" then
+        startAt = Content_num(m.watch.user_data.position_seconds)
+    end if
+    remaining = m.duration - startAt
+    if remaining < 0 then remaining = 0
+    return Int(remaining) + 600
+end function
+
+' Asks the shared AuthTask for a new access token; onTokenRefreshed goes on with `action`
+' ("start": the playback start, "media": the reconnect after the media refused the token).
+' The observer is scoped to this screen, so another screen's observer on the task is kept.
+function startTokenRefresh(action as string) as boolean
+    s = m.global.session
+    auth = m.global.authTask
+    if auth = invalid or Str_isEmpty(s.refreshToken) then return false
+    m.tokenAction = action
+    m.waitingForToken = true
+    auth.observeFieldScoped("generation", "onTokenRefreshed")
+    m.refreshTimeout.control = "stop"
+    m.refreshTimeout.control = "start"
+    auth.refreshRequest = { token: s.accessToken }
+    return true
+end function
 
 sub onTokenRefreshed()
     if m.waitingForToken <> true then return
     m.waitingForToken = false
     m.refreshTimeout.control = "stop"
     auth = m.global.authTask
-    if auth <> invalid then auth.unobserveField("generation")
+    if auth <> invalid then auth.unobserveFieldScoped("generation")
     if m.closing then return
+    if m.tokenAction = "media" then
+        Recovery_authReconnect()
+        return
+    end if
     fetchCapabilities()
 end sub
 
@@ -619,7 +691,7 @@ sub startSession(installation as string)
     ' Rewind on Resume (Settings → Playback → Episodes): back up a few seconds when continuing a
     ' partly watched title. Only when the caller passed the resume position; a server-side resume
     ' (no start_position) cannot be adjusted here.
-    if startPos <> invalid and startPos > 0 then
+    if startPos <> invalid and startPos > 0 and not PlaybackCaps_truthy(p.skipResumeRewind) then
         rewind = Settings_resumeRewindSeconds()
         if rewind > 0 then
             startPos = startPos - rewind
@@ -883,8 +955,10 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
     ' origin) is signed and authorises itself, and a Video node sends HttpHeaders to every origin
     ' a playlist or redirect names (silo-roku hardware evidence H1, decision D-1).
     headers = []
+    m.mountToken = ""   ' the account token baked into this mount's headers ("" = none sent)
     if Url_sameOrigin(url, Str_orEmpty(s.serverOrigin)) then
         headers.Push("Authorization: Bearer " + s.accessToken)
+        m.mountToken = Str_orEmpty(s.accessToken)
     else
         Diag_log("[siku-playback] stream on another origin (" + Url_host(url) + "): no account headers")
     end if
@@ -917,6 +991,18 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
     ' Roku can open a copy remux's growing playlist seconds past its start: the first "playing"
     ' checks where it opened (SeekReanchor_checkStart).
     if opts.resumeAt = invalid and SeekReanchor_isCopyRemux(plan) then m.resumeAfterStart = m.timelineOffset + Content_num(tl.player_start_seconds)
+    ' Until the Video node reports a position, the plan's start is where playback is: a replan,
+    ' progress post or stop sent during the first buffer (the silent-remux recovery runs right after
+    ' the start) must not report 0:00 for a resumed title.
+    m.mountPlayed = false
+    if opts.resumeAt <> invalid then
+        m.position = Num_or(opts.resumeAt, 0) * 1.0
+    else
+        startSrc = Content_num(tl.source_start_seconds)
+        if startSrc <= 0 then startSrc = m.timelineOffset + Content_num(tl.player_start_seconds)
+        m.position = startSrc * 1.0
+    end if
+    if not m.scrubbing then m.scrubber.position = m.position
 
     ' Subtitles: only WebVTT/SRT sidecars can be rendered by the Video node (Subs_buildTrack adds
     ' the `token=` fallback and the timestamp_offset for the timeline offset and the viewer's delay).
@@ -1117,6 +1203,7 @@ sub onVideoState()
         setBuffering(false)
         Recovery_notePlaying()
         Launch_ready("playing")
+        m.mountPlayed = true
         applyPlannedAudioTrack()
         if not Recovery_reconnecting() then m.bufferLabel.text = Tx("Buffering")
         m.isPaused = false
@@ -1211,8 +1298,12 @@ sub onVideoPosition()
     ' A lead-in reanchor's hold: the stopped node's position is the old stream's.
     if m.plan = invalid or m.reanchorHolding then return
     SeekReanchor_checkStartSeek()
+    ' Before the mount first plays, Roku reports 0 while it buffers towards PlayStart: the plan's
+    ' start (applyPlan) stays the position until a real reading arrives.
+    if not m.mountPlayed and Num_or(m.video.position, 0) < 1 and m.position > 1 then return
     m.position = m.video.position + m.timelineOffset
-    if not m.scrubbing then m.scrubber.position = m.position
+    ' The scrubber is drawn only with the controls; showControls catches it up.
+    if not m.scrubbing and m.controls.visible then m.scrubber.position = m.position
     AiLive_onPosition()
     checkMarkers()
     checkUpNext()
@@ -1240,7 +1331,23 @@ sub onFinished()
         return
     end if
     if (m.isEpisode or m.shuffle <> invalid) and m.nextEpisode <> invalid then
-        if not m.upNext.visible then showUpNext()
+        if m.upNext.visible and m.countdownToEnd and m.countdown >= 0 then
+            ' The card's countdown was the time left in this item: it ran to the end of the stream.
+            cancelUpNextCountdown()
+            if m.autoAdvances = invalid then m.autoAdvances = 0
+            m.autoAdvances = m.autoAdvances + 1
+            playNext()
+            return
+        end if
+        if not m.upNext.visible then
+            showUpNext()
+        else if not m.upNextShown then
+            ' Opened by hand without a countdown: the end of the stream arms it now, as the credits
+            ' point would have (TvPlayerViewModel.onApproachingEnd after onUserRequestedNextUp).
+            m.upNextShown = true
+            armUpNextCountdown()
+            renderUpNext()
+        end if
         if m.countdown < 0 and m.shuffle = invalid then
             ' No auto-play: wait for the user on the overlay.
             m.unEyebrow.text = Tx("FINISHED")
@@ -1490,6 +1597,20 @@ sub showError(msg as string)
     m.controls.visible = false
     m.hud.visible = false
     m.skipGroup.visible = false
+    ' Nothing stays over the error: an open picker or subtitle dialog would take every key first
+    ' (onKeyEvent) and leave Retry unreachable, and Up Next's countdown must not play on under it.
+    m.picker.visible = false
+    if m.subsDialog.visible then
+        m.subs.dialog = ""
+        m.subsDialog.visible = false
+    end if
+    cancelUpNextCountdown()
+    if m.upNext.visible then
+        m.upNext.visible = false
+        restoreVideoPane()
+    end if
+    m.bufqPill.visible = false
+    m.bufqFocused = false
     m.progressTimer.control = "stop"
     m.errorLabel.text = msg
     m.errorGroup.visible = true
@@ -1576,6 +1697,8 @@ sub showControls()
     ' A shuffle offers no sequential next on the transport row.
     m.upNextBtn.visible = m.nextEpisode <> invalid and m.shuffle = invalid
     layoutTransport()
+    ' Position ticks leave the hidden scrubber alone (onVideoPosition); a re-anchor in flight shows its target.
+    if not m.scrubbing and m.reanchorBusy <> true then m.scrubber.position = m.position
     m.controls.visible = true
     positionSkipPill()
     focusControls()
@@ -1633,7 +1756,7 @@ end sub
 sub onUpNextButton()
     if m.nextEpisode = invalid or m.shuffle <> invalid then return
     m.upNextDismissed = false
-    showUpNext()
+    showUpNext(true)
 end sub
 
 ' Scrubber: Left/Right nudge ±10 s; holding accelerates; OK commits.
@@ -1727,9 +1850,8 @@ function markerLabel(kind as string) as string
 end function
 
 sub checkMarkers()
-    ' playback.intro_skip_mode (never | ask | always) and playback.auto_skip_credits, from the server.
-    mode = Settings_introSkipMode()
-    skipCredits = Settings_autoSkipCredits()
+    ' Runs on every position tick: nothing to do for a title without markers.
+    if m.markers.Count() = 0 and m.activeMarker = invalid then return
     active = invalid
     for each mk in m.markers
         if mk.kind <> "preview" and m.position >= mk.start and m.position < mk["end"] - 1 then active = mk
@@ -1741,6 +1863,13 @@ sub checkMarkers()
     end if
     key = active.kind + ":" + Str_orEmpty(active.start)
     m.activeMarker = active
+    ' Already handled (auto-skipped, or its pill shown): no settings read on every tick.
+    if m.autoSkipped[key] = true or m.skipShownFor = key then return
+    ' playback.intro_skip_mode (never | ask | always) and playback.auto_skip_credits, from the server,
+    ' read once per playback (each read copies m.global.settings).
+    if m.markerPrefs = invalid then m.markerPrefs = { mode: Settings_introSkipMode(), credits: Settings_autoSkipCredits() }
+    mode = m.markerPrefs.mode
+    skipCredits = m.markerPrefs.credits
     if mode = "never" and not (active.kind = "credits" and skipCredits) then return
     if (mode = "always" and active.kind <> "credits") or (active.kind = "credits" and skipCredits) then
         if m.autoSkipped[key] <> true then
@@ -1764,12 +1893,18 @@ sub checkMarkers()
 end sub
 
 sub showSkippedCaption(mk as object)
-    kindText = Tx("Intro skipped")
-    if mk.kind = "recap" then kindText = Tx("Recap skipped")
-    m.skippedCaption.text = kindText
+    ' Auto-skipped credits (playback.auto_skip_credits) name the credits, not the intro.
+    if mk.kind = "recap" then
+        m.skippedCaption.text = Tx("Recap skipped")
+        m.skipBtn.text = Tx("Watch Recap")
+    else if mk.kind = "credits" then
+        m.skippedCaption.text = Tx("Credits skipped")
+        m.skipBtn.text = Tx("Watch Credits")
+    else
+        m.skippedCaption.text = Tx("Intro skipped")
+        m.skipBtn.text = Tx("Watch Intro")
+    end if
     m.skippedCaption.visible = true
-    m.skipBtn.text = Tx("Watch Intro")
-    if mk.kind = "recap" then m.skipBtn.text = Tx("Watch Recap")
     m.skipBtn.visible = true
     m.skipGroup.visible = true
     m.skipShownFor = "watch:" + Str_orEmpty(mk.start)
@@ -2019,8 +2154,7 @@ sub publishShuffleNext()
     if m.upNext.visible then
         renderUpNext()
         if nxt = invalid then
-            m.countdownTimer.control = "stop"
-            m.countdown = -1
+            cancelUpNextCountdown()
         else if m.finished and m.countdown < 0 and autoPlayNext() then
             ' A new pick at the end restarts the countdown.
             startCountdown()
@@ -2035,8 +2169,7 @@ sub advanceShuffle()
     if m.shuffle = invalid or m.nextEpisode = invalid then return
     if m.shuffleAdvancing or m.shufflePicking then return
     m.shuffleAdvancing = true
-    m.countdownTimer.control = "stop"
-    m.countdown = -1
+    cancelUpNextCountdown()
     m.unPlayBtn.text = Tx("Play Now")
     Api_send("POST", shufflePath() + "/advance", { from_content_id: m.itemId }, "onShuffleAdvanced", { forItem: m.itemId })
 end sub
@@ -2099,7 +2232,9 @@ sub checkUpNext()
     waiting = m.nextEpisode <> invalid and not m.upNextShown and not m.upNextDismissed
     if m.reachedCreditsOrEnd and not waiting then return
     ' playback.next_up_prompt_seconds: how long before the end the card appears (0 = at the end).
-    trigger = m.duration - Settings_nextUpPromptSeconds()
+    ' Read once per playback: each read copies m.global.settings, and this runs on every tick.
+    if m.nextUpPromptSecs = invalid then m.nextUpPromptSecs = Settings_nextUpPromptSeconds()
+    trigger = m.duration - m.nextUpPromptSecs
     ' Credits: the start of the LAST credits range (Silo Android #694), so a scene between two
     ' credits ranges still plays; each Skip Credits pill still ends at its own range.
     creditsAt = Markers_upNextCreditsStart(m.markers)
@@ -2112,6 +2247,14 @@ sub checkUpNext()
     ' A picker or subtitle dialog the viewer has open is left alone: the card shows on a later
     ' position tick once it closes (onFinished still closes it at the very end).
     if m.picker.visible or m.subsDialog.visible then return
+    if m.upNext.visible then
+        ' The viewer opened the card by hand (no countdown): the credits point arms it now, keeping
+        ' the viewer's focus on the card.
+        m.upNextShown = true
+        armUpNextCountdown()
+        renderUpNext()
+        return
+    end if
     showUpNext()
 end sub
 
@@ -2129,16 +2272,51 @@ function stillWatchingDue() as boolean
     return m.autoAdvances >= threshold
 end function
 
+' Two anchors, as Silo Android TV's startNextUpCountdown: a card raised at the end of the stream
+' counts 10 s down and then plays the next item; a card raised before the end (the prompt time or
+' the credits marker) shows the playback time left, so it freezes on pause and grows on a seek
+' back, and the next item starts when this one finishes (onFinished), never cutting the end off.
 sub startCountdown()
-    m.countdown = 10
-    m.unPlayBtn.text = TxF("Play Now · {0}", [m.countdown])
     m.countdownTimer.control = "stop"
+    m.countdownToEnd = not m.finished
+    if m.countdownToEnd then m.countdown = upNextSecondsLeft() else m.countdown = 10
+    m.unPlayBtn.text = TxF("Play Now · {0}", [m.countdown])
     m.countdownTimer.control = "start"
 end sub
 
-sub showUpNext()
+' Whole seconds of playback left in this item (rounded up), for a pre-end Up Next countdown.
+function upNextSecondsLeft() as integer
+    remain = m.duration - m.position
+    if remain <= 0 then return 0
+    n = Int(remain)
+    if n < remain then n = n + 1
+    return n
+end function
+
+sub cancelUpNextCountdown()
+    m.countdownTimer.control = "stop"
+    m.countdown = -1
+    m.countdownToEnd = false
+end sub
+
+' Starts the card's countdown when auto-play is on and the Still Watching Prompt is not due (it
+' then waits for a key and the count starts over), else shows a plain Play Now.
+sub armUpNextCountdown()
+    if m.nextEpisode <> invalid and autoPlayNext() and not stillWatchingDue() then
+        startCountdown()
+    else
+        if stillWatchingDue() then m.autoAdvances = 0
+        cancelUpNextCountdown()
+        m.unPlayBtn.text = Tx("Play Now")
+    end if
+end sub
+
+' userRequested: the transport's Up Next button. Someone who opened the card is choosing, so no
+' countdown starts (TvPlayerViewModel.onUserRequestedNextUp); the credits point or the end of the
+' stream still arms it later (m.upNextShown stays false until then).
+sub showUpNext(userRequested = false as boolean)
     if m.nextEpisode = invalid and m.shuffle = invalid then return
-    m.upNextShown = true
+    if not userRequested then m.upNextShown = true
     ' The end of the video (onFinished) does not wait for an open picker or subtitle dialog: it is
     ' closed so the card takes the keys (onKeyEvent gives an open dialog every key first).
     if m.picker.visible then m.picker.visible = false
@@ -2151,12 +2329,11 @@ sub showUpNext()
     m.skipGroup.visible = false
     layoutUpNext()
 
-    if m.nextEpisode <> invalid and autoPlayNext() and not stillWatchingDue() then
-        startCountdown()
-    else
-        if stillWatchingDue() then m.autoAdvances = 0
-        m.countdown = -1
+    if userRequested then
+        cancelUpNextCountdown()
         m.unPlayBtn.text = Tx("Play Now")
+    else
+        armUpNextCountdown()
     end if
     renderUpNext()
     m.upNext.visible = true
@@ -2316,6 +2493,12 @@ sub onCountdownTick()
         m.countdownTimer.control = "stop"
         return
     end if
+    if m.countdownToEnd then
+        ' The time left in the stream; the advance waits for the end (onFinished).
+        m.countdown = upNextSecondsLeft()
+        m.unPlayBtn.text = TxF("Play Now · {0}", [m.countdown])
+        return
+    end if
     m.countdown = m.countdown - 1
     if m.countdown <= 0 then
         m.countdownTimer.control = "stop"
@@ -2336,7 +2519,7 @@ sub restoreVideoPane()
 end sub
 
 sub keepWatching()
-    m.countdownTimer.control = "stop"
+    cancelUpNextCountdown()
     m.upNext.visible = false
     m.upNextDismissed = true
     restoreVideoPane()
@@ -2433,9 +2616,10 @@ sub openHud(tabIndex as integer)
         m.hudTabs.Push(chip)
     end for
     m.hudTabsGroup.translation = [Int((1920 - x + 12) / 2), 100]
-    buildHudRows()
     m.hudFocus = "tabs"
-    m.hudRow = 0
+    m.hudRow = hudInitialRow()
+    m.hudTop = 0
+    buildHudRows()
     m.hud.visible = true
     focusHud()
     if names[tabIndex] = "Subtitles" then Subs_onPaneShown()
@@ -2451,7 +2635,7 @@ end sub
 
 sub focusHud()
     if m.hudFocus = "rows" and m.hudRows.Count() > 0 then
-        if m.hudRow >= m.hudRows.Count() then m.hudRow = m.hudRows.Count() - 1
+        if m.hudRow >= m.hudSpecs.Count() then hudScrollTo(m.hudSpecs.Count() - 1)
         applyHudRowFocus()
         m.focusSink.setFocus(true)
     else
@@ -2468,6 +2652,8 @@ sub selectHudTab(i as integer)
         m.hudTabs[j].selected = (j = i)
     end for
     m.hudTabs[i].setFocus(true)
+    m.hudRow = hudInitialRow()
+    m.hudTop = 0
     buildHudRows()
     tabNames = hudTabNames()
     if tabNames[i] = "Subtitles" then Subs_onPaneShown()
@@ -2746,11 +2932,19 @@ sub buildHudRows()
     rowW = 1440 - 80
     rowH = 68
     y = 0
-    maxRows = 8
-    n = specs.Count()
+    maxRows = hudMaxRows()
+    total = specs.Count()
+    ' The focused row stays in the window; a pane longer than it scrolls (Chapters, Subtitles).
+    if m.hudRow >= total then m.hudRow = total - 1
+    if m.hudRow < 0 then m.hudRow = 0
+    if m.hudTop > total - maxRows then m.hudTop = total - maxRows
+    if m.hudTop < 0 then m.hudTop = 0
+    if m.hudRow < m.hudTop then m.hudTop = m.hudRow
+    if m.hudRow >= m.hudTop + maxRows then m.hudTop = m.hudRow - maxRows + 1
+    n = total - m.hudTop
     if n > maxRows then n = maxRows
     for i = 0 to n - 1
-        spec = specs[i]
+        spec = specs[m.hudTop + i]
         row = m.hudRowsGroup.createChild("Group")
         row.translation = [0, y]
         bg = row.createChild("Poster")
@@ -2804,18 +2998,61 @@ sub buildHudRows()
         m.hudRows.Push(row)
         y = y + rowH + 4
     end for
+    if total > maxRows then
+        ' Where the window is: "9–16 of 24".
+        more = m.hudRowsGroup.createChild("Label")
+        more.text = TxF("{0}–{1} of {2}", [m.hudTop + 1, m.hudTop + n, total])
+        more.translation = [24, y + 4]
+        more.width = rowW - 48
+        more.height = 40
+        more.horizAlign = "right"
+        more.vertAlign = "center"
+        more.color = "0xEDEDED8C"
+        mf = CreateObject("roSGNode", "Font")
+        mf.uri = "pkg:/fonts/Inter-regular.otf"
+        mf.size = 23
+        more.font = mf
+        y = y + 48
+    end if
     h = y + 80
     if h < 312 then h = 312
     m.hudBg.height = h
     m.hudRing.height = h
-    if m.hudRow >= m.hudRows.Count() then m.hudRow = 0
     applyHudRowFocus()
+end sub
+
+function hudMaxRows() as integer
+    return 8
+end function
+
+' The row a pane opens on: the chapter playing in Chapters, else the first.
+function hudInitialRow() as integer
+    names = hudTabNames()
+    if m.hudTab < 0 or m.hudTab >= names.Count() or names[m.hudTab] <> "Chapters" then return 0
+    cur = 0
+    for i = 0 to m.chapters.Count() - 1
+        if Content_num(m.chapters[i].start_seconds) <= m.position + 0.5 then cur = i
+    end for
+    return cur
+end function
+
+' Moves the focus to row `row` of the pane, scrolling the window when it leaves it.
+sub hudScrollTo(row as integer)
+    if m.hudSpecs = invalid then return
+    if row >= m.hudSpecs.Count() then row = m.hudSpecs.Count() - 1
+    if row < 0 then row = 0
+    m.hudRow = row
+    if row < m.hudTop or row >= m.hudTop + hudMaxRows() then
+        buildHudRows()
+    else
+        applyHudRowFocus()
+    end if
 end sub
 
 sub applyHudRowFocus()
     for i = 0 to m.hudRows.Count() - 1
         row = m.hudRows[i]
-        f = (m.hudFocus = "rows" and i = m.hudRow)
+        f = (m.hudFocus = "rows" and m.hudTop + i = m.hudRow)
         Node_find(row, "bg").visible = f
         if f then
             Node_find(row, "label").color = "0x000000FF"
@@ -2835,11 +3072,12 @@ end sub
 sub hudAnnounce()
     if not m.hud.visible then return
     if m.hudFocus = "rows" then
-        if m.hudSpecs = invalid or m.hudRow < 0 or m.hudRow >= m.hudRows.Count() or m.hudRow >= m.hudSpecs.Count() then return
+        if m.hudSpecs = invalid or m.hudRow < 0 or m.hudRow >= m.hudSpecs.Count() then return
         spec = m.hudSpecs[m.hudRow]
         role = "text"
         if A11y_isTrue(spec.actionable) then role = "button"
-        A11y_say("hud:row:" + m.hudTab.ToStr() + ":" + Str_orEmpty(spec.id), A11y_join([spec.label, spec.value]), role, m.hudRow, m.hudRows.Count(), m.hud)
+        ' The position among all of the pane's rows, not the window's.
+        A11y_say("hud:row:" + m.hudTab.ToStr() + ":" + Str_orEmpty(spec.id), A11y_join([spec.label, spec.value]), role, m.hudRow, m.hudSpecs.Count(), m.hud)
     else
         names = hudTabNames()
         if m.hudTab < 0 or m.hudTab >= names.Count() then return
@@ -2858,9 +3096,14 @@ sub activateHudRow()
     else if id = "quality" then
         openPicker("quality")
     else if id = "autoplay" then
+        ' Settings_autoPlayNext reads the server's playback.auto_play_next first, so the toggle writes
+        ' it there (profile_device, as Settings does); the device pref is kept as the fallback.
+        v = not autoPlayNext()
         p = AA_copy(m.global.prefs)
-        p.autoPlayNext = not (p.autoPlayNext <> false)
+        p.autoPlayNext = v
         Prefs_save(p)
+        Settings_setLocal("playback.auto_play_next", "profile_device", v)
+        Settings_put("playback.auto_play_next", "profile_device", v, "onHudSettingWritten")
         buildHudRows()
     else if id = "hdr" then
         toggleOutputSetting("player.hdr_enabled", not Settings_hdrEnabled())
@@ -3610,9 +3853,8 @@ function handleUpNextKey(key as string) as boolean
         else if onDeckShown() and m.onDeckGroup.visible then
             m.onDeckRow.setFocus(true)
         end if
-        m.countdownTimer.control = "stop"
+        cancelUpNextCountdown()
         m.unPlayBtn.text = Tx("Play Now")
-        m.countdown = -1
     else if key = "up" then
         if m.upNextIndex > 0 then m.upNextIndex = m.upNextIndex - 1
         focusUpNext()
@@ -3635,7 +3877,7 @@ function handleHudKey(key as string) as boolean
         else if key = "down" then
             if m.hudRows.Count() > 0 then
                 m.hudFocus = "rows"
-                m.hudRow = 0
+                hudScrollTo(hudInitialRow())
                 focusHud()
             end if
         else if key = "up" then
@@ -3646,17 +3888,13 @@ function handleHudKey(key as string) as boolean
     ' Rows
     if key = "up" then
         if m.hudRow > 0 then
-            m.hudRow = m.hudRow - 1
-            applyHudRowFocus()
+            hudScrollTo(m.hudRow - 1)
         else
             m.hudFocus = "tabs"
             focusHud()
         end if
     else if key = "down" then
-        if m.hudRow < m.hudRows.Count() - 1 then
-            m.hudRow = m.hudRow + 1
-            applyHudRowFocus()
-        end if
+        if m.hudRow < m.hudSpecs.Count() - 1 then hudScrollTo(m.hudRow + 1)
     else if key = "OK" then
         activateHudRow()
     end if

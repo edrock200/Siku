@@ -77,6 +77,7 @@ sub Recovery_reset()
         outagePaused: false
         outageSpent: false
         attemptPlayed: false
+        authTried: false
     }
     if m.recDebugTimer <> invalid then m.recDebugTimer.control = "stop"
     if m.reconnectTimer <> invalid then m.reconnectTimer.control = "stop"
@@ -141,6 +142,9 @@ sub Recovery_onVideoError(code as dynamic, msg as string, detail as string, info
         ' Roku refuses an HLS playlist over 4 MiB (4,194,304 bytes; silo-roku hardware run 2, H2).
         Diag_log("[siku-playback] playlist too large: Roku refuses HLS playlists over 4 MiB delivery=" + delivery + " define=" + PlaybackCaps_str(PlaybackCaps_defineNegotiable()))
     end if
+    ' The media refused the account token (expired during a long title, or revoked): a new token and
+    ' a reconnect at the position first, once per mount that has not played since; then the ladder.
+    if kind = "http" and Recovery_authRefresh(code, Recovery_httpStatus([detail, msg], info)) then return
     classification = Recovery_classify(code)
     if kind = "network" or kind = "server" then
         classification = "network_error"
@@ -310,6 +314,8 @@ sub Recovery_notePlaying()
     m.rec.everPlayed = true
     m.rec.attemptPlayed = true
     m.rec.outageSpent = false
+    ' A later refusal of the token (it ran out again hours on) may refresh it once more.
+    m.rec.authTried = false
     if m.rec.outageAt >= 0 then
         Diag_log("[siku-playback] reconnected after " + Int(Recovery_now() - m.rec.outageAt).ToStr() + " s tries=" + m.rec.tries.ToStr())
         m.rec.outageAt = -1.0
@@ -561,10 +567,47 @@ function Recovery_debugSpec(value as dynamic) as dynamic
     if v = "net" then return { code: -5, text: "buffer:loop:demux:Errors seen on all bitrates:last_err:961", limit: limit }
     if v = "drop" then return { code: -3, text: "reader pick stream error:bad:mpr zero length playlist", limit: limit }
     if v = "large" then return { code: -3, text: "reader pick stream error:bad:mpr playlist file is too large.", limit: limit }
+    if v = "auth" then return { code: -5, text: "buffer:loop:demux:Errors seen on all bitrates:last_err:401", limit: limit }
     code = PlaybackError_rokuCode(v)
     if code = invalid then return invalid
     return { code: code, text: "debugVideoError", limit: limit }
 end function
+
+' A media 401/403 (status from Recovery_httpStatus): true when handled. The stream's headers carry
+' the access token from the mount (Roku cannot change them mid-stream), so the token is refreshed
+' (unless it already changed, or the stream is on another origin with a signed URL and no token)
+' and the same tracks are replanned at the position as a reconnect, which mounts with the new token
+' and a freshly signed URL. Once until a plan plays again; a second refusal goes to the ladder.
+function Recovery_authRefresh(code as dynamic, status as integer) as boolean
+    if status <> 401 and status <> 403 then return false
+    if m.rec = invalid or m.rec.authTried or m.closing then return false
+    if m.plan = invalid or m.sessionId = "" or installationId() = "" then return false
+    m.rec.authTried = true
+    m.rec.lastRoku = code
+    m.rec.outagePaused = m.isPaused
+    m.recDebugTimer.control = "stop"
+    m.video.control = "stop"
+    setBuffering(true)
+    s = m.global.session
+    refresh = m.mountToken <> "" and Str_orEmpty(s.accessToken) = m.mountToken
+    action = "reconnecting"
+    if refresh then action = "refreshing the access token, then reconnecting"
+    Diag_log("[siku-playback] media refused status=" + status.ToStr() + " at " + Int(m.position).ToStr() + " s; " + action)
+    if refresh and startTokenRefresh("media") then return true
+    Recovery_authReconnect()
+    return true
+end function
+
+' After Recovery_authRefresh's token refresh (or without one): the reconnect replan. A replan
+' already on its way mounts its answer with the current token, so nothing more is sent then.
+sub Recovery_authReconnect()
+    if m.closing or m.plan = invalid or m.errorGroup.visible then return
+    if m.rec.inFlight or m.replanPending or m.reanchorBusy = true then
+        Diag_log("[siku-playback] media token: a replan is on its way; its plan mounts with the current token")
+        return
+    end if
+    sendReplan("track_change", "reconnect")
+end sub
 
 ' Empty inventory: the item is read once more before "no playable file" (a catalog that was
 ' still being written, or a stale cache). True when the fresh read was sent.

@@ -166,6 +166,10 @@ clears one); GET /mock/switch lists them.
                                  A start or replan that names it logs SUBTITLE requested unplayable
   credits_twice=1                every version's marker_segments carry two credits ranges (duration-600..-420
                                  and duration-300..end; the singular credits field the first), Silo Android #694
+  server_resume=<seconds>        a playback start without start_position is planned at <seconds> (the
+                                 server's own resume point)
+  chapters=<n>                   every version in a watch detail carries n evenly spaced chapters (the player
+                                 panel's Chapters pane scrolls past 8 rows)
   card_overlays=1|<preset>[+<variant>]|<variant>|off|404|500
                                  GET /api/v2/settings/overlay-config (Siku's card overlays): without the
                                  switch the server default is off ({"enabled": false}); 1 turns it on with
@@ -3207,6 +3211,12 @@ class Handler(BaseHTTPRequestHandler):
                     v["marker_segments"] = [sg for sg in v["marker_segments"] if sg["kind"] != "credits"] + [
                         dict(first, kind="credits"), dict(last, kind="credits")]
                     print("MARKERS file=%s credits_twice %d-%d %d-%d" % (fid, first["start_seconds"], first["end_seconds"], last["start_seconds"], last["end_seconds"]), flush=True)
+                nch = int(STATE["switches"].get("chapters") or 0)
+                if nch > 0:
+                    # Many chapters, for the player panel's scrolling Chapters pane.
+                    dur = float(v.get("duration") or d.get("duration_seconds") or 3000)
+                    v["chapters"] = [{"title": "Chapter %d" % (i + 1), "start_seconds": int(dur * i / nch), "end_seconds": int(dur * (i + 1) / nch)}
+                                     for i in range(nch)]
                 # "refused" still reports previews, so the client's refusal path is exercised.
                 v["trickplay_available"] = fid in TRICKPLAY_FILES and OPTS["trickplay"] != "off"
                 vs.append(v)
@@ -3293,7 +3303,12 @@ class Handler(BaseHTTPRequestHandler):
             print("START", json.dumps({k: b.get(k) for k in ("file_id", "audio_track_id", "subtitle_track_id", "start_position")}), flush=True)
             print("START CAPS", playback_summary(b), flush=True)
             LOG.append("START CAPS " + playback_summary(b))
-            return self.send(201, playback_decision(sid, b.get("start_position") or 0, b.get("file_id") or "42", b))
+            start = b.get("start_position")
+            if start is None and STATE["switches"].get("server_resume"):
+                # A start without start_position resumes where the server says (Continue Watching).
+                start = float(STATE["switches"]["server_resume"])
+                print("START server_resume=%s" % start, flush=True)
+            return self.send(201, playback_decision(sid, start or 0, b.get("file_id") or "42", b))
         m = re.match(r"^/api/v2/playback/([^/]+)/(replan|progress)$", p)
         if m and method == "POST" and STATE["switches"].get(m.group(2) + "_410"):
             print("SESSION_ENDED 410", m.group(2), flush=True)

@@ -400,5 +400,8 @@
   "The server took too long to answer.": "El servidor tardó demasiado en responder.",
   "The server's answer was too large.": "La respuesta del servidor era demasiado grande.",
   "Siku couldn't refresh the Home rows. Try again when the server is reachable.": "Siku no pudo actualizar las filas de Inicio. Vuelve a intentarlo cuando el servidor esté disponible.",
-  "Rewind on Resume skips back when you return to a partly watched title. Still Watching Prompt sets how many episodes play in a row before Siku asks whether you're still watching.": "Retroceder al reanudar salta hacia atrás cuando vuelves a un título visto en parte. Aviso de “¿Sigues viendo?” define cuántos episodios se reproducen seguidos antes de que Siku pregunte si sigues viendo."
+  "Rewind on Resume skips back when you return to a partly watched title. Still Watching Prompt sets how many episodes play in a row before Siku asks whether you're still watching.": "Retroceder al reanudar salta hacia atrás cuando vuelves a un título visto en parte. Aviso de “¿Sigues viendo?” define cuántos episodios se reproducen seguidos antes de que Siku pregunte si sigues viendo.",
+  "{0}–{1} of {2}": "{0}–{1} de {2}",
+  "Credits skipped": "Créditos omitidos",
+  "Watch Credits": "Ver créditos"
 }

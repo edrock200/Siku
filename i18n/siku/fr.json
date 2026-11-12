@@ -400,5 +400,8 @@
   "The server took too long to answer.": "Le serveur a mis trop de temps à répondre.",
   "The server's answer was too large.": "La réponse du serveur était trop volumineuse.",
   "Siku couldn't refresh the Home rows. Try again when the server is reachable.": "Impossible d’actualiser les rangées de l’Accueil. Réessayez lorsque le serveur sera accessible.",
-  "Rewind on Resume skips back when you return to a partly watched title. Still Watching Prompt sets how many episodes play in a row before Siku asks whether you're still watching.": "Reculer à la reprise revient un peu en arrière quand vous reprenez un titre en partie regardé. Vérification de visionnage définit combien d’épisodes sont lus d’affilée avant que Siku vous demande si vous regardez toujours."
+  "Rewind on Resume skips back when you return to a partly watched title. Still Watching Prompt sets how many episodes play in a row before Siku asks whether you're still watching.": "Reculer à la reprise revient un peu en arrière quand vous reprenez un titre en partie regardé. Vérification de visionnage définit combien d’épisodes sont lus d’affilée avant que Siku vous demande si vous regardez toujours.",
+  "{0}–{1} of {2}": "{0}–{1} sur {2}",
+  "Credits skipped": "Générique passé",
+  "Watch Credits": "Voir le générique"
 }
