@@ -30,6 +30,9 @@ sub execute()
             m.global.authExpired = true
         end if
     end if
+    ' The parsed tree is what callers read; the raw body would only double the copy to the render
+    ' thread. Keep it when the body was not JSON (ServerConnectScreen reads a plain-text 404).
+    if resp.data <> invalid then resp.text = ""
     resp.ok = resp.status >= 200 and resp.status < 300
     resp.context = req.context
     m.top.response = resp
