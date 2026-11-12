@@ -1340,6 +1340,7 @@
  "{0}h {1}m": "{0} h {1} min",
  "{0}m": "{0} min",
  "{0}s": "{0} s",
+ "{0}–{1} of {2}": "{0}–{1} sur {2}",
  "×{0} speed": "vitesse ×{0}",
  "← → speed  ·  OK play  ·  Back cancel": "← → vitesse  ·  OK lire  ·  Retour annuler",
  "↑ More above": "↑ Plus haut",

@@ -398,5 +398,6 @@
   "The server took too long to answer. Try again.": "Le serveur a mis trop de temps à répondre. Réessayez.",
   "The server's answer was too large for this Roku.": "La réponse du serveur est trop volumineuse pour ce Roku.",
   "The server took too long to answer.": "Le serveur a mis trop de temps à répondre.",
-  "The server's answer was too large.": "La réponse du serveur était trop volumineuse."
+  "The server's answer was too large.": "La réponse du serveur était trop volumineuse.",
+  "{0}–{1} of {2}": "{0}–{1} sur {2}"
 }

@@ -1340,6 +1340,7 @@
  "{0}h {1}m": "{0} Std. {1} Min.",
  "{0}m": "{0} Min.",
  "{0}s": "{0} Sek.",
+ "{0}–{1} of {2}": "{0}–{1} von {2}",
  "×{0} speed": "×{0} Tempo",
  "← → speed  ·  OK play  ·  Back cancel": "← → Tempo  ·  OK abspielen  ·  Zurück abbrechen",
  "↑ More above": "↑ Mehr oben",

@@ -214,8 +214,9 @@ sub resetPlaybackState()
     m.transportIndex = 1
     m.hudTab = 0
     m.hudFocus = "tabs"
-    m.hudRow = 0
-    m.hudRows = []
+    m.hudRow = 0     ' the focused row: an index into m.hudSpecs (every row of the pane)
+    m.hudTop = 0     ' the first row shown: a pane shows at most hudMaxRows() rows and scrolls
+    m.hudRows = []   ' the row nodes shown, for m.hudSpecs[m.hudTop ..]
     m.hudTabs = []
     m.hudChoices = []
     m.pickerKind = ""
@@ -2561,9 +2562,10 @@ sub openHud(tabIndex as integer)
         m.hudTabs.Push(chip)
     end for
     m.hudTabsGroup.translation = [Int((1920 - x + 12) / 2), 100]
-    buildHudRows()
     m.hudFocus = "tabs"
-    m.hudRow = 0
+    m.hudRow = hudInitialRow()
+    m.hudTop = 0
+    buildHudRows()
     m.hud.visible = true
     focusHud()
     if names[tabIndex] = "Subtitles" then Subs_onPaneShown()
@@ -2579,7 +2581,7 @@ end sub
 
 sub focusHud()
     if m.hudFocus = "rows" and m.hudRows.Count() > 0 then
-        if m.hudRow >= m.hudRows.Count() then m.hudRow = m.hudRows.Count() - 1
+        if m.hudRow >= m.hudSpecs.Count() then hudScrollTo(m.hudSpecs.Count() - 1)
         applyHudRowFocus()
         m.focusSink.setFocus(true)
     else
@@ -2596,6 +2598,8 @@ sub selectHudTab(i as integer)
         m.hudTabs[j].selected = (j = i)
     end for
     m.hudTabs[i].setFocus(true)
+    m.hudRow = hudInitialRow()
+    m.hudTop = 0
     buildHudRows()
     tabNames = hudTabNames()
     if tabNames[i] = "Subtitles" then Subs_onPaneShown()
@@ -2874,11 +2878,19 @@ sub buildHudRows()
     rowW = 1440 - 80
     rowH = 68
     y = 0
-    maxRows = 8
-    n = specs.Count()
+    maxRows = hudMaxRows()
+    total = specs.Count()
+    ' The focused row stays in the window; a pane longer than it scrolls (Chapters, Subtitles).
+    if m.hudRow >= total then m.hudRow = total - 1
+    if m.hudRow < 0 then m.hudRow = 0
+    if m.hudTop > total - maxRows then m.hudTop = total - maxRows
+    if m.hudTop < 0 then m.hudTop = 0
+    if m.hudRow < m.hudTop then m.hudTop = m.hudRow
+    if m.hudRow >= m.hudTop + maxRows then m.hudTop = m.hudRow - maxRows + 1
+    n = total - m.hudTop
     if n > maxRows then n = maxRows
     for i = 0 to n - 1
-        spec = specs[i]
+        spec = specs[m.hudTop + i]
         row = m.hudRowsGroup.createChild("Group")
         row.translation = [0, y]
         bg = row.createChild("Poster")
@@ -2932,18 +2944,61 @@ sub buildHudRows()
         m.hudRows.Push(row)
         y = y + rowH + 4
     end for
+    if total > maxRows then
+        ' Where the window is: "9–16 of 24".
+        more = m.hudRowsGroup.createChild("Label")
+        more.text = TxF("{0}–{1} of {2}", [m.hudTop + 1, m.hudTop + n, total])
+        more.translation = [24, y + 4]
+        more.width = rowW - 48
+        more.height = 40
+        more.horizAlign = "right"
+        more.vertAlign = "center"
+        more.color = "0xEDEDED8C"
+        mf = CreateObject("roSGNode", "Font")
+        mf.uri = "pkg:/fonts/Inter-regular.otf"
+        mf.size = 23
+        more.font = mf
+        y = y + 48
+    end if
     h = y + 80
     if h < 312 then h = 312
     m.hudBg.height = h
     m.hudRing.height = h
-    if m.hudRow >= m.hudRows.Count() then m.hudRow = 0
     applyHudRowFocus()
+end sub
+
+function hudMaxRows() as integer
+    return 8
+end function
+
+' The row a pane opens on: the chapter playing in Chapters, else the first.
+function hudInitialRow() as integer
+    names = hudTabNames()
+    if m.hudTab < 0 or m.hudTab >= names.Count() or names[m.hudTab] <> "Chapters" then return 0
+    cur = 0
+    for i = 0 to m.chapters.Count() - 1
+        if Content_num(m.chapters[i].start_seconds) <= m.position + 0.5 then cur = i
+    end for
+    return cur
+end function
+
+' Moves the focus to row `row` of the pane, scrolling the window when it leaves it.
+sub hudScrollTo(row as integer)
+    if m.hudSpecs = invalid then return
+    if row >= m.hudSpecs.Count() then row = m.hudSpecs.Count() - 1
+    if row < 0 then row = 0
+    m.hudRow = row
+    if row < m.hudTop or row >= m.hudTop + hudMaxRows() then
+        buildHudRows()
+    else
+        applyHudRowFocus()
+    end if
 end sub
 
 sub applyHudRowFocus()
     for i = 0 to m.hudRows.Count() - 1
         row = m.hudRows[i]
-        f = (m.hudFocus = "rows" and i = m.hudRow)
+        f = (m.hudFocus = "rows" and m.hudTop + i = m.hudRow)
         Node_find(row, "bg").visible = f
         if f then
             Node_find(row, "label").color = "0x000000FF"
@@ -2963,11 +3018,12 @@ end sub
 sub hudAnnounce()
     if not m.hud.visible then return
     if m.hudFocus = "rows" then
-        if m.hudSpecs = invalid or m.hudRow < 0 or m.hudRow >= m.hudRows.Count() or m.hudRow >= m.hudSpecs.Count() then return
+        if m.hudSpecs = invalid or m.hudRow < 0 or m.hudRow >= m.hudSpecs.Count() then return
         spec = m.hudSpecs[m.hudRow]
         role = "text"
         if A11y_isTrue(spec.actionable) then role = "button"
-        A11y_say("hud:row:" + m.hudTab.ToStr() + ":" + Str_orEmpty(spec.id), A11y_join([spec.label, spec.value]), role, m.hudRow, m.hudRows.Count(), m.hud)
+        ' The position among all of the pane's rows, not the window's.
+        A11y_say("hud:row:" + m.hudTab.ToStr() + ":" + Str_orEmpty(spec.id), A11y_join([spec.label, spec.value]), role, m.hudRow, m.hudSpecs.Count(), m.hud)
     else
         names = hudTabNames()
         if m.hudTab < 0 or m.hudTab >= names.Count() then return
@@ -3767,7 +3823,7 @@ function handleHudKey(key as string) as boolean
         else if key = "down" then
             if m.hudRows.Count() > 0 then
                 m.hudFocus = "rows"
-                m.hudRow = 0
+                hudScrollTo(hudInitialRow())
                 focusHud()
             end if
         else if key = "up" then
@@ -3778,17 +3834,13 @@ function handleHudKey(key as string) as boolean
     ' Rows
     if key = "up" then
         if m.hudRow > 0 then
-            m.hudRow = m.hudRow - 1
-            applyHudRowFocus()
+            hudScrollTo(m.hudRow - 1)
         else
             m.hudFocus = "tabs"
             focusHud()
         end if
     else if key = "down" then
-        if m.hudRow < m.hudRows.Count() - 1 then
-            m.hudRow = m.hudRow + 1
-            applyHudRowFocus()
-        end if
+        if m.hudRow < m.hudSpecs.Count() - 1 then hudScrollTo(m.hudRow + 1)
     else if key = "OK" then
         activateHudRow()
     end if
