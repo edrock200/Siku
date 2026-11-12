@@ -43,6 +43,11 @@ sub init()
     m.peopleItems = []
     m.titlesDone = false
     m.peopleDone = false
+    ' Title paging (Android TV TvSearchViewModel.loadMore: 40 a page, more as focus nears the end).
+    m.titlesCursor = ""
+    m.titlesLoadingMore = false
+    m.titlesFailures = 0
+    m.titlesRetryAt = 0
     m.boxSets = []
     m.boxSetsPending = false
     m.boxGrace = m.top.findNode("boxGrace")
@@ -62,6 +67,7 @@ sub init()
     m.debounce.observeField("fire", "onDebounce")
     m.people.observeField("rowItemSelected", "onPersonSelected")
     m.grid.observeField("itemSelected", "onTitleSelected")
+    m.grid.observeField("itemFocused", "onGridFocused")
     m.reqRow.observeField("rowItemSelected", "onRequestSelected")
     m.reqSeq = 0
     m.reqQuery = ""
@@ -277,6 +283,9 @@ sub runSearch()
     m.peopleDone = false
     m.titles = []
     m.peopleItems = []
+    m.titlesCursor = ""
+    m.titlesLoadingMore = false
+    m.titlesFailures = 0
     m.searchedQuery = q
     m.status.visible = false
     m.statusLine.text = Tx("Searching…")
@@ -285,6 +294,7 @@ sub runSearch()
     params = Artwork_query({ source: "query", q: q, limit: 40, image_size: "medium" }, "browse", Theme_posterScale())
     if chip.id <> "all" then params["type"] = chip.id
     ctx = { seq: m.searchSeq }
+    m.titlesParams = params
     Api_get("/api/v2/catalog", params, "onTitles", ctx)
     Api_get("/api/v2/catalog/people", { q: q, limit: 20, media_scope: chip.scope }, "onPeople", ctx)
     ' Box sets are movies: the Series and Audiobooks chips leave them out.
@@ -315,6 +325,7 @@ sub onTitles(event as object)
             m.titles = Arr_or(resp.data.items)
             m.titlesTotal = resp.data.total
             if resp.data.total_exact = false then m.titlesExact = false
+            m.titlesCursor = Paging_nextCursor(resp.data)
         end if
     end if
     ' Matching box sets lead the grid; they land with the first titles so the grid never shifts
@@ -459,6 +470,40 @@ sub renderResults()
     if m.focusArea = "grid" and not hasTitles then focusArea("people")
     if m.focusArea = "people" and not hasPeople then focusArea("grid")
     if m.focusArea = "retry" then focusArea("chips")
+end sub
+
+' ---------- Paging ----------
+
+' The next page of titles is read once focus is within two rows of the end; a failed read waits
+' 5 s, doubling to 60 s, before focus moves may ask again.
+sub onGridFocused()
+    if m.titlesCursor = "" or m.titlesLoadingMore or not m.titlesDone then return
+    if m.titlesFailures > 0 and Time_nowSeconds() < m.titlesRetryAt then return
+    if not Paging_nearEnd(m.grid.itemFocused, m.gridCards.Count(), 6, 2) then return
+    m.titlesLoadingMore = true
+    q = AA_copy(m.titlesParams)
+    q.cursor = m.titlesCursor
+    Api_get("/api/v2/catalog", q, "onMoreTitles", { seq: m.searchSeq })
+end sub
+
+' A later page: its cards join the grid where they are, so focus stays on the card it was on.
+sub onMoreTitles(event as object)
+    resp = Api_result(event)
+    if resp.context = invalid or resp.context.seq <> m.searchSeq then return
+    m.titlesLoadingMore = false
+    if not resp.ok or Type(resp.data) <> "roAssociativeArray" then
+        m.titlesFailures = m.titlesFailures + 1
+        m.titlesRetryAt = Time_nowSeconds() + Paging_retryDelay(m.titlesFailures)
+        print "[siku-search] titles page failed status="; Int(Num_or(resp.status, 0)); " retry in "; Paging_retryDelay(m.titlesFailures); " s"
+        return
+    end if
+    m.titlesFailures = 0
+    items = Arr_or(resp.data.items)
+    m.titlesCursor = Paging_nextCursor(resp.data)
+    m.titles.Append(items)
+    m.gridCards.Append(items)
+    if m.grid.content <> invalid then Content_appendCards(m.grid.content, items, "poster", 14, 30)
+    print "[siku-search] titles page cards="; items.Count(); " loaded="; m.titles.Count(); " more="; m.titlesCursor <> ""
 end sub
 
 ' ---------- Selection ----------
