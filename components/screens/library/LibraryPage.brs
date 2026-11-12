@@ -403,6 +403,9 @@ end sub
 ' ---------- Loading ----------
 
 sub reload()
+    ' Retry (or Clear filters) and the grid hide below: park focus on the page so the answer can
+    ' move it (setCards / showEmpty / showError act only while the page itself holds focus).
+    if m.retryBtn.hasFocus() or m.errClearBtn.hasFocus() or m.grid.hasFocus() then m.top.setFocus(true)
     m.loadedAt = 0
     m.refresh = invalid
     m.cards = []
