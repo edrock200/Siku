@@ -3,6 +3,15 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.2.0
+
+One change from Silo's Android TV app (November 12, 2026). Siku's version now goes up by 0.1 with every release.
+
+**Better**
+- **"Still watching?" waits for a real break.** With the Still Watching prompt turned on (Settings › Playback › Episodes), Siku counted only the episodes you started with Play Now as you still being there. Now pausing, skipping back or forward, scrubbing, jumping to a chapter, pressing Skip Intro or Skip Credits, and voice or phone-remote pause and seek commands count too, so the prompt comes only after episodes that really played on their own. Automatic intro skipping doesn't count.
+
+**Needs testing on a real Roku:** a binge with the prompt set to a small number of episodes, pausing in between.
+
 ## v0.1.47
 
 Two changes asked for by a user (November 12, 2026).

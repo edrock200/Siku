@@ -1451,6 +1451,7 @@ end sub
 ' ---------- Transport ----------
 
 sub togglePlay()
+    viewerInteracted()
     st = m.video.state
     if st = "paused" then
         m.video.control = "resume"
@@ -1479,6 +1480,7 @@ end sub
 
 sub skipBy(delta as integer)
     if m.plan = invalid then return
+    viewerInteracted()
     seekToSource(m.position + delta)
     if delta < 0 then
         showFeedback("-" + Abs(delta).ToStr() + "s")
@@ -1653,6 +1655,7 @@ sub commitScrub()
         m.scrubbing = false
         m.scrubber.scrubbing = false
         Trickplay_show(invalid, "")
+        viewerInteracted()
         seekToSource(m.scrubPos)
     end if
     rearmHide()
@@ -1758,6 +1761,7 @@ sub positionSkipPill()
 end sub
 
 sub onSkipPill()
+    viewerInteracted()
     if m.watchBackTarget <> invalid then
         seekToSource(m.watchBackTarget)
         m.captionTimer.control = "stop"
@@ -2280,6 +2284,14 @@ sub keepWatching()
     m.focusSink.setFocus(true)
 end sub
 
+'' The viewer paused, sought or skipped by hand (remote, voice, a phone's remote control): they are
+' still watching, so the Still Watching count starts over (Silo Android #876). Automatic seeks (intro
+' auto-skip, re-anchors) do not count.
+sub viewerInteracted()
+    if m.autoAdvances <> invalid and m.autoAdvances > 0 then Diag_log("[siku-playback] still watching count reset (viewer)")
+    m.autoAdvances = 0
+end sub
+
 ' Play Now pressed by hand: the viewer is still watching, so the auto-advance count starts over.
 sub onPlayNowButton()
     m.autoAdvances = 0
@@ -2794,6 +2806,7 @@ sub activateHudRow()
     else if Left(id, 8) = "chapter:" then
         idx = Int(Val(Mid(id, 9)))
         if idx >= 0 and idx < m.chapters.Count() then
+            viewerInteracted()
             seekToSource(Content_num(m.chapters[idx].start_seconds))
             closeHud()
         end if
@@ -3359,8 +3372,10 @@ function voiceTransport(info as dynamic) as object
     if cmd.action = "stop" then
         exitPlayer()
     else if cmd.action = "pause" then
+        viewerInteracted()
         if st <> "paused" then m.video.control = "pause"
     else if cmd.action = "play" then
+        viewerInteracted()
         if st = "paused" then m.video.control = "resume"
     else
         t = Voice_target(m.position, cmd.delta, cmd.toStart, m.duration)
@@ -3368,6 +3383,7 @@ function voiceTransport(info as dynamic) as object
         if HoldSeek_active() then HoldSeek_stop()
         if m.scrubbing then cancelScrub()
         fromPos = m.position
+        viewerInteracted()
         seekToSource(t.target)
         fb = Voice_feedback(fromPos, t.target)
         if fb <> "" then showFeedback(fb)

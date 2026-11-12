@@ -167,6 +167,7 @@ end function
 sub HoldSeek_commit()
     target = m.hs.preview
     HoldSeek_stop()
+    viewerInteracted()
     seekToSource(target)
     m.controlsZone = "scrubber"
     showControls()

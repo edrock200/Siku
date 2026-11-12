@@ -344,6 +344,9 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   created|unconfirmed|verify|refused|failed status=` (never the name or PIN). Mock: `--switch max_profiles=<n>|none`
   (default 6), `profiles=1`, `primary_pin=1` (log `PROFILE CREATE as= token= child= pin= answer=`). Roku has no
   background, so "return from the background" is not ported; the simulator cannot type in the form's keyboard.
+- Still Watching (Silo Android #876, v0.2.0): `viewerInteracted()` in PlayerScreen resets `m.autoAdvances` on any viewer
+  pause/play, skip, scrub/hold-seek commit, chapter, skip pill, voice or phone-remote pause/seek (`[siku-playback] still watching
+  count reset (viewer)` when it was above 0); intro auto-skip and re-anchors do not.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

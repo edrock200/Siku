@@ -149,13 +149,18 @@ sub Remote_onCommand()
         exitPlayer()
         return
     else if name = "play" then
+        viewerInteracted()
         if st = "paused" then m.video.control = "resume"
     else if name = "pause" then
+        viewerInteracted()
         if st = "playing" or st = "buffering" then m.video.control = "pause"
     else if name = "play_pause" then
         togglePlay()
     else if name = "seek" then
-        if m.plan <> invalid and c.seconds <> invalid then seekToSource(Num_or(c.seconds, m.position))
+        if m.plan <> invalid and c.seconds <> invalid then
+            viewerInteracted()
+            seekToSource(Num_or(c.seconds, m.position))
+        end if
     else if name = "select_audio_track" then
         Remote_selectAudio(Int(Num_or(c.trackId, -1)))
     else if name = "select_subtitle_track" then
