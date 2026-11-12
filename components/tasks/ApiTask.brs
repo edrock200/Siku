@@ -8,6 +8,14 @@ sub execute()
     req = m.top.request
     if req = invalid then req = {}
     resp = perform(req)
+    ' A GET whose connection failed outright (no HTTP answer, e.g. the network is not up yet after
+    ' the TV wakes) is tried once more. Mutations are never resent automatically: a failed POST may
+    ' have reached the server (Req_isUncertain relies on that). Timeouts are not retried either.
+    method = UCase(Str_orEmpty(req.method))
+    if (method = "" or method = "GET") and resp.status = 0 and resp.transportCode <> invalid and resp.transportCode <> -28 then
+        Sleep(700)
+        resp = perform(req)
+    end if
     ' A 401 means the access token was rejected: refresh once (single-flight via AuthTask) and retry.
     ' With no token at all (signed out meanwhile, e.g. the logout call itself) there is nothing to refresh.
     ' Pass the token the request was sent with: if another task refreshed meanwhile, Auth_refresh
