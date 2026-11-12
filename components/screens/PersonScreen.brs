@@ -11,6 +11,8 @@ sub init()
     m.bioBg = m.top.findNode("bioBg")
     m.bio = m.top.findNode("bio")
     m.filmSection = m.top.findNode("filmSection")
+    m.filmHeader = m.top.findNode("filmHeader")
+    m.filmCount = m.top.findNode("filmCount")
     m.chips = [m.top.findNode("chipAll"), m.top.findNode("chipMovies"), m.top.findNode("chipSeries")]
     m.chipTypes = ["", "movie", "series"]
     m.grid = m.top.findNode("grid")
@@ -30,6 +32,13 @@ sub init()
     m.loading = false
     m.items = []
     m.filter = ""
+    ' Filmography paging (Android TV TvPersonDetailViewModel: 60 a page, more as focus nears the end).
+    m.filmSeq = 0           ' filmography reads sent; an answer carries its number and filter
+    m.filmCursor = ""       ' the next page's cursor, "" when none remains
+    m.filmTotal = invalid   ' the server's total, when it sent one
+    m.filmLoadingMore = false
+    m.filmFailures = 0      ' failed "load more" pages in a row (Paging_retryDelay)
+    m.filmRetryAt = 0
     m.chipIndex = 0
     m.zones = []
     m.zoneIndex = 0
@@ -43,6 +52,7 @@ sub init()
         x = x + m.chips[i].width + 16
     end for
     m.grid.observeField("itemSelected", "onGridSelected")
+    m.grid.observeField("itemFocused", "onGridFocused")
     m.bioBox.observeField("focusedChild", "onBioFocus")
     m.retryBtn.observeField("buttonSelected", "load")
 end sub
@@ -77,10 +87,40 @@ end sub
 sub loadFilmography()
     m.emptyLabel.visible = false
     m.gridSpinner.visible = true
+    m.filmCursor = ""
+    m.filmTotal = invalid
+    m.filmLoadingMore = false
+    m.filmFailures = 0
+    m.filmCount.visible = false
+    requestFilmography("")
+end sub
+
+' One page of the filmography; cursor "" is the first. The answer carries {filter, seq}, so a slow
+' answer for a filter the viewer has left (or an older read of the same one) is dropped.
+sub requestFilmography(cursor as string)
+    m.filmSeq = m.filmSeq + 1
     q = Artwork_query({ source: "person", person_id: personId(), sort: "-year", limit: 60, image_size: "medium" }, "browse", Theme_posterScale())
     if m.filter <> "" then q["type"] = m.filter
-    m.filmographyFilter = m.filter
-    Api_get("/api/v2/catalog", q, "onFilmography")
+    if cursor <> "" then q.cursor = cursor
+    Api_get("/api/v2/catalog", q, "onFilmography", { filter: m.filter, seq: m.filmSeq, more: cursor <> "" })
+end sub
+
+' The count beside the header: the server's total, else the titles loaded with "+" while more remain.
+sub updateFilmCount()
+    txt = Paging_titleCount(m.filmTotal, m.items.Count(), m.filmCursor <> "")
+    m.filmCount.text = txt
+    m.filmCount.visible = txt <> ""
+    m.filmCount.translation = [Label_width(m.filmHeader) + 18, 7]
+end sub
+
+' The next page is read once focus is within two rows of the end (Android TV's loadMoreIfNeeded);
+' a failed read waits 5 s, doubling to 60 s, before focus moves may ask again.
+sub onGridFocused()
+    if m.filmCursor = "" or m.filmLoadingMore then return
+    if m.filmFailures > 0 and Time_nowSeconds() < m.filmRetryAt then return
+    if not Paging_nearEnd(m.grid.itemFocused, m.items.Count(), 6, 2) then return
+    m.filmLoadingMore = true
+    requestFilmography(m.filmCursor)
 end sub
 
 sub showError(msg as string)
@@ -174,7 +214,11 @@ end sub
 
 sub onFilmography(event as object)
     resp = Api_result(event)
-    if m.filmographyFilter <> m.filter then return
+    if not Paging_isCurrent(resp.context, "filter", m.filter, m.filmSeq) then return
+    if resp.context.more = true then
+        onMoreFilmography(resp)
+        return
+    end if
     m.gridSpinner.visible = false
     if not resp.ok or resp.data = invalid then
         m.items = []
@@ -185,12 +229,34 @@ sub onFilmography(event as object)
         return
     end if
     m.items = Arr_or(resp.data.items)
+    m.filmCursor = Paging_nextCursor(resp.data)
+    m.filmTotal = resp.data.total
+    updateFilmCount()
     ' Cells carry a 20 / 30 px inset so the focused card's zoom is not clipped at the grid's edge (pitfall 12).
     m.grid.content = Content_grid(m.items, "poster", 20, 30)
     m.emptyLabel.text = Tx("No titles found.")
     m.emptyLabel.visible = m.items.Count() = 0
     buildZones()
     if zoneName() = "grid" and m.items.Count() = 0 then focusZone(zoneIndexOf("chips"))
+end sub
+
+' A later page: its cards join the grid where they are, so focus stays on the card it was on.
+sub onMoreFilmography(resp as object)
+    m.filmLoadingMore = false
+    if not resp.ok or Type(resp.data) <> "roAssociativeArray" then
+        m.filmFailures = m.filmFailures + 1
+        m.filmRetryAt = Time_nowSeconds() + Paging_retryDelay(m.filmFailures)
+        Diag_log(Diag_join(["[siku-detail] person filmography page failed status=", Int(Num_or(resp.status, 0)), " retry in ", Paging_retryDelay(m.filmFailures), " s"]))
+        return
+    end if
+    m.filmFailures = 0
+    items = Arr_or(resp.data.items)
+    m.filmCursor = Paging_nextCursor(resp.data)
+    if resp.data.total <> invalid then m.filmTotal = resp.data.total
+    if m.grid.content <> invalid then Content_appendCards(m.grid.content, items, "poster", 20, 30)
+    m.items.Append(items)
+    Diag_log(Diag_join(["[siku-detail] person filmography page cards=", items.Count(), " loaded=", m.items.Count(), " more=", m.filmCursor <> ""]))
+    updateFilmCount()
 end sub
 
 ' ---------- Zones ----------

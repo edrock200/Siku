@@ -78,6 +78,7 @@ sub init()
     m.seasons = []
     m.episodes = []
     m.selectedSeason = invalid
+    m.episodesSeq = 0         ' episodes reads sent (loadEpisodes); an answer carries its number
     m.nextUp = invalid
     m.recomputeNextUp = false
     m.seriesReturn = invalid    ' the episode a closed player asked this series page to land on (SeriesReturn.brs)
@@ -1068,8 +1069,10 @@ sub loadEpisodes(n as integer)
         m.episodesMsg.visible = true
         m.episodesMsg.text = Tx("Loading episodes…")
     end if
-    m.episodesRequestSeason = n
-    Api_get("/api/v2/catalog/series/" + Str_urlEncode(sid) + "/seasons/" + n.ToStr() + "/episodes", Artwork_query({ image_size: "medium" }, "episodes"), "onEpisodes")
+    ' Each read carries its season and number: only the newest read for the season on screen may
+    ' fill the row (a slow Season 1 answer must not land under the Season 2 chip).
+    m.episodesSeq = m.episodesSeq + 1
+    Api_get("/api/v2/catalog/series/" + Str_urlEncode(sid) + "/seasons/" + n.ToStr() + "/episodes", Artwork_query({ image_size: "medium" }, "episodes"), "onEpisodes", { season: n, seq: m.episodesSeq })
 end sub
 
 function airDateText(d as dynamic) as string
@@ -1078,7 +1081,7 @@ end function
 
 sub onEpisodes(event as object)
     resp = Api_result(event)
-    if m.episodesRequestSeason <> m.selectedSeason then return
+    if not Paging_isCurrent(resp.context, "season", m.selectedSeason, m.episodesSeq) then return
     if not resp.ok or resp.data = invalid or Type(resp.data) <> "roAssociativeArray" then
         ' A quiet refresh of the season on screen keeps what it shows (Android TV does the same).
         if m.episodes.Count() > 0 and m.episodesShownSeason = m.selectedSeason then

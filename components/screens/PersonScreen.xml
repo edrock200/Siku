@@ -7,6 +7,7 @@
 -->
 <component name="PersonScreen" extends="BaseScreen">
   <script type="text/brightscript" uri="pkg:/components/screens/PersonScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Paging.brs" />
   <children>
     <Rectangle id="bg" width="1920" height="1080" color="0x000000FF" />
     <Group id="page">
@@ -32,6 +33,10 @@
       <Group id="filmSection" translation="[88, 640]">
         <Label id="filmHeader" text="Filmography" color="0xEDEDEDFF">
           <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+        </Label>
+        <!-- "72 titles" / "60+ titles" beside the header (Android TV's filmography count); placed by updateFilmCount. -->
+        <Label id="filmCount" translation="[220, 7]" color="0xEDEDED9E" visible="false">
+          <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="24" />
         </Label>
         <Group id="chips" translation="[0, 50]">
           <DetailChip id="chipAll" text="All" selected="true" />

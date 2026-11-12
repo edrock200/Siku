@@ -2934,7 +2934,19 @@ class Handler(BaseHTTPRequestHandler):
             elif src == "watchlist":
                 items = [i for i in all_movies() + all_series() if i["content_id"] in STATE["watchlist"]]
             elif src in ("person", "library_collection", "section"):
-                items = items[h(str(q)) % 6:][:10]
+                items = items[h(str({k: v for k, v in q.items() if k != "cursor"})) % 6:][:10]
+                # --switch person_works=<n>: a person with n titles, for the filmography's paging.
+                works = int(STATE["switches"].get("person_works") or 0)
+                if src == "person" and works > len(items) and items:
+                    base = list(items)
+                    for k in range(works - len(base)):
+                        c = dict(base[k % len(base)])
+                        c["content_id"] = "%s:work-%d" % (c["type"], k)
+                        c["id"] = c["content_id"]
+                        c["title"] = "Work %03d" % k
+                        items.append(c)
+            if q.get("cursor", [""])[0] and src in ("person", "query"):
+                print("CATALOG PAGE source=%s cursor=%s limit=%s" % (src, q.get("cursor", [""])[0], q.get("limit", ["50"])[0]), flush=True)
             if text:
                 items = [i for i in items if text in i["title"].lower()]
             sort = q.get("sort", ["title"])[0]
