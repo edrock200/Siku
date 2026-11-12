@@ -31,6 +31,7 @@
     <field id="exitLeft" type="boolean" alwaysNotify="true" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/ShellPanel.brs" />
+  <script type="text/brightscript" uri="pkg:/components/widgets/KeyRepeat.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Theme.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Session.brs" />
