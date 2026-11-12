@@ -41,6 +41,9 @@ sub init()
     m.started = false
     m.closing = false
     m.closed = false
+    ' Requests Back waits for before closing (final sync, session DELETE, in-flight starts).
+    m.closeWaits = 0
+    m.startsInFlight = 0
     m.mode = ""
     m.queue = []
     m.qIndex = 0
@@ -143,6 +146,8 @@ sub onScreenHidden()
     if m.closing then return
     syncBookProgress(true)
     m.closing = true
+    ' The screen is going away without Back: nothing is left to close (as PlayerScreen does).
+    m.closed = true
     m.global.homeDirty = true
     m.sleepTimer.control = "stop"
     m.audio.control = "stop"
@@ -432,7 +437,9 @@ sub syncBookProgress(force = false as boolean)
     if m.mode <> "audiobook" or m.contentId = "" or m.timeline = invalid then return
     if m.globalPos <= 0 then return
     body = { items: [{ media_item_id: m.contentId, position_ms: Int(m.globalPos * 1000), duration_ms: Int(m.timeline.total * 1000) }] }
-    Api_send("POST", "/api/v2/sync/progress", body, "onSynced", { pos: m.globalPos, total: m.timeline.total })
+    isFinal = m.closing
+    if isFinal then m.closeWaits = m.closeWaits + 1
+    Api_send("POST", "/api/v2/sync/progress", body, "onSynced", { pos: m.globalPos, total: m.timeline.total, lastSync: isFinal })
     if m.resumeRec <> invalid then
         m.resumeRec.pos = m.globalPos
         m.resumeRec.total = m.timeline.total
@@ -442,14 +449,13 @@ end sub
 
 sub onSynced(event as object)
     resp = Api_result(event)
+    ctx = resp.context
     if not resp.ok then
         print "[AudioPlayer] sync/progress "; resp.status
-        return
-    end if
-    ctx = resp.context
-    if m.resumeRec <> invalid and ctx <> invalid then
+    else if m.resumeRec <> invalid and ctx <> invalid then
         m.resumeRec.base = AudioResume_serverAfter(Num_or(ctx.pos), Num_or(ctx.total), Num_or(m.resumeRec.base))
     end if
+    if ctx <> invalid and ctx.lastSync = true then closeDone()
 end sub
 
 ' Writes the on-device resume record; at the end of the book it is dropped instead.
@@ -571,20 +577,28 @@ sub sendStart()
     pd = m.pending
     if pd = invalid or m.closing then return
     body = AudioCaps_startBody(installationId(), pd.fileId, m.attemptId, pd.localStart, pd.persistence)
+    m.startsInFlight = m.startsInFlight + 1
     Api_send("POST", "/api/v2/playback/start", body, "onStart", { gen: pd.gen, fileId: pd.fileId })
 end sub
 
 sub onStart(event as object)
     resp = Api_result(event)
     ctx = resp.context
+    if m.startsInFlight > 0 then m.startsInFlight = m.startsInFlight - 1
     stale = m.closing or ctx = invalid or ctx.gen <> m.loadGen
     if stale then
         ' Superseded (seek / skip / close while in flight): release the session we no longer need.
+        ' While closing, Back waits for this start and then for its DELETE.
+        released = false
         if resp.ok and resp.data <> invalid and not Str_isEmpty(resp.data.session_id) then
             inst = installationId()
             body = { installation_id: inst, stop_id: m.di.GetRandomUUID() }
-            Api_send("DELETE", "/api/v2/playback/" + Str_urlEncode(resp.data.session_id), body, "onStopped")
+            cb = "onRetired"
+            if m.closing then cb = "onStopped"
+            Api_send("DELETE", "/api/v2/playback/" + Str_urlEncode(resp.data.session_id), body, cb)
+            released = m.closing
         end if
+        if m.closing and not released then closeDone()
         return
     end if
     if resp.status = 409 and not m.retriedInstall then
@@ -773,24 +787,34 @@ end sub
 
 sub onStopped(event as object)
     Api_result(event)
-    if m.closing then finishClose()
+    closeDone()
 end sub
 
+' Back: stop playback, then close once the final sync, the session DELETE and any start still in
+' flight have answered (the screen's ApiTasks go with it), or after stopTimeout.
 sub exitPlayer()
     if m.closing then return
-    syncBookProgress(true)
     m.closing = true
+    m.closeWaits = m.startsInFlight
+    syncBookProgress(true)
     m.global.homeDirty = true
     m.sleepTimer.control = "stop"
     m.audio.control = "stop"
-    hadSession = m.sessionId <> ""
+    if m.sessionId <> "" and installationId() <> "" then m.closeWaits = m.closeWaits + 1
     stopSession(false)
-    if hadSession then
+    if m.closeWaits > 0 then
         m.stopTimeout.control = "start"
     else
         finishClose()
     end if
 end sub
+
+sub closeDone()
+    if not m.closing then return
+    m.closeWaits = m.closeWaits - 1
+    if m.closeWaits <= 0 then finishClose()
+end sub
+
 
 sub finishClose()
     if m.closed then return
