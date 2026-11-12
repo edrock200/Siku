@@ -33,6 +33,10 @@ sub init()
     m.chipIndex = 0
     m.zones = []
     m.zoneIndex = 0
+    m.filmSeq = 0
+    m.nextCursor = ""
+    m.loadingMore = false
+    m.moreRetryAt = 0
 
     x = 0
     for i = 0 to m.chips.Count() - 1
@@ -41,6 +45,7 @@ sub init()
         x = x + m.chips[i].width + 16
     end for
     m.grid.observeField("itemSelected", "onGridSelected")
+    m.grid.observeField("itemFocused", "onGridFocused")
     m.bioBox.observeField("focusedChild", "onBioFocus")
     m.retryBtn.observeField("buttonSelected", "load")
 end sub
@@ -68,17 +73,38 @@ sub load()
     m.errorGroup.visible = false
     m.spinner.visible = true
     m.nameLabel.text = Str_orEmpty(m.top.params.name)
-    Api_get("/api/v2/catalog/people/" + Str_urlEncode(personId()), { prefetch: "true" }, "onPerson")
+    ' A real visit, not a speculative read: no prefetch flag, so the server may queue a refresh of
+    ' the person's biography and photo (docs/api-spec.md, people).
+    Api_get("/api/v2/catalog/people/" + Str_urlEncode(personId()), invalid, "onPerson")
     loadFilmography()
 end sub
 
 sub loadFilmography()
     m.emptyLabel.visible = false
     m.gridSpinner.visible = true
+    ' A new chip starts a new sequence; answers for an older chip (or its pages) are dropped.
+    m.filmSeq = m.filmSeq + 1
+    m.nextCursor = ""
+    m.loadingMore = false
+    m.moreRetryAt = 0
+    requestFilmography("")
+end sub
+
+sub requestFilmography(cursor as string)
     q = { source: "person", person_id: personId(), sort: "-year", limit: 60, image_size: "medium" }
     if m.filter <> "" then q["type"] = m.filter
-    m.filmographyFilter = m.filter
-    Api_get("/api/v2/catalog", q, "onFilmography")
+    if cursor <> "" then q.cursor = cursor
+    Api_get("/api/v2/catalog", q, "onFilmography", { seq: m.filmSeq, cursor: cursor })
+end sub
+
+' Pages through the filmography as focus nears the end (two rows of six before the last card).
+sub onGridFocused()
+    idx = m.grid.itemFocused
+    if m.nextCursor = "" or m.loadingMore or idx < m.items.Count() - 12 then return
+    ' After a failed page, wait a few seconds before asking again instead of on every key press.
+    if Time_nowSeconds() < m.moreRetryAt then return
+    m.loadingMore = true
+    requestFilmography(m.nextCursor)
 end sub
 
 sub showError(msg as string)
@@ -175,9 +201,24 @@ end sub
 
 sub onFilmography(event as object)
     resp = Api_result(event)
-    if m.filmographyFilter <> m.filter then return
+    ctx = resp.context
+    if ctx = invalid or ctx.seq <> m.filmSeq then return
+    if ctx.cursor <> "" then
+        m.loadingMore = false
+        if not resp.ok or resp.data = invalid or Type(resp.data) <> "roAssociativeArray" then
+            m.global.toast = "Couldn't load more. " + Api_errorText(resp)
+            m.moreRetryAt = Time_nowSeconds() + 5
+            return
+        end if
+        more = Arr_or(resp.data.items)
+        m.nextCursor = pageCursor(resp.data)
+        if m.grid.content = invalid or more.Count() = 0 then return
+        m.items.Append(more)
+        Content_appendCards(m.grid.content, more, "poster", 20, 30)
+        return
+    end if
     m.gridSpinner.visible = false
-    if not resp.ok or resp.data = invalid then
+    if not resp.ok or resp.data = invalid or Type(resp.data) <> "roAssociativeArray" then
         m.items = []
         m.grid.content = invalid
         m.emptyLabel.text = Api_errorText(resp)
@@ -186,6 +227,7 @@ sub onFilmography(event as object)
         return
     end if
     m.items = Arr_or(resp.data.items)
+    m.nextCursor = pageCursor(resp.data)
     ' Cells carry a 20 / 30 px inset so the focused card's zoom is not clipped at the grid's edge (pitfall 12).
     m.grid.content = Content_grid(m.items, "poster", 20, 30)
     m.emptyLabel.text = "No titles found."
@@ -193,6 +235,12 @@ sub onFilmography(event as object)
     buildZones()
     if zoneName() = "grid" and m.items.Count() = 0 then focusZone(zoneIndexOf("chips"))
 end sub
+
+function pageCursor(data as object) as string
+    pg = data.page
+    if pg = invalid or pg.has_more <> true then return ""
+    return Str_orEmpty(pg.next_cursor)
+end function
 
 ' ---------- Zones ----------
 
