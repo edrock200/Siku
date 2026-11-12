@@ -33,6 +33,11 @@ sub init()
     m.libsLoading = false
     m.gateLoadedAt = 0
     m.gateLoading = false
+    m.libsRetries = 0
+    ' A failed libraries request retries on its own (3 s, 10 s, then every 30 s) so the Movies /
+    ' Series tabs do not stay missing until another screen happens to be opened and closed.
+    m.libsRetryTimer = m.top.findNode("libsRetryTimer")
+    m.libsRetryTimer.observeField("fire", "onLibsRetry")
     m.prefsSig = prefsSignature()
 
     updateProfile()
@@ -97,10 +102,25 @@ sub onLibraries(event as object)
     resp = Api_result(event)
     if resp.context = invalid or resp.context.profileId <> m.profileId then return
     m.libsLoading = false
-    if not resp.ok or resp.data = invalid then return
+    if not resp.ok or resp.data = invalid or Type(resp.data) <> "roAssociativeArray" then
+        delays = [3.0, 10.0, 30.0]
+        di = m.libsRetries
+        if di >= delays.Count() then di = delays.Count() - 1
+        m.libsRetries = m.libsRetries + 1
+        m.libsRetryTimer.control = "stop"
+        m.libsRetryTimer.duration = delays[di]
+        m.libsRetryTimer.control = "start"
+        return
+    end if
+    m.libsRetries = 0
+    m.libsRetryTimer.control = "stop"
     m.libsLoadedAt = Time_nowSeconds()
     m.libraries = Arr_or(resp.data.items)
     buildTabs()
+end sub
+
+sub onLibsRetry()
+    if m.libsLoadedAt = 0 then loadLibraries()
 end sub
 
 ' Requests feature gate (RequestsFeatureStore): the tab and the search row appear only when the
@@ -192,7 +212,17 @@ sub buildTabs()
     if si < 0 then si = 0
     m.bar.selectedIndex = si
     if m.bar.focusIndex >= tabs.Count() then m.bar.focusIndex = si
+    ' The selected tab is gone (Show Audiobooks off, a library removed): its page goes too.
+    if tabIndex(selectedId) < 0 and selectedId <> "home" and m.currentKey <> "home" and not isPersonalPage() then
+        showHome()
+        if m.top.active and m.focusArea = "content" then focusContent()
+    end if
 end sub
+
+' Watchlist / Favorites / History from the profile menu or the For You panel.
+function isPersonalPage() as boolean
+    return Left(m.currentKey, 9) = "personal:"
+end function
 
 function tabIndex(id as string) as integer
     for i = 0 to m.tabs.Count() - 1
@@ -581,6 +611,8 @@ sub onScreenShown()
         m.libraries = []
         m.bar.selectedIndex = 0
         m.libsLoading = false
+        m.libsRetries = 0
+        m.libsRetryTimer.control = "stop"
         m.gateLoading = false
         resetRequestsGate()
         buildTabs()
@@ -633,7 +665,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
     barFocused = m.bar.hasFocus()
     if key = "back" then
         if barFocused then
-            if m.bar.selectedIndex <> 0 then
+            ' Decide from the page on screen as well as the tab: a profile-menu page (Watchlist,
+            ' Favorites, History) shows under the Home tab, and Back must return Home, not exit.
+            if m.bar.selectedIndex <> 0 or m.currentKey <> "home" then
                 commitTab(0)
                 focusBar(0)
                 return true

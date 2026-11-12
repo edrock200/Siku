@@ -17,5 +17,7 @@
     <ShellTopBar id="bar" />
     <ShellPanel id="panelMain" visible="false" />
     <ShellPanel id="panelFly" width="300" visible="false" />
+    <!-- Retries a failed libraries request (ShellScreen.onLibraries sets the delay). -->
+    <Timer id="libsRetryTimer" repeat="false" duration="3" />
   </children>
 </component>
