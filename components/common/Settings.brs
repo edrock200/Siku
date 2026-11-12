@@ -44,6 +44,8 @@ function Settings_keyDefs() as object
         { key: "player.dv_profile7_hdr10_fallback", rev: 1, def: false }
         { key: "player.video_skip_back_seconds", rev: 9, def: 10 }
         { key: "player.video_skip_forward_seconds", rev: 9, def: 30 }
+        { key: "player.audiobook_skip_back_seconds", rev: 9, def: 10 }
+        { key: "player.audiobook_skip_forward_seconds", rev: 9, def: 30 }
         { key: "catalog.metadata_language", rev: 1, def: "" }
         { key: "home.hide_watched_items", rev: 12, def: false }
         { key: "ui.card_presentation", rev: 5, def: { poster_size: "standard", caption: Settings_retiredCardCaption() } }

@@ -3,7 +3,8 @@
   Full-screen now-playing UI for music queues and audiobooks (Android TV TvAudiobookPlayerScreen):
   large cover on the left; eyebrow, title, author/artist and chapter/album on the right; progress bar
   with elapsed / remaining; transport row (previous, skip back, play/pause, skip forward, next);
-  utility pills (Chapters or Up Next, Sleep timer). Panels open on the right (AudioPanel).
+  utility pills (Chapters or Up Next, Sleep timer, and for audiobooks Skip interval: AudioSkip.brs).
+  Panels open on the right (AudioPanel); Play / Pause and the skip keys still work while one is open.
 
   params (all optional except what each mode needs):
     Music / generic queue (`queue` present and non-empty):
@@ -38,6 +39,8 @@
   <interface>
     <!-- A Roku voice transport command routed by MainScene.handleTransport; returns { status }. -->
     <function name="voiceTransport" />
+    <!-- Set by Settings_notify when a Settings_load this screen started lands (skip intervals). -->
+    <field id="settingsLoaded" type="boolean" alwaysNotify="true" onChange="onSettingsLoaded" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/player/AudioPlayerScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/PlaybackCaps.brs" />
@@ -45,6 +48,7 @@
   <script type="text/brightscript" uri="pkg:/components/player/AudioCaps.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioTimeline.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioResume.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/AudioSkip.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioSessionRecovery.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/VoiceTransport.brs" />
   <children>
@@ -104,6 +108,7 @@
         <Group id="utility" translation="[0, 876]">
           <PillButton id="listBtn" text="Chapters" iconUri="pkg:/images/icons/chapters.png" height="64" padX="32" fontSize="25" scaleOnFocus="1.0" />
           <PillButton id="sleepBtn" text="Sleep Timer" iconUri="pkg:/images/icons/sleep.png" height="64" padX="32" fontSize="25" scaleOnFocus="1.0" />
+          <PillButton id="skipBtn" text="Skip interval" iconUri="pkg:/images/icons/tune.png" height="64" padX="32" fontSize="25" scaleOnFocus="1.0" visible="false" />
         </Group>
       </Group>
     </Group>

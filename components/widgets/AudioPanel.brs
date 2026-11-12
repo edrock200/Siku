@@ -35,6 +35,8 @@ sub onSelected()
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
+    ' Transport keys reach the player underneath (Play / Pause and skips work with a panel open).
+    if key = "play" or key = "rewind" or key = "fastforward" or key = "replay" then return false
     if not press then return true
     if key = "back" or key = "left" then
         m.top.dismissed = true
