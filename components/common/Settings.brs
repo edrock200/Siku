@@ -53,8 +53,10 @@ function Settings_deviceKeys() as object
     return ["playback.preferred_quality", "playback.max_bitrate_kbps", "playback.audio_language", "playback.intro_skip_mode", "playback.auto_skip_credits", "playback.auto_play_next", "playback.next_up_prompt_seconds", "playback.subtitle_appearance", "player.hdr_enabled", "player.dolby_vision_enabled", "player.dv_profile7_hdr10_fallback"]
 end function
 
+' Keys are quoted so FormatJson keeps their camelCase (unquoted literal keys are lower-cased on
+' Roku, and the server's schema rejects unknown names). Fallbacks match contract revision 6.
 function Settings_defaultAppearance() as object
-    return { fontSize: "large", fontFamily: "sans-serif", fontColor: "#ffffff", textOpacity: 100, backgroundColor: "#000000", backgroundStyle: "shadow", backgroundOpacity: 75, textOutline: false, textOutlineColor: "#000000", position: "bottom" }
+    return { "fontSize": "large", "fontFamily": "sans-serif", "fontColor": "#ffffff", "textOpacity": 100, "backgroundColor": "#000000", "backgroundStyle": "box", "backgroundOpacity": 75, "textOutline": false, "textOutlineColor": "#000000", "position": "bottom" }
 end function
 
 ' ---------- State ----------
