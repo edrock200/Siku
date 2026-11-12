@@ -14,8 +14,10 @@ end function
 
 sub Registry_write(key as string, value as dynamic)
     sec = CreateObject("roRegistrySection", "siku")
-    sec.Write(key, FormatJson({ v: value }))
-    sec.Flush()
+    ok = sec.Write(key, FormatJson({ v: value }))
+    if ok = true then ok = sec.Flush()
+    ' A full registry (16 KB per channel) fails without a word otherwise; the key only, never the value.
+    if ok <> true then Diag_log("[siku-diag] registry write failed key=" + key)
 end sub
 
 sub Registry_delete(key as string)
