@@ -73,6 +73,8 @@ sub init()
     m.sleepMode = "off"
     m.sleepRemaining = 0
     m.sleepChapterEnd = -1.0
+    m.resumeRec = invalid       ' this device's audiobook resume record (AudioResume.brs)
+    m.resumeSavedAt = 0
     m.panelKind = ""
     m.zone = "transport"
     m.tIndex = 2
@@ -146,7 +148,7 @@ end sub
 ' Covered or removed without going through Back (e.g. a stack reset): stop playback.
 sub onScreenHidden()
     if m.closing then return
-    syncBookProgress()
+    syncBookProgress(true)
     m.closing = true
     m.global.homeDirty = true
     m.sleepTimer.control = "stop"
@@ -379,11 +381,19 @@ sub setupAudiobook(it as object)
     layoutUtility()
     if m.focusSink.hasFocus() then restoreFocus()
 
-    ' Start: explicit whole-book position, else the stored resume point (TvAudiobookDetailHero rules).
+    ' Start: explicit whole-book position, else the stored resume point (TvAudiobookDetailHero rules),
+    ' taking this device's record where the server dropped the position (AudioResume.brs).
+    serverPos = Num_or(ud.position_seconds)
+    m.resumeRec = { position: 0.0, total: m.timeline.total, base: serverPos }
     startAt = startParam(m.top.params)
     if startAt < 0 then
         startAt = 0.0
-        posSec = AudioTimeline_num(ud.position_seconds)
+        posSec = serverPos
+        localPos = AudioResume_position(Settings_identity(), m.contentId, serverPos)
+        if localPos >= 0 then
+            posSec = localPos
+            Diag_log(Diag_join(["[siku-audio] resume from this device's record at ", Int(localPos).ToStr(), " s (server holds ", Int(serverPos).ToStr(), " s)"]))
+        end if
         if posSec > 0 and posSec < m.timeline.total - 5 then startAt = posSec
     end if
     seekGlobal(startAt, true)
@@ -427,17 +437,45 @@ sub seekGlobal(t as float, forceStart as boolean)
     updateProgressUi()
 end sub
 
-' Whole-book progress (furthest-wins on the server): POST /api/v2/sync/progress.
-sub syncBookProgress()
+' Whole-book progress: POST /api/v2/sync/progress. The server keeps the last write, drops a
+' position under its min-resume threshold and stores one over its watched threshold as finished
+' at 0, so the on-device record (AudioResume.brs) is updated too: at once when `force` (pause,
+' chapter jump, close), else at most every two minutes.
+sub syncBookProgress(force = false as boolean)
     if m.mode <> "audiobook" or m.contentId = "" or m.timeline = invalid then return
     if m.globalPos <= 0 then return
     body = { items: [{ media_item_id: m.contentId, position_ms: Int(m.globalPos * 1000), duration_ms: Int(m.timeline.total * 1000) }] }
-    Api_send("POST", "/api/v2/sync/progress", body, "onSynced")
+    Api_send("POST", "/api/v2/sync/progress", body, "onSynced", { at: m.globalPos, total: m.timeline.total, save: force })
+    if m.resumeRec <> invalid then
+        m.resumeRec.position = m.globalPos
+        m.resumeRec.total = m.timeline.total
+        if force or Time_nowSeconds() - m.resumeSavedAt >= 120 then saveResumeRecord()
+    end if
 end sub
 
 sub onSynced(event as object)
     resp = Api_result(event)
-    if not resp.ok then print "[AudioPlayer] sync/progress "; resp.status
+    if not resp.ok then
+        print "[AudioPlayer] sync/progress "; resp.status
+        return
+    end if
+    ctx = resp.context
+    if m.resumeRec = invalid or ctx = invalid then return
+    prevBase = Num_or(m.resumeRec.base)
+    m.resumeRec.base = AudioResume_serverAfter(Num_or(ctx.at), Num_or(ctx.total), prevBase)
+    ' A forced sync (pause, close) keeps the stored record's idea of the server in step.
+    if ctx.save = true and m.resumeRec.base <> prevBase then saveResumeRecord()
+end sub
+
+' Writes the on-device resume record; at the end of the book it is dropped instead.
+sub saveResumeRecord()
+    if m.resumeRec = invalid or m.mode <> "audiobook" or m.contentId = "" then return
+    m.resumeSavedAt = Time_nowSeconds()
+    if m.ended then
+        AudioResume_clear(Settings_identity(), m.contentId)
+    else if m.resumeRec.position > 0 then
+        AudioResume_put(Settings_identity(), m.contentId, m.resumeRec)
+    end if
 end sub
 
 ' ---------- Sessions ----------
@@ -729,7 +767,7 @@ end sub
 sub leaveServerEndedSession()
     if m.closing or m.endedByServer then return
     Diag_log("[siku-audio] the server ended this playback session; not starting another")
-    syncBookProgress()
+    syncBookProgress(true)
     m.endedByServer = true
     m.sessionId = ""
     m.pending = invalid
@@ -770,7 +808,7 @@ end sub
 
 sub exitPlayer()
     if m.closing then return
-    syncBookProgress()
+    syncBookProgress(true)
     m.closing = true
     m.global.homeDirty = true
     m.sleepTimer.control = "stop"
@@ -834,7 +872,7 @@ sub onAudioState()
         m.statusLabel.text = Tx("Paused")
         m.playBtn.iconUri = "pkg:/images/icons/play.png"
         sendProgress()
-        syncBookProgress()
+        syncBookProgress(true)
     else if st = "finished" then
         onFinished()
     else if st = "error" then
@@ -885,7 +923,8 @@ sub onFinished()
         m.ended = true
         m.globalPos = tl.total
         m.localPos = tl.tracks[m.trackIdx].duration
-        syncBookProgress()
+        ' m.ended is set, so this also drops the on-device resume record.
+        syncBookProgress(true)
         stopSession(true)
         m.isPaused = true
         m.statusLabel.text = Tx("Finished")
@@ -1068,7 +1107,7 @@ sub onPrev()
         if ci > 0 and m.globalPos - chapters[ci].start < 3 then ci = ci - 1
         if ci < 0 then ci = 0
         seekGlobal(chapters[ci].start, false)
-        syncBookProgress()
+        syncBookProgress(true)
     else
         if m.localPos > 3 or m.qIndex = 0 then
             if m.sessionId <> "" then seekLocal(0) else playQueueIndex(m.qIndex, 0)
@@ -1084,7 +1123,7 @@ sub onNext()
         ci = AudioTimeline_chapterAt(chapters, m.globalPos)
         if ci >= 0 and ci < chapters.Count() - 1 then
             seekGlobal(chapters[ci + 1].start, false)
-            syncBookProgress()
+            syncBookProgress(true)
         end if
     else if m.qIndex < m.queue.Count() - 1 then
         playQueueIndex(m.qIndex + 1, 0)
@@ -1148,7 +1187,7 @@ sub onPanelChosen()
         i = Int(Val(id))
         if i >= 0 and i < m.timeline.chapters.Count() then
             seekGlobal(m.timeline.chapters[i].start, false)
-            syncBookProgress()
+            syncBookProgress(true)
         end if
     else if kind = "queue" then
         i = Int(Val(id))

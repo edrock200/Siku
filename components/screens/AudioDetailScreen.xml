@@ -14,6 +14,7 @@
 <component name="AudioDetailScreen" extends="BaseScreen">
   <script type="text/brightscript" uri="pkg:/components/screens/AudioDetailScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioTimeline.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/AudioResume.brs" />
   <children>
     <Rectangle id="bg" width="1920" height="1080" color="0x040D0FFF" />
     <Poster id="backdrop" loadWidth="960" loadHeight="540" width="1920" height="1080" loadDisplayMode="scaleToZoom" opacity="0.16" />
