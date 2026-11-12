@@ -149,6 +149,7 @@ sub resetPlaybackState()
     m.upNextDismissed = false
     m.countdown = -1
     m.countdownToEnd = false
+    m.nextUpPrompt = invalid
     m.scrubbing = false
     m.scrubPos = 0.0
     m.holdTicks = 0
@@ -853,7 +854,7 @@ sub onDownloadedSegment()
     endS = startS + durS + m.timelineOffset
     if endS > m.bufferedEnd then
         m.bufferedEnd = endS
-        if not m.scrubbing then m.scrubber.buffered = m.bufferedEnd
+        if not m.scrubbing and m.controls.visible then m.scrubber.buffered = m.bufferedEnd
     end if
 end sub
 
@@ -875,7 +876,9 @@ sub onVideoPosition()
     ' towards PlayStart; m.position keeps the plan's start until then.
     if not m.mountPlayed then return
     m.position = m.video.position + m.timelineOffset
-    if not m.scrubbing then m.scrubber.position = m.position
+    ' The scrubber redraws every mark on each position change; it is only visible with the controls
+    ' (showControls brings it up to date).
+    if not m.scrubbing and m.controls.visible then m.scrubber.position = m.position
     checkMarkers()
     checkUpNext()
     if m.countdownToEnd and m.countdown > 0 and m.upNext.visible and not m.finished then
@@ -1161,6 +1164,10 @@ end sub
 sub showControls()
     ' A shuffle offers no sequential next on the transport row.
     m.upNextBtn.visible = m.nextEpisode <> invalid and m.shuffle = invalid
+    if not m.scrubbing then
+        m.scrubber.position = m.position
+        m.scrubber.buffered = m.bufferedEnd
+    end if
     layoutTransport()
     m.controls.visible = true
     positionSkipPill()
@@ -1298,9 +1305,7 @@ function markerLabel(kind as string) as string
 end function
 
 sub checkMarkers()
-    ' playback.intro_skip_mode (never | ask | always) and playback.auto_skip_credits, from the server.
-    mode = Settings_introSkipMode()
-    skipCredits = Settings_autoSkipCredits()
+    if m.markers.Count() = 0 then return
     active = invalid
     for each mk in m.markers
         if mk.kind <> "preview" and m.position >= mk.start and m.position < mk["end"] - 1 then active = mk
@@ -1312,6 +1317,10 @@ sub checkMarkers()
     end if
     key = active.kind + ":" + Str_orEmpty(active.start)
     m.activeMarker = active
+    ' playback.intro_skip_mode (never | ask | always) and playback.auto_skip_credits, from the
+    ' server; read only inside a marker (each read copies the global settings map).
+    mode = Settings_introSkipMode()
+    skipCredits = Settings_autoSkipCredits()
     if mode = "never" and not (active.kind = "credits" and skipCredits) then return
     if (mode = "always" and active.kind <> "credits") or (active.kind = "credits" and skipCredits) then
         if m.autoSkipped[key] <> true then
@@ -1336,11 +1345,17 @@ end sub
 
 sub showSkippedCaption(mk as object)
     kindText = "Intro skipped"
-    if mk.kind = "recap" then kindText = "Recap skipped"
+    watchText = "Watch Intro"
+    if mk.kind = "recap" then
+        kindText = "Recap skipped"
+        watchText = "Watch Recap"
+    else if mk.kind = "credits" then
+        kindText = "Credits skipped"
+        watchText = "Watch Credits"
+    end if
     m.skippedCaption.text = kindText
     m.skippedCaption.visible = true
-    m.skipBtn.text = "Watch Intro"
-    if mk.kind = "recap" then m.skipBtn.text = "Watch Recap"
+    m.skipBtn.text = watchText
     m.skipBtn.visible = true
     m.skipGroup.visible = true
     m.skipShownFor = "watch:" + Str_orEmpty(mk.start)
@@ -1590,7 +1605,9 @@ sub checkUpNext()
     if (not m.isEpisode and m.shuffle = invalid) or m.nextEpisode = invalid or m.upNextShown or m.upNextDismissed then return
     if m.duration <= 0 then return
     ' playback.next_up_prompt_seconds: how long before the end the card appears (0 = at the end).
-    trigger = m.duration - Settings_nextUpPromptSeconds()
+    ' Read once per item: each settings read copies the global settings map, and this runs every second.
+    if m.nextUpPrompt = invalid then m.nextUpPrompt = Settings_nextUpPromptSeconds()
+    trigger = m.duration - m.nextUpPrompt
     for each mk in m.markers
         if mk.kind = "credits" and mk.start < trigger and mk.start > m.duration * 0.5 then trigger = mk.start
     end for
