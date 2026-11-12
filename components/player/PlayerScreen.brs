@@ -1507,6 +1507,21 @@ sub showError(msg as string)
     m.controls.visible = false
     m.hud.visible = false
     m.skipGroup.visible = false
+    ' Nothing stays over the error: an open picker or subtitle dialog would take every key first
+    ' (onKeyEvent) and leave Retry unreachable, and Up Next's countdown must not play on under it.
+    m.picker.visible = false
+    if m.subsDialog.visible then
+        m.subs.dialog = ""
+        m.subsDialog.visible = false
+    end if
+    m.countdownTimer.control = "stop"
+    m.countdown = -1
+    if m.upNext.visible then
+        m.upNext.visible = false
+        restoreVideoPane()
+    end if
+    m.bufqPill.visible = false
+    m.bufqFocused = false
     m.progressTimer.control = "stop"
     m.errorLabel.text = msg
     m.errorGroup.visible = true
