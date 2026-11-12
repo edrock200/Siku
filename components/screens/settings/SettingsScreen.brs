@@ -74,6 +74,7 @@ sub init()
     m.pickerFirst = 0
     m.pickerMode = ""        ' "options" | "confirm"
     m.pendingWrites = 0
+    m.saving = false ' a server write or its reload is in flight: the rows still show the old snapshot
     m.writeFailed = false
     m.serverVersion = ""
     m.supportsDolbyVision = displaySupportsDolbyVision()
@@ -89,6 +90,8 @@ end sub
 
 sub onScreenShown()
     m.top.setFocus(true)
+    ' A reload for another profile (Switch Profile) is dropped without notice; don't stay locked.
+    if m.pendingWrites <= 0 then m.saving = false
     fillAccount()
     ' Back from Switch Profile: the snapshot may belong to another profile now.
     if not Settings_available() then Settings_load()
@@ -897,6 +900,7 @@ end sub
 
 ' A load this screen started landed (settingsLoaded), or the screen is shown again.
 sub onSettingsChanged()
+    if m.pendingWrites <= 0 then m.saving = false
     showStatus("")
     renderPane()
 end sub
@@ -1050,9 +1054,14 @@ end sub
 
 ' ---------- Writes ----------
 
+' Writes add up: a second change while one is in flight must not reset the count, or the first
+' completion reloads early (and twice). Until the reload lands (onSettingsChanged) the rows show the
+' old snapshot, so activateRow ignores further changes to choice and toggle rows meanwhile.
 sub beginWrites(count as integer)
-    m.pendingWrites = count
-    m.writeFailed = false
+    if count <= 0 then return
+    if m.pendingWrites <= 0 then m.writeFailed = false
+    m.pendingWrites = m.pendingWrites + count
+    m.saving = true
     showStatus(Tx("Saving…"))
 end sub
 
@@ -1211,8 +1220,10 @@ sub applyChoice(row as object, value as dynamic)
         putValue("player.dv_profile7_hdr10_fallback", "profile_device", value = true)
     else if id = "forceHdr" then
         savePref("forceHdrPassthrough", value = true)
+        refreshValues()
     else if id = "forceDolby" then
         savePref("forceDolbyPassthrough", value = true)
+        refreshValues()
     else if id = "tsCopy" then
         savePref("tsCopyDisabled", value <> true)
         refreshValues()
@@ -1329,6 +1340,7 @@ end sub
 
 sub activateRow(row as object)
     id = row.id
+    if m.saving = true and (row.kind = "choice" or row.kind = "toggle") then return
     if row.kind = "choice" then
         openPicker(row)
     else if row.kind = "toggle" then
