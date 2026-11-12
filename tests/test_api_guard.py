@@ -40,6 +40,16 @@ class ApiGuard(unittest.TestCase):
             ("baseUrl fragment", {"baseUrl": "http://h/#", "path": "/api/v2/system/identity"}, refused),
             ("baseUrl dot segments", {"baseUrl": "http://h/api/v2/..", "path": "/api/v2/x"}, refused),
             ("baseUrl not http", {"baseUrl": "javascript:x", "path": "/api/v2/x"}, refused),
+            ("baseUrl ending /api/v1", {"baseUrl": "https://silo.example/api/v1", "path": "/api/v2/system/identity"}, refused),
+            ("baseUrl with /api/v1/ inside", {"baseUrl": "http://h:8097/silo/API/V1/", "path": "/api/v2/x"}, refused),
+            ("baseUrl ending /api/v3", {"baseUrl": "https://h/api/v3", "path": "/api/v2/x"}, refused),
+            ("baseUrl proxy prefix /api", {"baseUrl": "https://example.com/api", "path": "/api/v2/x"}, OK),
+            ("baseUrl proxy prefix /media/api/", {"baseUrl": "https://example.com/media/api/", "path": "/api/v2/x"}, OK),
+            ("baseUrl /api/video is a prefix", {"baseUrl": "https://example.com/api/video", "path": "/api/v2/x"}, OK),
+            ("baseUrl /api/v is a prefix", {"baseUrl": "https://example.com/api/v", "path": "/api/v2/x"}, OK),
+            ("baseUrl /apiv1 is a prefix", {"baseUrl": "https://example.com/apiv1", "path": "/api/v2/x"}, OK),
+            ("baseUrl /v1 is a prefix", {"baseUrl": "https://example.com/v1", "path": "/api/v2/x"}, OK),
+            ("baseUrl ending /api/v2 is not refused by this rule", {"baseUrl": "https://example.com/api/v2", "path": "/api/v2/x"}, OK),
         ]
         check_cases(self, FILES, [(n, "ApiTask_refusal", [req], exp) for n, req, exp in cases])
 

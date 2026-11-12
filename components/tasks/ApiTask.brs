@@ -129,7 +129,8 @@ end function
 ' under /api/v2/ with no dot segments (/api/v2/../v1 would reach v1); an absolute `url` must be
 ' http(s) and its path likewise under /api/v2/; a `baseUrl` (a server being probed, or one a phone
 ' pushed over the LAN) must be a bare http(s) origin or path prefix, with no query or fragment that
-' would turn the v2 path into a parameter of some other route (pure; tests/test_api_guard.py).
+' would turn the v2 path into a parameter of some other route, and no `/api/v<n>` pair other than
+' /api/v2 in its prefix (a saved or pushed address that ends in an older API version) (pure; tests/test_api_guard.py).
 function ApiTask_refusal(req as object) as string
     u = Str_orEmpty(req.url)
     if u <> "" then
@@ -151,8 +152,32 @@ function ApiTask_refusal(req as object) as string
         if Left(lb, 7) <> "http://" and Left(lb, 8) <> "https://" then return "baseUrl is not http(s)"
         if Instr(1, base, "?") > 0 or Instr(1, base, "#") > 0 or Instr(1, base, "\") > 0 then return "baseUrl has a query or fragment"
         if Instr(1, base, "/..") > 0 or Instr(1, base, "/./") > 0 then return "baseUrl has dot segments"
+        if ApiTask_baseHasOtherApiVersion(lb) then return "baseUrl names an API version other than v2"
     end if
     return ApiTask_pathRefusal(Str_orEmpty(req.path))
+end function
+
+' True when a lower-case http(s) base URL's path has an "api" segment followed by "v<digits>" other
+' than "v2" (an older or newer version such as v3). Any other prefix stays allowed, a reverse proxy's "/api" or
+' "/media/api" included.
+function ApiTask_baseHasOtherApiVersion(lb as string) as boolean
+    rest = Mid(lb, Instr(1, lb, "://") + 3)
+    slash = Instr(1, rest, "/")
+    if slash = 0 then return false
+    tail = Mid(rest, slash + 1)
+    segs = tail.Split("/")
+    for i = 0 to segs.Count() - 2
+        v = segs[i + 1]
+        if segs[i] = "api" and Len(v) > 1 and Left(v, 1) = "v" and v <> "v2" then
+            digits = true
+            for j = 2 to Len(v)
+                c = Mid(v, j, 1)
+                if c < "0" or c > "9" then digits = false
+            end for
+            if digits then return true
+        end if
+    end for
+    return false
 end function
 
 function ApiTask_pathRefusal(path as string) as string
