@@ -424,6 +424,18 @@ function Node_find(parent as object, id as string) as object
     return invalid
 end function
 
+' ---------- Keyboards ----------
+
+' Lets a StandardKeyboardDialog take dictation from the voice remote's microphone (Android TV's
+' search has voice input). Its text box is a VoiceTextEditBox on firmware that has one; the field
+' is set only where it exists. Never call it for a password field.
+sub Keyboard_enableVoice(dlg as object)
+    if dlg = invalid then return
+    editBox = invalid
+    if dlg.hasField("textEditBox") then editBox = dlg.textEditBox
+    if editBox <> invalid and editBox.hasField("voiceEnabled") then editBox.voiceEnabled = true
+end sub
+
 ' ---------- Diagnostics log ----------
 
 ' Prints a console line and, once MainScene has started DiagTask, keeps it (redacted) in the

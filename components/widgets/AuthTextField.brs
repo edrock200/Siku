@@ -121,6 +121,9 @@ sub openKeyboard()
             dlg.keyboardDomain = "password"
             editBox = dlg.textEditBox
             if editBox <> invalid then editBox.secureMode = not m.top.revealed
+        else
+            ' Dictation for addresses and user names; never for a password.
+            Keyboard_enableVoice(dlg)
         end if
     else
         dlg = CreateObject("roSGNode", "KeyboardDialog")
