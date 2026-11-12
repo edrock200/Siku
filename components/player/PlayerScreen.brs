@@ -2875,9 +2875,14 @@ sub activateHudRow()
     else if id = "quality" then
         openPicker("quality")
     else if id = "autoplay" then
+        ' Settings_autoPlayNext reads the server's playback.auto_play_next first, so the toggle writes
+        ' it there (profile_device, as Settings does); the device pref is kept as the fallback.
+        v = not autoPlayNext()
         p = AA_copy(m.global.prefs)
-        p.autoPlayNext = not (p.autoPlayNext <> false)
+        p.autoPlayNext = v
         Prefs_save(p)
+        Settings_setLocal("playback.auto_play_next", "profile_device", v)
+        Settings_put("playback.auto_play_next", "profile_device", v, "onHudSettingWritten")
         buildHudRows()
     else if id = "hdr" then
         toggleOutputSetting("player.hdr_enabled", not Settings_hdrEnabled())
