@@ -206,6 +206,8 @@ sub resetPlaybackState()
     ' never set it (the series page moves on to the next episode only after it).
     m.reachedCreditsOrEnd = false
     m.countdown = -1
+    m.markerPrefs = invalid        ' { mode, credits }: the skip settings, read at the first active marker
+    m.nextUpPromptSecs = invalid   ' playback.next_up_prompt_seconds, read at the first check (checkUpNext)
     m.countdownToEnd = false   ' the Up Next countdown is the playback time left (advances at the stream's end)
     m.scrubbing = false
     m.scrubPos = 0.0
@@ -1265,7 +1267,8 @@ sub onVideoPosition()
     ' start (applyPlan) stays the position until a real reading arrives.
     if not m.mountPlayed and Num_or(m.video.position, 0) < 1 and m.position > 1 then return
     m.position = m.video.position + m.timelineOffset
-    if not m.scrubbing then m.scrubber.position = m.position
+    ' The scrubber is drawn only with the controls; showControls catches it up.
+    if not m.scrubbing and m.controls.visible then m.scrubber.position = m.position
     AiLive_onPosition()
     checkMarkers()
     checkUpNext()
@@ -1659,6 +1662,8 @@ sub showControls()
     ' A shuffle offers no sequential next on the transport row.
     m.upNextBtn.visible = m.nextEpisode <> invalid and m.shuffle = invalid
     layoutTransport()
+    ' Position ticks leave the hidden scrubber alone (onVideoPosition); a re-anchor in flight shows its target.
+    if not m.scrubbing and m.reanchorBusy <> true then m.scrubber.position = m.position
     m.controls.visible = true
     positionSkipPill()
     focusControls()
@@ -1810,9 +1815,8 @@ function markerLabel(kind as string) as string
 end function
 
 sub checkMarkers()
-    ' playback.intro_skip_mode (never | ask | always) and playback.auto_skip_credits, from the server.
-    mode = Settings_introSkipMode()
-    skipCredits = Settings_autoSkipCredits()
+    ' Runs on every position tick: nothing to do for a title without markers.
+    if m.markers.Count() = 0 and m.activeMarker = invalid then return
     active = invalid
     for each mk in m.markers
         if mk.kind <> "preview" and m.position >= mk.start and m.position < mk["end"] - 1 then active = mk
@@ -1824,6 +1828,13 @@ sub checkMarkers()
     end if
     key = active.kind + ":" + Str_orEmpty(active.start)
     m.activeMarker = active
+    ' Already handled (auto-skipped, or its pill shown): no settings read on every tick.
+    if m.autoSkipped[key] = true or m.skipShownFor = key then return
+    ' playback.intro_skip_mode (never | ask | always) and playback.auto_skip_credits, from the server,
+    ' read once per playback (each read copies m.global.settings).
+    if m.markerPrefs = invalid then m.markerPrefs = { mode: Settings_introSkipMode(), credits: Settings_autoSkipCredits() }
+    mode = m.markerPrefs.mode
+    skipCredits = m.markerPrefs.credits
     if mode = "never" and not (active.kind = "credits" and skipCredits) then return
     if (mode = "always" and active.kind <> "credits") or (active.kind = "credits" and skipCredits) then
         if m.autoSkipped[key] <> true then
@@ -2186,7 +2197,9 @@ sub checkUpNext()
     waiting = m.nextEpisode <> invalid and not m.upNextShown and not m.upNextDismissed
     if m.reachedCreditsOrEnd and not waiting then return
     ' playback.next_up_prompt_seconds: how long before the end the card appears (0 = at the end).
-    trigger = m.duration - Settings_nextUpPromptSeconds()
+    ' Read once per playback: each read copies m.global.settings, and this runs on every tick.
+    if m.nextUpPromptSecs = invalid then m.nextUpPromptSecs = Settings_nextUpPromptSeconds()
+    trigger = m.duration - m.nextUpPromptSecs
     ' Credits: the start of the LAST credits range (Silo Android #694), so a scene between two
     ' credits ranges still plays; each Skip Credits pill still ends at its own range.
     creditsAt = Markers_upNextCreditsStart(m.markers)
