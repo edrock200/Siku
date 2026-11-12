@@ -18,6 +18,13 @@ on:
 permissions:
   contents: write
 
+# One release run at a time, across every branch above: a push made while a release is being built
+# (a docs commit, say) waits for it instead of building and publishing the same version beside it.
+# Runs are never cancelled, so a publish or Discord announcement is never cut off half-way.
+concurrency:
+  group: siku-release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -80,6 +87,9 @@ jobs:
       - name: LAN vectors (sealed frames, framing, mDNS)
         if: steps.exists.outputs.released == 'false'
         run: python3 tools/lan_vectors.py
+      - name: Buffering-quality conformance vectors
+        if: steps.exists.outputs.released == 'false'
+        run: tools/bq_vectors_fetch.sh "$RUNNER_TEMP/bq-vectors.json" && python3 tools/bq_vectors.py --vectors "$RUNNER_TEMP/bq-vectors.json"
       - name: Name the zip after the version
         if: steps.exists.outputs.released == 'false'
         run: cp out/siku.zip "out/siku-${{ steps.version.outputs.tag }}.zip"
@@ -113,8 +123,27 @@ jobs:
             echo "::warning::.claude/skills/roku-brightscript/SKILL.md has no Release log entry for $tag; record what this build taught."
           fi
           cat out/release-notes.md
-      - uses: softprops/action-gh-release@v2
+      # Checked again right before publishing: the build takes minutes, and a release or tag made
+      # meanwhile (by hand, or by a run outside the concurrency group) must not be published or
+      # announced a second time.
+      - name: Re-check that this version is still unreleased
+        id: recheck
         if: steps.exists.outputs.released == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::$tag was released while this run was building; not publishing it again."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          elif git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "::notice::The tag $tag already exists without a release; not publishing over it."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: softprops/action-gh-release@v2
+        if: steps.exists.outputs.released == 'false' && steps.recheck.outputs.publish == 'true'
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           # Tag the commit that was built; without it the tag lands on the default branch.
@@ -125,5 +154,5 @@ jobs:
             CHANGELOG.md
           body_path: out/release-notes.md
       - name: Announce on Discord
-        if: steps.exists.outputs.released == 'false' && env.DISCORD_WEBHOOK_URL != ''
+        if: steps.exists.outputs.released == 'false' && steps.recheck.outputs.publish == 'true' && env.DISCORD_WEBHOOK_URL != ''
         run: python3 tools/announce_discord.py "${{ steps.version.outputs.tag }}" "$GITHUB_REPOSITORY"

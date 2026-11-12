@@ -6,7 +6,8 @@ Usage:
 
 vectors.json is the server's contract file (silo-server docs/design/schemas/buffering-quality/v1/
 vectors.json; Silo Android vendors it as shared/src/commonTest/resources/playback/buffering-quality/
-v1/vectors.json). It is not copied into this repository. Exits non-zero when a case fails.
+v1/vectors.json). It is not copied into this repository: tools/bq_vectors_fetch.sh downloads it
+at the pinned silo-server commit CI and releases use. Exits non-zero when a case fails.
 """
 import argparse
 import os
