@@ -221,6 +221,9 @@ sub applyState()
     end if
     if m.status.visible then
         m.actionBtn.translation = [(1920 - m.actionBtn.width) / 2, 560]
+        ' Focus parked on the feed while loading, or on the RowList that is now hidden (the last
+        ' card was removed), moves to Retry / the empty-state action so OK works.
+        if m.top.isInFocusChain() and not m.actionBtn.hasFocus() then m.actionBtn.setFocus(true)
     end if
     if s = "ready" and m.top.hasRows then
         first = firstCard()
