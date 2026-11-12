@@ -211,8 +211,12 @@ function Lan_serverIdFor(url as dynamic) as string
     return Lan_base64url(Lan_bytes(u))
 end function
 
+' The URL trimmed of spaces and trailing slashes; "" for anything that is not a string. Wire
+' values come from any device on the network: a number, object or boolean where a URL belongs must
+' not reach .Trim() (that crashed the channel).
 function Lan_trimUrl(url as dynamic) as string
-    if url = invalid then return ""
+    t = Type(url)
+    if t <> "String" and t <> "roString" then return ""
     s = url.Trim()
     while Len(s) > 0 and Right(s, 1) = "/"
         s = Left(s, Len(s) - 1)
