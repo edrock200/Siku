@@ -392,5 +392,7 @@
   "← → speed  ·  OK play  ·  Back cancel": "← → Tempo  ·  OK abspielen  ·  Zurück abbrechen",
   "↑ More above": "↑ Mehr oben",
   "→ picks values · Back applies": "→ wählt Werte · Zurück übernimmt",
-  "↓ More below": "↓ Mehr unten"
+  "↓ More below": "↓ Mehr unten",
+  "Transcribing… {0}%": "Wird transkribiert… {0} %",
+  "Transcribing and translating… {0}%": "Wird transkribiert und übersetzt… {0} %"
 }

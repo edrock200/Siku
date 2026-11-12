@@ -318,7 +318,9 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   sends the job (6 s bound), draws `subtitle_translation_cues` in `aiLiveGroup` and hands over to the stored track the poll
   adopts. `[siku-playback] ai live socket open|failed reason=<unsupported|ticket|open_timeout|error|protocol|timeout>|closed
   reason=`, `ai live started cues=N`, `ai live cues +N done/total` (first batch, then every 10 s), `ai live completed|failed`.
-  Never the ticket. Mock: `--switch ai_live=1|off|fail` (log `AI LIVE ticket|socket|started|cues|done|failed`); brs-cli has
+  Transcription streams per ASR chunk: the server's default chunk is 600 s unless its `subtitle_ai.live_asr_chunk_seconds` is
+  set (min 15), so first lines can take minutes. Progress names the job (`Subs_aiProgressTitle`); untagged audio sends `transcribe`
+  (v0.1.47). Never the ticket. Mock: `--switch ai_live=1|off|fail` (log `AI LIVE ticket|socket|started|cues|done|failed`); brs-cli has
   a real roWebSocket, so the simulator runs the whole path.
 - Detail running time (v0.1.44, `detailLengthSeconds` in DetailScreen): the shown file's measured `duration`, else
   `runtime` minutes; 0 means unknown and hides it. Mock `--switch no_runtime=1` (runtime 0, files keep their duration).

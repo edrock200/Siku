@@ -118,6 +118,19 @@ function Subs_languageName(code as dynamic) as string
 end function
 
 ' Whether a track's code names the picker language ("bul" vs "bg"); unknown codes never match.
+' True for an audio language that names none: empty or an ISO 639 "none known" code.
+function Subs_aiUntaggedLanguage(code as dynamic) as boolean
+    c = LCase(Str_orEmpty(code)).Trim()
+    return c = "" or c = "und" or c = "mul" or c = "mis" or c = "zxx" or c = "unknown"
+end function
+
+' The running AI job's progress title, naming what the job does.
+function Subs_aiProgressTitle(kind as string, pct as integer) as string
+    if kind = "transcribe" then return TxF("Transcribing… {0}%", [pct])
+    if kind = "transcribe_translate" then return TxF("Transcribing and translating… {0}%", [pct])
+    return TxF("Translating… {0}%", [pct])
+end function
+
 function Subs_isSameLanguage(source as dynamic, target as string) as boolean
     c = LCase(Str_orEmpty(source)).Trim()
     if c = "" then return false
@@ -1551,7 +1564,9 @@ sub Subs_renderAi()
         pct = Int(ai.progress * 100)
         if pct < 0 then pct = 0
         if pct > 100 then pct = 100
-        rows.Push({ kind: "progress", title: TxF("Translating… {0}%", [pct]), percent: pct, message: ai.message })
+        jobKind = ""
+        if ai.request <> invalid then jobKind = Str_orEmpty(ai.request.kind)
+        rows.Push({ kind: "progress", title: Subs_aiProgressTitle(jobKind, pct), percent: pct, message: ai.message })
         rows.Push({ kind: "action", id: "cancel", label: Tx("Cancel") })
     else if ai.phase = "submitting" then
         rows.Push({ kind: "text", text: Tx("Submitting…"), color: "0xEDEDEDB8" })
@@ -1653,6 +1668,10 @@ sub Subs_aiSubmit()
         src = sources[ai.audioPos]
         kind = "transcribe_translate"
         if Subs_isSameLanguage(src.language, target) then kind = "transcribe"
+        ' An untagged audio track is transcribed only (the server detects the language): translating
+        ' it too slowed every live chunk for no change (the user's choice, Nov 12 2026; Silo's apps
+        ' still send transcribe_translate here).
+        if Subs_aiUntaggedLanguage(src.language) then kind = "transcribe"
         if not Subs_aiCanTranslateTranscript() then
             ' Without AI translation a transcribe_translate job is refused ("not configured").
             kind = "transcribe"

@@ -1131,6 +1131,8 @@
  "Trailers & More": "Bandes-annonces et plus",
  "Transcode": "Transcodage",
  "Transcribe": "Transcrire",
+ "Transcribing and translating… {0}%": "Transcription et traduction… {0} %",
+ "Transcribing… {0}%": "Transcription… {0} %",
  "Transcription quota exhausted ({0} of {1} used {2})": "Quota de transcription épuisé ({0} sur {1} utilisées {2})",
  "Translate": "Traduire",
  "Translate with AI": "Traduire avec l’IA",

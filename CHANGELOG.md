@@ -3,6 +3,16 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.1.47
+
+Two changes asked for by a user (November 12, 2026).
+
+**Better**
+- **AI subtitles from audio say what they are doing.** While Siku makes subtitles from the audio, the progress line now reads "Transcribing…", or "Transcribing and translating…" only when they are also being translated, instead of "Translating…" for everything.
+- **Untagged audio is transcribed only.** When the audio track has no language tag, Siku now asks the server just to transcribe it (the server works out the language) instead of transcribing and translating, which slowed every part of the job. If the audio turns out to be in a different language from the one you picked, the subtitles stay in the spoken language.
+
+**Good to know:** how soon the first lines appear while transcribing depends on the server's `subtitle_ai.live_asr_chunk_seconds` setting; left unset, the server transcribes 10 minutes of audio before the first lines can show.
+
 ## v0.1.46
 
 Four changes from Silo's Android TV app (November 11, 2026).

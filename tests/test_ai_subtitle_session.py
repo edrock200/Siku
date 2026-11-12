@@ -32,5 +32,32 @@ class AiSession(unittest.TestCase):
         ])
 
 
+class AiTranscribeKind(unittest.TestCase):
+    """Untagged audio is transcribed only, and the progress title names the job (the user's
+    request, Nov 12 2026)."""
+
+    def test_untagged(self):
+        u = "Subs_aiUntaggedLanguage"
+        check_cases(self, FILES, [
+            ("empty", u, [""], True),
+            ("missing", u, [None], True),
+            ("und", u, ["und"], True),
+            ("upper case", u, ["UND"], True),
+            ("mul", u, ["mul"], True),
+            ("zxx", u, ["zxx"], True),
+            ("english", u, ["eng"], False),
+            ("catalan", u, ["cat"], False),
+        ])
+
+    def test_progress_title(self):
+        t = "Subs_aiProgressTitle"
+        check_cases(self, FILES, [
+            ("transcribe", t, ["transcribe", 40], "Transcribing… 40%"),
+            ("transcribe and translate", t, ["transcribe_translate", 5], "Transcribing and translating… 5%"),
+            ("translate", t, ["translate", 99], "Translating… 99%"),
+            ("unknown kind", t, ["", 0], "Translating… 0%"),
+        ])
+
+
 if __name__ == "__main__":
     unittest.main()
