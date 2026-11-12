@@ -138,9 +138,16 @@ sub onSessionChanged()
     if m.borrowed <> invalid then
         if Lan_isTrue(s.temporary) then
             if Str_isEmpty(s.accessToken) then
-                ' Sign Out on the phone's profile: the Roku signs out, its own account does not
-                ' come back when the identity ends.
-                endBorrowedBySignOut()
+                if Str_orEmpty(s.serverUrl) = m.borrowed.serverUrl then
+                    ' Sign Out on the phone's profile: the Roku signs out, its own account does not
+                    ' come back when the identity ends.
+                    endBorrowedBySignOut()
+                else
+                    ' A signed-out copy for another server still marked temporary (not a Sign Out
+                    ' here): the TV's own account must not be signed out for it.
+                    print "[siku-cast] a borrowed copy without tokens for another server; handing the profile back"
+                    restoreOwn(true)
+                end if
                 pushConfig()
                 return
             end if
@@ -194,9 +201,7 @@ sub endBorrowedBySignOut()
     print "[siku-cast] signed out on the phone's profile; ending it and signing the TV out"
     own = endBorrowedIdentity(true)
     if own = invalid then return
-    if not Str_isEmpty(own.accessToken) and not Str_isEmpty(own.serverUrl) then
-        Api_call({ method: "POST", path: "/api/v2/auth/logout", baseUrl: Str_orEmpty(own.serverUrl), auth: false, profile: false, headers: { Authorization: "Bearer " + Str_orEmpty(own.accessToken) }, timeout: 5 }, "Api_onFired")
-    end if
+    Api_revoke(Str_orEmpty(own.serverUrl), own)
     own.temporary = false
     Session_signOutLocal(own)
 end sub
@@ -277,6 +282,7 @@ end sub
 sub onOffer(conn as string, offer as object, c as object)
     requestId = Str_orEmpty(offer.requestId)
     s = m.global.session
+    ' "" for a missing or non-string serverURL (Lan_trimUrl): refused just below.
     serverUrl = Lan_trimUrl(offer.serverURL)
     profileId = Str_orEmpty(offer.profileId)
     if serverUrl = "" or profileId = "" or Lan_serverIdFor(serverUrl) <> Str_orEmpty(offer.serverId) then
@@ -636,7 +642,8 @@ function endBorrowedIdentity(logout as boolean) as dynamic
     m.borrowed = invalid
     m.endTimer.control = "stop"
     if logout and b.accessToken <> "" and b.serverUrl <> "" then
-        Api_call({ method: "POST", path: "/api/v2/auth/logout", baseUrl: b.serverUrl, auth: false, profile: false, headers: { Authorization: "Bearer " + b.accessToken }, timeout: 5 }, "Api_onFired")
+        ' The borrowed session's own tokens (kept current by onSessionChanged), never the Roku's.
+        Api_revoke(b.serverUrl, { accessToken: b.accessToken, refreshToken: Str_orEmpty(b.session.refreshToken), expiresAt: b.session.expiresAt })
     end if
     for each conn in m.ready.Keys()
         if Str_orEmpty(m.ready[conn]) = b.generation then m.ready.Delete(conn)
@@ -655,6 +662,18 @@ sub scheduleEnd(seconds as integer)
     m.endTimer.duration = seconds
     m.endTimer.control = "start"
 end sub
+
+' callFunc from a screen that needs the Roku's own session back now (Change Account's open
+' account): ends the borrowed identity, logging its session out, and restores the TV's own.
+' Returns true when one was handed back.
+function handBack(reason as dynamic) as boolean
+    if m.borrowed = invalid then return false
+    print "[siku-cast] handing the borrowed profile back: " + Str_orEmpty(reason)
+    player = m.global.castPlayer
+    if player <> invalid then player.remoteCommand = { name: "stop" }
+    restoreOwn(true)
+    return true
+end function
 
 sub onEndTimer()
     if m.borrowed = invalid or m.global.castPlayer <> invalid then return

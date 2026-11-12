@@ -845,7 +845,8 @@ sub lookupDone()
         print "[siku-servers] saved server answered as another deployment; signing in again"
     end if
     m.savedPick = invalid
-    s = AA_copy(m.global.session)
+    ' Never a copy that keeps a phone's borrowed `temporary` flag (Session_ownCopy).
+    s = Session_ownCopy()
     s.serverUrl = base
     s.serverOrigin = Url_origin(base)
     s.serverId = m.serverId

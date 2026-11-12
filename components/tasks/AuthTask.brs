@@ -67,29 +67,42 @@ end sub
 ' (sign-out, a new sign-in, another server) the answer belongs to a session that is gone.
 sub saveTokens(usedRefreshToken as string, data as object)
     current = m.global.session
-    if current.refreshToken <> usedRefreshToken then
-        Diag_log("[siku-auth] refresh answer dropped: the session changed meanwhile")
+    ' Only the token fields: a response carrying `user` would read as a new sign-in and drop the profile.
+    tokens = { access_token: data.access_token, refresh_token: data.refresh_token, expires_in: data.expires_in }
+    if current.refreshToken = usedRefreshToken then
+        Session_save(Session_withTokens(current, tokens))
         return
     end if
-    ' Only the token fields: a response carrying `user` would read as a new sign-in and drop the profile.
-    Session_save(Session_withTokens(current, { access_token: data.access_token, refresh_token: data.refresh_token, expires_in: data.expires_in }))
+    ' The session changed meanwhile, but the refresh token rotated on the server, so the old one is
+    ' spent: the pair belongs wherever the used token lives now, or that sign-in breaks later.
+    where = AuthTask_rotatedHome(current, Registry_read("session"), usedRefreshToken)
+    if where = "own" then
+        ' The TV's own sign-in while a phone's profile is borrowed: saved through Session_save, so
+        ' RemoteControl keeps it for the hand-back (isOwnRefresh) and puts the borrowed one back.
+        own = Session_withTokens(Registry_read("session"), tokens)
+        own.Delete("temporary")
+        Diag_log("[siku-auth] refresh answer kept for the TV's own sign-in")
+        Session_save(own)
+        return
+    end if
+    fresh = Session_withTokens({}, tokens)
+    r = Accounts_withRotatedTokens(Accounts_list(), usedRefreshToken, fresh.accessToken, Str_orEmpty(data.refresh_token), fresh.expiresAt)
+    if r.found then
+        Registry_write("accounts", r.list)
+        Diag_log("[siku-auth] refresh answer kept for a saved account")
+        return
+    end if
+    Diag_log("[siku-auth] refresh answer dropped: the session changed meanwhile")
 end sub
 
-' What a refresh answer means (pure; tests/test_auth_refresh.py):
-'   "ok"       a usable token response
-'   "rejected" 400/401: the refresh token is invalid (api-spec §2.4 session_expired) -> sign in again
-'   "retry"    anything else: unreachable, 5xx, 429, 403, a 200 without a token; the session stays
-function AuthTask_outcome(status as dynamic, data as dynamic) as string
-    s = Int(Num_or(status, 0))
-    if s >= 200 and s < 300 then
-        if Type(data) = "roAssociativeArray" then
-            t = data.access_token
-            if (Type(t) = "roString" or Type(t) = "String") and not Str_isEmpty(t) then return "ok"
-        end if
-        return "retry"
-    end if
-    if s = 400 or s = 401 then return "rejected"
-    return "retry"
+' Where a refresh answer goes when the published session no longer holds the used refresh token
+' (pure; tests/test_auth_refresh.py): "own" when the registry session still does under a phone's
+' borrowed (temporary) profile, else "accounts" (a saved account's stored sign-in, if any holds it).
+function AuthTask_rotatedHome(current as dynamic, stored as dynamic, usedRefreshToken as string) as string
+    if usedRefreshToken = "" then return "accounts"
+    if stored = invalid or Type(stored) <> "roAssociativeArray" then return "accounts"
+    if Accounts_isTemporary(current) and Str_orEmpty(stored.refreshToken) = usedRefreshToken then return "own"
+    return "accounts"
 end function
 
 function AuthTask_attempts() as integer

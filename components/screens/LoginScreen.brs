@@ -874,7 +874,7 @@ sub onApproved(d as object)
     m.code = invalid
     m.routed = true
     tokens = d.tokens
-    s = withoutProfile(Session_withTokens(m.global.session, tokens))
+    s = withoutProfile(Session_withTokens(Session_ownCopy(), tokens))
     profileId = Str_orEmpty(d.profile_id)
     profileToken = Str_orEmpty(d.profile_token)
     if profileId <> "" then
@@ -1122,7 +1122,7 @@ sub onLogin(event as object)
     m.passwordField.disabled = false
     if resp.ok and resp.data <> invalid and Type(resp.data) = "roAssociativeArray" and not Str_isEmpty(resp.data.access_token) then
         m.routed = true
-        Api_saveSignIn(withoutProfile(Session_withTokens(m.global.session, resp.data)))
+        Api_saveSignIn(withoutProfile(Session_withTokens(Session_ownCopy(), resp.data)))
         Nav_reset("@start")
         return
     end if
