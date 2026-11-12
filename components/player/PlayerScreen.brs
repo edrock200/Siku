@@ -221,6 +221,7 @@ sub resetPlaybackState()
     m.closing = false
     m.finished = false
     m.resumeAfterStart = invalid
+    m.mountPlayed = false       ' the mounted plan has reported "playing" (onVideoPosition trusts readings then)
     m.pauseAfterStart = false   ' a re-anchored seek made while paused stays paused once the new plan plays
     m.watchBackTarget = invalid
     m.waitingForToken = false
@@ -917,6 +918,18 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
     ' Roku can open a copy remux's growing playlist seconds past its start: the first "playing"
     ' checks where it opened (SeekReanchor_checkStart).
     if opts.resumeAt = invalid and SeekReanchor_isCopyRemux(plan) then m.resumeAfterStart = m.timelineOffset + Content_num(tl.player_start_seconds)
+    ' Until the Video node reports a position, the plan's start is where playback is: a replan,
+    ' progress post or stop sent during the first buffer (the silent-remux recovery runs right after
+    ' the start) must not report 0:00 for a resumed title.
+    m.mountPlayed = false
+    if opts.resumeAt <> invalid then
+        m.position = Num_or(opts.resumeAt, 0) * 1.0
+    else
+        startSrc = Content_num(tl.source_start_seconds)
+        if startSrc <= 0 then startSrc = m.timelineOffset + Content_num(tl.player_start_seconds)
+        m.position = startSrc * 1.0
+    end if
+    if not m.scrubbing then m.scrubber.position = m.position
 
     ' Subtitles: only WebVTT/SRT sidecars can be rendered by the Video node (Subs_buildTrack adds
     ' the `token=` fallback and the timestamp_offset for the timeline offset and the viewer's delay).
@@ -1117,6 +1130,7 @@ sub onVideoState()
         setBuffering(false)
         Recovery_notePlaying()
         Launch_ready("playing")
+        m.mountPlayed = true
         applyPlannedAudioTrack()
         if not Recovery_reconnecting() then m.bufferLabel.text = Tx("Buffering")
         m.isPaused = false
@@ -1211,6 +1225,9 @@ sub onVideoPosition()
     ' A lead-in reanchor's hold: the stopped node's position is the old stream's.
     if m.plan = invalid or m.reanchorHolding then return
     SeekReanchor_checkStartSeek()
+    ' Before the mount first plays, Roku reports 0 while it buffers towards PlayStart: the plan's
+    ' start (applyPlan) stays the position until a real reading arrives.
+    if not m.mountPlayed and Num_or(m.video.position, 0) < 1 and m.position > 1 then return
     m.position = m.video.position + m.timelineOffset
     if not m.scrubbing then m.scrubber.position = m.position
     AiLive_onPosition()
