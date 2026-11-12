@@ -25,6 +25,17 @@ class SourcePitfalls(unittest.TestCase):
                         hits.append("%s:%d: %s" % (p.relative_to(ROOT), n, code.strip()))
         self.assertEqual(hits, [], "index a variable, not a call result:\n" + "\n".join(hits))
 
+    def test_subtitle_appearance_keys_are_quoted(self):
+        """Pitfall 15: Roku lower-cases unquoted AA-literal keys and FormatJson writes them that way;
+        the server's subtitle-appearance schema refuses "fontsize". brs-cli keeps the case, so only a
+        scan catches it."""
+        src = (ROOT / "components/common/Settings.brs").read_text(encoding="utf-8")
+        m = re.search(r"function Settings_defaultAppearance\(\) as object\n\s*return \{(.*)\}\n", src)
+        self.assertIsNotNone(m)
+        keys = re.findall(r'(?:^|,)\s*("?)(\w+)"?\s*:', m.group(1))
+        self.assertGreater(len(keys), 5)
+        self.assertEqual([k for q, k in keys if q != '"'], [], "quote every key")
+
 
 if __name__ == "__main__":
     unittest.main()

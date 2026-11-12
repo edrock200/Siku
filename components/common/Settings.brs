@@ -69,8 +69,11 @@ function Settings_deviceKeys() as object
     return ["playback.preferred_quality", "playback.max_bitrate_kbps", "playback.audio_language", "playback.intro_skip_mode", "playback.buffering_quality_mode", "playback.auto_skip_credits", "playback.auto_play_next", "playback.next_up_prompt_seconds", "playback.subtitle_appearance", "player.subtitle_sync_ms", "player.hdr_enabled", "player.dolby_vision_enabled", "player.dv_profile7_hdr10_fallback"]
 end function
 
+' Quoted keys keep their camelCase: Roku lower-cases unquoted AA-literal keys, FormatJson writes
+' them that way, and the contract's schema (additionalProperties: false) refuses "fontsize".
+' writeAppearance copies these keys. The fallback is contract revision 6's (a 75% opaque box).
 function Settings_defaultAppearance() as object
-    return { fontSize: "large", fontFamily: "sans-serif", fontColor: "#ffffff", textOpacity: 100, backgroundColor: "#000000", backgroundStyle: "shadow", backgroundOpacity: 75, textOutline: false, textOutlineColor: "#000000", position: "bottom" }
+    return { "fontSize": "large", "fontFamily": "sans-serif", "fontColor": "#ffffff", "textOpacity": 100, "backgroundColor": "#000000", "backgroundStyle": "box", "backgroundOpacity": 75, "textOutline": false, "textOutlineColor": "#000000", "position": "bottom" }
 end function
 
 ' ---------- State ----------
