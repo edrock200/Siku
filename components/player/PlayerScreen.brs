@@ -147,6 +147,7 @@ sub resetPlaybackState()
     m.upNextShown = false
     m.upNextDismissed = false
     m.countdown = -1
+    m.countdownToEnd = false
     m.scrubbing = false
     m.scrubPos = 0.0
     m.holdTicks = 0
@@ -875,6 +876,10 @@ sub onVideoPosition()
     if not m.scrubbing then m.scrubber.position = m.position
     checkMarkers()
     checkUpNext()
+    if m.countdownToEnd and m.countdown > 0 and m.upNext.visible and not m.finished then
+        m.countdown = remainingSeconds()
+        m.unPlayBtn.text = "Play Now · " + m.countdown.ToStr()
+    end if
 end sub
 
 function sourcePosition() as float
@@ -899,6 +904,15 @@ sub onFinished()
         return
     end if
     if (m.isEpisode or m.shuffle <> invalid) and m.nextEpisode <> invalid then
+        if m.upNext.visible and m.countdownToEnd and m.countdown > 0 then
+            ' The pre-end countdown ran to the end of the stream.
+            m.countdownToEnd = false
+            m.countdown = -1
+            if m.autoAdvances = invalid then m.autoAdvances = 0
+            m.autoAdvances = m.autoAdvances + 1
+            playNext()
+            return
+        end if
         if not m.upNext.visible then showUpNext()
         if m.countdown < 0 and m.shuffle = invalid then
             ' No auto-play: wait for the user on the overlay.
@@ -1172,7 +1186,8 @@ end sub
 sub onUpNextButton()
     if m.nextEpisode = invalid or m.shuffle <> invalid then return
     m.upNextDismissed = false
-    showUpNext()
+    ' Opened by hand to see what is next: no countdown (TvPlayerViewModel.onUserRequestedNextUp).
+    showUpNext(true)
 end sub
 
 ' Scrubber: Left/Right nudge ±10 s; holding accelerates; OK commits.
@@ -1566,14 +1581,31 @@ function stillWatchingDue() as boolean
     return m.autoAdvances >= threshold
 end function
 
+' At the end of the stream: a 10 s wall clock. Before the end (the card raised at the prompt time or
+' the credits marker): the countdown is the playback time left, updated from the position, and
+' the next item starts when this one finishes, so the rest of the episode is not cut off.
 sub startCountdown()
-    m.countdown = 10
-    m.unPlayBtn.text = "Play Now · " + m.countdown.ToStr()
     m.countdownTimer.control = "stop"
-    m.countdownTimer.control = "start"
+    if m.finished then
+        m.countdownToEnd = false
+        m.countdown = 10
+        m.countdownTimer.control = "start"
+    else
+        m.countdownToEnd = true
+        m.countdown = remainingSeconds()
+    end if
+    m.unPlayBtn.text = "Play Now · " + m.countdown.ToStr()
 end sub
 
-sub showUpNext()
+function remainingSeconds() as integer
+    remain = m.duration - m.position
+    if remain < 1 then return 1
+    n = Int(remain)
+    if n < remain then n = n + 1
+    return n
+end function
+
+sub showUpNext(userRequested = false as boolean)
     if m.nextEpisode = invalid and m.shuffle = invalid then return
     m.upNextShown = true
     hideControlsNow()
@@ -1588,7 +1620,7 @@ sub showUpNext()
     m.videoFrame.translation = [152, 284]
     m.videoFrame.visible = true
 
-    if m.nextEpisode <> invalid and autoPlayNext() and not stillWatchingDue() then
+    if m.nextEpisode <> invalid and not userRequested and autoPlayNext() and not stillWatchingDue() then
         startCountdown()
     else
         if stillWatchingDue() then m.autoAdvances = 0
