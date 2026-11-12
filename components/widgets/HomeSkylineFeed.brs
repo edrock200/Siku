@@ -362,12 +362,16 @@ sub applyState()
     end if
     if m.status.visible then
         m.actionBtn.translation = [(1920 - m.actionBtn.width) / 2, 560]
+        ' Focus parked on the feed while it loaded, or on the RowList that is now hidden (the
+        ' last card was removed), moves to Retry / the empty-state action so OK works.
+        if m.top.isInFocusChain() and not m.actionBtn.hasFocus() then m.actionBtn.setFocus(true)
     end if
     if s = "ready" and m.top.hasRows then
         first = firstCard()
         if first <> invalid and m.marqueeCard = invalid then showCard(first)
-        ' If focus is parked on the feed itself (content was not ready yet), move it to the rows.
-        if m.top.hasFocus() then m.rowList.setFocus(true)
+        ' If focus is parked on the feed itself (content was not ready yet) or still sits on the
+        ' Retry / empty-state button that just hid, move it to the rows.
+        if m.top.hasFocus() or m.actionBtn.hasFocus() then m.rowList.setFocus(true)
     end if
 end sub
 
