@@ -73,6 +73,8 @@ sub init()
     ' One automatic restart after a stream error (an expired token, a dropped connection).
     m.autoRetried = false
     m.autoRetryAt = 0.0
+    ' Whole-book time of the last "finished" that came well before the end of the part.
+    m.earlyEndAt = -1.0
     m.pendingSeek = -1.0
     m.waitingForToken = false
     m.chapterIdx = -1
@@ -914,8 +916,21 @@ sub onFinished()
     if m.ended then return
     if m.mode = "audiobook" then
         tl = m.timeline
+        if m.fileDuration > 0 and m.localPos < m.fileDuration - 15 then
+            if m.earlyEndAt < 0 or Abs(m.globalPos - m.earlyEndAt) > 30 then
+                ' "finished" well before the part's duration: a dropped or truncated stream rather
+                ' than the end of the part. Restart here once; a second early end at the same place
+                ' means the file really ends there, and the book moves on.
+                print "[AudioPlayer] finished early at "; m.localPos; " of "; m.fileDuration; ", restarting"
+                m.earlyEndAt = m.globalPos
+                seekGlobal(m.globalPos, true)
+                return
+            end if
+        end if
+        m.earlyEndAt = -1.0
         if m.trackIdx >= 0 and m.trackIdx < tl.tracks.Count() - 1 then
             cur = tl.tracks[m.trackIdx]
+
             if m.sleepMode = "chapter" and m.sleepChapterEnd > 0 and m.sleepChapterEnd <= cur.offset + cur.duration + 1 then
                 ' The chapter the sleep timer waits for ends with this part: stop at the start of
                 ' the next part instead of starting it. Play starts it from there.
