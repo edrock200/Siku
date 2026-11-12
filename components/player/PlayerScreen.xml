@@ -254,6 +254,8 @@
     <!-- AiLive.brs: redraws the live AI lines; bounds the wait for the control socket before the job is sent. -->
     <Timer id="aiLiveTimer" duration="0.25" repeat="true" />
     <Timer id="aiLiveConnectTimer" duration="6" />
+    <!-- AiLive.brs: the wait before reconnecting a control socket that closed while the job runs. -->
+    <Timer id="aiLiveRetryTimer" duration="2" />
     <!-- How long a playing stream may take to list the plan's HLS subtitle rendition. -->
     <Timer id="renditionTimer" duration="8" />
     <!-- PlayerSeekReanchor: a copy remux's lead-in reanchor is handed to the Video node this long after its answer. -->

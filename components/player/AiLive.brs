@@ -10,6 +10,13 @@
 ' video, until the stored track is selected (SubtitleSuite's job poll stays the authority and
 ' adopts it as before). A Roku without roWebSocket (before Roku OS 16) reports "unsupported" once
 ' and translates as before for the rest of the player.
+'
+' Reconnect: Silo closes the control socket at the access-token expiry recorded in the ticket (and
+' a network drop closes it too). While the job still runs, the player refreshes the token when it
+' is near expiry, mints a new ticket and reopens the socket after 2, 4, 8 and 16 s, keeping the
+' cues it has (later batches are merged and de-duplicated). The server replays nothing, so lines
+' sent while it was closed are missing until the stored track takes over. After the last try the
+' drawn lines are hidden and the subtitle they replaced comes back.
 
 sub AiLive_init()
     m.aiLiveGroup = m.top.findNode("aiLiveGroup")
@@ -19,6 +26,8 @@ sub AiLive_init()
     m.aiLiveConnectTimer = m.top.findNode("aiLiveConnectTimer")
     m.aiLiveTimer.observeField("fire", "AiLive_onTick")
     m.aiLiveConnectTimer.observeField("fire", "AiLive_onConnectTimeout")
+    m.aiLiveRetryTimer = m.top.findNode("aiLiveRetryTimer")
+    m.aiLiveRetryTimer.observeField("fire", "AiLive_onRetryTimer")
     m.aiLive = { caps: "unknown", unsupported: false, task: invalid, conn: "off", connSession: "", waitingSend: false, lastEventId: 0, clock: CreateObject("roTimespan"), logClock: CreateObject("roTimespan"), posAt: 0.0 }
     AiLive_resetJob()
 end sub
@@ -26,6 +35,7 @@ end sub
 ' Per job: the cues and the job and live track they belong to.
 sub AiLive_resetJob()
     a = m.aiLive
+    AiLive_stopRetry()
     a.jobId = ""
     a.trackKey = ""
     a.cues = []
@@ -98,13 +108,17 @@ end sub
 sub AiLive_onTicket(event as object)
     resp = Api_result(event)
     a = m.aiLive
-    if m.closing or a = invalid or a.conn <> "minting" or Str_orEmpty(resp.context.sessionId) <> a.connSession then return
+    if m.closing or a = invalid or a.conn <> "minting" or resp.context = invalid or Str_orEmpty(resp.context.sessionId) <> a.connSession then return
     ticket = ""
     if resp.ok and Type(resp.data) = "roAssociativeArray" then ticket = Str_orEmpty(resp.data.ticket)
     url = AiLive_socketUrl(m.global.session.serverUrl, a.connSession)
     if ticket = "" or url = "" then
         a.conn = "off"
         Diag_log("[siku-playback] ai live socket failed reason=ticket status=" + Str_orEmpty(resp.status))
+        if a.retryTries > 0 then
+            AiLive_scheduleReconnect("ticket")
+            return
+        end if
         AiLive_releaseSend()
         return
     end if
@@ -128,6 +142,10 @@ sub AiLive_onState(event as object)
     if kind = "open" then
         a.conn = "open"
         Diag_log("[siku-playback] ai live socket open")
+        if a.retryTries > 0 then
+            Diag_log("[siku-playback] ai live reconnected after " + a.retryTries.ToStr() + " tries; keeping " + a.cues.Count().ToStr() + " cues")
+            a.retryTries = 0
+        end if
         AiLive_releaseSend()
         return
     end if
@@ -140,6 +158,112 @@ sub AiLive_onState(event as object)
         Diag_log("[siku-playback] ai live socket closed reason=" + reason)
     end if
     AiLive_releaseSend()
+    if AiLive_shouldReconnect(kind, reason, a.retryTries > 0, AiLive_jobRunning()) then AiLive_scheduleReconnect(reason)
+end sub
+
+' ---------- Reconnect ----------
+
+' Whether a socket that ended (kind "closed" after it opened, "failed" before) is worth opening
+' again: only while the job it streams still runs, and never when Roku has no roWebSocket, the
+' socket was refused for its protocol or URL, or the player shut it. A socket that never opened
+' is retried only as part of a reconnect (the first connect has the 6 s bound and the poll).
+function AiLive_shouldReconnect(kind as string, reason as string, reconnecting as boolean, jobRunning as boolean) as boolean
+    if not jobRunning then return false
+    if reason = "unsupported" or reason = "protocol" or reason = "url" or reason = "shutdown" then return false
+    if kind = "closed" then return true
+    return kind = "failed" and reconnecting
+end function
+
+' Seconds before reconnect try n (1-based): 2, 4, 8, 16; 0 once the 4 tries are spent.
+function AiLive_retryDelay(tries as integer) as integer
+    if tries < 1 or tries > 4 then return 0
+    d = 2
+    n = 1
+    while n < tries
+        d = d * 2
+        n = n + 1
+    end while
+    return d
+end function
+
+' The live lines still matter: a job of this session is running (or was just sent), the lines
+' were not given up for another subtitle, and the player is open on the socket's session.
+function AiLive_jobRunning() as boolean
+    a = m.aiLive
+    if m.closing or a = invalid or a.userLeft or a.unsupported then return false
+    if m.sessionId = "" or a.connSession <> m.sessionId then return false
+    if m.subs = invalid or m.subs.ai = invalid then return false
+    phase = Str_orEmpty(m.subs.ai.phase)
+    if phase = "running" then return true
+    return phase = "submitting" and not a.waitingSend
+end function
+
+sub AiLive_scheduleReconnect(reason as string)
+    a = m.aiLive
+    a.retryTries = a.retryTries + 1
+    delay = AiLive_retryDelay(a.retryTries)
+    if delay = 0 then
+        Diag_log("[siku-playback] ai live reconnect gave up after " + (a.retryTries - 1).ToStr() + " tries; showing the normal subtitles")
+        a.retryTries = 0
+        ' The lines would freeze on the last batch: hide them and put back the subtitle they replaced.
+        AiLive_deactivate(true)
+        a.userLeft = true
+        return
+    end if
+    Diag_log("[siku-playback] ai live reconnect " + a.retryTries.ToStr() + " in " + delay.ToStr() + " s reason=" + reason)
+    a.retryRefreshAsked = false
+    a.retryWaits = 0
+    m.aiLiveRetryTimer.control = "stop"
+    m.aiLiveRetryTimer.duration = delay
+    m.aiLiveRetryTimer.control = "start"
+end sub
+
+sub AiLive_stopRetry()
+    a = m.aiLive
+    if a = invalid then return
+    a.retryTries = 0
+    a.retryRefreshAsked = false
+    a.retryWaits = 0
+    a.retryToken = ""
+    if m.aiLiveRetryTimer <> invalid then m.aiLiveRetryTimer.control = "stop"
+end sub
+
+' The wait is over: refresh the token first when it is near expiry (the server closes the socket
+' at the expiry the ticket records, so a ticket minted from the old token would close again at
+' once), then mint a new ticket; onTicket opens the socket as the first time.
+sub AiLive_onRetryTimer()
+    a = m.aiLive
+    if a = invalid or a.retryTries = 0 then return
+    if not AiLive_jobRunning() then
+        Diag_log("[siku-playback] ai live reconnect dropped: the job is no longer running")
+        AiLive_stopRetry()
+        return
+    end if
+    s = m.global.session
+    auth = invalid
+    if m.global.hasField("authTask") then auth = m.global.authTask
+    nearExpiry = s <> invalid and not Str_isEmpty(s.refreshToken) and Num_or(s.expiresAt, 0) > 0 and Num_or(s.expiresAt, 0) - Time_nowSeconds() < 300
+    if nearExpiry and auth <> invalid and not a.retryRefreshAsked then
+        a.retryRefreshAsked = true
+        a.retryToken = Str_orEmpty(s.accessToken)
+        Diag_log("[siku-playback] ai live reconnect: refreshing the token first")
+        auth.refreshRequest = { token: a.retryToken }
+        m.aiLiveRetryTimer.duration = 2
+        m.aiLiveRetryTimer.control = "start"
+        return
+    end if
+    ' Waiting for that refresh: up to 10 s more, then the ticket is minted with what there is.
+    if a.retryRefreshAsked and s <> invalid and Str_orEmpty(s.accessToken) = a.retryToken and a.retryWaits < 5 then
+        a.retryWaits = a.retryWaits + 1
+        m.aiLiveRetryTimer.duration = 2
+        m.aiLiveRetryTimer.control = "start"
+        return
+    end if
+    a.conn = "minting"
+    body = {}
+    inst = installationId()
+    if inst <> "" then body["installation_id"] = inst
+    Api_send("POST", "/api/v2/playback/sessions/" + Str_urlEncode(a.connSession) + "/control/ws-ticket", body, "AiLive_onTicket", { fileId: m.fileId, sessionId: a.connSession })
 end sub
 
 ' The job goes out now (socket open, failed or the 6 s bound passed), if the user has not
@@ -310,6 +434,7 @@ end sub
 sub AiLive_close(reason as string)
     a = m.aiLive
     if a = invalid then return
+    AiLive_stopRetry()
     if a.waitingSend then
         a.waitingSend = false
         m.aiLiveConnectTimer.control = "stop"
