@@ -73,6 +73,7 @@ sub init()
     m.hasMore = false
     m.loading = false
     m.loadingMore = false
+    m.moreRetryAt = 0       ' after a failed next page, no automatic retry before this time
     m.loaded = false
     m.requestSeq = 0
     m.loadedRev = -1        ' DataRev_current() when page 1 was last requested
@@ -484,6 +485,7 @@ sub onPage(event as object)
         if isMore then
             m.global.toast = "Couldn't load more. " + Api_errorText(resp)
             m.hasMore = true
+            m.moreRetryAt = Time_nowSeconds() + 5
         else if m.restoreIndex <> invalid then
             ' A failed in-place refresh keeps the list that is on screen.
             m.restoreIndex = invalid
@@ -554,6 +556,7 @@ sub onGroups(event as object)
         if isMore then
             m.global.toast = "Couldn't load more. " + Api_errorText(resp)
             m.hasMore = true
+            m.moreRetryAt = Time_nowSeconds() + 5
         else
             showError(Api_errorText(resp))
         end if
@@ -753,6 +756,9 @@ end sub
 
 sub onGridFocused()
     idx = m.grid.itemFocused
+    ' A failed page is retried by focus moves again, but not before a short pause, so an outage
+    ' does not send a request (and a toast) on every key press near the end of the grid.
+    if Time_nowSeconds() < m.moreRetryAt then return
     if m.hasMore and not m.loadingMore and not m.loading and idx >= m.cards.Count() - 12 then
         m.loadingMore = true
         if isGroupsMode() and m.drill = invalid then
