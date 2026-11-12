@@ -62,6 +62,11 @@ sub init()
     m.globalPos = 0.0
     m.isPaused = false
     m.ended = false
+    ' True while the Audio node plays the file of the current start (position events count).
+    m.fileActive = false
+    ' The server ended the session while we were paused: Play starts a fresh one there.
+    m.sessionLost = false
+    m.pausedTicks = 0
     m.pendingSeek = -1.0
     m.waitingForToken = false
     m.chapterIdx = -1
@@ -228,6 +233,7 @@ sub playQueueIndex(idx as integer, startAt as float)
     if m.mode <> "music" or idx < 0 or idx >= m.queue.Count() then return
     ' Retire the outgoing track first so its stop reports where it actually was.
     stopSession(true)
+    m.fileActive = false
     m.qIndex = idx
     m.ended = false
     e = m.queue[idx]
@@ -402,7 +408,7 @@ sub seekGlobal(t as float, forceStart as boolean)
     localT = AudioTimeline_localTime(tr, t)
     m.ended = false
     m.globalPos = t
-    if not forceStart and idx = m.trackIdx and m.sessionId <> "" then
+    if not forceStart and idx = m.trackIdx and m.fileActive and not m.sessionLost then
         seekLocal(localT)
     else
         stopSession(true)
@@ -459,6 +465,7 @@ end sub
 sub startFile(fileId as string, localStart as float, persistence as string)
     stopSession(true)
     m.audio.control = "stop"
+    m.fileActive = false
     m.loadGen = m.loadGen + 1
     m.attemptId = m.di.GetRandomUUID()
     m.retriedInstall = false
@@ -600,6 +607,7 @@ sub onStart(event as object)
     m.sequence = 0
     m.stopId = ""
     m.pending = invalid
+    m.sessionLost = false
     applyPlan(d.playback_plan)
 end sub
 
@@ -650,6 +658,7 @@ sub applyPlan(plan as object)
     print "[AudioPlayer] playing "; url; " fmt "; fmt
     m.audio.content = content
     m.audio.control = "play"
+    m.fileActive = true
     m.isPaused = false
     m.playBtn.iconUri = "pkg:/images/icons/pause.png"
     m.progressTimer.control = "start"
@@ -675,7 +684,17 @@ sub setFileDuration(d as float)
 end sub
 
 sub onProgressTick()
-    if m.isPaused then return
+    if m.isPaused then
+        ' Keep the session alive while paused: the server ends a paused session after 30 minutes
+        ' without a sample. Once a minute is plenty.
+        m.pausedTicks = m.pausedTicks + 1
+        if m.pausedTicks >= 6 then
+            m.pausedTicks = 0
+            sendProgress()
+        end if
+        return
+    end if
+    m.pausedTicks = 0
     sendProgress()
     syncBookProgress()
 end sub
@@ -692,8 +711,27 @@ end sub
 sub onProgressResult(event as object)
     resp = Api_result(event)
     if (resp.status = 404 or resp.status = 410) and resp.context <> invalid and resp.context.sid = m.sessionId then
-        ' The session ended on the server; stop reporting.
+        ' The session ended on the server. Start a fresh one at the current position: at once while
+        ' audio plays, otherwise when Play is pressed (the stream would be refused by then).
         m.sessionId = ""
+        m.progressTimer.control = "stop"
+        if m.closing then return
+        st = m.audio.state
+        if st = "playing" or st = "buffering" then
+            restartHere()
+        else
+            m.sessionLost = true
+        end if
+    end if
+end sub
+
+' A new session for the current file at the current position.
+sub restartHere()
+    m.sessionLost = false
+    if m.mode = "audiobook" and m.timeline <> invalid then
+        seekGlobal(m.globalPos, true)
+    else if m.mode = "music" and m.queue.Count() > 0 then
+        playQueueIndex(m.qIndex, m.localPos)
     end if
 end sub
 
@@ -783,8 +821,10 @@ sub onAudioState()
         sendProgress()
         syncBookProgress(true)
     else if st = "finished" then
+        m.fileActive = false
         onFinished()
     else if st = "error" then
+        m.fileActive = false
         msg = Str_orEmpty(m.audio.errorMsg)
         if msg = "" then msg = "This could not be played."
         print "[AudioPlayer] audio error "; m.audio.errorCode; " "; msg
@@ -804,7 +844,7 @@ sub onAudioDuration()
 end sub
 
 sub onAudioPosition()
-    if m.sessionId = "" then return
+    if not m.fileActive then return
     m.localPos = m.audio.position + m.timelineOffset
     if m.mode = "audiobook" and m.timeline <> invalid and m.trackIdx >= 0 then
         m.globalPos = m.timeline.tracks[m.trackIdx].offset + m.localPos
@@ -953,7 +993,9 @@ sub togglePlay()
         return
     end if
     st = m.audio.state
-    if st = "paused" then
+    if st = "paused" and m.sessionLost then
+        restartHere()
+    else if st = "paused" then
         m.audio.control = "resume"
     else if st = "playing" or st = "buffering" then
         m.audio.control = "pause"
@@ -986,7 +1028,7 @@ end sub
 
 ' Seek inside the current file (file-local seconds).
 sub seekLocal(t as float)
-    if m.sessionId = "" then return
+    if not m.fileActive then return
     if t < 0 then t = 0
     if m.fileDuration > 0 and t > m.fileDuration - 1 then t = m.fileDuration - 1
     m.audio.seek = t - m.timelineOffset
@@ -1014,7 +1056,8 @@ sub onPrev()
         syncBookProgress(true)
     else
         if m.localPos > 3 or m.qIndex = 0 then
-            if m.sessionId <> "" then seekLocal(0) else playQueueIndex(m.qIndex, 0)
+            if m.fileActive and not m.sessionLost then seekLocal(0) else playQueueIndex(m.qIndex, 0)
+
         else
             playQueueIndex(m.qIndex - 1, 0)
         end if
