@@ -29,6 +29,7 @@ sub init()
     m.errorText = ""
     m.refreshing = false
     m.loadingMore = false
+    m.moreFailed = false    ' an older page failed: no automatic retry until Retry or a refresh
     m.refreshSeq = 0
     m.loaded = false
 
@@ -52,6 +53,7 @@ sub refresh()
     m.refreshSeq = m.refreshSeq + 1
     m.refreshing = true
     m.errorText = ""
+    m.moreFailed = false
     m.pendingCount = invalid
     m.pendingPage = invalid
     m.pendingParts = 2
@@ -101,8 +103,13 @@ function pageCursor(data as object) as string
 end function
 
 sub maybeLoadMore()
-    if m.nextCursor = "" or m.loadingMore or m.refreshing then return
+    if m.nextCursor = "" or m.loadingMore or m.refreshing or m.moreFailed then return
     if lastVisibleIndex() < m.items.Count() - 4 then return
+    requestMore()
+end sub
+
+sub requestMore()
+    if m.nextCursor = "" or m.loadingMore or m.refreshing then return
     m.loadingMore = true
     cursor = m.nextCursor
     Api_get("/api/v2/notifications", { limit: m.pageSize, status: "all", cursor: cursor }, "onMorePage", { cursor: cursor, seq: m.refreshSeq })
@@ -113,6 +120,9 @@ sub onMorePage(event as object)
     m.loadingMore = false
     if resp.context = invalid or resp.context.cursor <> m.nextCursor then return
     if not resp.ok or resp.data = invalid then
+        ' Stop here: rebuild() ends in maybeLoadMore(), which would otherwise send the same page
+        ' again at once, on every failure. The error card's Retry asks for this page again.
+        m.moreFailed = true
         m.errorText = "Older notifications could not be loaded. Retry to continue."
         rebuild()
         return
@@ -438,7 +448,15 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
     if key = "OK" then
         if m.errorFocused then
-            refresh()
+            if m.moreFailed and m.nextCursor <> "" then
+                ' Retry the older page that failed rather than starting over from page 1.
+                m.moreFailed = false
+                m.errorText = ""
+                requestMore()
+                rebuild()
+            else
+                refresh()
+            end if
             return true
         end if
         if m.focusIdx < 0 or m.focusIdx >= m.items.Count() then return true
