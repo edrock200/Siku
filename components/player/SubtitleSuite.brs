@@ -1371,6 +1371,9 @@ sub Subs_adoptStored(storedId as string, origin as string)
     ' watchdog hold until the answer (m.rec.inFlight); voice commands wait on m.subs.adoptId.
     Recovery_decorateReplan(body, "track_change")
     m.subs.adoptBody = body
+    ' Like any track_change (sendReplan): a new route choice whose fMP4 remux answer gets one more
+    ' silent-remux recovery (maybeRecoverSilentRemux in Subs_takeAdoptReplan).
+    m.remuxRecoveryTried = false
     Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/replan", body, "Subs_onAdoptReplan", { fileId: m.fileId, sessionId: m.sessionId, storedId: storedId })
 end sub
 
@@ -1433,8 +1436,13 @@ sub Subs_takeAdoptReplan(resp as object)
     if origin = "ai" then AiLive_onAdopting()
     m.video.control = "stop"
     applyPlan(plan, { resumeAt: m.position, subtitleTrackId: trackId, mountKind: "track" })
+    ' As takeReplan does for any adopted plan: seek previews and markers follow its file, an open
+    ' panel shows the new plan, and an fMP4 remux (silent on Roku) asks for another route once.
+    Trickplay_bind(m.itemId, planFileId(plan))
     if planFileId(plan) <> m.markersFileId then adoptFileMarkers(planFileId(plan))
     Subs_adoptDone(origin)
+    if m.hud.visible then buildHudRows()
+    maybeRecoverSilentRemux(plan)
 end sub
 
 ' "Translated, but …" / "Downloaded, but …" as whole sentences, so each translates as one.
