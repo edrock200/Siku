@@ -63,6 +63,7 @@ sub init()
     m.globalPos = 0.0
     m.isPaused = false
     m.ended = false
+    m.fileActive = false        ' the Audio node holds the current start's file (position events count)
     m.voiceDebugDone = false   ' debugVoice injected (simulator aid)
     m.pendingSeek = -1.0
     m.waitingForToken = false
@@ -248,6 +249,7 @@ sub playQueueIndex(idx as integer, startAt as float)
     if m.mode <> "music" or idx < 0 or idx >= m.queue.Count() then return
     ' Retire the outgoing track first so its stop reports where it actually was.
     stopSession(true)
+    m.fileActive = false
     m.qIndex = idx
     m.ended = false
     e = m.queue[idx]
@@ -425,7 +427,7 @@ sub seekGlobal(t as float, forceStart as boolean)
     localT = AudioTimeline_localTime(tr, t)
     m.ended = false
     m.globalPos = t
-    if not forceStart and idx = m.trackIdx and m.sessionId <> "" then
+    if not forceStart and idx = m.trackIdx and m.sessionId <> "" and m.fileActive then
         seekLocal(localT)
     else
         stopSession(true)
@@ -484,6 +486,7 @@ end sub
 sub startFile(fileId as string, localStart as float, persistence as string)
     stopSession(true)
     m.audio.control = "stop"
+    m.fileActive = false
     m.sessionExpired = false
     m.loadGen = m.loadGen + 1
     m.attemptId = m.di.GetRandomUUID()
@@ -679,6 +682,7 @@ sub applyPlan(plan as object)
     print "[AudioPlayer] playing delivery="; Str_orEmpty(plan.delivery); " fmt="; fmt
     m.audio.content = content
     m.audio.control = "play"
+    m.fileActive = true
     m.isPaused = false
     m.playBtn.iconUri = "pkg:/images/icons/pause.png"
     m.progressTimer.control = "start"
@@ -706,7 +710,12 @@ sub setFileDuration(d as float)
 end sub
 
 sub onProgressTick()
-    if m.isPaused then return
+    if m.isPaused then
+        ' Keep the session alive while paused, as Android's reporter does (is_paused: true every
+        ' 10 s): the server ends a paused session after 30 minutes without a sample.
+        sendProgress()
+        return
+    end if
     sendProgress()
     syncBookProgress()
 end sub
@@ -774,6 +783,7 @@ sub leaveServerEndedSession()
     m.loadGen = m.loadGen + 1
     m.sleepTimer.control = "stop"
     m.audio.control = "stop"
+    m.fileActive = false
     m.isPaused = true
     m.playBtn.iconUri = "pkg:/images/icons/play.png"
     m.statusLabel.text = ""
@@ -874,8 +884,10 @@ sub onAudioState()
         sendProgress()
         syncBookProgress(true)
     else if st = "finished" then
+        m.fileActive = false
         onFinished()
     else if st = "error" then
+        m.fileActive = false
         msg = Str_orEmpty(m.audio.errorMsg)
         if msg = "" then msg = Tx("This could not be played.")
         ' The Audio node's text can quote the signed stream URL: masked on the console.
@@ -895,8 +907,11 @@ sub onAudioDuration()
     if d > 0 and m.fileDuration <= 0 then setFileDuration(d * 1.0)
 end sub
 
+' Follows the Audio node whenever a file is loaded, not only while a session id is set: after the
+' server forgot the session (music stops reporting, an audiobook renews on Play) the bar, chapter
+' label, skips and the chapter sleep timer keep working.
 sub onAudioPosition()
-    if m.sessionId = "" then return
+    if not m.fileActive then return
     m.localPos = m.audio.position + m.timelineOffset
     if m.mode = "audiobook" and m.timeline <> invalid and m.trackIdx >= 0 then
         m.globalPos = m.timeline.tracks[m.trackIdx].offset + m.localPos
@@ -1082,7 +1097,7 @@ end sub
 
 ' Seek inside the current file (file-local seconds).
 sub seekLocal(t as float)
-    if m.sessionId = "" then return
+    if not m.fileActive then return
     if t < 0 then t = 0
     if m.fileDuration > 0 and t > m.fileDuration - 1 then t = m.fileDuration - 1
     m.audio.seek = t - m.timelineOffset
@@ -1110,7 +1125,7 @@ sub onPrev()
         syncBookProgress(true)
     else
         if m.localPos > 3 or m.qIndex = 0 then
-            if m.sessionId <> "" then seekLocal(0) else playQueueIndex(m.qIndex, 0)
+            if m.fileActive then seekLocal(0) else playQueueIndex(m.qIndex, 0)
         else
             playQueueIndex(m.qIndex - 1, 0)
         end if
@@ -1282,7 +1297,7 @@ function voiceTransport(info as dynamic) as object
         reason = "closing"
     else if m.errorGroup.visible then
         reason = "error_shown"
-    else if m.pending <> invalid or (m.sessionId = "" and not m.sessionExpired) then
+    else if m.pending <> invalid or not m.fileActive then
         reason = "loading"
     else if st <> "playing" and st <> "paused" and st <> "buffering" then
         reason = "state_" + st
