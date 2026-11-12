@@ -3,6 +3,10 @@
 """Posts a Siku release to a Discord channel webhook.
 
   DISCORD_WEBHOOK_URL=<url> python3 tools/announce_discord.py <tag> [<repo>]
+  python3 tools/announce_discord.py --notes <tag>     # prints the tag's CHANGELOG.md section
+
+The release workflow builds the GitHub release notes with --notes, so the release page and the
+Discord post find a version's section by the same rule (see heading_tag).
 
 The message is the tag's CHANGELOG.md section (the same plain-language notes as the GitHub
 release) plus links to the release page and the side-loadable zip. The webhook URL is a secret:
@@ -15,14 +19,24 @@ import sys
 import urllib.request
 
 
-def section(tag: str) -> str:
+def heading_tag(line: str) -> str:
+    """The version a "## " heading names: its first word, so "## v0.2.0 (2026-11-12)" is v0.2.0.
+    "" for any other line."""
+    if not line.startswith("## "):
+        return ""
+    words = line[3:].split()
+    return words[0] if words else ""
+
+
+def section(tag: str, path: str = "CHANGELOG.md") -> str:
+    """The lines under the heading that names tag, up to the next "## " heading."""
     out, inside = [], False
-    with open("CHANGELOG.md", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             if line.startswith("## "):
                 if inside:
                     break
-                inside = line[3:].strip() == tag
+                inside = heading_tag(line) == tag
                 continue
             if inside:
                 out.append(line.rstrip("\n"))
@@ -30,6 +44,11 @@ def section(tag: str) -> str:
 
 
 def main() -> int:
+    if len(sys.argv) > 2 and sys.argv[1] == "--notes":
+        notes = section(sys.argv[2])
+        if notes:
+            print(notes)
+        return 0
     url = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
     if not url:
         print("DISCORD_WEBHOOK_URL is not set; nothing posted.")

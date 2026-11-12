@@ -100,11 +100,9 @@ jobs:
           {
             echo "## What's new"
             echo
-            # The section for this version: from its "## vX.Y.Z" heading up to the next "## " heading.
-            awk -v tag="$tag" '
-              $0 ~ "^## " { if (found) exit; if ($2 == tag) { found = 1; next } }
-              found { print }
-            ' CHANGELOG.md | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'
+            # The section for this version: from the "## " heading whose first word is the tag up to
+            # the next "## " heading. The Discord post finds it with the same function.
+            python3 tools/announce_discord.py --notes "$tag"
             echo
             echo "## Install"
             echo
