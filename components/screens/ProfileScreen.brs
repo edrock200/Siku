@@ -392,7 +392,7 @@ end sub
 
 sub onChangeServer()
     if m.busy then return
-    Session_clearServer()
+    Api_leaveServer()
     Nav_reset("ServerConnectScreen")
 end sub
 
