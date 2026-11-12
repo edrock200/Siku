@@ -1068,8 +1068,10 @@ sub applyChoice(row as object, value as dynamic)
         putValue("player.dv_profile7_hdr10_fallback", "profile_device", value = true)
     else if id = "forceHdr" then
         savePref("forceHdrPassthrough", value = true)
+        refreshValues()
     else if id = "forceDolby" then
         savePref("forceDolbyPassthrough", value = true)
+        refreshValues()
     else if id = "progressiveRemux" then
         savePref("progressiveRemux", value = true)
         refreshValues()
