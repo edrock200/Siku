@@ -274,7 +274,7 @@ function buildPane(catId as string) as object
         out.Push({ kind: "row", row: rowDef("skipCredits", "toggle", Tx("Skip Credits")) })
         out.Push({ kind: "row", row: rowDef("rewindOnResume", "choice", Tx("Rewind on Resume")) })
         out.Push({ kind: "row", row: rowDef("stillWatching", "choice", Tx("Still Watching Prompt")) })
-        out.Push({ kind: "footer", text: Tx("Rewind on Resume skips back when you return to a partly watched title. Still Watching Prompt sets how many episodes play in a row before Silo asks whether you're still watching.") })
+        out.Push({ kind: "footer", text: Tx("Rewind on Resume skips back when you return to a partly watched title. Still Watching Prompt sets how many episodes play in a row before Siku asks whether you're still watching.") })
 
         ' Spoiler protection (catalog.hide_unwatched_episode_*, revision 17, profile scope): hidden
         ' on servers that do not know the keys.
