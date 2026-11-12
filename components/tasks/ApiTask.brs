@@ -10,8 +10,10 @@ sub execute()
     resp = perform(req)
     ' A 401 means the access token was rejected: refresh once (single-flight via AuthTask) and retry.
     ' With no token at all (signed out meanwhile, e.g. the logout call itself) there is nothing to refresh.
+    ' Pass the token the request was sent with: if another task refreshed meanwhile, Auth_refresh
+    ' sees a newer token and just retries instead of asking for a second refresh.
     if resp.status = 401 and req.auth <> false and not Str_isEmpty(m.global.session.accessToken) then
-        if Auth_refresh(m.global.session.accessToken) then
+        if Auth_refresh(m.sentToken) then
             resp = perform(req)
         else if Str_isEmpty(m.global.session.refreshToken) then
             ' Nothing to refresh with: the user has to sign in again. A refresh token the server
@@ -26,6 +28,7 @@ sub execute()
 end sub
 
 function perform(req as object) as object
+    m.sentToken = "" ' the bearer token this attempt sends (read by execute after a 401)
     session = m.global.session
     method = UCase(Str_orEmpty(req.method))
     if method = "" then method = "GET"
@@ -57,6 +60,7 @@ function perform(req as object) as object
     headers = Http_deviceHeaders(session)
     if req.auth <> false and not Str_isEmpty(session.accessToken) then
         headers["Authorization"] = "Bearer " + session.accessToken
+        m.sentToken = session.accessToken
     end if
     if req.profile <> false and not Str_isEmpty(session.profileId) then
         headers["X-Profile-Id"] = session.profileId
