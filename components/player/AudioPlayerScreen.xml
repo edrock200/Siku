@@ -3,7 +3,7 @@
   Full-screen now-playing UI for music queues and audiobooks (Android TV TvAudiobookPlayerScreen):
   large cover on the left; eyebrow, title, author/artist and chapter/album on the right; progress bar
   with elapsed / remaining; transport row (previous, skip back, play/pause, skip forward, next);
-  utility pills (Chapters or Up Next, Sleep timer). Panels open on the right (AudioPanel).
+  utility pills (Chapters or Up Next, Sleep timer, and for audiobooks the skip interval). Panels open on the right (AudioPanel).
 
   params (all optional except what each mode needs):
     Music / generic queue (`queue` present and non-empty):
@@ -25,15 +25,21 @@
   → POST /api/v2/playback/{session}/progress every 10 s → DELETE /api/v2/playback/{session}.
   Music sessions use progress_persistence "server". Audiobooks play one part per session with
   progress_persistence "client" and a part-local start_position; whole-book progress is written with
-  POST /api/v2/sync/progress {items:[{media_item_id, position_ms, duration_ms}]}.
+  POST /api/v2/sync/progress {items:[{media_item_id, position_ms, duration_ms}]}, and an on-device
+  record (AudioResume.brs) keeps the stretches the server's resume thresholds drop.
   Back closes an open panel, otherwise stops playback and closes; m.global.homeDirty is set on exit.
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="AudioPlayerScreen" extends="BaseScreen">
+  <interface>
+    <!-- Set by Settings_notify when a Settings_load this screen started lands (skip intervals). -->
+    <field id="settingsLoaded" type="boolean" alwaysNotify="true" onChange="onSettingsLoaded" />
+  </interface>
   <script type="text/brightscript" uri="pkg:/components/player/AudioPlayerScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/PlaybackCaps.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioCaps.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioTimeline.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/AudioResume.brs" />
   <children>
     <Rectangle width="1920" height="1080" color="0x000000FF" />
     <Poster id="backdrop" width="1920" height="1080" loadDisplayMode="scaleToZoom" opacity="0.22" />
@@ -91,6 +97,7 @@
         <Group id="utility" translation="[0, 876]">
           <PillButton id="listBtn" text="Chapters" iconUri="pkg:/images/icons/chapters.png" height="64" padX="32" fontSize="25" scaleOnFocus="1.0" />
           <PillButton id="sleepBtn" text="Sleep Timer" iconUri="pkg:/images/icons/sleep.png" height="64" padX="32" fontSize="25" scaleOnFocus="1.0" />
+          <PillButton id="skipBtn" text="Skip" iconUri="pkg:/images/icons/tune.png" height="64" padX="32" fontSize="25" scaleOnFocus="1.0" visible="false" />
         </Group>
       </Group>
     </Group>
@@ -114,7 +121,7 @@
 
     <Timer id="progressTimer" duration="10" repeat="true" />
     <Timer id="sleepTimer" duration="1" repeat="true" />
-    <Timer id="stopTimeout" duration="2.5" />
+    <Timer id="stopTimeout" duration="3" />
     <Timer id="refreshTimeout" duration="12" />
   </children>
 </component>

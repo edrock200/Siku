@@ -40,6 +40,8 @@ function Settings_keyDefs() as object
         { key: "player.dv_profile7_hdr10_fallback", rev: 1, def: false }
         { key: "player.video_skip_back_seconds", rev: 9, def: 10 }
         { key: "player.video_skip_forward_seconds", rev: 9, def: 30 }
+        { key: "player.audiobook_skip_back_seconds", rev: 9, def: 10 }
+        { key: "player.audiobook_skip_forward_seconds", rev: 9, def: 30 }
         { key: "catalog.metadata_language", rev: 1, def: "" }
         { key: "home.hide_watched_items", rev: 12, def: false }
         { key: "ui.card_presentation", rev: 5, def: { poster_size: "standard", caption: "title_metadata" } }
@@ -290,7 +292,38 @@ function Settings_skipForwardSeconds() as integer
     return v
 end function
 
+' Audiobook skip intervals, as Android TV's AudiobookPlayerViewModel: the profile-wide
+' player.audiobook_skip_*_seconds on a revision-9 server, else this device's pref, else 30 s
+' (Android's device-local default).
+function Settings_audiobookSkipProfileWide() as boolean
+    return Settings_available() and Settings_manifestRevision() >= 9
+end function
+
+function Settings_audiobookSkipBackSeconds() as integer
+    v = 0
+    if Settings_audiobookSkipProfileWide() then v = Int(Content_numOr(Settings_value("player.audiobook_skip_back_seconds", invalid), 0))
+    if v <= 0 then v = Int(Content_numOr(Settings_prefs().audiobookSkipBack, 0))
+    if v <= 0 then v = 30
+    return v
+end function
+
+function Settings_audiobookSkipForwardSeconds() as integer
+    v = 0
+    if Settings_audiobookSkipProfileWide() then v = Int(Content_numOr(Settings_value("player.audiobook_skip_forward_seconds", invalid), 0))
+    if v <= 0 then v = Int(Content_numOr(Settings_prefs().audiobookSkipForward, 0))
+    if v <= 0 then v = 30
+    return v
+end function
+
+' The choices the skip-interval picker offers: the contract's values when the server keeps them,
+' else Android's device-local set.
+function Settings_audiobookSkipChoices() as object
+    if Settings_audiobookSkipProfileWide() then return [5, 10, 15, 30, 45, 60, 90]
+    return [10, 15, 30, 60]
+end function
+
 ' Off plays the HDR10 base layer of a Dolby Vision file (PlaybackCaps stops advertising DV).
+
 function Settings_dolbyVision() as boolean
     return Settings_value("player.dolby_vision_enabled", true) <> false
 end function

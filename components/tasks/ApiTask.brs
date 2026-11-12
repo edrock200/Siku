@@ -89,18 +89,19 @@ function perform(req as object) as object
 end function
 
 ' Asks the single AuthTask to refresh, then waits for it. Returns true when a usable token exists.
+' Scoped observers: unobserveField would also remove other waiters' observers on the shared node.
 function Auth_refresh(tokenUsed as string) as boolean
     auth = m.global.authTask
     if auth = invalid then return false
     port = CreateObject("roMessagePort")
-    auth.observeField("generation", port)
+    auth.observeFieldScoped("generation", port)
     current = m.global.session.accessToken
     if current <> tokenUsed and not Str_isEmpty(current) then
-        auth.unobserveField("generation")
+        auth.unobserveFieldScoped("generation")
         return true ' someone already refreshed
     end if
     auth.refreshRequest = { token: tokenUsed }
     Wait(30000, port) ' only the wake-up matters; the session itself tells us the outcome
-    auth.unobserveField("generation")
+    auth.unobserveFieldScoped("generation")
     return not Str_isEmpty(m.global.session.accessToken) and m.global.session.accessToken <> tokenUsed
 end function

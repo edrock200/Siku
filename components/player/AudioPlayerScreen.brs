@@ -25,6 +25,7 @@ sub init()
     m.nextBtn = m.top.findNode("nextBtn")
     m.listBtn = m.top.findNode("listBtn")
     m.sleepBtn = m.top.findNode("sleepBtn")
+    m.skipBtn = m.top.findNode("skipBtn")
     m.spinner = m.top.findNode("spinner")
     m.errorGroup = m.top.findNode("errorGroup")
     m.errorLabel = m.top.findNode("errorLabel")
@@ -41,6 +42,9 @@ sub init()
     m.started = false
     m.closing = false
     m.closed = false
+    ' Requests Back waits for before closing (final sync, session DELETE, in-flight starts).
+    m.closeWaits = 0
+    m.startsInFlight = 0
     m.mode = ""
     m.queue = []
     m.qIndex = 0
@@ -62,12 +66,24 @@ sub init()
     m.globalPos = 0.0
     m.isPaused = false
     m.ended = false
+    ' True while the Audio node plays the file of the current start (position events count).
+    m.fileActive = false
+    ' The server ended the session while we were paused: Play starts a fresh one there.
+    m.sessionLost = false
+    m.pausedTicks = 0
+    ' One automatic restart after a stream error (an expired token, a dropped connection).
+    m.autoRetried = false
+    m.autoRetryAt = 0.0
+    ' Whole-book time of the last "finished" that came well before the end of the part.
+    m.earlyEndAt = -1.0
     m.pendingSeek = -1.0
     m.waitingForToken = false
     m.chapterIdx = -1
     m.sleepMode = "off"
     m.sleepRemaining = 0
     m.sleepChapterEnd = -1.0
+    m.resumeRec = invalid
+    m.resumeSavedAt = 0
     m.panelKind = ""
     m.zone = "transport"
     m.tIndex = 2
@@ -88,8 +104,10 @@ sub init()
     m.nextBtn.observeField("buttonSelected", "onNext")
     m.listBtn.observeField("buttonSelected", "openListPanel")
     m.sleepBtn.observeField("buttonSelected", "openSleepPanel")
+    m.skipBtn.observeField("buttonSelected", "openSkipPanel")
     m.listBtn.observeField("width", "layoutUtility")
     m.sleepBtn.observeField("width", "layoutUtility")
+    m.skipBtn.observeField("width", "layoutUtility")
     m.retryBtn.observeField("buttonSelected", "retry")
     m.errorCloseBtn.observeField("buttonSelected", "exitPlayer")
     m.panel.observeField("chosen", "onPanelChosen")
@@ -117,7 +135,7 @@ sub startPipeline()
     q = Arr_or(p.queue)
     if q.Count() > 0 then
         setupQueue(q, p)
-        playQueueIndex(m.qIndex, startParam(p))
+        playQueueIndex(m.qIndex, musicStart(p))
         return
     end if
     m.contentId = Str_orEmpty(p.itemId)
@@ -131,8 +149,10 @@ end sub
 ' Covered or removed without going through Back (e.g. a stack reset): stop playback.
 sub onScreenHidden()
     if m.closing then return
-    syncBookProgress()
+    syncBookProgress(true)
     m.closing = true
+    ' The screen is going away without Back: nothing is left to close (as PlayerScreen does).
+    m.closed = true
     m.global.homeDirty = true
     m.sleepTimer.control = "stop"
     m.audio.control = "stop"
@@ -162,7 +182,16 @@ function startParam(p as object) as float
     return -1.0
 end function
 
+' Music starts at params.startPosition or at 0:00, never at the server's resume point (an omitted
+' start_position asks for it), like every later track in the queue.
+function musicStart(p as object) as float
+    s = startParam(p)
+    if s < 0 then s = 0.0
+    return s
+end function
+
 sub onItem(event as object)
+
     resp = Api_result(event)
     if m.closing then return
     if not resp.ok or resp.data = invalid then
@@ -177,7 +206,7 @@ sub onItem(event as object)
     else
         ' A single track (or other audio item): a one-entry queue.
         setupQueue([it], m.top.params)
-        playQueueIndex(0, startParam(m.top.params))
+        playQueueIndex(0, musicStart(m.top.params))
     end if
 end sub
 
@@ -226,6 +255,8 @@ sub playQueueIndex(idx as integer, startAt as float)
     if m.mode <> "music" or idx < 0 or idx >= m.queue.Count() then return
     ' Retire the outgoing track first so its stop reports where it actually was.
     stopSession(true)
+    m.fileActive = false
+    if idx <> m.qIndex then m.autoRetried = false
     m.qIndex = idx
     m.ended = false
     e = m.queue[idx]
@@ -348,8 +379,8 @@ sub setupAudiobook(it as object)
     m.listBtn.text = "Chapters"
     m.listBtn.iconUri = "pkg:/images/icons/chapters.png"
     m.listBtn.visible = m.timeline.chapters.Count() > 1
-    m.backBtn.iconUri = "pkg:/images/icons/rewind_30.png"
-    m.fwdBtn.iconUri = "pkg:/images/icons/forward.png"
+    m.skipBtn.visible = true
+    updateSkipUi()
     m.coverIcon.uri = "pkg:/images/icons/audiobook.png"
     setCover(Str_orEmpty(it.poster_url))
     drawChapterTicks()
@@ -359,11 +390,16 @@ sub setupAudiobook(it as object)
     layoutUtility()
     if m.focusSink.hasFocus() then restoreFocus()
 
-    ' Start: explicit whole-book position, else the stored resume point (TvAudiobookDetailHero rules).
+    ' Start: explicit whole-book position, else the stored resume point (TvAudiobookDetailHero rules),
+    ' taking this device's record where the server dropped the position (AudioResume.brs).
+    serverPos = Num_or(ud.position_seconds)
+    m.resumeRec = { pos: 0.0, total: m.timeline.total, base: serverPos }
     startAt = startParam(m.top.params)
     if startAt < 0 then
         startAt = 0.0
-        posSec = AudioTimeline_num(ud.position_seconds)
+        posSec = serverPos
+        localPos = AudioResume_position(Settings_identity(), m.contentId, serverPos)
+        if localPos >= 0 then posSec = localPos
         if posSec > 0 and posSec < m.timeline.total - 5 then startAt = posSec
     end if
     seekGlobal(startAt, true)
@@ -395,7 +431,7 @@ sub seekGlobal(t as float, forceStart as boolean)
     localT = AudioTimeline_localTime(tr, t)
     m.ended = false
     m.globalPos = t
-    if not forceStart and idx = m.trackIdx and m.sessionId <> "" then
+    if not forceStart and idx = m.trackIdx and m.fileActive and not m.sessionLost then
         seekLocal(localT)
     else
         stopSession(true)
@@ -404,20 +440,49 @@ sub seekGlobal(t as float, forceStart as boolean)
         m.localPos = localT
         startFile(tr.fileId, localT, "client")
     end if
+    ' "End of chapter" follows the chapter the book is now in.
+    if m.sleepMode = "chapter" then m.sleepChapterEnd = sleepChapterEndAt(t)
     updateProgressUi()
 end sub
 
-' Whole-book progress (furthest-wins on the server): POST /api/v2/sync/progress.
-sub syncBookProgress()
+' Whole-book progress: POST /api/v2/sync/progress. The server keeps the last write, drops a
+' position under its min-resume threshold and stores one over its watched threshold as finished
+' at 0, so the on-device record (AudioResume.brs) is updated too. `force` writes that record now
+' instead of at most once a minute.
+sub syncBookProgress(force = false as boolean)
     if m.mode <> "audiobook" or m.contentId = "" or m.timeline = invalid then return
     if m.globalPos <= 0 then return
     body = { items: [{ media_item_id: m.contentId, position_ms: Int(m.globalPos * 1000), duration_ms: Int(m.timeline.total * 1000) }] }
-    Api_send("POST", "/api/v2/sync/progress", body, "onSynced")
+    isFinal = m.closing
+    if isFinal then m.closeWaits = m.closeWaits + 1
+    Api_send("POST", "/api/v2/sync/progress", body, "onSynced", { pos: m.globalPos, total: m.timeline.total, lastSync: isFinal })
+    if m.resumeRec <> invalid then
+        m.resumeRec.pos = m.globalPos
+        m.resumeRec.total = m.timeline.total
+        if force or Time_nowSeconds() - m.resumeSavedAt >= 60 then saveResumeRecord()
+    end if
 end sub
 
 sub onSynced(event as object)
     resp = Api_result(event)
-    if not resp.ok then print "[AudioPlayer] sync/progress "; resp.status
+    ctx = resp.context
+    if not resp.ok then
+        print "[AudioPlayer] sync/progress "; resp.status
+    else if m.resumeRec <> invalid and ctx <> invalid then
+        m.resumeRec.base = AudioResume_serverAfter(Num_or(ctx.pos), Num_or(ctx.total), Num_or(m.resumeRec.base))
+    end if
+    if ctx <> invalid and ctx.lastSync = true then closeDone()
+end sub
+
+' Writes the on-device resume record; at the end of the book it is dropped instead.
+sub saveResumeRecord()
+    if m.resumeRec = invalid or m.mode <> "audiobook" or m.contentId = "" then return
+    m.resumeSavedAt = Time_nowSeconds()
+    if m.ended then
+        AudioResume_clear(Settings_identity(), m.contentId)
+    else if m.resumeRec.pos > 0 then
+        AudioResume_put(Settings_identity(), m.contentId, m.resumeRec)
+    end if
 end sub
 
 ' ---------- Sessions ----------
@@ -426,6 +491,7 @@ end sub
 sub startFile(fileId as string, localStart as float, persistence as string)
     stopSession(true)
     m.audio.control = "stop"
+    m.fileActive = false
     m.loadGen = m.loadGen + 1
     m.attemptId = m.di.GetRandomUUID()
     m.retriedInstall = false
@@ -436,14 +502,25 @@ sub startFile(fileId as string, localStart as float, persistence as string)
     ensureFreshToken()
 end sub
 
-' The Audio node can't refresh headers mid-stream: refresh first when the token is about to expire.
+' The Audio node can't refresh headers mid-stream, and every range request (buffer refills, a seek
+' inside the part) carries the token. Refresh first when the token would expire before the file
+' has played out. Capped at an hour: tokens are issued for hours, so a cap keeps every start from
+' refreshing, and the automatic retry in onAudioState covers a part that outlives its token.
 sub ensureFreshToken()
     s = m.global.session
-    if not Str_isEmpty(s.refreshToken) and s.expiresAt > 0 and s.expiresAt - Time_nowSeconds() < 300 then
+    need = 300.0
+    pd = m.pending
+    if pd <> invalid and m.fileDuration > 0 then
+        remaining = m.fileDuration - Num_or(pd.localStart)
+        if remaining > need then need = remaining
+    end if
+    if need > 3600 then need = 3600.0
+    expiresAt = Num_or(s.expiresAt)
+    if not Str_isEmpty(s.refreshToken) and expiresAt > 0 and expiresAt - Time_nowSeconds() < need then
         auth = m.global.authTask
         if auth <> invalid then
             m.waitingForToken = true
-            auth.observeField("generation", "onTokenRefreshed")
+            auth.observeFieldScoped("generation", "onTokenRefreshed")
             m.refreshTimeout.control = "start"
             auth.refreshRequest = { token: s.accessToken }
             return
@@ -457,7 +534,7 @@ sub onTokenRefreshed()
     m.waitingForToken = false
     m.refreshTimeout.control = "stop"
     auth = m.global.authTask
-    if auth <> invalid then auth.unobserveField("generation")
+    if auth <> invalid then auth.unobserveFieldScoped("generation")
     if m.closing then return
     fetchCapabilities()
 end sub
@@ -516,20 +593,28 @@ sub sendStart()
     pd = m.pending
     if pd = invalid or m.closing then return
     body = AudioCaps_startBody(installationId(), pd.fileId, m.attemptId, pd.localStart, pd.persistence)
+    m.startsInFlight = m.startsInFlight + 1
     Api_send("POST", "/api/v2/playback/start", body, "onStart", { gen: pd.gen, fileId: pd.fileId })
 end sub
 
 sub onStart(event as object)
     resp = Api_result(event)
     ctx = resp.context
+    if m.startsInFlight > 0 then m.startsInFlight = m.startsInFlight - 1
     stale = m.closing or ctx = invalid or ctx.gen <> m.loadGen
     if stale then
         ' Superseded (seek / skip / close while in flight): release the session we no longer need.
+        ' While closing, Back waits for this start and then for its DELETE.
+        released = false
         if resp.ok and resp.data <> invalid and not Str_isEmpty(resp.data.session_id) then
             inst = installationId()
             body = { installation_id: inst, stop_id: m.di.GetRandomUUID() }
-            Api_send("DELETE", "/api/v2/playback/" + Str_urlEncode(resp.data.session_id), body, "onStopped")
+            cb = "onRetired"
+            if m.closing then cb = "onStopped"
+            Api_send("DELETE", "/api/v2/playback/" + Str_urlEncode(resp.data.session_id), body, cb)
+            released = m.closing
         end if
+        if m.closing and not released then closeDone()
         return
     end if
     if resp.status = 409 and not m.retriedInstall then
@@ -567,6 +652,7 @@ sub onStart(event as object)
     m.sequence = 0
     m.stopId = ""
     m.pending = invalid
+    m.sessionLost = false
     applyPlan(d.playback_plan)
 end sub
 
@@ -617,6 +703,7 @@ sub applyPlan(plan as object)
     print "[AudioPlayer] playing "; url; " fmt "; fmt
     m.audio.content = content
     m.audio.control = "play"
+    m.fileActive = true
     m.isPaused = false
     m.playBtn.iconUri = "pkg:/images/icons/pause.png"
     m.progressTimer.control = "start"
@@ -642,7 +729,17 @@ sub setFileDuration(d as float)
 end sub
 
 sub onProgressTick()
-    if m.isPaused then return
+    if m.isPaused then
+        ' Keep the session alive while paused: the server ends a paused session after 30 minutes
+        ' without a sample. Once a minute is plenty.
+        m.pausedTicks = m.pausedTicks + 1
+        if m.pausedTicks >= 6 then
+            m.pausedTicks = 0
+            sendProgress()
+        end if
+        return
+    end if
+    m.pausedTicks = 0
     sendProgress()
     syncBookProgress()
 end sub
@@ -659,8 +756,27 @@ end sub
 sub onProgressResult(event as object)
     resp = Api_result(event)
     if (resp.status = 404 or resp.status = 410) and resp.context <> invalid and resp.context.sid = m.sessionId then
-        ' The session ended on the server; stop reporting.
+        ' The session ended on the server. Start a fresh one at the current position: at once while
+        ' audio plays, otherwise when Play is pressed (the stream would be refused by then).
         m.sessionId = ""
+        m.progressTimer.control = "stop"
+        if m.closing then return
+        st = m.audio.state
+        if st = "playing" or st = "buffering" then
+            restartHere()
+        else
+            m.sessionLost = true
+        end if
+    end if
+end sub
+
+' A new session for the current file at the current position.
+sub restartHere()
+    m.sessionLost = false
+    if m.mode = "audiobook" and m.timeline <> invalid then
+        seekGlobal(m.globalPos, true)
+    else if m.mode = "music" and m.queue.Count() > 0 then
+        playQueueIndex(m.qIndex, m.localPos)
     end if
 end sub
 
@@ -687,29 +803,41 @@ end sub
 
 sub onStopped(event as object)
     Api_result(event)
-    if m.closing then finishClose()
+    closeDone()
 end sub
 
+' Back: stop playback, then close once the final sync, the session DELETE and any start still in
+' flight have answered (the screen's ApiTasks go with it), or after stopTimeout.
 sub exitPlayer()
     if m.closing then return
-    syncBookProgress()
     m.closing = true
+    m.closeWaits = m.startsInFlight
+    syncBookProgress(true)
     m.global.homeDirty = true
     m.sleepTimer.control = "stop"
     m.audio.control = "stop"
-    hadSession = m.sessionId <> ""
+    if m.sessionId <> "" and installationId() <> "" then m.closeWaits = m.closeWaits + 1
     stopSession(false)
-    if hadSession then
+    if m.closeWaits > 0 then
         m.stopTimeout.control = "start"
     else
         finishClose()
     end if
 end sub
 
+sub closeDone()
+    if not m.closing then return
+    m.closeWaits = m.closeWaits - 1
+    if m.closeWaits <= 0 then finishClose()
+end sub
+
+
 sub finishClose()
     if m.closed then return
     m.closed = true
     m.stopTimeout.control = "stop"
+    ' The final sync may have changed what the server holds; keep the record in step with it.
+    saveResumeRecord()
     Nav_close()
 end sub
 
@@ -746,14 +874,25 @@ sub onAudioState()
         m.statusLabel.text = "Paused"
         m.playBtn.iconUri = "pkg:/images/icons/play.png"
         sendProgress()
-        syncBookProgress()
+        syncBookProgress(true)
     else if st = "finished" then
+        m.fileActive = false
         onFinished()
     else if st = "error" then
+        m.fileActive = false
         msg = Str_orEmpty(m.audio.errorMsg)
         if msg = "" then msg = "This could not be played."
         print "[AudioPlayer] audio error "; m.audio.errorCode; " "; msg
         m.progressTimer.control = "stop"
+        if not m.autoRetried and not m.closing and (m.timeline <> invalid or m.queue.Count() > 0) then
+            ' Retry once by itself with a new session (and a fresh token when it is due); the
+            ' error shows only if that fails too.
+            m.autoRetried = true
+            m.autoRetryAt = m.globalPos
+            print "[AudioPlayer] restarting once after the error"
+            restartHere()
+            return
+        end if
         if m.mode = "music" then
             stopSession(true)
             trackFailed(msg)
@@ -769,7 +908,7 @@ sub onAudioDuration()
 end sub
 
 sub onAudioPosition()
-    if m.sessionId = "" then return
+    if not m.fileActive then return
     m.localPos = m.audio.position + m.timelineOffset
     if m.mode = "audiobook" and m.timeline <> invalid and m.trackIdx >= 0 then
         m.globalPos = m.timeline.tracks[m.trackIdx].offset + m.localPos
@@ -779,14 +918,44 @@ sub onAudioPosition()
     else
         m.globalPos = m.localPos
     end if
+    ' Thirty seconds of good playback since the automatic retry re-arms it.
+    if m.autoRetried and m.globalPos > m.autoRetryAt + 30 then m.autoRetried = false
     updateProgressUi()
 end sub
+
 
 sub onFinished()
     if m.ended then return
     if m.mode = "audiobook" then
         tl = m.timeline
+        if m.fileDuration > 0 and m.localPos < m.fileDuration - 15 then
+            if m.earlyEndAt < 0 or Abs(m.globalPos - m.earlyEndAt) > 30 then
+                ' "finished" well before the part's duration: a dropped or truncated stream rather
+                ' than the end of the part. Restart here once; a second early end at the same place
+                ' means the file really ends there, and the book moves on.
+                print "[AudioPlayer] finished early at "; m.localPos; " of "; m.fileDuration; ", restarting"
+                m.earlyEndAt = m.globalPos
+                seekGlobal(m.globalPos, true)
+                return
+            end if
+        end if
+        m.earlyEndAt = -1.0
         if m.trackIdx >= 0 and m.trackIdx < tl.tracks.Count() - 1 then
+            cur = tl.tracks[m.trackIdx]
+
+            if m.sleepMode = "chapter" and m.sleepChapterEnd > 0 and m.sleepChapterEnd <= cur.offset + cur.duration + 1 then
+                ' The chapter the sleep timer waits for ends with this part: stop at the start of
+                ' the next part instead of starting it. Play starts it from there.
+                stopSession(true)
+                nxt = tl.tracks[m.trackIdx + 1]
+                m.trackIdx = nxt.index
+                m.fileDuration = nxt.duration
+                m.localPos = 0.0
+                m.globalPos = nxt.offset
+                sleepNow()
+                updateProgressUi()
+                return
+            end if
             ' Next part: a new session (playback is not gapless across parts, as on Android).
             m.localPos = tl.tracks[m.trackIdx].duration
             seekGlobal(tl.tracks[m.trackIdx + 1].offset, true)
@@ -796,7 +965,8 @@ sub onFinished()
         m.ended = true
         m.globalPos = tl.total
         m.localPos = tl.tracks[m.trackIdx].duration
-        syncBookProgress()
+        ' m.ended is set, so this also drops the on-device resume record.
+        syncBookProgress(true)
         stopSession(true)
         m.isPaused = true
         m.statusLabel.text = "Finished"
@@ -806,9 +976,20 @@ sub onFinished()
     end if
     ' Music: auto-advance; the end of the queue (or a "End of track" sleep timer) stops.
     if m.sleepMode = "track" then
-        m.ended = true
         stopSession(true)
         setSleep("off")
+        if m.qIndex < m.queue.Count() - 1 then
+            ' Stop on the next track, so Play continues the queue instead of replaying this one.
+            m.qIndex = m.qIndex + 1
+            m.autoRetried = false
+            e = m.queue[m.qIndex]
+            m.fileDuration = e.durationSeconds
+            m.localPos = 0.0
+            m.globalPos = 0.0
+            showMusicInfo()
+        else
+            m.ended = true
+        end if
         m.isPaused = true
         m.playBtn.iconUri = "pkg:/images/icons/play.png"
         m.statusLabel.text = "Sleep timer ended"
@@ -854,7 +1035,7 @@ end sub
 
 function utilityButtons() as object
     out = []
-    for each b in [m.listBtn, m.sleepBtn]
+    for each b in [m.listBtn, m.sleepBtn, m.skipBtn]
         if b.visible then out.Push(b)
     end for
     return out
@@ -917,7 +1098,9 @@ sub togglePlay()
         return
     end if
     st = m.audio.state
-    if st = "paused" then
+    if st = "paused" and m.sessionLost then
+        restartHere()
+    else if st = "paused" then
         m.audio.control = "resume"
     else if st = "playing" or st = "buffering" then
         m.audio.control = "pause"
@@ -927,9 +1110,15 @@ sub togglePlay()
     end if
 end sub
 
+' Audiobooks use the profile's (or this device's) skip intervals; music jumps 10 s back, 30 s on.
 function skipBackSeconds() as integer
-    if m.mode = "audiobook" then return 30
+    if m.mode = "audiobook" then return Settings_audiobookSkipBackSeconds()
     return 10
+end function
+
+function skipForwardSeconds() as integer
+    if m.mode = "audiobook" then return Settings_audiobookSkipForwardSeconds()
+    return 30
 end function
 
 sub onSkipBack()
@@ -937,7 +1126,26 @@ sub onSkipBack()
 end sub
 
 sub onSkipForward()
-    skipBy(30)
+    skipBy(skipForwardSeconds())
+end sub
+
+' The skip pill's label and the skip icons: numbered icons exist for 10 and 30 s only, other
+' intervals get the plain double arrows (the pill names the seconds).
+sub updateSkipUi()
+    b = skipBackSeconds()
+    f = skipForwardSeconds()
+    icon = "fast_rewind"
+    if b = 10 then icon = "rewind"
+    if b = 30 then icon = "rewind_30"
+    m.backBtn.iconUri = "pkg:/images/icons/" + icon + ".png"
+    icon = "fast_forward"
+    if f = 10 then icon = "forward_10"
+    if f = 30 then icon = "forward"
+    m.fwdBtn.iconUri = "pkg:/images/icons/" + icon + ".png"
+
+    t = "Skip " + b.ToStr() + "s"
+    if f <> b then t = "Skip " + b.ToStr() + "s / " + f.ToStr() + "s"
+    if m.skipBtn.text <> t then m.skipBtn.text = t
 end sub
 
 sub skipBy(delta as integer)
@@ -950,7 +1158,7 @@ end sub
 
 ' Seek inside the current file (file-local seconds).
 sub seekLocal(t as float)
-    if m.sessionId = "" then return
+    if not m.fileActive then return
     if t < 0 then t = 0
     if m.fileDuration > 0 and t > m.fileDuration - 1 then t = m.fileDuration - 1
     m.audio.seek = t - m.timelineOffset
@@ -975,10 +1183,11 @@ sub onPrev()
         if ci > 0 and m.globalPos - chapters[ci].start < 3 then ci = ci - 1
         if ci < 0 then ci = 0
         seekGlobal(chapters[ci].start, false)
-        syncBookProgress()
+        syncBookProgress(true)
     else
         if m.localPos > 3 or m.qIndex = 0 then
-            if m.sessionId <> "" then seekLocal(0) else playQueueIndex(m.qIndex, 0)
+            if m.fileActive and not m.sessionLost then seekLocal(0) else playQueueIndex(m.qIndex, 0)
+
         else
             playQueueIndex(m.qIndex - 1, 0)
         end if
@@ -991,7 +1200,7 @@ sub onNext()
         ci = AudioTimeline_chapterAt(chapters, m.globalPos)
         if ci >= 0 and ci < chapters.Count() - 1 then
             seekGlobal(chapters[ci + 1].start, false)
-            syncBookProgress()
+            syncBookProgress(true)
         end if
     else if m.qIndex < m.queue.Count() - 1 then
         playQueueIndex(m.qIndex + 1, 0)
@@ -1055,14 +1264,71 @@ sub onPanelChosen()
         i = Int(Val(id))
         if i >= 0 and i < m.timeline.chapters.Count() then
             seekGlobal(m.timeline.chapters[i].start, false)
-            syncBookProgress()
+            syncBookProgress(true)
+
         end if
     else if kind = "queue" then
         i = Int(Val(id))
         if i >= 0 and i < m.queue.Count() and i <> m.qIndex then playQueueIndex(i, 0)
     else if kind = "sleep" then
         setSleep(id)
+    else if kind = "skip" then
+        openSkipChoices(id)
+    else if kind = "skipback" or kind = "skipforward" then
+        saveSkip(kind, Int(Val(id)))
     end if
+end sub
+
+' ---------- Skip interval (Android TV TvAudiobookSkipIntervalPanel) ----------
+
+sub openSkipPanel()
+    rows = [{ id: "back", title: "Skip back", trailing: skipBackSeconds().ToStr() + "s" }, { id: "forward", title: "Skip forward", trailing: skipForwardSeconds().ToStr() + "s" }]
+    openPanel("skip", "Skip interval", rows)
+end sub
+
+sub openSkipChoices(which as string)
+    cur = skipForwardSeconds()
+    title = "Skip forward"
+    kind = "skipforward"
+    if which = "back" then
+        cur = skipBackSeconds()
+        title = "Skip back"
+        kind = "skipback"
+    end if
+    rows = []
+    for each sec in Settings_audiobookSkipChoices()
+        rows.Push({ id: sec.ToStr(), title: sec.ToStr() + " seconds", isCurrent: sec = cur })
+    end for
+    if Settings_audiobookSkipProfileWide() then title = title + " (this profile)" else title = title + " (this device)"
+    openPanel(kind, title, rows)
+end sub
+
+' Revision-9 servers keep the interval for the whole profile; older ones get a device pref.
+sub saveSkip(kind as string, seconds as integer)
+    if seconds <= 0 then return
+    if Settings_audiobookSkipProfileWide() then
+        key = "player.audiobook_skip_forward_seconds"
+        if kind = "skipback" then key = "player.audiobook_skip_back_seconds"
+        Settings_setLocal(key, "profile", seconds)
+        Settings_put(key, "profile", seconds, "onSkipSaved")
+    else
+        p = AA_copy(Settings_prefs())
+        if kind = "skipback" then p.audiobookSkipBack = seconds else p.audiobookSkipForward = seconds
+        Prefs_save(p)
+    end if
+    updateSkipUi()
+end sub
+
+sub onSettingsLoaded()
+    if m.mode = "audiobook" then updateSkipUi()
+end sub
+
+sub onSkipSaved(event as object)
+    resp = Api_result(event)
+    if resp.ok then return
+    m.global.toast = "Couldn't save the skip interval"
+    ' Drop the optimistic value: reload what the server holds.
+    Settings_load()
 end sub
 
 ' ---------- Sleep timer ----------
@@ -1075,17 +1341,24 @@ sub setSleep(mode as string)
         m.sleepRemaining = Int(Val(mode)) * 60
         m.sleepTimer.control = "start"
     else if mode = "chapter" then
-        ci = AudioTimeline_chapterAt(m.timeline.chapters, m.globalPos)
-        if ci >= 0 then
-            ch = m.timeline.chapters[ci]
-            m.sleepChapterEnd = ch["end"]
-            if m.sleepChapterEnd <= ch.start then
-                if ci < m.timeline.chapters.Count() - 1 then m.sleepChapterEnd = m.timeline.chapters[ci + 1].start else m.sleepChapterEnd = m.timeline.total
-            end if
-        end if
+        m.sleepChapterEnd = sleepChapterEndAt(m.globalPos)
     end if
     updateSleepLabel()
 end sub
+
+' Whole-book time where the chapter playing at t ends, or -1 without chapters.
+function sleepChapterEndAt(t as float) as float
+    if m.timeline = invalid then return -1.0
+    chapters = m.timeline.chapters
+    ci = AudioTimeline_chapterAt(chapters, t)
+    if ci < 0 then return -1.0
+    ch = chapters[ci]
+    chEnd = ch["end"]
+    if chEnd <= ch.start then
+        if ci < chapters.Count() - 1 then chEnd = chapters[ci + 1].start else chEnd = m.timeline.total
+    end if
+    return chEnd
+end function
 
 sub updateSleepLabel()
     t = "Sleep Timer"
@@ -1101,7 +1374,8 @@ sub updateSleepLabel()
 end sub
 
 sub onSleepTick()
-    if m.isPaused then return
+    ' The countdown runs only while a file plays (not paused, not between parts or tracks).
+    if m.isPaused or not m.fileActive then return
     m.sleepRemaining = m.sleepRemaining - 1
     if m.sleepRemaining <= 0 then
         sleepNow()
@@ -1112,9 +1386,28 @@ end sub
 
 sub sleepNow()
     setSleep("off")
-    if m.audio.state = "playing" or m.audio.state = "buffering" then m.audio.control = "pause"
+    st = m.audio.state
+    if not m.fileActive and not m.ended and m.mode <> "" then
+        ' Between files (a part or track change in flight): cancel it so nothing starts playing.
+        haltLoading()
+    else if st = "playing" or st = "buffering" then
+        m.audio.control = "pause"
+    end if
     m.global.toast = "Sleep timer ended"
 end sub
+
+' Cancels the start or track lookup in flight (its answer turns stale and a session it created
+' is released) and leaves the player stopped where it is; Play starts again from there.
+sub haltLoading()
+    m.loadGen = m.loadGen + 1
+    m.pending = invalid
+    m.audio.control = "stop"
+    m.spinner.visible = false
+    m.isPaused = true
+    m.playBtn.iconUri = "pkg:/images/icons/play.png"
+    m.statusLabel.text = "Sleep timer ended"
+end sub
+
 
 ' ---------- Focus and keys ----------
 
@@ -1161,7 +1454,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
         onSkipForward()
         return true
     else if key = "options" then
-        if m.listBtn.visible then openListPanel()
+        ' Nothing to list until the item has loaded (m.mode is set then).
+        if m.listBtn.visible and m.mode <> "" then openListPanel()
+
         return true
     end if
     if not m.main.visible then return true
