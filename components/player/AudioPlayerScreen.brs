@@ -25,6 +25,7 @@ sub init()
     m.nextBtn = m.top.findNode("nextBtn")
     m.listBtn = m.top.findNode("listBtn")
     m.sleepBtn = m.top.findNode("sleepBtn")
+    m.skipBtn = m.top.findNode("skipBtn")
     m.spinner = m.top.findNode("spinner")
     m.errorGroup = m.top.findNode("errorGroup")
     m.errorLabel = m.top.findNode("errorLabel")
@@ -103,8 +104,10 @@ sub init()
     m.nextBtn.observeField("buttonSelected", "onNext")
     m.listBtn.observeField("buttonSelected", "openListPanel")
     m.sleepBtn.observeField("buttonSelected", "openSleepPanel")
+    m.skipBtn.observeField("buttonSelected", "openSkipPanel")
     m.listBtn.observeField("width", "layoutUtility")
     m.sleepBtn.observeField("width", "layoutUtility")
+    m.skipBtn.observeField("width", "layoutUtility")
     m.retryBtn.observeField("buttonSelected", "retry")
     m.errorCloseBtn.observeField("buttonSelected", "exitPlayer")
     m.panel.observeField("chosen", "onPanelChosen")
@@ -376,8 +379,8 @@ sub setupAudiobook(it as object)
     m.listBtn.text = "Chapters"
     m.listBtn.iconUri = "pkg:/images/icons/chapters.png"
     m.listBtn.visible = m.timeline.chapters.Count() > 1
-    m.backBtn.iconUri = "pkg:/images/icons/rewind_30.png"
-    m.fwdBtn.iconUri = "pkg:/images/icons/forward.png"
+    m.skipBtn.visible = true
+    updateSkipUi()
     m.coverIcon.uri = "pkg:/images/icons/audiobook.png"
     setCover(Str_orEmpty(it.poster_url))
     drawChapterTicks()
@@ -1032,7 +1035,7 @@ end sub
 
 function utilityButtons() as object
     out = []
-    for each b in [m.listBtn, m.sleepBtn]
+    for each b in [m.listBtn, m.sleepBtn, m.skipBtn]
         if b.visible then out.Push(b)
     end for
     return out
@@ -1107,9 +1110,15 @@ sub togglePlay()
     end if
 end sub
 
+' Audiobooks use the profile's (or this device's) skip intervals; music jumps 10 s back, 30 s on.
 function skipBackSeconds() as integer
-    if m.mode = "audiobook" then return 30
+    if m.mode = "audiobook" then return Settings_audiobookSkipBackSeconds()
     return 10
+end function
+
+function skipForwardSeconds() as integer
+    if m.mode = "audiobook" then return Settings_audiobookSkipForwardSeconds()
+    return 30
 end function
 
 sub onSkipBack()
@@ -1117,7 +1126,26 @@ sub onSkipBack()
 end sub
 
 sub onSkipForward()
-    skipBy(30)
+    skipBy(skipForwardSeconds())
+end sub
+
+' The skip pill's label and the skip icons: numbered icons exist for 10 and 30 s only, other
+' intervals get the plain double arrows (the pill names the seconds).
+sub updateSkipUi()
+    b = skipBackSeconds()
+    f = skipForwardSeconds()
+    icon = "fast_rewind"
+    if b = 10 then icon = "rewind"
+    if b = 30 then icon = "rewind_30"
+    m.backBtn.iconUri = "pkg:/images/icons/" + icon + ".png"
+    icon = "fast_forward"
+    if f = 10 then icon = "forward_10"
+    if f = 30 then icon = "forward"
+    m.fwdBtn.iconUri = "pkg:/images/icons/" + icon + ".png"
+
+    t = "Skip " + b.ToStr() + "s"
+    if f <> b then t = "Skip " + b.ToStr() + "s / " + f.ToStr() + "s"
+    if m.skipBtn.text <> t then m.skipBtn.text = t
 end sub
 
 sub skipBy(delta as integer)
@@ -1244,7 +1272,63 @@ sub onPanelChosen()
         if i >= 0 and i < m.queue.Count() and i <> m.qIndex then playQueueIndex(i, 0)
     else if kind = "sleep" then
         setSleep(id)
+    else if kind = "skip" then
+        openSkipChoices(id)
+    else if kind = "skipback" or kind = "skipforward" then
+        saveSkip(kind, Int(Val(id)))
     end if
+end sub
+
+' ---------- Skip interval (Android TV TvAudiobookSkipIntervalPanel) ----------
+
+sub openSkipPanel()
+    rows = [{ id: "back", title: "Skip back", trailing: skipBackSeconds().ToStr() + "s" }, { id: "forward", title: "Skip forward", trailing: skipForwardSeconds().ToStr() + "s" }]
+    openPanel("skip", "Skip interval", rows)
+end sub
+
+sub openSkipChoices(which as string)
+    cur = skipForwardSeconds()
+    title = "Skip forward"
+    kind = "skipforward"
+    if which = "back" then
+        cur = skipBackSeconds()
+        title = "Skip back"
+        kind = "skipback"
+    end if
+    rows = []
+    for each sec in Settings_audiobookSkipChoices()
+        rows.Push({ id: sec.ToStr(), title: sec.ToStr() + " seconds", isCurrent: sec = cur })
+    end for
+    if Settings_audiobookSkipProfileWide() then title = title + " (this profile)" else title = title + " (this device)"
+    openPanel(kind, title, rows)
+end sub
+
+' Revision-9 servers keep the interval for the whole profile; older ones get a device pref.
+sub saveSkip(kind as string, seconds as integer)
+    if seconds <= 0 then return
+    if Settings_audiobookSkipProfileWide() then
+        key = "player.audiobook_skip_forward_seconds"
+        if kind = "skipback" then key = "player.audiobook_skip_back_seconds"
+        Settings_setLocal(key, "profile", seconds)
+        Settings_put(key, "profile", seconds, "onSkipSaved")
+    else
+        p = AA_copy(Settings_prefs())
+        if kind = "skipback" then p.audiobookSkipBack = seconds else p.audiobookSkipForward = seconds
+        Prefs_save(p)
+    end if
+    updateSkipUi()
+end sub
+
+sub onSettingsLoaded()
+    if m.mode = "audiobook" then updateSkipUi()
+end sub
+
+sub onSkipSaved(event as object)
+    resp = Api_result(event)
+    if resp.ok then return
+    m.global.toast = "Couldn't save the skip interval"
+    ' Drop the optimistic value: reload what the server holds.
+    Settings_load()
 end sub
 
 ' ---------- Sleep timer ----------
@@ -1370,7 +1454,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
         onSkipForward()
         return true
     else if key = "options" then
-        if m.listBtn.visible then openListPanel()
+        ' Nothing to list until the item has loaded (m.mode is set then).
+        if m.listBtn.visible and m.mode <> "" then openListPanel()
+
         return true
     end if
     if not m.main.visible then return true
