@@ -163,6 +163,8 @@ clears one); GET /mock/switch lists them.
                                  A start or replan that names it logs SUBTITLE requested unplayable
   credits_twice=1                every version's marker_segments carry two credits ranges (duration-600..-420
                                  and duration-300..end; the singular credits field the first), Silo Android #694
+  server_resume=<seconds>        a playback start without start_position is planned at <seconds> (the
+                                 server's own resume point)
   chapters=<n>                   every version in a watch detail carries n evenly spaced chapters (the player
                                  panel's Chapters pane scrolls past 8 rows)
   card_overlays=1|<preset>[+<variant>]|<variant>|off|404|500
@@ -3287,7 +3289,12 @@ class Handler(BaseHTTPRequestHandler):
             print("START", json.dumps({k: b.get(k) for k in ("file_id", "audio_track_id", "subtitle_track_id", "start_position")}), flush=True)
             print("START CAPS", playback_summary(b), flush=True)
             LOG.append("START CAPS " + playback_summary(b))
-            return self.send(201, playback_decision(sid, b.get("start_position") or 0, b.get("file_id") or "42", b))
+            start = b.get("start_position")
+            if start is None and STATE["switches"].get("server_resume"):
+                # A start without start_position resumes where the server says (Continue Watching).
+                start = float(STATE["switches"]["server_resume"])
+                print("START server_resume=%s" % start, flush=True)
+            return self.send(201, playback_decision(sid, start or 0, b.get("file_id") or "42", b))
         m = re.match(r"^/api/v2/playback/([^/]+)/(replan|progress)$", p)
         if m and method == "POST" and STATE["switches"].get(m.group(2) + "_410"):
             print("SESSION_ENDED 410", m.group(2), flush=True)

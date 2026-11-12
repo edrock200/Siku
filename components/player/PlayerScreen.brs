@@ -229,6 +229,8 @@ sub resetPlaybackState()
     m.pauseAfterStart = false   ' a re-anchored seek made while paused stays paused once the new plan plays
     m.watchBackTarget = invalid
     m.waitingForToken = false
+    m.tokenAction = ""
+    m.mountToken = ""
     m.renewals = 0        ' new sessions started for this playback after the server lost one
     m.renew = invalid     ' the renewal being started: { at, audioId, subtitleTrackId, paused }
     SeekReanchor_reset()
@@ -560,29 +562,60 @@ sub adoptFileMarkers(fileId as string)
     reconcileMarkers()
 end sub
 
-' Refresh the token first when it is about to expire: the Video node can't refresh headers mid-stream.
+' Refresh the token first when it would run out during the title: the Video node can't change its
+' headers mid-stream (a media 401/403 later is handled by Recovery_authRefresh).
 sub ensureFreshToken()
     s = m.global.session
-    if not Str_isEmpty(s.refreshToken) and s.expiresAt > 0 and s.expiresAt - Time_nowSeconds() < 300 then
-        auth = m.global.authTask
-        if auth <> invalid then
-            m.waitingForToken = true
-            auth.observeField("generation", "onTokenRefreshed")
-            m.refreshTimeout.control = "start"
-            auth.refreshRequest = { token: s.accessToken }
-            return
-        end if
+    expiresAt = Num_or(s.expiresAt, 0)
+    if not Str_isEmpty(s.refreshToken) and expiresAt > 0 and expiresAt - Time_nowSeconds() < playbackTokenMargin() then
+        if startTokenRefresh("start") then return
     end if
     fetchCapabilities()
 end sub
+
+' Seconds the access token must still last at the start: the rest of the title plus 10 minutes
+' (pauses, buffering), or 5 minutes when the length is unknown.
+function playbackTokenMargin() as integer
+    if m.duration <= 0 then return 300
+    startAt = 0.0
+    p = m.top.params
+    if p <> invalid and p.startPosition <> invalid then
+        startAt = Num_or(p.startPosition, 0)
+    else if m.watch <> invalid and Type(m.watch.user_data) = "roAssociativeArray" then
+        startAt = Content_num(m.watch.user_data.position_seconds)
+    end if
+    remaining = m.duration - startAt
+    if remaining < 0 then remaining = 0
+    return Int(remaining) + 600
+end function
+
+' Asks the shared AuthTask for a new access token; onTokenRefreshed goes on with `action`
+' ("start": the playback start, "media": the reconnect after the media refused the token).
+' The observer is scoped to this screen, so another screen's observer on the task is kept.
+function startTokenRefresh(action as string) as boolean
+    s = m.global.session
+    auth = m.global.authTask
+    if auth = invalid or Str_isEmpty(s.refreshToken) then return false
+    m.tokenAction = action
+    m.waitingForToken = true
+    auth.observeFieldScoped("generation", "onTokenRefreshed")
+    m.refreshTimeout.control = "stop"
+    m.refreshTimeout.control = "start"
+    auth.refreshRequest = { token: s.accessToken }
+    return true
+end function
 
 sub onTokenRefreshed()
     if m.waitingForToken <> true then return
     m.waitingForToken = false
     m.refreshTimeout.control = "stop"
     auth = m.global.authTask
-    if auth <> invalid then auth.unobserveField("generation")
+    if auth <> invalid then auth.unobserveFieldScoped("generation")
     if m.closing then return
+    if m.tokenAction = "media" then
+        Recovery_authReconnect()
+        return
+    end if
     fetchCapabilities()
 end sub
 
@@ -922,8 +955,10 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
     ' origin) is signed and authorises itself, and a Video node sends HttpHeaders to every origin
     ' a playlist or redirect names (silo-roku hardware evidence H1, decision D-1).
     headers = []
+    m.mountToken = ""   ' the account token baked into this mount's headers ("" = none sent)
     if Url_sameOrigin(url, Str_orEmpty(s.serverOrigin)) then
         headers.Push("Authorization: Bearer " + s.accessToken)
+        m.mountToken = Str_orEmpty(s.accessToken)
     else
         Diag_log("[siku-playback] stream on another origin (" + Url_host(url) + "): no account headers")
     end if
