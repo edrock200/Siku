@@ -176,7 +176,8 @@ demuxed CMAF.
 6. Playback changes: on the device, play one direct-play title and one that needs a server route,
    and read the two `[siku-playback]` lines (declared caps | request | decision). Open the debug
    screens with `curl -d '' "http://<roku-ip>:8060/launch/dev?debugScreen=StreamTestScreen"`
-   (ECP needs POST; `&debugUrl=<url-encoded>` adds a stream) to test a packaging claim against
+   (ECP needs POST; `&debugUrl=<url-encoded>` adds a stream in a `npm run package:dev` build; release
+   builds ignore every debug link but a bare `debugScreen=StreamTestScreen`) to test a packaging claim against
    Apple's reference streams and the last Silo stream; results print as `[siku-streamtest]`.
 
 ## When a Roku prints an error

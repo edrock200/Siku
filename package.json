@@ -7,6 +7,7 @@
   "scripts": {
     "lint": "bsc --project bsconfig.json",
     "package": "sh scripts/package.sh",
+    "package:dev": "SIKU_DEBUG=1 sh scripts/package.sh",
     "deploy": "sh scripts/deploy.sh",
     "mock": "python3 tools/mock_server.py --port 8097",
     "simulate": "python3 tools/simulate.py --brs-cli node_modules/.bin/brs-cli"

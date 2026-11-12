@@ -68,6 +68,10 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   `&debugUrl=`, logs `[siku-streamtest]` state and track counts), `FontTestScreen` (label and
   9-patch rendering). Simulator deep links: `debugSession=mock`, `debugScreen`, `debugItem`,
   `debugFile` (mock 4K files 52 and 56; 56 always remuxes), `debugUrl`.
+- The debug deep links work only in a development build (`bs_const=DEBUG=true`):
+  `npm run package:dev`, `SIKU_DEBUG=1 npm run deploy`, and every `tools/simulate.py` run.
+  Release zips (`npm run package`) ignore them, except `debugScreen=StreamTestScreen` without
+  `debugUrl`, which the README offers users as a field diagnostic.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

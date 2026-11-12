@@ -44,7 +44,14 @@ def main():
     log = open(os.path.join(OUT, "console.log"), "wb")
     zip_path = os.path.join(OUT, "siku.zip")
 
-    subprocess.run(["sh", "-c", "cd '%s' && zip -qrD '%s' manifest source components images fonts -x '*.DS_Store'" % (ROOT, zip_path)], check=True)
+    # The simulator always runs a development build (bs_const=DEBUG=true) so the debug deep
+    # links (debugSession, debugScreen, ...) work; release packages ignore them.
+    subprocess.run(["sh", "-c", "cd '%s' && rm -f '%s' && zip -qrD '%s' source components images fonts -x '*.DS_Store'" % (ROOT, zip_path, zip_path)], check=True)
+    dev_dir = os.path.join(OUT, "manifest-dev")
+    os.makedirs(dev_dir, exist_ok=True)
+    with open(os.path.join(ROOT, "manifest")) as src, open(os.path.join(dev_dir, "manifest"), "w") as dst:
+        dst.write(src.read().replace("bs_const=DEBUG=false", "bs_const=DEBUG=true"))
+    subprocess.run(["zip", "-qj", zip_path, os.path.join(dev_dir, "manifest")], check=True)
     args.app = zip_path
     pid, fd = pty.fork()
     if pid == 0:
