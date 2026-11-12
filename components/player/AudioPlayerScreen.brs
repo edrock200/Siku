@@ -498,7 +498,7 @@ sub ensureFreshToken()
         auth = m.global.authTask
         if auth <> invalid then
             m.waitingForToken = true
-            auth.observeField("generation", "onTokenRefreshed")
+            auth.observeFieldScoped("generation", "onTokenRefreshed")
             m.refreshTimeout.control = "start"
             auth.refreshRequest = { token: s.accessToken }
             return
@@ -512,7 +512,7 @@ sub onTokenRefreshed()
     m.waitingForToken = false
     m.refreshTimeout.control = "stop"
     auth = m.global.authTask
-    if auth <> invalid then auth.unobserveField("generation")
+    if auth <> invalid then auth.unobserveFieldScoped("generation")
     if m.closing then return
     fetchCapabilities()
 end sub
