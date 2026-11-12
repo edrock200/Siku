@@ -74,6 +74,8 @@ sub init()
     m.loadedAt = 0
     m.artReloadAt = 0
     m.refresh = invalid
+    m.loadedRev = -1        ' DataRev_current() when page 1 was last read (DataRevision.brs)
+    m.listEditTimer = invalid
     m.win = invalid         ' GridWindow.brs: the pages held in the grid (Browse-style grids only)
     m.nextCursor = ""
     m.hasMore = false
@@ -347,6 +349,10 @@ end sub
 sub onPageShown()
     if not m.loaded and not m.loading then
         reload()
+    else if m.loaded and not m.loading and isPersonalList() and DataRev_current() <> m.loadedRev then
+        ' Favorites / Watchlist / History changed elsewhere (a detail page, playback, a card menu):
+        ' read the list again, back to the card that had focus.
+        refreshInPlace("changed")
     else if m.loaded and not m.loading and Fresh_isStale(m.loadedAt, Time_nowSeconds()) then
         ' Signed artwork in an old answer may have expired (Freshness.brs): read again, back to the
         ' card that had focus.
@@ -421,6 +427,7 @@ sub reload()
     m.loaded = false
     m.loading = true
     m.spinner.visible = true
+    m.loadedRev = DataRev_current()
     m.libraryHasItems = invalid
     m.requestSeq = m.requestSeq + 1
     if m.mode = "collections" and m.drill = invalid then
@@ -1656,7 +1663,33 @@ sub onMenuChosen()
     patch = CardActions_perform(m.menu.chosen, target.card, "", target)
     if patch = invalid then return
     applyCardPatch(target.index, patch)
+    ' Taken off the list this page shows: read the list again once the write has had a moment
+    ' to land (the write is not answered), back to the card that had focus.
+    ' (A patch carries only the keys it changes; comparing a missing one with false throws on a Roku.)
+    gone = false
+    if m.mode = "favorites" and patch.favorite <> invalid then gone = not patch.favorite
+    if m.mode = "watchlist" and patch.inWatchlist <> invalid then gone = not patch.inWatchlist
+    if gone and m.drill = invalid then
+        if m.listEditTimer = invalid then
+            m.listEditTimer = m.top.createChild("Timer")
+            m.listEditTimer.repeat = false
+            m.listEditTimer.duration = 1
+            m.listEditTimer.observeField("fire", "onListEdited")
+        end if
+        m.listEditTimer.control = "stop"
+        m.listEditTimer.control = "start"
+    end if
 end sub
+
+sub onListEdited()
+    if m.loading or not m.top.visible then return
+    refreshInPlace("removed")
+end sub
+
+' Watchlist, Favorites and History: lists of the user's own data that change on other screens.
+function isPersonalList() as boolean
+    return m.drill = invalid and (m.mode = "favorites" or m.mode = "watchlist" or m.mode = "history")
+end function
 
 ' A refused Mark as Watched / Unwatched (HomeCardActions.brs): put the card back, unless the grid
 ' has reloaded and another card sits at that index.
