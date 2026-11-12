@@ -1,7 +1,8 @@
 ' Low-level HTTP used by ApiTask and AuthTask (Task threads only).
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
-' Performs a request and returns {status, text, data, error, headers}.
+' Performs a request and returns {status, text, data, error, headers}. status is 0 when no HTTP
+' answer arrived (timeout or transport failure; the latter also sets transportCode, the curl code).
 function Http_send(method as string, url as string, headers as object, body as dynamic, timeoutSec as integer) as object
     xfer = CreateObject("roUrlTransfer")
     port = CreateObject("roMessagePort")
@@ -52,13 +53,26 @@ function Http_send(method as string, url as string, headers as object, body as d
     end if
 
     status = msg.GetResponseCode()
+    failure = msg.GetFailureReason()
+    ' A transport failure (DNS, connection refused, reset, TLS) arrives as a negative curl code.
+    ' Callers test `status = 0` for "no answer from the server", so normalise it to 0 and keep the
+    ' curl code in transportCode and error.detail for the console.
+    transportCode = invalid
+    if status < 0 then
+        transportCode = status
+        status = 0
+        reason = Str_orEmpty(failure)
+        if reason <> "" then reason = reason + " "
+        failure = reason + "(curl " + transportCode.ToStr() + ")"
+    end if
     text = msg.GetString()
     if text = invalid then text = ""
     data = invalid
-    if Len(text) > 0 then data = ParseJson(text)
+    if status > 0 and Len(text) > 0 then data = ParseJson(text)
     result = { status: status, text: text, data: data, error: invalid, headers: msg.GetResponseHeaders() }
+    if transportCode <> invalid then result.transportCode = transportCode
     if status < 200 or status >= 300 then
-        result.error = Http_problem(status, data, msg.GetFailureReason())
+        result.error = Http_problem(status, data, failure)
     end if
     return result
 end function
