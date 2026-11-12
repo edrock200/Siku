@@ -21,6 +21,15 @@ sub init()
     m.style = "poster"
     m.insetX = 0
     m.insetY = 0
+    ' Caption setting, read once per item instance: reading m.global.settings deep-copies the
+    ' whole snapshot, too much to repeat on every bind while a list scrolls.
+    m.caption = invalid
+    m.global.observeField("settings", "onSettingsChanged")
+end sub
+
+sub onSettingsChanged()
+    m.caption = invalid
+    if m.top.itemContent <> invalid then onContent()
 end sub
 
 ' Image box size for the current item width (minus the cell inset). Captions go below it.
@@ -61,8 +70,14 @@ sub onContent()
     layout()
 end sub
 
-' The server-synced ui.card_presentation caption (read inline: this item has no Theme/Settings include).
+' The server-synced ui.card_presentation caption (read inline: this item has no Theme/Settings
+' include), cached until m.global.settings changes.
 function cardCaption() as string
+    if m.caption = invalid then m.caption = readCardCaption()
+    return m.caption
+end function
+
+function readCardCaption() as string
     st = m.global.settings
     if st = invalid or Type(st) <> "roAssociativeArray" or st.available <> true or st.items = invalid then return "title_metadata"
     it = st.items["ui.card_presentation"]
