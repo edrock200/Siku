@@ -987,9 +987,13 @@ end sub
 
 ' playback.subtitle_appearance at profile_device (the full object; textOpacity only when the
 ' server's manifest knows it).
+' The body is built from quoted camelCase names: on a Roku, unquoted AA-literal keys and keys
+' read back from such an AA are lower-cased ("fontsize"), and the contract's schema
+' (additionalProperties: false) refuses those. AA lookups are case-insensitive, so a[k] still
+' finds the value whatever case it was stored under.
 sub writeAppearance(a as object)
     body = {}
-    for each k in Settings_defaultAppearance()
+    for each k in ["fontSize", "fontFamily", "fontColor", "textOpacity", "backgroundColor", "backgroundStyle", "backgroundOpacity", "textOutline", "textOutlineColor", "position"]
         if a[k] <> invalid then body[k] = a[k]
     end for
     if not textOpacitySupported() then body.Delete("textOpacity")
