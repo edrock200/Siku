@@ -5,8 +5,9 @@ import unittest
 
 from brs import call, check_cases
 
-AUTH = ["components/tasks/AuthTask.brs", "components/common/Utils.brs"]
+AUTH = ["components/tasks/AuthTask.brs", "components/tasks/Http.brs", "components/common/Utils.brs"]
 HTTP = ["components/tasks/Http.brs", "components/common/Utils.brs"]
+NOW = 1800000000
 PROBE = ["components/tasks/ProbeTask.brs", "components/tasks/Http.brs", "components/common/Utils.brs"]
 
 
@@ -38,6 +39,41 @@ class RefreshOutcome(unittest.TestCase):
         self.assertEqual(worst, 41)
         # One refresh already running ahead of this one, plus its own.
         self.assertGreater(wait, 2 * worst)
+
+
+class Revoke(unittest.TestCase):
+    """Api_revoke (ApiTask): an expired stored token is refreshed before the logout, so the
+    session and its refresh token do not stay alive on the server."""
+
+    def test_refresh_first(self):
+        f = "ApiTask_revokeRefreshFirst"
+        files = ["components/tasks/ApiTask.brs", "components/tasks/Http.brs", "components/common/Accounts.brs",
+                 "components/common/Session.brs", "components/common/Utils.brs"]
+        check_cases(self, files, [
+            ("expired an hour ago", f, ["acc", "ref", NOW - 3600, NOW], True),
+            ("expires within a minute", f, ["acc", "ref", NOW + 30, NOW], True),
+            ("still valid", f, ["acc", "ref", NOW + 600, NOW], False),
+            ("unknown expiry: try the logout, refresh on its 401", f, ["acc", "ref", 0, NOW], False),
+            ("no access token", f, ["", "ref", 0, NOW], True),
+            ("nothing to refresh with", f, ["acc", "", NOW - 3600, NOW], False),
+        ])
+
+
+class RotatedHome(unittest.TestCase):
+    """A refresh that finished after the published session changed (AuthTask.saveTokens)."""
+
+    def test_home(self):
+        f = "AuthTask_rotatedHome"
+        files = AUTH + ["components/common/Accounts.brs", "components/common/Session.brs"]
+        own = {"serverUrl": "http://own", "refreshToken": "ref-own"}
+        borrowed = {"serverUrl": "http://phone", "refreshToken": "ref-phone", "temporary": True}
+        check_cases(self, files, [
+            ("the TV's own sign-in under a phone's profile", f, [borrowed, own, "ref-own"], "own"),
+            ("not borrowed: a stashed account", f, [{"serverUrl": "http://own", "refreshToken": "ref-2"}, own, "ref-own"], "accounts"),
+            ("another token", f, [borrowed, own, "ref-x"], "accounts"),
+            ("no stored session", f, [borrowed, None, "ref-own"], "accounts"),
+            ("empty used token", f, [borrowed, {"refreshToken": ""}, ""], "accounts"),
+        ])
 
 
 class ProbeHeaders(unittest.TestCase):

@@ -39,10 +39,17 @@ sub init()
     ' profile that owns the cached Home changes; onHomeCachePurge deletes the files in a Task.
     m.global.addFields({ homeCachePurge: 0, homeCachePurgeReason: "" })
     m.global.observeField("homeCachePurge", "onHomeCachePurge")
+    ' Sign-ins to end on their servers (Session_queueRevoke: a replaced session, accounts of a
+    ' server that was removed or pushed out of the list); onRevokeQueue sends each with Api_revoke,
+    ' here so the request outlives the screen (or Task) that asked.
+    m.global.addFields({ revokeQueue: [], revokeSeq: 0 })
+    m.global.observeField("revokeSeq", "onRevokeQueue")
     m.launch = { done: false, dialog: false }
     ' Diagnostics log and last-exit notice (DiagScene.brs).
     Diag_init()
     if migration <> "" then Diag_log(migration)
+    ' Accounts left on servers an older Siku dropped from the list (6 at most) without them.
+    Session_dropOrphanAccounts()
 
     ' Single-flight token refresher used by every ApiTask.
     authTask = CreateObject("roSGNode", "AuthTask")
@@ -109,6 +116,16 @@ sub onDebugRelaunch()
     routeToStart()
 end sub
 
+sub onRevokeQueue()
+    q = Arr_or(m.global.revokeQueue)
+    if q.Count() = 0 then return
+    m.global.revokeQueue = []
+    for i = 0 to q.Count() - 1
+        e = q[i]
+        if Type(e) = "roAssociativeArray" then Api_revoke(Str_orEmpty(e.url), e)
+    end for
+end sub
+
 sub onHomeCachePurge()
     ' Keep the active owner's file (a new profile's Home may already have written it); a sign-out
     ' has no owner, so everything goes. The reference keeps the Task alive while it runs.
@@ -127,7 +144,7 @@ sub routeToStart(params = {} as object)
     s = m.global.session
     if Str_isEmpty(s.serverUrl) then
         resetTo("ServerConnectScreen", params)
-    else if Str_isEmpty(s.accessToken) and Accounts_anotherSignedIn(Accounts_list(), s) then
+    else if Str_isEmpty(s.accessToken) and Accounts_anotherSignedIn(Accounts_onSavedServers(Accounts_list(), Session_savedServers(), Str_orEmpty(s.serverUrl)), s) then
         ' No account open (signed out, or the server refused it) while another account has a
         ' session: Change Account is the start screen (Android TV, silo-roku).
         params = AA_copy(params)
@@ -142,7 +159,8 @@ sub routeToStart(params = {} as object)
         ' picker. A held content link waits there until a profile opens (resetTo ShellScreen).
         if m.launchAsks = true then
             m.launchAsks = false
-            count = Accounts_list().Count()
+            ' Only accounts Change Account can show: those on saved servers.
+            count = Accounts_onSavedServers(Accounts_list(), Session_savedServers(), Str_orEmpty(s.serverUrl)).Count()
             waiting = m.pendingDeepLink <> invalid
             start = ProfileLaunch_startScreen(true, count, waiting)
             shown = "picker"

@@ -180,6 +180,48 @@ class Groups(unittest.TestCase):
             ("same user signing in again replaces its stored session", "Accounts_replacedToken", [lst, session(account="a2", uid="u2"), session(uid="u3", token="new")], "t3"),
             ("the open account's own session", "Accounts_replacedToken", [[], session(account="a1", token="old"), session(token="new")], "old"),
             ("another user replaces nothing", "Accounts_replacedToken", [lst, session(account="a1", token="old"), session(uid="u9", token="new")], ""),
+            ("the replaced stored sign-in carries its refresh token (Api_revoke refreshes an expired one)", "Accounts_replacedSignIn",
+             [lst, session(account="a2", uid="u2"), session(uid="u3", token="new")],
+             lambda v: lower(v) == {"accesstoken": "t3", "refreshtoken": "ref-t3", "expiresat": NOW}),
+            ("the open account's own sign-in", "Accounts_replacedSignIn", [[], session(account="a1", token="old"), session(token="new")],
+             lambda v: lower(v)["refreshtoken"] == "ref-old" and lower(v)["expiresat"] == NOW + 3600),
+            ("a phone's borrowed session is never replaced", "Accounts_replacedSignIn",
+             [[], dict(session(account="a1", token="old"), temporary=True), session(token="new")], None),
+            ("nothing replaced", "Accounts_replacedSignIn", [lst, session(account="a1", token="old"), session(uid="u9", token="new")], None),
+        ])
+
+    def test_saved_servers_only(self):
+        """Servers dropped past the 6-server limit by older builds left accounts nobody can see:
+        the launch rule counts only accounts on saved servers, and they are forgotten."""
+        lst = [entry("a1", token="t1"), entry("a2", url=B, uid="u2", token="t2"), entry("a3", url="https://gone.example", uid="u3", token="t3")]
+        servers = [{"url": A, "name": "", "id": ""}, {"url": B, "name": "", "id": ""}]
+        check_cases(self, FILES, [
+            ("an account on a dropped server is not counted", "Accounts_onSavedServers", [lst, servers, A],
+             lambda v: [e["id"] for e in v] == ["a1", "a2"]),
+            ("the open session's server counts as saved", "Accounts_onSavedServers", [lst, [], "https://gone.example"],
+             lambda v: [e["id"] for e in v] == ["a3"]),
+            ("unsaved servers, once each", "Accounts_unsavedServers", [lst + [entry("a4", url="https://gone.example", uid="u4")], servers, ""],
+             ["https://gone.example"]),
+            ("all saved", "Accounts_unsavedServers", [lst[:2], servers, ""], []),
+            ("without the accounts of the given servers", "Accounts_onServersOtherThan", [lst, [B, "https://gone.example"]],
+             lambda v: [e["id"] for e in v] == ["a1"]),
+        ])
+
+    def test_rotated_tokens(self):
+        """A refresh that finished after the session moved on: the account holding the used
+        refresh token keeps the rotated pair (AuthTask.saveTokens)."""
+        lst = [entry("a1", token="t1"), entry("a2", uid="u2", token="t2")]
+        f = "Accounts_withRotatedTokens"
+        check_cases(self, FILES, [
+            ("the stashed account gets the new pair", f, [lst, "ref-t2", "acc-new", "ref-new", NOW + 7200],
+             lambda v: v["found"] and lower(v["list"][1]["session"])["accesstoken"] == "acc-new"
+             and lower(v["list"][1]["session"])["refreshtoken"] == "ref-new" and lower(v["list"][1]["session"])["expiresat"] == NOW + 7200
+             and lower(v["list"][0]["session"])["accesstoken"] == "t1"),
+            ("a refresh answer without a new refresh token keeps the old one", f, [lst, "ref-t2", "acc-new", "", NOW],
+             lambda v: lower(v["list"][1]["session"])["refreshtoken"] == "ref-t2"),
+            ("a signed-out account is not brought back", f, [lst, "ref-gone", "acc-new", "ref-new", NOW],
+             lambda v: not v["found"] and len(v["list"]) == 2),
+            ("an empty used token matches nothing", f, [[entry("a9")], "", "acc", "ref", NOW], lambda v: not v["found"]),
         ])
 
 

@@ -126,11 +126,9 @@ sub SignOut_run(remove as boolean)
     print "[siku-servers] sign out remove=" + Session_boolWord(remove) + " borrowed=" + Session_boolWord(borrowed)
     ' Revoke the login on the server first and wait for the answer (at most 5 s): a request left
     ' running when this screen goes away never reached the server in the simulator.
+    ' Api_revoke refreshes an expired token first, so an hour idle still ends the session there.
     token = Str_orEmpty(s.accessToken)
-    if token <> "" and not Str_isEmpty(s.serverUrl) then
-        Api_call({ method: "POST", path: "/api/v2/auth/logout", baseUrl: Str_orEmpty(s.serverUrl), auth: false, profile: false, headers: { Authorization: "Bearer " + token }, timeout: 5, context: { token: token } }, "SignOut_onLoggedOut")
-        return
-    end if
+    if token <> "" and Api_revoke(Str_orEmpty(s.serverUrl), s, "SignOut_onLoggedOut", { token: token }) <> invalid then return
     SignOut_afterLogout(token)
 end sub
 
@@ -209,14 +207,13 @@ function SignOut_entryState(e as object) as string
 end function
 
 ' Ends the stored sessions of the saved accounts on `url` (except `exceptId`) on the server, best
-' effort, before the server is forgotten.
+' effort, before the server is forgotten (MainScene sends them: they outlive this screen; an
+' expired stored token is refreshed first, Api_revoke).
 sub SignOut_revokeServerAccounts(url as string, exceptId as string)
     list = Accounts_onServer(Accounts_list(), url)
     for i = 0 to list.Count() - 1
         e = list[i]
-        if Str_orEmpty(e.id) <> exceptId and Accounts_hasSignIn(e) and not Str_isEmpty(e.session.accessToken) then
-            Api_call({ method: "POST", path: "/api/v2/auth/logout", baseUrl: url, auth: false, profile: false, headers: { Authorization: "Bearer " + Str_orEmpty(e.session.accessToken) }, timeout: 5 }, "Api_onFired")
-        end if
+        if Str_orEmpty(e.id) <> exceptId and Accounts_hasSignIn(e) then Session_queueRevoke(url, e.session)
     end for
 end sub
 

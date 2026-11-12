@@ -241,6 +241,49 @@ function Accounts_withoutServer(list as dynamic, url as string) as object
     return out
 end function
 
+' The list without the accounts on any of `urls` (pure).
+function Accounts_onServersOtherThan(list as dynamic, urls as object) as object
+    out = []
+    items = Accounts_clean(list)
+    for i = 0 to items.Count() - 1
+        u = Str_orEmpty(items[i].url)
+        gone = false
+        for j = 0 to urls.Count() - 1
+            if urls[j] = u then gone = true
+        end for
+        if not gone then out.Push(items[i])
+    end for
+    return out
+end function
+
+' The accounts on saved servers only (the launch rule counts these; pure). activeUrl counts as
+' saved: the open session's server is always first in the list.
+function Accounts_onSavedServers(list as dynamic, servers as dynamic, activeUrl = "" as string) as object
+    urls = Accounts_unsavedServers(list, servers, activeUrl)
+    return Accounts_onServersOtherThan(list, urls)
+end function
+
+' Server addresses that accounts name but the saved-servers list does not (pure).
+function Accounts_unsavedServers(list as dynamic, servers as dynamic, activeUrl as string) as object
+    saved = {}
+    items = Arr_or(servers)
+    for i = 0 to items.Count() - 1
+        e = items[i]
+        if e <> invalid and Type(e) = "roAssociativeArray" and not Str_isEmpty(e.url) then saved[Str_orEmpty(e.url)] = true
+    end for
+    if activeUrl <> "" then saved[activeUrl] = true
+    out = []
+    accts = Accounts_clean(list)
+    for i = 0 to accts.Count() - 1
+        u = Str_orEmpty(accts[i].url)
+        if not saved.DoesExist(u) then
+            saved[u] = true
+            out.Push(u)
+        end if
+    end for
+    return out
+end function
+
 ' A server's accounts in the order they were added (Android's buildAccountGroups).
 function Accounts_onServer(list as object, url as string) as object
     out = []
@@ -565,17 +608,55 @@ end function
 ' in again), so the caller can end that session on the server (best effort, as Android ends the
 ' session it replaces). "" when nothing is replaced. Pure given the list and the active session.
 function Accounts_replacedToken(list as object, active as dynamic, s as object) as string
+    r = Accounts_replacedSignIn(list, active, s)
+    if r = invalid then return ""
+    return r.accessToken
+end function
+
+' The stored sign-in {accessToken, refreshToken, expiresAt} behind Accounts_replacedToken (its
+' refresh token lets Api_revoke end it even when its access token has expired), or invalid.
+function Accounts_replacedSignIn(list as object, active as dynamic, s as object) as dynamic
     uid = Accounts_userId(s)
     url = Str_orEmpty(s.serverUrl)
-    if uid = "" or url = "" then return ""
+    if uid = "" or url = "" then return invalid
     if active <> invalid and Type(active) = "roAssociativeArray" and not Accounts_isTemporary(active) then
-        if Str_orEmpty(active.serverUrl) = url and Accounts_userId(active) = uid and Str_orEmpty(active.accessToken) <> Str_orEmpty(s.accessToken) then return Str_orEmpty(active.accessToken)
+        if Str_orEmpty(active.serverUrl) = url and Accounts_userId(active) = uid and Str_orEmpty(active.accessToken) <> Str_orEmpty(s.accessToken) and Str_orEmpty(active.accessToken) <> "" then
+            return { "accessToken": Str_orEmpty(active.accessToken), "refreshToken": Str_orEmpty(active.refreshToken), "expiresAt": Accounts_int(active.expiresAt) }
+        end if
     end if
     for i = 0 to list.Count() - 1
         e = list[i]
         if Str_orEmpty(e.url) = url and Str_orEmpty(e.userid) = uid and Accounts_hasSignIn(e) then
-            if Str_orEmpty(e.session.accessToken) <> Str_orEmpty(s.accessToken) then return Str_orEmpty(e.session.accessToken)
+            st = e.session
+            if Str_orEmpty(st.accessToken) <> Str_orEmpty(s.accessToken) and Str_orEmpty(st.accessToken) <> "" then
+                return { "accessToken": Str_orEmpty(st.accessToken), "refreshToken": Str_orEmpty(st.refreshToken), "expiresAt": Accounts_int(st.expiresAt) }
+            end if
         end if
     end for
-    return ""
+    return invalid
+end function
+
+' The list after a token refresh whose session changed meanwhile (AuthTask): the saved account
+' whose stored sign-in still holds the used refresh token gets the rotated pair (pure;
+' tests/test_accounts.py). {list, found}: found false when no entry holds that token (signed out).
+function Accounts_withRotatedTokens(list as dynamic, usedRefresh as string, access as string, newRefresh as string, expiresAt as integer) as object
+    out = []
+    found = false
+    items = Accounts_clean(list)
+    for i = 0 to items.Count() - 1
+        e = items[i]
+        if not found and usedRefresh <> "" and Accounts_hasSignIn(e) and Str_orEmpty(e.session.refreshToken) = usedRefresh then
+            c = AA_copy(e)
+            st = AA_copy(e.session)
+            st.accessToken = access
+            if newRefresh <> "" then st.refreshToken = newRefresh
+            st.expiresAt = expiresAt
+            c.session = st
+            out.Push(c)
+            found = true
+        else
+            out.Push(e)
+        end if
+    end for
+    return { "list": out, "found": found }
 end function

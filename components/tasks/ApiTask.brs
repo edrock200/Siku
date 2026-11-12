@@ -7,6 +7,14 @@ end sub
 sub execute()
     req = m.top.request
     if req = invalid then req = {}
+    if Type(req.revoke) = "roAssociativeArray" then
+        ' Api_revoke: its own refresh rules, never the active session's.
+        resp = ApiTask_revoke(req)
+        resp.ok = resp.status >= 200 and resp.status < 300
+        resp.context = req.context
+        m.top.response = resp
+        return
+    end if
     resp = perform(req)
     ' A 401 means the access token was rejected: refresh once (single-flight via AuthTask) and retry.
     ' With no token at all (signed out meanwhile, e.g. the logout call itself) there is nothing to refresh.
@@ -176,4 +184,83 @@ function isAnonymous(req as object) as boolean
     t = Type(v)
     if t = "Boolean" or t = "roBoolean" then return v
     return false
+end function
+
+' ---------- Ending a sign-in on its server (Api_revoke) ----------
+
+' POST /auth/logout with the sign-in's access token. A token that has expired (or is about to) is
+' refreshed first with its refresh token, and so is one the logout refuses with 401: the stored
+' access token of a stashed account, or of the open one after an hour idle, has usually expired,
+' and a refused logout would leave that session and its refresh token alive on the server. The
+' refreshed tokens serve this logout only and are never stored. A refresh the server rejects
+' (400/401) means the session has already ended there. Logs the outcome, never a token.
+function ApiTask_revoke(req as object) as object
+    refusal = ApiTask_refusal(req)
+    if refusal <> "" then
+        print "[ApiTask] refused request: "; refusal
+        return { status: 0, text: "", data: invalid, error: { code: "not_v2", title: Tx("Unsupported API path") } }
+    end if
+    rv = req.revoke
+    base = Str_orEmpty(req.baseUrl)
+    access = Str_orEmpty(rv.access)
+    refreshTok = Str_orEmpty(rv["refresh"])
+    timeout = 5
+    if req.timeout <> invalid then timeout = Int(Num_or(req.timeout, 5))
+    headers = Http_deviceHeaders(m.global.session)
+    refreshed = "no"
+    resp = invalid
+    if ApiTask_revokeRefreshFirst(access, refreshTok, Accounts_int(rv.expiresAt), Time_nowSeconds()) then
+        r = ApiTask_revokeRefresh(base, headers, refreshTok, timeout)
+        refreshed = r.outcome
+        if r.outcome = "rejected" then return ApiTask_revokeDone("ended", refreshed, r.resp)
+        if r.outcome = "ok" then access = r.access
+    end if
+    if access <> "" then
+        resp = ApiTask_logout(base, headers, access, timeout)
+        if resp.status = 401 and refreshed = "no" and refreshTok <> "" then
+            r = ApiTask_revokeRefresh(base, headers, refreshTok, timeout)
+            refreshed = r.outcome
+            if r.outcome = "rejected" then return ApiTask_revokeDone("ended", refreshed, r.resp)
+            if r.outcome = "ok" then resp = ApiTask_logout(base, headers, r.access, timeout)
+        end if
+    end if
+    if resp = invalid then resp = { status: 0, text: "", data: invalid, error: { code: "network", title: Tx("Can't reach the server") } }
+    outcome = "failed"
+    if resp.status >= 200 and resp.status < 300 then outcome = "revoked"
+    return ApiTask_revokeDone(outcome, refreshed, resp)
+end function
+
+' Whether Api_revoke refreshes before its logout (pure; tests/test_auth_refresh.py): no access token,
+' or one that expires within a minute, with a refresh token to use.
+function ApiTask_revokeRefreshFirst(access as string, refreshTok as string, expiresAt as integer, now as integer) as boolean
+    if refreshTok = "" then return false
+    if access = "" then return true
+    return expiresAt > 0 and now > expiresAt - 60
+end function
+
+function ApiTask_revokeRefresh(base as string, headers as object, refreshTok as string, timeout as integer) as object
+    r = Http_send("POST", base + "/api/v2/auth/refresh", headers, { refresh_token: refreshTok }, timeout)
+    outcome = AuthTask_outcome(r.status, r.data)
+    access = ""
+    if outcome = "ok" then access = Str_orEmpty(r.data.access_token)
+    return { outcome: outcome, access: access, resp: r }
+end function
+
+function ApiTask_logout(base as string, headers as object, access as string, timeout as integer) as object
+    h = AA_copy(headers)
+    h["Authorization"] = "Bearer " + access
+    return Http_send("POST", base + "/api/v2/auth/logout", h, invalid, timeout)
+end function
+
+' The answer for Api_revoke's caller: the logout's (or, when the session had already ended, the
+' refresh's with ok true), plus revokeOutcome "revoked" | "ended" | "failed".
+function ApiTask_revokeDone(outcome as string, refreshed as string, resp as object) as object
+    Diag_log("[siku-auth] logout outcome=" + outcome + " refreshed=" + refreshed + " status=" + Str_orEmpty(resp.status))
+    out = AA_copy(resp)
+    if outcome = "ended" then
+        out.status = 204
+        out.error = invalid
+    end if
+    out.revokeOutcome = outcome
+    return out
 end function

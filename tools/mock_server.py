@@ -84,6 +84,10 @@ clears one); GET /mock/switch lists them.
                                  profile_verification_required until GET /api/v2/profiles runs
   reject_access=1                every authenticated request answers 401 invalid_token (an expired
                                  access token) until a refresh succeeds
+  stale_logout=1                 POST /auth/logout answers 401 for every access token not issued by a
+                                 /auth/refresh since the switch was set (a stored token that has expired);
+                                 Siku's Api_revoke refreshes and logs out again. The log prints
+                                 LOGOUT stale 401 before the LOGOUT session= line of the retry
   password_change_required=1     the account holds a temporary password (Silo Android #790): every
                                  authenticated request answers 403 password_change_required except GET
                                  /api/v2/account/me (which says "password_change_required": true), GET
@@ -2749,11 +2753,15 @@ class Handler(BaseHTTPRequestHandler):
             old = TOKEN_USERS.get(b.get("refresh_token") or "")
             t = tokens(old["username"], distinct=True) if old else tokens()
             t.pop("user", None)
+            STATE.setdefault("refreshed_access", set()).add(t["access_token"])
             return self.send(200, t)
         if p == "/api/v2/auth/logout":
             # Which session was revoked (never the token itself): a SiloCast handoff's, the
             # debugSession's, or another sign-in's.
             bearer = (self.headers.get("Authorization") or "")[len("Bearer "):]
+            if STATE["switches"].get("stale_logout") and bearer not in STATE.setdefault("refreshed_access", set()):
+                print("LOGOUT stale 401", flush=True)
+                return self.problem(401, "invalid_token", "Access token expired")
             kind = "handoff" if bearer in STATE.setdefault("handoff_tokens", set()) else "debug" if bearer.startswith("acc-debug") else "login" if bearer else "none"
             print("LOGOUT session=%s user=%s" % (kind, user_for_token(bearer)["username"] if bearer else "-"), flush=True)
             return self.send(204)

@@ -89,5 +89,40 @@ class Next(unittest.TestCase):
         ])
 
 
+class Dropped(unittest.TestCase):
+    """Servers pushed out of the list (the 6-server limit, the byte budget) take their accounts
+    with them (Session_storeServers -> Session_dropAccountsOf)."""
+
+    def test_dropped(self):
+        old = [{"url": u, "name": "", "id": ""} for u in [A, B, C]]
+        f = "Session_serversDropped"
+        check_cases(self, FILES, [
+            ("the last one pushed out", f, [old, old[:2]], [C]),
+            ("nothing dropped when a server moves to the front", f, [old, [old[2], old[0], old[1]]], []),
+            ("a new server added, none dropped", f, [old, [{"url": "https://d.example"}] + old], []),
+            ("malformed entries are skipped", f, [[None, {"url": ""}, 5] + old, old[:1]], [B, C]),
+            ("no list", f, [None, old], []),
+        ])
+
+    def test_six_server_limit_drops_the_oldest(self):
+        full = [{"url": "https://s%d.example" % i, "name": "", "id": ""} for i in range(6)]
+        nxt = check_cases(self, FILES, [("seventh", "Session_serversNext", [full, session(A), session("https://new.example")], lambda v: len(v) == 6)])[0]["value"]
+        check_cases(self, FILES, [("the oldest is reported dropped", "Session_serversDropped", [full, nxt], ["https://s5.example"])])
+
+
+class OwnCopy(unittest.TestCase):
+    """A copy for a new server or sign-in never keeps a phone's borrowed `temporary` flag
+    (Session_save would publish it without storing it; RemoteControl would sign the TV out)."""
+
+    def test_own_copy(self):
+        borrowed = dict(session("https://phone.example"), temporary=True)
+        own = session(A)
+        check_cases(self, FILES, [
+            ("temporary dropped", "Session_ownCopy", [], lambda v: "temporary" not in {k.lower() for k in v} and v["serverUrl"] == "https://phone.example",
+             {"global": {"session": borrowed}}),
+            ("own session copied as it is", "Session_ownCopy", [], lambda v: lower(v) == lower(own), {"global": {"session": own}}),
+        ])
+
+
 if __name__ == "__main__":
     unittest.main()

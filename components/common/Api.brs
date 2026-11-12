@@ -75,16 +75,18 @@ sub Api_onFired(event as object)
     end if
 end sub
 
-' Signs out: revokes the login session on the server (best effort, with the token we still hold)
-' and clears the local tokens and profile. Callers then route with Nav_reset("@start").
-sub Api_signOut()
-    s = m.global.session
-    token = Str_orEmpty(s.accessToken)
-    if token <> "" then
-        Api_call({ method: "POST", path: "/api/v2/auth/logout", auth: false, profile: false, headers: { Authorization: "Bearer " + token }, timeout: 8 }, "Api_onFired")
-    end if
-    Session_signOutLocal(s)
-end sub
+' Ends a sign-in on its server: POST /api/v2/auth/logout with its access token. ApiTask refreshes
+' first when that token has expired, or when the logout answers 401, and uses the refreshed tokens
+' for the logout only (never stored), then logs "[siku-auth] logout outcome=" (no tokens).
+' signIn: {accessToken, refreshToken, expiresAt} (a session or a stored sign-in). Returns the task,
+' or invalid when there is nothing to end. Background revokes go through Session_queueRevoke.
+function Api_revoke(baseUrl as string, signIn as dynamic, callback = "Api_onFired" as string, context = invalid as dynamic) as dynamic
+    if baseUrl = "" or signIn = invalid or Type(signIn) <> "roAssociativeArray" then return invalid
+    access = Str_orEmpty(signIn.accessToken)
+    refreshTok = Str_orEmpty(signIn.refreshToken)
+    if access = "" and refreshTok = "" then return invalid
+    return Api_call({ method: "POST", path: "/api/v2/auth/logout", baseUrl: baseUrl, auth: false, profile: false, timeout: 5, revoke: { access: access, refresh: refreshTok, expiresAt: Accounts_int(signIn.expiresAt) }, context: context }, callback)
+end function
 
 ' Saves a new sign-in (password, code or a phone's approval). When the same server user had a
 ' saved sign-in on this Roku, that account is refreshed rather than added again (Accounts.brs), and
@@ -92,11 +94,13 @@ end sub
 sub Api_saveSignIn(s as object)
     c = AA_copy(s)
     c.accountId = ""
-    old = Accounts_replacedToken(Accounts_list(), m.global.session, c)
+    ' A sign-in is stored, never published only as a phone's borrowed profile is.
+    c.Delete("temporary")
+    old = Accounts_replacedSignIn(Accounts_list(), m.global.session, c)
     Session_save(c)
-    if old <> "" then
+    if old <> invalid then
         Diag_log("[siku-accounts] signed in again as a saved account; ending the session it replaces")
-        Api_call({ method: "POST", path: "/api/v2/auth/logout", baseUrl: Str_orEmpty(c.serverUrl), auth: false, profile: false, headers: { Authorization: "Bearer " + old }, timeout: 5 }, "Api_onFired")
+        Session_queueRevoke(Str_orEmpty(c.serverUrl), old)
     end if
 end sub
 

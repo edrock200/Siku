@@ -185,6 +185,24 @@ end function
 
 ' ---------- Token refresh (Task threads only: roMessagePort + Wait) ----------
 
+' What a refresh answer means (pure; tests/test_auth_refresh.py; AuthTask and Api_revoke's ApiTask):
+'   "ok"       a usable token response
+'   "rejected" 400/401: the refresh token is invalid (api-spec §2.4 session_expired) -> sign in again
+'   "retry"    anything else: unreachable, 5xx, 429, 403, a 200 without a token; the session stays
+function AuthTask_outcome(status as dynamic, data as dynamic) as string
+    s = Int(Num_or(status, 0))
+    if s >= 200 and s < 300 then
+        if Type(data) = "roAssociativeArray" then
+            t = data.access_token
+            if (Type(t) = "roString" or Type(t) = "String") and not Str_isEmpty(t) then return "ok"
+        end if
+        return "retry"
+    end if
+    if s = 400 or s = 401 then return "rejected"
+    return "retry"
+end function
+
+
 ' Asks the single AuthTask to refresh the access token a request sent (`tokenUsed`), then waits
 ' for AuthTask to answer this request. Returns true when a newer usable token exists.
 function Auth_refresh(tokenUsed as string) as boolean
@@ -193,7 +211,10 @@ function Auth_refresh(tokenUsed as string) as boolean
     current = m.global.session.accessToken
     if current <> tokenUsed and not Str_isEmpty(current) then return true ' someone already refreshed
     port = CreateObject("roMessagePort")
-    auth.observeField("answered", port)
+    ' Scoped: unobserving must remove this task's observer only. A plain unobserveField removes
+    ' every observer of the field, so the other requests waiting on parallel 401s would never wake
+    ' and would sit out the whole wait.
+    auth.observeFieldScoped("answered", port)
     id = CreateObject("roDeviceInfo").GetRandomUUID()
     auth.refreshRequest = { token: tokenUsed, id: id }
     ' Only the wake-up matters; the session itself tells us the outcome. Other requests' answers
@@ -207,7 +228,7 @@ function Auth_refresh(tokenUsed as string) as boolean
         if ev = invalid then exit while
         if Type(ev) = "roSGNodeEvent" and Str_orEmpty(ev.getData()) = id then exit while
     end while
-    auth.unobserveField("answered")
+    auth.unobserveFieldScoped("answered")
     return not Str_isEmpty(m.global.session.accessToken) and m.global.session.accessToken <> tokenUsed
 end function
 

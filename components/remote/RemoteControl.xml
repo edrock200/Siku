@@ -22,6 +22,9 @@
     disconnectAll  in   the TV's own "Disconnect phones"
     endBorrowed    in   a reason; ends a borrowed phone identity now (its session expired)
     launchRequest  out  PlayerScreen params for MainScene to open
+  Functions
+    handBack(reason)    ends a borrowed phone identity now and restores the TV's own session
+                        (Change Account's open account); true when one was handed back
   Console lines: [siku-cast] (decisions; never tokens).
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
@@ -32,6 +35,7 @@
     <field id="disconnectAll" type="boolean" alwaysNotify="true" onChange="onDisconnectAll" />
     <field id="endBorrowed" type="string" alwaysNotify="true" onChange="onEndBorrowed" />
     <field id="launchRequest" type="assocarray" alwaysNotify="true" />
+    <function name="handBack" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/remote/RemoteControl.brs" />
   <script type="text/brightscript" uri="pkg:/components/remote/RemotePrefs.brs" />

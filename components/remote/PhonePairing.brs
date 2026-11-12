@@ -155,7 +155,11 @@ function Pair_accountLabel(push as dynamic) as string
 end function
 
 sub Pair_onPush(push as object)
-    if Str_isEmpty(push.serverURL) then return
+    ' A missing, empty or non-string serverURL (any device on the network can send one) is ignored.
+    if Lan_trimUrl(push.serverURL) = "" then
+        print "[siku-pair] push ignored: no usable server address"
+        return
+    end if
     m.pair.pushes = m.pair.pushes + 1
     n = m.pair.pushes.ToStr()
     signedIn = m.pair.accounts.Count()
@@ -660,7 +664,7 @@ end sub
 ' Saves the server and the approved sign-in, as the address screen and the sign-in screen would.
 sub Pair_persist(a as object, tokens as object, d as object)
     push = m.pair.push
-    s = AA_copy(m.global.session)
+    s = Session_ownCopy()
     s.serverUrl = a.base
     s.serverOrigin = Url_origin(a.base)
     s.serverId = a.identity

@@ -40,6 +40,16 @@ function Session_load() as object
     return s
 end function
 
+' A copy of the published session to build a new sign-in or server on (the address screen, the
+' sign-in screen, a phone's sign-in). It never carries `temporary`: Session_save would publish such
+' a copy of a phone's borrowed profile without storing it, and RemoteControl would read its empty
+' tokens as Sign Out on the phone's profile (signing the TV's own account out and removing it).
+function Session_ownCopy() as object
+    c = AA_copy(m.global.session)
+    c.Delete("temporary")
+    return c
+end function
+
 ' Saves a session and publishes it on m.global. A temporary session (a phone's profile borrowed
 ' for remote playback, components/remote/RemoteControl.brs) is published only: it is never written
 ' to the registry, so the Roku's own sign-in is what the next launch finds.
@@ -211,6 +221,71 @@ sub Session_storeServers(prev as dynamic, s as object)
     nxt = Session_serversNext(old, prev, s)
     if FormatJson(nxt) = FormatJson(Arr_or(old)) then return
     Registry_write("servers", nxt)
+    ' A server pushed out by the limit or the byte budget takes its accounts with it: a sign-in
+    ' nobody can see on Change Account must not stay on this Roku (or alive on the server).
+    Session_dropAccountsOf(Session_serversDropped(old, nxt), "limit")
+end sub
+
+' The addresses in `old` that `nxt` no longer has (pure; tests/test_saved_servers.py).
+function Session_serversDropped(old as dynamic, nxt as dynamic) as object
+    kept = Arr_or(nxt)
+    out = []
+    items = Arr_or(old)
+    for i = 0 to items.Count() - 1
+        e = items[i]
+        if e <> invalid and Type(e) = "roAssociativeArray" and not Str_isEmpty(e.url) then
+            url = Str_orEmpty(e.url)
+            if not Session_serversHas(kept, url) and not Session_listHas(out, url) then out.Push(url)
+        end if
+    end for
+    return out
+end function
+
+function Session_listHas(list as object, v as string) as boolean
+    for i = 0 to list.Count() - 1
+        if list[i] = v then return true
+    end for
+    return false
+end function
+
+' Forgets the accounts on `urls` (servers no longer saved): each stored sign-in is ended on its
+' server (Session_queueRevoke) and the accounts go. why: "limit" (Session_storeServers) or
+' "orphan" (found at launch, left by an older Siku).
+sub Session_dropAccountsOf(urls as object, why as string)
+    if urls.Count() = 0 then return
+    list = Accounts_list()
+    dropped = 0
+    for i = 0 to urls.Count() - 1
+        accts = Accounts_onServer(list, urls[i])
+        for j = 0 to accts.Count() - 1
+            if Accounts_hasSignIn(accts[j]) then Session_queueRevoke(urls[i], accts[j].session)
+            dropped = dropped + 1
+        end for
+    end for
+    if dropped = 0 then return
+    Registry_write("accounts", Accounts_onServersOtherThan(list, urls))
+    Diag_log("[siku-accounts] forgot " + dropped.ToStr() + " account(s) on servers no longer saved (" + why + ")")
+end sub
+
+' Accounts on servers that are not saved any more (the active session's server always counts as
+' saved), left by Siku builds before the limit dropped them with their accounts: forgotten at launch.
+sub Session_dropOrphanAccounts()
+    if Accounts_layout() < 2 then return
+    urls = Accounts_unsavedServers(Accounts_list(), Session_savedServers(), Str_orEmpty(m.global.session.serverUrl))
+    Session_dropAccountsOf(urls, "orphan")
+end sub
+
+' Asks MainScene to end a stored sign-in on its server (Api_revoke; best effort, also from a Task
+' thread, and outliving the screen that asked). signIn: {accessToken, refreshToken, expiresAt}.
+sub Session_queueRevoke(url as string, signIn as dynamic)
+    if url = "" or signIn = invalid or Type(signIn) <> "roAssociativeArray" then return
+    if Str_isEmpty(signIn.accessToken) and Str_isEmpty(signIn.refreshToken) then return
+    g = m.global
+    if g = invalid or not g.hasField("revokeQueue") then return
+    q = Arr_or(g.revokeQueue)
+    q.Push({ url: url, accessToken: Str_orEmpty(signIn.accessToken), refreshToken: Str_orEmpty(signIn.refreshToken), expiresAt: Accounts_int(signIn.expiresAt) })
+    g.revokeQueue = q
+    g.revokeSeq = g.revokeSeq + 1
 end sub
 
 ' Records the server in the saved-servers list without touching another server's sign-in.

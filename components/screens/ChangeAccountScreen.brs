@@ -434,6 +434,9 @@ sub chooseAccount(card as object)
     srv = m.groups[m.shown].server
     expired = Accounts_isExpired(a) or not Accounts_hasSignIn(a)
     if card.current then
+        ' During a phone's borrowed profile the published session is the phone's: the open account's
+        ' picker (or launch choice, or sign-in) must run on the TV's own, so hand it back first.
+        handBackBorrowed()
         s = ownSession()
         if Accounts_signedIn(s) and isTrue(m.top.params.chooseAccount) then
             ' Shown at launch in the picker's place (Silo Android #880): the open account is
@@ -482,6 +485,15 @@ sub addAccount()
     m.busy = true
     Session_activateAccount(srv, invalid, true)
     Nav_reset("ChangeAccountScreen", { root: true, signIn: true })
+end sub
+
+sub handBackBorrowed()
+    if not Accounts_isTemporary(m.global.session) then return
+    if not m.global.hasField("remoteControl") then return
+    rc = m.global.remoteControl
+    if rc = invalid then return
+    Diag_log("[siku-accounts] change account picked the open account during a phone's profile; handing it back")
+    rc.callFunc("handBack", "change account")
 end sub
 
 sub addServer()
