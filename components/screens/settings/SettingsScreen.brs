@@ -273,7 +273,7 @@ function buildPane(catId as string) as object
             out.Push({ kind: "row", row: rowDef("address", "info", "Address") })
         end if
         out.Push({ kind: "row", row: rowDef("serverVersion", "info", "Server Version") })
-        out.Push({ kind: "row", row: rowDef("manageServers", "action", "Manage Servers") })
+        out.Push({ kind: "row", row: rowDef("manageServers", "action", "Change Server") })
         out.Push({ kind: "header", text: "About" })
         out.Push({ kind: "row", row: rowDef("appVersion", "info", "App Version") })
     end if
@@ -1134,6 +1134,10 @@ sub performConfirmed(actionId as string)
         Api_signOut()
         Settings_clear()
         Nav_reset("@start")
+    else if actionId = "changeServer" then
+        Api_leaveServer()
+        Settings_clear()
+        Nav_reset("ServerConnectScreen")
     else if actionId = "resetOverrides" then
         ' Clear every server-side device override for this profile on this Roku, and the
         ' device-local playback keys that have no server row.
@@ -1175,8 +1179,11 @@ sub activateRow(row as object)
     else if id = "resetAppearance" then
         openConfirm("resetAppearance", "Reset Custom Appearance?", "This restores all custom subtitle appearance options to their defaults.", "Reset")
     else if id = "manageServers" then
-        Session_clearServer()
-        Nav_reset("ServerConnectScreen")
+        ' Leaving the server discards this sign-in (tokens are kept only for the active server),
+        ' so it is confirmed like Sign Out.
+        server = Str_orEmpty(m.global.session.serverName)
+        if server = "" then server = Str_orEmpty(m.global.session.serverUrl)
+        openConfirm("changeServer", "Change Server?", "You will be signed out of " + server + " and can then connect to another server.", "Change Server")
     else if id = "retry" then
         showStatus("Loading…")
         Settings_load()
