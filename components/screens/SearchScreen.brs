@@ -26,7 +26,8 @@ sub init()
         { id: "series", label: "Series", scope: "series" }
     ]
     prefs = m.global.prefs
-    if prefs <> invalid and prefs.showAudiobooks = true then
+    m.showAudiobooks = prefs <> invalid and prefs.showAudiobooks = true
+    if m.showAudiobooks then
         m.chipDefs.Push({ id: "audiobook", label: "Audiobooks", scope: "audiobook" })
     end if
     m.chipIndex = 0
@@ -36,6 +37,9 @@ sub init()
     m.pendingText = ""
     m.searchSeq = 0
     m.titles = []
+    m.titlesCursor = ""
+    m.titlesLoadingMore = false
+    m.titlesRetryAt = 0
     m.peopleItems = []
     m.titlesDone = false
     m.peopleDone = false
@@ -45,6 +49,7 @@ sub init()
     m.debounce.observeField("fire", "onDebounce")
     m.people.observeField("rowItemSelected", "onPersonSelected")
     m.grid.observeField("itemSelected", "onTitleSelected")
+    m.grid.observeField("itemFocused", "onGridFocused")
     m.reqRow.observeField("rowItemSelected", "onRequestSelected")
     m.reqSeq = 0
     m.reqQuery = ""
@@ -235,17 +240,67 @@ sub runSearch()
     m.titlesDone = false
     m.peopleDone = false
     m.titles = []
+    m.titlesCursor = ""
+    m.titlesLoadingMore = false
+    m.titlesRetryAt = 0
     m.peopleItems = []
     m.status.visible = false
     m.statusLine.text = "Searching…"
     m.spinner.visible = not m.grid.visible and not m.people.visible
     chip = m.chipDefs[m.chipIndex]
-    params = { source: "query", q: q, limit: 40, image_size: "medium" }
-    if chip.id <> "all" then params["type"] = chip.id
-    ctx = { seq: m.searchSeq }
-    Api_get("/api/v2/catalog", params, "onTitles", ctx)
-    Api_get("/api/v2/catalog/people", { q: q, limit: 20, media_scope: chip.scope }, "onPeople", ctx)
+    requestTitles("")
+    Api_get("/api/v2/catalog/people", { q: q, limit: 20, media_scope: chip.scope }, "onPeople", { seq: m.searchSeq })
     runRequestSearch(false)
+end sub
+
+' All is unscoped only when audiobooks are shown (the server has no "video + audiobook" scope);
+' the results are then filtered on the client, as Android TV does.
+function allIsUnscoped() as boolean
+    return m.chipDefs[m.chipIndex].id = "all" and m.showAudiobooks
+end function
+
+' Page 1 (cursor "") or the next page of the titles query; the same query every time.
+sub requestTitles(cursor as string)
+    chip = m.chipDefs[m.chipIndex]
+    params = { source: "query", q: m.query.Trim(), limit: 40, image_size: "medium" }
+    ' All means video (movies and series); with Show Audiobooks on it is unscoped and filtered.
+    if not allIsUnscoped() then params["type"] = chip.scope
+    if cursor <> "" then params.cursor = cursor
+    Api_get("/api/v2/catalog", params, "onTitles", { seq: m.searchSeq, cursor: cursor })
+end sub
+
+' Android TV hides ebook-like content (no reader on TV); audiobooks stay only when shown.
+function visibleTitles(items as object) as object
+    hidden = { ebook: true, ebooks: true, book: true, books: true, comic: true, comics: true, manga: true, reading: true }
+    out = []
+    for each it in items
+        if Type(it) = "roAssociativeArray" then
+            t = LCase(Str_orEmpty(it["type"]))
+            if not hidden.DoesExist(t) and (m.showAudiobooks or t <> "audiobook") then out.Push(it)
+        end if
+    end for
+    return out
+end function
+
+function titlesCursorOf(data as object) as string
+    pg = data.page
+    if pg = invalid or pg.has_more <> true then return ""
+    return Str_orEmpty(pg.next_cursor)
+end function
+
+' Pages through the titles as focus nears the end of the grid (two rows of six before the end).
+sub onGridFocused()
+    idx = m.grid.itemFocused
+    if idx < m.titles.Count() - 12 then return
+    loadMoreTitles()
+end sub
+
+sub loadMoreTitles()
+    if m.titlesCursor = "" or m.titlesLoadingMore then return
+    ' After a failed page, wait a few seconds instead of retrying on every key press.
+    if Time_nowSeconds() < m.titlesRetryAt then return
+    m.titlesLoadingMore = true
+    requestTitles(m.titlesCursor)
 end sub
 
 sub retry()
@@ -255,6 +310,10 @@ end sub
 sub onTitles(event as object)
     resp = Api_result(event)
     if resp.context = invalid or resp.context.seq <> m.searchSeq then return
+    if resp.context.cursor <> "" then
+        onMoreTitles(resp)
+        return
+    end if
     m.titlesDone = true
     if not resp.ok then
         m.titlesError = Api_errorText(resp)
@@ -264,13 +323,61 @@ sub onTitles(event as object)
         m.titles = []
         m.titlesTotal = invalid
         m.titlesExact = true
-        if resp.data <> invalid then
-            m.titles = Arr_or(resp.data.items)
+        if resp.data <> invalid and Type(resp.data) = "roAssociativeArray" then
+            m.titles = visibleTitles(Arr_or(resp.data.items))
+            m.titlesCursor = titlesCursorOf(resp.data)
             m.titlesTotal = resp.data.total
             if resp.data.total_exact = false then m.titlesExact = false
         end if
     end if
     render()
+    ' A page can hold only hidden types; fetch on until something shows or paging ends.
+    if m.titles.Count() = 0 and m.titlesCursor <> "" then loadMoreTitles()
+end sub
+
+sub onMoreTitles(resp as object)
+    m.titlesLoadingMore = false
+    if not resp.ok or resp.data = invalid or Type(resp.data) <> "roAssociativeArray" then
+        m.global.toast = "Couldn't load more. " + Api_errorText(resp)
+        m.titlesRetryAt = Time_nowSeconds() + 5
+        return
+    end if
+    more = visibleTitles(Arr_or(resp.data.items))
+    m.titlesCursor = titlesCursorOf(resp.data)
+    if more.Count() > 0 then
+        if m.titles.Count() = 0 or m.grid.content = invalid then
+            m.titles = more
+            m.titlesError = ""
+            render()
+        else
+            m.titles.Append(more)
+            Content_appendCards(m.grid.content, more, "poster", 14, 30)
+            updateTitleCount()
+        end if
+    else if m.titles.Count() = 0 then
+        if m.titlesCursor <> "" then
+            loadMoreTitles()
+        else
+            render()
+        end if
+    end if
+end sub
+
+' "N results": the server's total for a scoped query; for the unscoped, client-filtered All the
+' count of titles loaded so far ("About" while more pages remain).
+sub updateTitleCount()
+    n = m.titles.Count()
+    exact = m.titlesExact
+    if allIsUnscoped() then
+        exact = m.titlesCursor = ""
+    else if m.titlesTotal <> invalid then
+        n = Int(Content_num(m.titlesTotal))
+    end if
+    if exact then
+        m.statusLine.text = n.ToStr() + " results"
+    else
+        m.statusLine.text = "About " + n.ToStr() + " results"
+    end if
 end sub
 
 sub onPeople(event as object)
@@ -336,13 +443,7 @@ sub renderResults()
     end if
     m.status.visible = false
     if hasTitles then
-        n = m.titles.Count()
-        if m.titlesTotal <> invalid then n = Int(Content_num(m.titlesTotal))
-        if m.titlesExact then
-            m.statusLine.text = n.ToStr() + " results"
-        else
-            m.statusLine.text = "About " + n.ToStr() + " results"
-        end if
+        updateTitleCount()
     else
         m.statusLine.text = "No matching titles"
     end if

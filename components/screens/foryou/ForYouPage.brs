@@ -10,12 +10,15 @@ sub init()
     m.menu.observeField("dismissed", "onMenuDismissed")
     m.loaded = false
     m.loading = false
+    m.loadSeq = 0
+    m.loadedRev = -1        ' DataRev_current() when the rows were last requested
+    m.background = false
     m.optionsTarget = invalid
     m.top.focusable = true
 end sub
 
 sub onPageShown()
-    if m.global.homeDirty = true or (not m.loaded and not m.loading) then load()
+    if DataRev_current() <> m.loadedRev or (not m.loaded and not m.loading) then load()
 end sub
 
 sub focusContent()
@@ -28,14 +31,34 @@ end sub
 
 sub load()
     m.loading = true
+    m.loadSeq = m.loadSeq + 1
+    m.loadedRev = DataRev_current()
+    ' Rows already on screen stay there while the new ones load.
+    m.background = m.loaded and m.feed.state = "ready"
+    if m.background then
+        requestDiscover()
+        return
+    end if
+    ' Retry / Refresh hides with the status card: park focus on the page so the answer moves it
+    ' to the rows (buildRows acts only while the page itself holds focus).
+    if m.feed.state = "error" or m.feed.state = "empty" then
+        if m.top.isInFocusChain() then m.top.setFocus(true)
+    end if
     m.feed.state = "loading"
-    Api_get("/api/v2/recommendations/discover", { image_size: "medium" }, "onDiscover")
+    requestDiscover()
+end sub
+
+sub requestDiscover()
+    Api_get("/api/v2/recommendations/discover", { image_size: "medium" }, "onDiscover", { seq: m.loadSeq })
 end sub
 
 sub onDiscover(event as object)
     resp = Api_result(event)
+    if resp.context = invalid or resp.context.seq <> m.loadSeq then return
     m.loading = false
     if not resp.ok then
+        ' A failed background refresh keeps the rows that are on screen.
+        if m.background then return
         m.feed.errorText = Api_errorText(resp)
         m.feed.state = "error"
         return
