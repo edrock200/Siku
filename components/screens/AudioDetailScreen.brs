@@ -297,11 +297,16 @@ sub renderAudiobook()
     m.metaLabel.text = Str_joinDots(meta)
 
     ' Resume / finished, as TvAudiobookDetailHero: resume when 30 s < position < duration - 5 s.
-    posSec = AudioTimeline_num(ud.position_seconds)
-    dur = AudioTimeline_num(ud.duration_seconds)
+    ' This device's record (AudioResume.brs) wins while the server still holds what we left it at:
+    ' it keeps the start and the end of the book, which the server's thresholds drop.
+    posSec = Num_or(ud.position_seconds)
+    localPos = AudioResume_position(Settings_identity(), Str_orEmpty(it.content_id), posSec)
+    if localPos >= 0 then posSec = localPos
+    dur = Num_or(ud.duration_seconds)
     if dur <= 0 then dur = total
     m.resume = -1.0
     m.finished = ud.played = true or (dur > 0 and posSec > 0 and posSec >= dur - 5)
+
     if posSec > 30 and dur > 0 and posSec < dur - 5 then m.resume = posSec
     chapters = []
     if m.timeline <> invalid then chapters = m.timeline.chapters
