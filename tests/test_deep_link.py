@@ -41,6 +41,15 @@ class Route(unittest.TestCase):
             ("a series with nothing to play opens its page", r, [{"content_id": "series:o", "type": "series"}], {"action": "detail", "itemId": "series:o"}),
             ("an audiobook", r, [{"content_id": "b", "type": "audiobook"}], {"action": "audio", "itemId": "b", "itemType": "audiobook"}),
             ("no item", r, [None], {"action": "drop", "reason": "unavailable"}),
+            ("a plain video plays", r, [{"content_id": "v", "type": "Video", "title": "V"}], {"action": "play", "itemId": "v", "title": "V"}),
+            ("an ebook is dropped", r, [{"content_id": "b", "type": "ebook"}], {"action": "drop", "reason": "unsupported_type"}),
+            ("a book is dropped", r, [{"content_id": "b", "type": "book"}], {"action": "drop", "reason": "unsupported_type"}),
+            ("a podcast is dropped", r, [{"content_id": "p", "type": "podcast"}], {"action": "drop", "reason": "unsupported_type"}),
+            ("a podcast episode is dropped", r, [{"content_id": "p", "type": "podcast_episode"}], {"action": "drop", "reason": "unsupported_type"}),
+            ("a box set is dropped", r, [{"content_id": "box_set:l:1", "type": "box_set"}], {"action": "drop", "reason": "unsupported_type"}),
+            ("a collection is dropped", r, [{"content_id": "c", "type": "collection"}], {"action": "drop", "reason": "unsupported_type"}),
+            ("a person is dropped", r, [{"content_id": "person:1", "type": "person"}], {"action": "drop", "reason": "unsupported_type"}),
+            ("an item without a type is dropped", r, [{"content_id": "x", "title": "X"}], {"action": "drop", "reason": "unsupported_type"}),
         ])
 
     def test_resume(self):

@@ -58,11 +58,13 @@ function DeepLink_kindOf(mt as string) as string
 end function
 
 ' What to do with a catalog item body (GET /api/v2/catalog/items/{id}):
-'   { action: "play", itemId, title }       a movie, episode or other video plays itself
+'   { action: "play", itemId, title }       a movie or episode (or a plain "video") plays itself
 '   { action: "next", itemId }               a series or season: read its next episode, then play it
 '   { action: "detail", itemId }             a series or season with no next episode: its page
 '   { action: "audio", itemId, itemType }    an audio item (an untyped link to one)
-'   { action: "drop", reason }               nothing to open
+'   { action: "drop", reason }               nothing to open: "unavailable", or "unsupported_type" for
+'                                            anything else (ebooks, podcasts, box sets, collections,
+'                                            people, an item without a type), which the player cannot play
 function DeepLink_route(item as dynamic) as object
     if Type(item) <> "roAssociativeArray" then return { action: "drop", reason: "unavailable" }
     cid = Str_orEmpty(item.content_id)
@@ -74,7 +76,8 @@ function DeepLink_route(item as dynamic) as object
         return { action: "next", itemId: nextId }
     end if
     if t = "album" or t = "artist" or t = "audiobook" or t = "track" or t = "song" then return { action: "audio", itemId: cid, itemType: t }
-    return { action: "play", itemId: cid, title: Str_orEmpty(item.title) }
+    if t = "movie" or t = "episode" or t = "video" then return { action: "play", itemId: cid, title: Str_orEmpty(item.title) }
+    return { action: "drop", reason: "unsupported_type" }
 end function
 
 ' Where the profile left the item (seconds), 0 when it was not started or is finished: the same
