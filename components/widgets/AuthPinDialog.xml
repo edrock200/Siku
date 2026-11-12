@@ -8,6 +8,9 @@
     profile     the profile being unlocked
     error       error text; setting it clears the entered digits and turns the dots red
     verifying   true while the PIN is checked: shows "Checking…" and ignores digits
+    prompt      the status line's text while nothing else shows (default "Enter your PIN"): the
+                primary profile's PIN before manage mode ("Enter this PIN to manage profiles"),
+                or a new PIN on Edit Profile
     pinEntered  (out, alwaysNotify) the four-digit PIN
     dismissed   (out, alwaysNotify) Cancel or Back
   SPDX-License-Identifier: AGPL-3.0-or-later
@@ -17,6 +20,7 @@
     <field id="profile" type="assocarray" onChange="onProfile" />
     <field id="error" type="string" onChange="onError" />
     <field id="verifying" type="boolean" value="false" onChange="renderStatus" />
+    <field id="prompt" type="string" onChange="renderStatus" />
     <field id="pinEntered" type="string" alwaysNotify="true" />
     <field id="dismissed" type="boolean" alwaysNotify="true" />
   </interface>

@@ -44,6 +44,10 @@ sub init()
     m.peopleItems = []
     m.titlesDone = false
     m.peopleDone = false
+    m.peopleLists = []
+    m.peopleScopes = []
+    ' people_media_scope: unknown until GET /api/v2/catalog/search/capabilities answers.
+    m.peopleScopeSupported = invalid
     ' Title paging (Android TV TvSearchViewModel.loadMore: 40 a page, more as focus nears the end).
     m.titlesCursor = ""
     m.titlesLoadingMore = false
@@ -64,6 +68,7 @@ sub init()
         Api_get("/api/v2/user/libraries", invalid, "onLibrariesForBoxSets")
     end if
     m.keyboard = invalid
+    Api_call({ method: "GET", path: "/api/v2/catalog/search/capabilities", timeout: 10 }, "onSearchCaps")
     m.top.focusable = true
     m.top.observeField("focusedChild", "applyFocusVisuals")
     m.debounce.observeField("fire", "onDebounce")
@@ -312,9 +317,7 @@ sub runSearch()
     m.peopleLists = []
     m.peopleScopes = [chip.scope]
     if chip.id = "all" and m.showAudiobooks then m.peopleScopes.Push("audiobook")
-    for each scope in m.peopleScopes
-        Api_get("/api/v2/catalog/people", { q: q, limit: 20, media_scope: scope }, "onPeople", ctx)
-    end for
+    startPeopleSearch()
     ' Box sets are movies: the Series and Audiobooks chips leave them out.
     if m.boxSetsAvailable and (chip.id = "all" or chip.id = "movie") and Len(q) <= 200 then
         m.boxSetsPending = true
@@ -394,6 +397,36 @@ sub onLibrariesForBoxSets(event as object)
     changed = available <> m.boxSetsAvailable
     m.boxSetsAvailable = available
     if changed and m.searchedQuery <> "" and m.query.Trim() = m.searchedQuery then runSearch()
+end sub
+
+' People search only on a server that advertises people_media_scope (GET
+' /api/v2/catalog/search/capabilities, read once per Search page): such a server scopes people by
+' media and filters them by the viewer's library access. An older server would answer an unscoped,
+' unfiltered list, so Android TV never asks it (SearchPeople.kt); neither does Siku. A search that
+' runs before the capability answers waits for it.
+sub startPeopleSearch()
+    if m.peopleScopeSupported = invalid then return ' onSearchCaps starts it
+    if not m.peopleScopeSupported then
+        m.peopleDone = true
+        return
+    end if
+    q = m.query.Trim()
+    if q = "" then return
+    ctx = { seq: m.searchSeq }
+    for each scope in m.peopleScopes
+        Api_get("/api/v2/catalog/people", { q: q, limit: 20, media_scope: scope }, "onPeople", ctx)
+    end for
+end sub
+
+sub onSearchCaps(event as object)
+    resp = Api_result(event)
+    m.peopleScopeSupported = Search_peopleScopeSupported(resp)
+    Diag_log("[siku-search] people search media_scope supported=" + Session_boolWord(m.peopleScopeSupported) + " status=" + Int(Num_or(resp.status, 0)).ToStr())
+    ' A search already running (titles on their way) gets its people now.
+    if m.query.Trim() <> "" and not m.peopleDone and m.peopleLists.Count() = 0 then
+        startPeopleSearch()
+        if m.peopleDone then render()
+    end if
 end sub
 
 sub onPeople(event as object)
@@ -499,9 +532,9 @@ sub updateResultCount()
     if m.titlesTotal <> invalid then n = Int(Content_num(m.titlesTotal))
     n = n + m.boxSets.Count()
     if m.titlesExact then
-        m.statusLine.text = TxF("{0} results", [n])
+        m.statusLine.text = TxP("{0} result", "{0} results", n)
     else
-        m.statusLine.text = TxF("About {0} results", [n])
+        m.statusLine.text = TxP("About {0} result", "About {0} results", n)
     end if
 end sub
 

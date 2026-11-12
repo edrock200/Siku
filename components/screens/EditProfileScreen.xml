@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Edit Profile: the picker's manage mode opens it for a profile (Silo Android TV's
+  TvEditProfileScreen / TvEditProfileViewModel, laid out like NewProfileScreen). Name (the Roku
+  keyboard), PIN (Set / Change on the PIN pad, Remove beside it; nothing is sent until Save),
+  Child Profile, then Save Changes | Cancel, and Delete Profile under them for any profile but the
+  primary one (the server refuses it: 409 primary_profile_protected). Delete asks first in a
+  StandardMessageDialog with Cancel focused.
+  The calls act as the household's primary profile (X-Profile-Id, X-Profile-Token from the picker's
+  manage mode): PATCH /api/v2/profiles/{id} (name always, pin: "1234" / null, is_child always, the
+  PG ceiling Child fills in or clears) and DELETE /api/v2/profiles/{id}. A 403
+  profile_verification_required (the primary's token went stale after a PIN or child change) asks the
+  primary profile's PIN again and sends the call once more; Cancel there ends manage mode.
+  Params: { profileId, manager: { id, token } } (manager optional: the primary from the list is used,
+  and its PIN asked when the server wants it). Result to the picker: { changed, deletedId, token,
+  manageEnded }.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="EditProfileScreen" extends="BaseScreen">
+  <script type="text/brightscript" uri="pkg:/components/screens/EditProfileScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/ProfileManage.brs" />
+  <children>
+    <AuthMarqueeChrome id="chrome" backdropUri="pkg:/images/marquee_profiles.jpg" showLogo="false" />
+    <Group id="form" visible="false">
+      <Label id="title" width="1920" translation="[0, 120]" horizAlign="center" color="0xEDEDEDFF" text="Edit Profile">
+        <Font role="font" uri="pkg:/fonts/Inter-black.otf" size="55" />
+      </Label>
+      <Label id="subtitle" width="1920" translation="[0, 198]" horizAlign="center" color="0xEDEDED9E" text="Rename it, change its PIN, or delete it.">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+      </Label>
+      <AuthTextField id="nameField" fieldWidth="760" translation="[580, 280]" iconUri="pkg:/images/icons/person.png" />
+      <PillButton id="pinButton" variant="glass" fixedWidth="500" height="84" fontSize="25" translation="[580, 388]" iconUri="pkg:/images/icons/lock.png" />
+      <PillButton id="removePinButton" text="Remove PIN" variant="glass" fixedWidth="240" height="84" fontSize="23" translation="[1100, 388]" iconUri="pkg:/images/icons/close.png" />
+      <PillButton id="childButton" variant="glass" fixedWidth="760" height="84" fontSize="25" translation="[580, 496]" iconUri="pkg:/images/icons/people.png" />
+      <Label id="error" width="1200" translation="[360, 600]" horizAlign="center" wrap="true" maxLines="3" color="0xFF6961FF" visible="false">
+        <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+      </Label>
+      <Group id="buttons" translation="[0, 730]">
+        <PillButton id="saveButton" text="Save Changes" variant="glass" height="68" fontSize="24" padX="36" minWidth="300" />
+        <PillButton id="cancelButton" text="Cancel" variant="plain" height="68" fontSize="24" padX="36" />
+      </Group>
+      <PillButton id="deleteButton" text="Delete profile" variant="plain" height="61" fontSize="21" padX="28" translation="[0, 836]" visible="false" />
+    </Group>
+    <LoadingSpinner id="spinner" size="72" translation="[924, 504]" visible="false" />
+  </children>
+</component>

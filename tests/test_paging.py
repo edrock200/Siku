@@ -103,6 +103,31 @@ class SearchResults(unittest.TestCase):
         ])
 
 
+class SearchCapabilities(unittest.TestCase):
+    def test_people_scope(self):
+        f = "Search_peopleScopeSupported"
+        check_cases(self, PAGING, [
+            ("advertised", f, [{"ok": True, "status": 200, "data": {"people_media_scope": True}}], True),
+            ("an older server leaves it out", f, [{"ok": True, "status": 200, "data": {"revision": "1"}}], False),
+            ("false", f, [{"ok": True, "status": 200, "data": {"people_media_scope": False}}], False),
+            ("text is not a flag", f, [{"ok": True, "status": 200, "data": {"people_media_scope": "true"}}], False),
+            ("a failed read", f, [{"ok": False, "status": 404, "data": {"people_media_scope": True}}], False),
+            ("no answer", f, [{"ok": False, "status": 0}], False),
+            ("no ok member", f, [{"status": 200, "data": {"people_media_scope": True}}], False),
+            ("not an object", f, [None], False),
+        ])
+
+    def test_result_count_plural(self):
+        f = "TxP"
+        fr = {"global": {"appLocale": "fr", "strings": {"{0} result": "{0} résultat", "{0} results": "{0} résultats"}}}
+        check_cases(self, PAGING, [
+            ("one", f, ["{0} result", "{0} results", 1], "1 result", EN),
+            ("several", f, ["{0} result", "{0} results", 4], "4 results", EN),
+            ("none", f, ["{0} result", "{0} results", 0], "0 results", EN),
+            ("French counts 0 as one", f, ["{0} result", "{0} results", 0], "0 résultat", fr),
+        ])
+
+
 class ErrorText(unittest.TestCase):
     def resp(self, code, status=0):
         return {"ok": False, "status": status, "error": {"code": code, "title": "x", "detail": "", "shown": ""}}

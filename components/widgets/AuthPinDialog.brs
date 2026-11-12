@@ -114,6 +114,8 @@ sub onProfile()
     m.focusIndex = 4
     ' The screen reader introduces the pad once, with the first key it says.
     m.a11yIntro = TxF("PIN for {0}.", [name]) + " "
+    ' A prompt set before the profile (manage mode, a new PIN) is part of the introduction.
+    if m.top.prompt <> "" then m.a11yIntro = m.a11yIntro + m.top.prompt + ". "
     m.a11yIntroKey = m.focusIndex
     A11y_reset()
     renderDots()
@@ -139,6 +141,9 @@ sub renderStatus()
         m.status.color = "0xFF6961FF"
     else if m.top.verifying then
         m.status.text = Tx("Checking…")
+        m.status.color = "0xEDEDED9E"
+    else if m.top.prompt <> "" then
+        m.status.text = m.top.prompt
         m.status.color = "0xEDEDED9E"
     else
         m.status.text = Tx("Enter your PIN")

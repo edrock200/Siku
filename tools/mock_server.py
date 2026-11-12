@@ -218,8 +218,21 @@ clears one); GET /mock/switch lists them.
                                  primary profile (and X-Profile-Token ptok-1 with primary_pin), answers 409 at
                                  max_profiles or for a taken name. Log: PROFILE CREATE as= token= child= pin=
                                  answer=
+  policy_revision=1              a PIN, child or rating change (PATCH /api/v2/profiles/{id}) bumps the account's
+                                 access-policy revision: verify-pin then issues ptok-<revision> and the token
+                                 the picker's manage mode holds goes stale (403 profile_verification_required),
+                                 as on a real server. Without it every token is ptok-1.
+  profile_write=fail             PATCH and DELETE /api/v2/profiles/{id} answer 500 (after the primary check).
+                                 Both act as the primary profile like POST; PATCH 409s a taken name, DELETE
+                                 409s the primary (primary_profile_protected) and 404s once gone. A PIN set
+                                 with PATCH is what verify-pin then checks for that profile. Log: PROFILE
+                                 UPDATE id= as= token= fields=name,pin=set|clear,child=on|off,rating,libraries
+                                 answer=, PROFILE DELETE id= as= token= answer= (never names or PINs)
   device_user=<name>             device-code sign-ins are approved as that user (implies multi_user for
                                  the tokens it hands out); the simulator cannot type a password
+  people_scope=0|fail            GET /api/v2/catalog/search/capabilities leaves people_media_scope out (an
+                                 older server: Search then asks no people at all, as Android TV) or answers
+                                 500 (the same). Default: advertised. Log: SEARCH CAPS people_media_scope=
   info_status=<code>[:<detail>]  GET /system/info answers that status: a problem with that detail, or
                                  a bare text error without one (the address screen's "Could not reach
                                  server: <detail>" / "Could not reach a Silo server at that address.")
@@ -2855,9 +2868,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, body)
         m = re.match(r"^/api/v2/profiles/([^/]+)/verify-pin$", p)
         if m:
-            if b.get("pin") == "1234":
-                return self.send(200, {"valid": True, "profile_token": "ptok-1", "expires_at": None})
+            if b.get("pin") == profile_pin(self.user()["id"], m.group(1)):
+                return self.send(200, {"valid": True, "profile_token": manager_token(), "expires_at": None})
             return self.send(200, {"valid": False})
+        m = re.match(r"^/api/v2/profiles/([^/]+)$", p)
+        if m and method == "PATCH":
+            return update_profile(self, m.group(1), b)
+        if m and method == "DELETE":
+            return delete_profile(self, m.group(1))
         if p == "/api/v2/user/libraries":
             libs = [
                 {"id": "1", "name": "Movies", "type": "movies", "sort_order": 0},
@@ -3114,6 +3132,17 @@ class Handler(BaseHTTPRequestHandler):
                         print("EPISODES translation=%s" % season_translation_state(), flush=True)
                     return self.send(200, {"items": [episode(i, sn, e) for e in range(1, eps + 1)] if 1 <= sn <= seasons else []})
             return self.problem(404, "not_found", "Not found")
+        if p == "/api/v2/catalog/search/capabilities":
+            # --switch people_scope=0|fail: an older server without people_media_scope, or a failed read.
+            mode = str(STATE["switches"].get("people_scope") or "1")
+            print("SEARCH CAPS people_media_scope=%s" % mode, flush=True)
+            LOG.append("SEARCH CAPS people_media_scope=%s" % mode)
+            if mode == "fail":
+                return self.problem(500, "internal_error", "Search capabilities failed")
+            caps = {"revision": "mock-1", "state": "ready", "provider": "mock"}
+            if mode not in ("0", "off"):
+                caps["people_media_scope"] = True
+            return self.send(200, caps)
         if p == "/api/v2/catalog/people":
             text = q.get("q", [""])[0].lower()
             print("PEOPLE SEARCH media_scope=%s" % q.get("media_scope", ["-"])[0], flush=True)
@@ -4041,7 +4070,146 @@ def household(user):
         # profiles=<n> above the household's own: pad with guests (a picker with more than two rows).
         items = items + [{"id": "p-guest-%d" % i, "name": "Guest %d" % i, "avatar_url": "", "has_pin": False}
                          for i in range(len(items) + 1, min(int(want), 40) + 1)]
-    return items + STATE.setdefault("created_profiles", {}).get(uid, [])
+    items = items + STATE.setdefault("created_profiles", {}).get(uid, [])
+    # PATCH / DELETE /api/v2/profiles/{id} (the picker's manage mode): edits and deletions per account.
+    edits = STATE.setdefault("profile_edits", {}).get(uid, {})
+    gone = STATE.setdefault("deleted_profiles", {}).get(uid, set())
+    out = []
+    for p in items:
+        if p["id"] in gone:
+            continue
+        e = edits.get(p["id"])
+        if e:
+            p = dict(p)
+            p.update({k: v for k, v in e.items() if k != "pin"})
+        out.append(p)
+    return out
+
+
+def profile_pin(uid, pid):
+    """The PIN verify-pin checks for a profile: one set with PATCH, else 1234 (every mock PIN)."""
+    e = STATE.setdefault("profile_edits", {}).get(uid, {}).get(pid) or {}
+    return e.get("pin") or "1234"
+
+
+def manager_token():
+    """The profile token verify-pin issues: ptok-1, or with --switch policy_revision=1 ptok-<revision>
+    (a PIN or child change bumps the account's access-policy revision, as the server does, so the
+    token the picker holds goes stale and the next management call answers 403)."""
+    if not STATE["switches"].get("policy_revision"):
+        return "ptok-1"
+    return "ptok-%d" % STATE.setdefault("policy_rev", 1)
+
+
+def manager_check(h, items):
+    """A management call must act as the household's primary profile (X-Profile-Id) with its current
+    token (X-Profile-Token) when it has a PIN. Returns (as_id, token, ok)."""
+    primary = next((p for p in items if p.get("is_primary")), items[0] if len(items) == 1 else None)
+    as_id = h.headers.get("X-Profile-Id") or ""
+    token = h.headers.get("X-Profile-Token") or ""
+    ok = primary is not None and as_id == primary["id"] and (not primary.get("has_pin") or token == manager_token())
+    return as_id, token, ok
+
+
+def update_profile(h, pid, b):
+    """PATCH /api/v2/profiles/{id} as the primary profile: name (trimmed, 409 when another profile has
+    it), pin (null removes it; "" is refused), is_child, max_content_rating, library_restrictions_enabled
+    (refused on the primary). --switch profile_write=fail answers 500. Log (never a name or PIN):
+    PROFILE UPDATE id= as= token=yes|no fields=name,pin=set|clear,child=on|off,rating,libraries answer=."""
+    user = h.user()
+    uid = user["id"]
+    items = household(user)
+    as_id, token, ok = manager_check(h, items)
+    b = b if isinstance(b, dict) else {}
+    fields = []
+    if "name" in b:
+        fields.append("name")
+    if "pin" in b:
+        fields.append("pin=clear" if b["pin"] is None else "pin=set")
+    if "is_child" in b:
+        fields.append("child=on" if b["is_child"] else "child=off")
+    if "max_content_rating" in b:
+        fields.append("rating")
+    if "library_restrictions_enabled" in b:
+        fields.append("libraries")
+
+    def log(answer):
+        line = "PROFILE UPDATE id=%s as=%s token=%s fields=%s answer=%s" % (
+            pid, as_id or "-", "yes" if token else "no", ",".join(fields) or "-", answer)
+        print(line, flush=True)
+        LOG.append(line)
+
+    target = next((p for p in items if p["id"] == pid), None)
+    if not ok:
+        log(403)
+        return h.problem(403, "profile_verification_required", "Profile management requires verifying the primary profile PIN")
+    if target is None:
+        log(404)
+        return h.problem(404, "not_found", "Profile not found")
+    if STATE["switches"].get("profile_write") == "fail":
+        log(500)
+        return h.problem(500, "internal_error", "The profile could not be saved")
+    edit = {}
+    if "name" in b:
+        name = str(b.get("name") or "").strip()
+        if not name:
+            log(422)
+            return h.problem(422, "validation_failed", "Profile name is required")
+        if any(p["id"] != pid and p["name"].strip().lower() == name.lower() for p in items):
+            log(409)
+            return h.problem(409, "conflict", "A profile with this name already exists")
+        edit["name"] = name
+    if "pin" in b:
+        if b["pin"] == "":
+            log(422)
+            return h.problem(422, "validation_failed", "PIN must not be empty")
+        edit["has_pin"] = b["pin"] is not None
+        edit["pin"] = b["pin"]
+    if "is_child" in b:
+        edit["is_child"] = bool(b["is_child"])
+    if "max_content_rating" in b:
+        edit["max_content_rating"] = b["max_content_rating"]
+    if "library_restrictions_enabled" in b:
+        if target.get("is_primary") and b["library_restrictions_enabled"]:
+            log(422)
+            return h.problem(422, "validation_failed", "The primary profile can't be limited to some libraries")
+        edit["library_restrictions_enabled"] = bool(b["library_restrictions_enabled"])
+    STATE.setdefault("profile_edits", {}).setdefault(uid, {}).setdefault(pid, {}).update(edit)
+    if any(k in b for k in ("pin", "is_child", "max_content_rating", "library_restrictions_enabled")):
+        STATE["policy_rev"] = STATE.setdefault("policy_rev", 1) + 1
+    log(200)
+    return h.send(200, next(p for p in household(user) if p["id"] == pid))
+
+
+def delete_profile(h, pid):
+    """DELETE /api/v2/profiles/{id} as the primary profile: 204, 404 once gone, 409
+    primary_profile_protected for the primary. --switch profile_write=fail answers 500.
+    Log: PROFILE DELETE id= as= token=yes|no answer=."""
+    user = h.user()
+    items = household(user)
+    as_id, token, ok = manager_check(h, items)
+
+    def log(answer):
+        line = "PROFILE DELETE id=%s as=%s token=%s answer=%s" % (pid, as_id or "-", "yes" if token else "no", answer)
+        print(line, flush=True)
+        LOG.append(line)
+
+    target = next((p for p in items if p["id"] == pid), None)
+    if not ok:
+        log(403)
+        return h.problem(403, "profile_verification_required", "Profile management requires verifying the primary profile PIN")
+    if target is None:
+        log(404)
+        return h.problem(404, "not_found", "Profile not found")
+    if target.get("is_primary"):
+        log(409)
+        return h.problem(409, "primary_profile_protected", "The primary profile cannot be deleted. Delete the user account instead.")
+    if STATE["switches"].get("profile_write") == "fail":
+        log(500)
+        return h.problem(500, "internal_error", "The profile could not be deleted")
+    STATE.setdefault("deleted_profiles", {}).setdefault(user["id"], set()).add(pid)
+    log(204)
+    return h.send(204)
 
 
 def create_profile(h, b):
@@ -4062,7 +4230,7 @@ def create_profile(h, b):
         print(line, flush=True)
         LOG.append(line)
 
-    if as_id != primary["id"] or (primary["has_pin"] and token != "ptok-1"):
+    if not manager_check(h, items)[2]:
         log(403)
         return h.problem(403, "profile_verification_required", "Only the primary profile, with its PIN, can add profiles")
     if not name:

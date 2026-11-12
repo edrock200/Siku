@@ -85,6 +85,19 @@ function Search_tvVisible(items as dynamic, showAudiobooks as boolean) as object
     return out
 end function
 
+' Whether a GET /api/v2/catalog/search/capabilities answer says people search takes media_scope
+' and filters by the viewer's access (people_media_scope, Android TV's CatalogSearchCapabilitiesV2).
+' A failed or malformed answer means no (Android TV's searchPeopleForQuery).
+function Search_peopleScopeSupported(resp as dynamic) as boolean
+    if Type(resp) <> "roAssociativeArray" then return false
+    ok = resp.ok
+    if not (Type(ok) = "Boolean" or Type(ok) = "roBoolean") then return false
+    if not ok or Type(resp.data) <> "roAssociativeArray" then return false
+    v = resp.data.people_media_scope
+    if Type(v) = "Boolean" or Type(v) = "roBoolean" then return v
+    return false
+end function
+
 ' People lists from several media scopes as one row (Android TV's mergePeopleSearchResults): one
 ' list keeps the server's order; several are de-duplicated by id and ranked exact name matches
 ' first, then by name, then id. At most `limit` people.

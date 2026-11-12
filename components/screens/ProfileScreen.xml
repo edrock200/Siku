@@ -11,8 +11,17 @@
   PIN profiles open AuthPinDialog and POST /api/v2/profiles/{id}/verify-pin.
   An account with a temporary password (403 password_change_required, Silo Android #790) gets a
   message saying where to change it, with Retry | Change account | Sign out and Sign out focused.
-  Params: { switching: bool, atLaunch: bool, openAccounts: bool }; openAccounts (a phone signed
-  several accounts in, PhonePairing.brs) opens Change Account over the picker once.
+  Manage (Silo Android TV's manage mode, first in the button row while the list names a primary
+  profile; not on a phone's borrowed profile): acts as the household's primary profile, asking its
+  PIN first when it has one ("Enter this PIN to manage profiles"; the token is kept in memory for
+  manage mode only, never selected or saved). The avatars dim under a pencil and OK on one opens
+  EditProfileScreen (rename, PIN, Child, delete); an Add profile tile ends the grid while the account
+  has room (max_profiles) and opens NewProfileScreen without asking the PIN again. The button reads
+  Done; Done or Back leaves manage mode. A change reloads the list in manage mode; deleting the
+  profile this Roku has open clears it from the session.
+  Params: { switching: bool, atLaunch: bool, openAccounts: bool, manage: bool }; openAccounts (a phone
+  signed several accounts in, PhonePairing.brs) opens Change Account over the picker once; manage
+  (DEBUG deep link debugManage=1) starts manage mode once the list is shown.
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="ProfileScreen" extends="BaseScreen">
@@ -21,6 +30,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/DeepLink.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/SignOutFlow.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/PasswordChange.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/ProfileManage.brs" />
   <children>
     <AuthMarqueeChrome id="chrome" backdropUri="pkg:/images/marquee_profiles.jpg" showLogo="false" />
     <Group id="content" visible="false">
@@ -40,6 +50,7 @@
     </Group>
     <Group id="buttons" visible="false">
       <PillButton id="retryButton" text="Retry" variant="glass" iconUri="pkg:/images/icons/refresh.png" height="61" fontSize="21" padX="28" visible="false" />
+      <PillButton id="manageButton" text="Manage" variant="glass" iconUri="pkg:/images/icons/edit.png" height="61" fontSize="21" padX="28" visible="false" />
       <PillButton id="changeAccountButton" text="Change account" variant="glass" iconUri="pkg:/images/icons/person.png" height="61" fontSize="21" padX="28" />
       <PillButton id="signOutButton" text="Sign out" variant="glass" iconUri="pkg:/images/icons/logout.png" height="61" fontSize="21" padX="28" />
     </Group>

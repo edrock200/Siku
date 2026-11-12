@@ -728,7 +728,8 @@ sub handleDeepLink(args as dynamic)
         if not Str_isEmpty(args.debugVoice) then params.debugVoice = Str_orEmpty(args.debugVoice) ' PlayerScreen / AudioPlayerScreen: inject this voice transport command (<command>[:<seconds>]) once playback has started (the simulator sends none)
         if not Str_isEmpty(args.debugQuery) then params.query = Str_orEmpty(args.debugQuery) ' SearchScreen: search for this
         if not Str_isEmpty(args.debugLibrary) then params.libraryId = Str_orEmpty(args.debugLibrary) ' LibraryScreen: browse this library (mock: 1 = Movies)
-        if not Str_isEmpty(args.debugManage) then params.manage = true ' ServerConnectScreen: open as Manage Servers (pushed over the shell in the app)
+        if not Str_isEmpty(args.debugManage) then params.manage = true ' ServerConnectScreen: open as Manage Servers (pushed over the shell in the app); ProfileScreen: start manage mode
+        if not Str_isEmpty(args.debugProfileName) then params.debugName = Str_orEmpty(args.debugProfileName) ' EditProfileScreen (directly or from ProfileScreen's manage mode): the name field starts with this (the simulator cannot type)
         if not Str_isEmpty(args.debugLanSelf) then params.debugLanSelf = true ' ServerConnectScreen: Find servers also accepts this machine's own address (tools/silo_responder.py)
         resetTo(args.debugScreen, params)
         return
