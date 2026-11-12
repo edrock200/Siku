@@ -75,6 +75,8 @@ sub init()
     m.loadingMore = false
     m.loaded = false
     m.requestSeq = 0
+    m.loadedRev = -1        ' DataRev_current() when page 1 was last requested
+    m.restoreIndex = invalid ' set while a personal list refreshes in place
     ' Drill-in from a list grid: {kind: "collection", collectionId, title} from the Collections list, or
     ' {kind: "group", field: "author"|"series", name, title, subtitle} from the Authors / Series groups.
     m.drill = invalid
@@ -267,7 +269,12 @@ end sub
 ' ---------- Lifecycle ----------
 
 sub onPageShown()
-    if not m.loaded and not m.loading then reload()
+    if not m.loaded and not m.loading then
+        reload()
+    else if m.loaded and not m.loading and isPersonalMode() and DataRev_current() <> m.loadedRev then
+        ' Favorites / Watchlist / History change elsewhere (detail page, playback, card menus).
+        refreshInPlace()
+    end if
     ' The Shuffle pill follows the server's capability (hidden until it says available).
     Shuffle_refreshCaps("onShuffleCaps")
     updateShufflePill()
@@ -313,6 +320,22 @@ end sub
 
 ' ---------- Loading ----------
 
+function isPersonalMode() as boolean
+    return m.mode = "favorites" or m.mode = "watchlist" or m.mode = "history"
+end function
+
+' Reloads page 1 behind the grid that is on screen, then restores the focused position.
+sub refreshInPlace()
+    m.restoreIndex = m.grid.itemFocused
+    m.requestSeq = m.requestSeq + 1
+    m.loadedRev = DataRev_current()
+    m.loading = true
+    m.loadingMore = false
+    m.hasMore = false
+    m.nextCursor = ""
+    requestPage("")
+end sub
+
 sub reload()
     ' The Retry button and the grid hide below; park focus on the page so the answer can move it
     ' (setCards / showEmpty / showError act only while the page itself holds focus).
@@ -327,6 +350,8 @@ sub reload()
     m.loaded = false
     m.loading = true
     m.spinner.visible = true
+    m.restoreIndex = invalid
+    m.loadedRev = DataRev_current()
     m.requestSeq = m.requestSeq + 1
     if m.mode = "collections" and m.drill = invalid then
         Api_get("/api/v2/library/" + Str_urlEncode(Str_orEmpty(prm("libraryId"))) + "/collections", invalid, "onCollections", { seq: m.requestSeq })
@@ -459,6 +484,9 @@ sub onPage(event as object)
         if isMore then
             m.global.toast = "Couldn't load more. " + Api_errorText(resp)
             m.hasMore = true
+        else if m.restoreIndex <> invalid then
+            ' A failed in-place refresh keeps the list that is on screen.
+            m.restoreIndex = invalid
         else
             showError(Api_errorText(resp))
         end if
@@ -488,6 +516,12 @@ sub setCards(items as object)
     m.grid.content = Content_grid(items, m.cardStyle, m.insetX, m.insetY)
     m.grid.visible = true
     if m.top.hasFocus() then m.grid.setFocus(true)
+    if m.restoreIndex <> invalid then
+        idx = m.restoreIndex
+        m.restoreIndex = invalid
+        if idx >= items.Count() then idx = items.Count() - 1
+        if idx > 0 then m.grid.jumpToItem = idx
+    end if
 end sub
 
 sub appendCards(items as object)
@@ -1205,6 +1239,23 @@ sub onMenuChosen()
     raw.user_state = us
     node.raw = raw
     m.cards[target.index] = raw
+    ' Removed from the list this page shows: take the card out now. The change is this page's
+    ' own, so it does not call for a refetch when the page is shown again.
+    gone = false
+    if m.mode = "favorites" and patch.favorite <> invalid then gone = patch.favorite = false
+    if m.mode = "watchlist" and patch.inWatchlist <> invalid then gone = patch.inWatchlist = false
+    if gone and m.drill = invalid then
+        m.loadedRev = DataRev_current()
+        m.grid.content.removeChildIndex(target.index)
+        m.cards.Delete(target.index)
+        if m.cards.Count() = 0 then
+            showEmpty()
+        else
+            idx = target.index
+            if idx >= m.cards.Count() then idx = m.cards.Count() - 1
+            m.grid.jumpToItem = idx
+        end if
+    end if
 end sub
 
 sub onMenuDismissed()
