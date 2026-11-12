@@ -1,6 +1,7 @@
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
 sub init()
+    KeyRepeat_init()
     m.shadow = m.top.findNode("shadow")
     m.bg = m.top.findNode("bg")
     m.sheen = m.top.findNode("sheen")
@@ -48,7 +49,7 @@ function rowNode(i as integer) as object
     icon.height = 36
     lbl = g.createChild("Label")
     lbl.id = "label"
-    Label_setFont(lbl, "medium", 26)
+    Label_setFontIfChanged(lbl, "medium", 26)
     lbl.vertAlign = "center"
     lbl.height = m.rowH
     sub1 = g.createChild("Label")
@@ -279,7 +280,7 @@ sub applyFocus()
             sub1 = Node_find(g, "sub")
             if isF then
                 lbl.color = Theme().colors.onInk
-                Label_setFont(lbl, "semibold", 26)
+                Label_setFontIfChanged(lbl, "semibold", 26)
                 icon.blendColor = Theme().colors.onInk
                 trailing.blendColor = Theme().colors.onInk
                 sub1.color = "0x000000B3"
@@ -289,7 +290,7 @@ sub applyFocus()
                 ink = Theme().colors.ink
                 if Panel_isTrue(m.rowMeta[i].destructive) then ink = Theme().colors.error
                 lbl.color = ink
-                Label_setFont(lbl, "medium", 26)
+                Label_setFontIfChanged(lbl, "medium", 26)
                 icon.blendColor = ink
                 trailing.blendColor = "0xEDEDED9E"
                 sub1.color = "0xEDEDED9E"
@@ -298,9 +299,10 @@ sub applyFocus()
     end for
 end sub
 
-sub moveFocus(delta as integer)
+' Moves the focus to the next selectable row; false when it did not move.
+function moveFocus(delta as integer) as boolean
     n = m.rowMeta.Count()
-    if n = 0 then return
+    if n = 0 then return false
     i = m.top.focusIndex
     tries = 0
     while tries < n
@@ -310,12 +312,18 @@ sub moveFocus(delta as integer)
         if not m.rowMeta[i].divider then exit while
         tries = tries + 1
     end while
-    if m.rowMeta[i].divider then return
-    if i <> m.top.focusIndex then
-        m.top.focusIndex = i
-        m.top.rowFocused = i
-    end if
-end sub
+    if m.rowMeta[i].divider then return false
+    if i = m.top.focusIndex then return false
+    m.top.focusIndex = i
+    m.top.rowFocused = i
+    return true
+end function
+
+' KeyRepeat step while Up/Down is held.
+function onKeyRepeat(key as string) as boolean
+    if key = "up" then return moveFocus(-1)
+    return moveFocus(1)
+end function
 
 ' A row flag that may be missing (pitfall 16: comparing invalid with a boolean throws on a Roku).
 function Panel_isTrue(v as dynamic) as boolean
@@ -334,12 +342,12 @@ function Shell_initials(name as string) as string
 end function
 
 function onKeyEvent(key as string, press as boolean) as boolean
-    if not press then return false
-    if key = "up" then
-        moveFocus(-1)
-        return true
-    else if key = "down" then
-        moveFocus(1)
+    if not press then
+        KeyRepeat_stop()
+        return false
+    end if
+    if key = "up" or key = "down" then
+        if onKeyRepeat(key) then KeyRepeat_start(key)
         return true
     else if key = "OK" then
         fi = m.top.focusIndex

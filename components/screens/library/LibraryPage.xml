@@ -24,6 +24,7 @@
 -->
 <component name="LibraryPage" extends="ShellPage">
   <script type="text/brightscript" uri="pkg:/components/screens/library/LibraryPage.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/DataRevision.brs" />
   <script type="text/brightscript" uri="pkg:/components/widgets/HomeCardActions.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Shuffle.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/LibraryFilters.brs" />

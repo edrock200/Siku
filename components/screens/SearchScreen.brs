@@ -29,7 +29,8 @@ sub init()
         { id: "series", label: Tx("Series"), scope: "series" }
     ]
     prefs = m.global.prefs
-    if prefs <> invalid and prefs.showAudiobooks = true then
+    m.showAudiobooks = prefs <> invalid and prefs.showAudiobooks = true
+    if m.showAudiobooks then
         m.chipDefs.Push({ id: "audiobook", label: Tx("Audiobooks"), scope: "audiobook" })
     end if
     m.chipIndex = 0
@@ -48,6 +49,7 @@ sub init()
     m.titlesLoadingMore = false
     m.titlesFailures = 0
     m.titlesRetryAt = 0
+    m.titlesSkipped = 0      ' pages read in a row that held only hidden types (ebooks, …)
     m.boxSets = []
     m.boxSetsPending = false
     m.boxGrace = m.top.findNode("boxGrace")
@@ -286,6 +288,7 @@ sub runSearch()
     m.titlesCursor = ""
     m.titlesLoadingMore = false
     m.titlesFailures = 0
+    m.titlesSkipped = 0
     m.searchedQuery = q
     m.status.visible = false
     m.statusLine.text = Tx("Searching…")
@@ -296,7 +299,14 @@ sub runSearch()
     ctx = { seq: m.searchSeq }
     m.titlesParams = params
     Api_get("/api/v2/catalog", params, "onTitles", ctx)
-    Api_get("/api/v2/catalog/people", { q: q, limit: 20, media_scope: chip.scope }, "onPeople", ctx)
+    ' People for All: video, plus audiobook credits while the Audiobooks tab is on (Android TV
+    ' searches each scope and merges them).
+    m.peopleLists = []
+    m.peopleScopes = [chip.scope]
+    if chip.id = "all" and m.showAudiobooks then m.peopleScopes.Push("audiobook")
+    for each scope in m.peopleScopes
+        Api_get("/api/v2/catalog/people", { q: q, limit: 20, media_scope: scope }, "onPeople", ctx)
+    end for
     ' Box sets are movies: the Series and Audiobooks chips leave them out.
     if m.boxSetsAvailable and (chip.id = "all" or chip.id = "movie") and Len(q) <= 200 then
         m.boxSetsPending = true
@@ -312,6 +322,8 @@ end sub
 sub onTitles(event as object)
     resp = Api_result(event)
     if resp.context = invalid or resp.context.seq <> m.searchSeq then return
+    ' A first page that held only hidden types: read the next one before showing anything.
+    if resp.ok and readPastHidden(resp.data, "onTitles") then return
     m.titlesDone = true
     if not resp.ok then
         m.titlesError = Api_errorText(resp)
@@ -322,10 +334,16 @@ sub onTitles(event as object)
         m.titlesTotal = invalid
         m.titlesExact = true
         if resp.data <> invalid then
-            m.titles = Arr_or(resp.data.items)
-            m.titlesTotal = resp.data.total
-            if resp.data.total_exact = false then m.titlesExact = false
+            m.titles = Search_tvVisible(Arr_or(resp.data.items), m.showAudiobooks)
             m.titlesCursor = Paging_nextCursor(resp.data)
+            if isAllChip() then
+                ' All searches every type and hides some on the client, so the server's total
+                ' counts titles that are never shown: count what is loaded (Android TV).
+                m.titlesExact = m.titlesCursor = ""
+            else
+                m.titlesTotal = resp.data.total
+                if resp.data.total_exact = false then m.titlesExact = false
+            end if
         end if
     end if
     ' Matching box sets lead the grid; they land with the first titles so the grid never shifts
@@ -373,9 +391,12 @@ end sub
 sub onPeople(event as object)
     resp = Api_result(event)
     if resp.context = invalid or resp.context.seq <> m.searchSeq then return
+    items = []
+    if resp.ok and Type(resp.data) = "roAssociativeArray" then items = Arr_or(resp.data.items)
+    m.peopleLists.Push(items)
+    if m.peopleLists.Count() < m.peopleScopes.Count() then return
     m.peopleDone = true
-    m.peopleItems = []
-    if resp.ok and resp.data <> invalid then m.peopleItems = Arr_or(resp.data.items)
+    m.peopleItems = Search_mergePeople(m.peopleLists, m.query.Trim(), 20)
     render()
 end sub
 
@@ -440,14 +461,7 @@ sub renderResults()
     end if
     m.status.visible = false
     if hasTitles then
-        n = m.titles.Count()
-        if m.titlesTotal <> invalid then n = Int(Content_num(m.titlesTotal))
-        n = n + m.boxSets.Count()
-        if m.titlesExact then
-            m.statusLine.text = TxF("{0} results", [n])
-        else
-            m.statusLine.text = TxF("About {0} results", [n])
-        end if
+        updateResultCount()
     else
         m.statusLine.text = Tx("No matching titles")
     end if
@@ -471,6 +485,44 @@ sub renderResults()
     if m.focusArea = "people" and not hasPeople then focusArea("grid")
     if m.focusArea = "retry" then focusArea("chips")
 end sub
+
+sub updateResultCount()
+    n = m.titles.Count()
+    if m.titlesTotal <> invalid then n = Int(Content_num(m.titlesTotal))
+    n = n + m.boxSets.Count()
+    if m.titlesExact then
+        m.statusLine.text = TxF("{0} results", [n])
+    else
+        m.statusLine.text = TxF("About {0} results", [n])
+    end if
+end sub
+
+function isAllChip() as boolean
+    return m.chipDefs[m.chipIndex].id = "all"
+end function
+
+' A page whose titles are all hidden types (ebooks, or audiobooks with the tab off) shows nothing,
+' so the grid could never ask for the next one: read it at once, as Android TV does, at most 10
+' pages in a row. True when a read was sent (the answer goes to `callback` again).
+function readPastHidden(data as dynamic, callback as string) as boolean
+    if Type(data) <> "roAssociativeArray" then return false
+    items = Arr_or(data.items)
+    cursor = Paging_nextCursor(data)
+    if items.Count() = 0 or cursor = "" or Search_tvVisible(items, m.showAudiobooks).Count() > 0 then
+        m.titlesSkipped = 0
+        return false
+    end if
+    if m.titlesSkipped >= 10 then
+        m.titlesSkipped = 0
+        return false
+    end if
+    m.titlesSkipped = m.titlesSkipped + 1
+    print "[siku-search] titles page held only hidden types; reading the next one ("; m.titlesSkipped; ")"
+    q = AA_copy(m.titlesParams)
+    q.cursor = cursor
+    Api_get("/api/v2/catalog", q, callback, { seq: m.searchSeq })
+    return true
+end function
 
 ' ---------- Paging ----------
 
@@ -498,11 +550,17 @@ sub onMoreTitles(event as object)
         return
     end if
     m.titlesFailures = 0
-    items = Arr_or(resp.data.items)
+    if readPastHidden(resp.data, "onMoreTitles") then
+        m.titlesLoadingMore = true
+        return
+    end if
+    items = Search_tvVisible(Arr_or(resp.data.items), m.showAudiobooks)
     m.titlesCursor = Paging_nextCursor(resp.data)
+    if isAllChip() then m.titlesExact = m.titlesCursor = ""
     m.titles.Append(items)
     m.gridCards.Append(items)
     if m.grid.content <> invalid then Content_appendCards(m.grid.content, items, "poster", 14, 30)
+    if isAllChip() and m.grid.visible then updateResultCount()
     print "[siku-search] titles page cards="; items.Count(); " loaded="; m.titles.Count(); " more="; m.titlesCursor <> ""
 end sub
 

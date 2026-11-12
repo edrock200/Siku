@@ -131,3 +131,18 @@ sub Label_setFont(lbl as object, weight as string, sizePx as integer)
     if lbl = invalid then return
     lbl.font = ThemeFont(weight, sizePx)
 end sub
+
+' Label_setFont for focus handlers that run on every key press (top bar, panels, menus): the
+' label remembers the weight and size it was given, and a new Font node is created (and the label
+' re-laid out) only when they change.
+sub Label_setFontIfChanged(lbl as object, weight as string, sizePx as integer)
+    if lbl = invalid then return
+    want = weight + "/" + sizePx.ToStr()
+    if lbl.hasField("sikuFontKey") then
+        if lbl.sikuFontKey = want then return
+    else
+        lbl.addField("sikuFontKey", "string", false)
+    end if
+    lbl.font = ThemeFont(weight, sizePx)
+    lbl.sikuFontKey = want
+end sub

@@ -17,6 +17,9 @@ Test switches (not part of the API) change behaviour for one scenario. Set them 
 clears one); GET /mock/switch lists them.
   hidden_libraries=<JSON array>  the profile's ui.disabled_library_ids default, e.g. [2,"4"]
   mixed_library=1                add library 5 "Everything" (type "mixed": movies and series)
+  search_hidden=1                an unscoped title search (Search's All chip) also answers 45 ebooks first, then
+                                 a manga and an audiobook, as a real server with reading libraries does.
+                                 Log: SEARCH HIDDEN q= cursor=, PEOPLE SEARCH media_scope=
   progress_410=1                 POST /playback/{id}/progress answers 410 playback_session_ended
   progress_404=<n>               the next n POST /playback/{id}/progress answer 404 playback_session_not_found
                                  (the session is forgotten too, like a server restart); Siku starts a new
@@ -2991,6 +2994,15 @@ class Handler(BaseHTTPRequestHandler):
             if group == "box_set":
                 # Silo dropped box_set from the catalog group enum (Silo Android #796).
                 return self.problem(422, "validation_failed", "group must be one of the supported values")
+            # --switch search_hidden=1: an unscoped title search (Search's All chip) also matches
+            # types a TV hides, as the real server's does: 45 ebooks lead (the whole first page of
+            # 40), a manga and an audiobook follow the video titles.
+            if STATE["switches"].get("search_hidden") and src == "query" and not typ and not lib and text:
+                hidden = [{"content_id": "ebook:%d" % k, "id": "ebook:%d" % k, "type": "ebook", "title": "%s Ebook %02d" % (text.title(), k)}
+                          for k in range(45)]
+                items = hidden + items + [{"content_id": "manga:1", "id": "manga:1", "type": "manga", "title": text.title() + " Manga"},
+                                          dict(audiobook_card(0), title=text.title() + " Audiobook")]
+                print("SEARCH HIDDEN q=%s cursor=%s" % (text, q.get("cursor", ["0"])[0]), flush=True)
             return self.send(200, page(items, q))
         if p == "/api/v2/catalog/box-sets":
             text = q.get("q", [""])[0].strip().lower()
@@ -3099,6 +3111,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.problem(404, "not_found", "Not found")
         if p == "/api/v2/catalog/people":
             text = q.get("q", [""])[0].lower()
+            print("PEOPLE SEARCH media_scope=%s" % q.get("media_scope", ["-"])[0], flush=True)
             ppl = [{"id": str(100 + i), "name": n, "photo_url": img("person", str(100 + i))} for i, n in enumerate(PEOPLE) if text in n.lower()]
             return self.send(200, {"items": ppl})
         m = re.match(r"^/api/v2/catalog/people/([^/]+)$", p)

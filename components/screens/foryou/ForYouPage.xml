@@ -6,6 +6,7 @@
 -->
 <component name="ForYouPage" extends="ShellPage">
   <script type="text/brightscript" uri="pkg:/components/screens/foryou/ForYouPage.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/DataRevision.brs" />
   <script type="text/brightscript" uri="pkg:/components/widgets/HomeCardActions.brs" />
   <children>
     <HomeSkylineFeed id="feed" emptyTitle="Not enough data yet"

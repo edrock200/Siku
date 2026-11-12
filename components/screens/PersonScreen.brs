@@ -80,7 +80,9 @@ sub load()
     m.errorGroup.visible = false
     m.spinner.visible = true
     m.nameLabel.text = Str_orEmpty(m.top.params.name)
-    Api_get("/api/v2/catalog/people/" + Str_urlEncode(personId()), { prefetch: "true" }, "onPerson")
+    ' A real visit, so no prefetch=true: that marks a speculative read, which never queues the
+    ' biography refresh, and a server without person_prefetch answers it with 422.
+    Api_get("/api/v2/catalog/people/" + Str_urlEncode(personId()), invalid, "onPerson")
     loadFilmography()
 end sub
 

@@ -76,6 +76,33 @@ class Pages(unittest.TestCase):
         ])
 
 
+class SearchResults(unittest.TestCase):
+    """Search's All chip (Android TV's visibleOnTv + audiobook filter, mergePeopleSearchResults)."""
+
+    def test_tv_visible(self):
+        f = "Search_tvVisible"
+        items = [{"type": "movie", "id": "m"}, {"type": "ebook", "id": "e"}, {"type": "Manga", "id": "g"},
+                 {"type": "audiobook", "id": "a"}, {"type": "series", "id": "s"}, {"type": " comic ", "id": "c"},
+                 {"id": "n"}, "junk"]
+        check_cases(self, PAGING, [
+            ("audiobooks hidden", f, [items, False], [items[0], items[4], items[6]]),
+            ("audiobooks shown", f, [items, True], [items[0], items[3], items[4], items[6]]),
+            ("not a list", f, [None, True], []),
+        ])
+
+    def test_merge_people(self):
+        f = "Search_mergePeople"
+        ann = {"id": "1", "name": "Ann Lee"}
+        bob = {"id": "2", "name": "bob"}
+        lee = {"id": "3", "name": "Lee"}
+        check_cases(self, PAGING, [
+            ("one list keeps the server's order", f, [[[lee, ann]], "lee", 20], [lee, ann]),
+            ("one list, limit", f, [[[lee, ann, bob]], "lee", 2], [lee, ann]),
+            ("merged: exact first, then by name, duplicates once", f, [[[ann, bob], [bob, lee]], "Lee", 20], [lee, ann, bob]),
+            ("merged, limit", f, [[[ann, bob], [lee]], "x", 2], [ann, bob]),
+        ])
+
+
 class ErrorText(unittest.TestCase):
     def resp(self, code, status=0):
         return {"ok": False, "status": status, "error": {"code": code, "title": "x", "detail": "", "shown": ""}}

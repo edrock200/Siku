@@ -109,6 +109,11 @@ sub maybeLoadMore()
     ' every key press.
     if m.nextCursor = "" or m.loadingMore or m.refreshing or m.moreFailed then return
     if lastVisibleIndex() < m.items.Count() - 4 then return
+    requestMore()
+end sub
+
+sub requestMore()
+    if m.nextCursor = "" or m.loadingMore or m.refreshing then return
     m.loadingMore = true
     cursor = m.nextCursor
     Api_get("/api/v2/notifications", { limit: m.pageSize, status: "all", cursor: cursor }, "onMorePage", { cursor: cursor, seq: m.refreshSeq })
@@ -445,7 +450,16 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
     if key = "OK" then
         if m.errorFocused then
-            refresh()
+            if m.moreFailed and m.nextCursor <> "" and m.items.Count() > 0 then
+                ' Ask for the older page that failed again, keeping the pages already shown,
+                ' instead of starting over from the newest page.
+                m.moreFailed = false
+                m.errorText = ""
+                requestMore()
+                rebuild()
+            else
+                refresh()
+            end if
             return true
         end if
         if m.focusIdx < 0 or m.focusIdx >= m.items.Count() then return true

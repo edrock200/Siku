@@ -17,6 +17,7 @@
     <field id="settingsLoaded" type="boolean" alwaysNotify="true" onChange="onSettingsLoaded" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/screens/DetailScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/DataRevision.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Paging.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Shuffle.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />
