@@ -41,8 +41,13 @@ end function
 
 ' Saves a session and publishes it on m.global.
 sub Session_save(s as object)
-    Registry_write("session", s)
-    Session_rememberServer(s)
+    ' The simulator's debugSession=mock login lives in memory only, so a stray deep link (ECP is
+    ' open to the whole LAN) cannot overwrite the saved login. Any other server drops the mark.
+    if s.debugMock = true and s.serverUrl <> "http://127.0.0.1:8097" then s.Delete("debugMock")
+    if s.debugMock <> true then
+        Registry_write("session", s)
+        Session_rememberServer(s)
+    end if
     m.global.session = s
     m.global.sessionChanged = m.global.sessionChanged + 1
     ' The server-synced settings snapshot (components/common/Settings.brs) belongs to one server

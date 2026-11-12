@@ -179,10 +179,11 @@ sub handleDeepLink(args as dynamic)
         s.profileId = "p-owner"
         s.profileName = "Laura"
         s.profileAvatar = "/mock-img/avatar/laura.jpg"
+        s.debugMock = true ' kept in memory only (Session_save); the saved login survives
         Session_save(s)
         if Str_isEmpty(args.debugScreen) then routeToStart()
     end if
-    if not Str_isEmpty(args.debugScreen) then
+    if not Str_isEmpty(args.debugScreen) and Right(Str_orEmpty(args.debugScreen), 6) = "Screen" then
         params = {}
         if not Str_isEmpty(args.debugItem) then params.itemId = args.debugItem
         if not Str_isEmpty(args.debugFile) then params.fileId = args.debugFile ' PlayerScreen: play this version (mock 4K files: 52, 56)
