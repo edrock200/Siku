@@ -114,9 +114,25 @@ end sub
 ' Error message to show for a failed response.
 function Api_errorText(resp as object) as string
     if resp = invalid or resp.error = invalid then return Tx("Something went wrong")
-    if resp.status = 0 then return Tx("Can't reach the server. Check your connection and try again.")
+    if Int(Num_or(resp.status, 0)) <= 0 then
+        ' No HTTP answer: say why when the request knows (Http.brs / ApiTask error codes).
+        code = Api_errorCode(resp)
+        if code = "timeout" then return Tx("The server took too long to answer. Try again.")
+        if code = "too_large" then return Tx("The server's answer was too large for this Roku.")
+        if code = "not_v2" or code = "bad_download" then return Tx("Something went wrong")
+        return Tx("Can't reach the server. Check your connection and try again.")
+    end if
     if Type(resp.error) = "roAssociativeArray" and not Str_isEmpty(resp.error.shown) then return resp.error.shown
     return Api_titleText(resp.error.title)
+end function
+
+' The error code of a failed response ("timeout", "too_large", "not_v2", "bad_download", "network",
+' or a problem type's last segment), "" when it has none.
+function Api_errorCode(resp as dynamic) as string
+    if Type(resp) <> "roAssociativeArray" then return ""
+    err = resp.error
+    if Type(err) <> "roAssociativeArray" then return ""
+    return Str_orEmpty(err.code)
 end function
 
 ' A problem title for the screen: Http.brs's English stand-ins ("Can't reach the server",
@@ -138,7 +154,13 @@ end function
 ' Http_problem's stand-in title ("Something went wrong (500)") is not a reason.
 function Api_reasonText(resp as dynamic, fallback as string) as string
     if resp = invalid or Type(resp) <> "roAssociativeArray" then return fallback
-    if Int(Num_or(resp.status, 0)) <= 0 then return Tx("Can't reach the server. Check your connection.")
+    if Int(Num_or(resp.status, 0)) <= 0 then
+        code = Api_errorCode(resp)
+        if code = "timeout" then return Tx("The server took too long to answer.")
+        if code = "too_large" then return Tx("The server's answer was too large.")
+        if code = "not_v2" or code = "bad_download" then return fallback
+        return Tx("Can't reach the server. Check your connection.")
+    end if
     err = resp.error
     if err = invalid or Type(err) <> "roAssociativeArray" then return fallback
     if not Str_isEmpty(err.shown) then return err.shown

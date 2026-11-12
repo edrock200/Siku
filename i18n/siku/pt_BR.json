@@ -394,5 +394,9 @@
   "→ picks values · Back applies": "→ escolhe valores · Voltar aplica",
   "↓ More below": "↓ Mais abaixo",
   "Transcribing… {0}%": "Transcrevendo… {0}%",
-  "Transcribing and translating… {0}%": "Transcrevendo e traduzindo… {0}%"
+  "Transcribing and translating… {0}%": "Transcrevendo e traduzindo… {0}%",
+  "The server took too long to answer. Try again.": "O servidor demorou demais para responder. Tente novamente.",
+  "The server's answer was too large for this Roku.": "A resposta do servidor é grande demais para este Roku.",
+  "The server took too long to answer.": "O servidor demorou demais para responder.",
+  "The server's answer was too large.": "A resposta do servidor era grande demais."
 }

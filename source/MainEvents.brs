@@ -27,6 +27,16 @@ function MainEvents_memoryPressure(eventType as string, info as dynamic) as inte
     return -1
 end function
 
+' True when a device-wide roDeviceInfoEvent says memory is back to normal. Firmware without
+' roAppMemoryMonitor sends only these (no usage to sample), so the level must drop to normal at once
+' instead of one step per sample: it would otherwise stay raised for good.
+function MainEvents_memoryReset(eventType as string, info as dynamic) as boolean
+    if eventType <> "roDeviceInfoEvent" or Type(info) <> "roAssociativeArray" then return false
+    level = info.Lookup("generalMemoryLevel")
+    if Type(level) <> "String" and Type(level) <> "roString" then return false
+    return LCase(level) = "normal"
+end function
+
 ' true / false when a roDeviceInfoEvent says the channel gained or lost focus (a system overlay, the
 ' screensaver), invalid for any other device event.
 function MainEvents_appFocus(info as dynamic) as dynamic

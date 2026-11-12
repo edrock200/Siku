@@ -9,6 +9,8 @@
     <!-- From source/main.brs: memory warning level (percent of the channel's limit, alwaysNotify)
          and app focus (false while a system overlay or the screensaver covers Siku). -->
     <field id="memoryPressure" type="integer" alwaysNotify="true" onChange="onMemoryPressure" />
+    <!-- The device-wide memory level is back to normal (source/main.brs, firmware without roAppMemoryMonitor). -->
+    <field id="memoryReset" type="boolean" alwaysNotify="true" onChange="onMemoryReset" />
     <field id="appFocused" type="boolean" value="true" onChange="onAppFocused" />
     <!-- From source/main.brs at launch: { low, reasons, foregroundMb } (MainEvents_deviceTier). -->
     <field id="deviceTier" type="assocarray" onChange="onDeviceTier" />

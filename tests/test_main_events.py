@@ -27,6 +27,20 @@ class MainEvents(unittest.TestCase):
             ("other event", p, ["roInputEvent", {"memoryUsagePercent": 90}], -1),
         ])
 
+    def test_memory_reset(self):
+        # Firmware without roAppMemoryMonitor: a device-wide "normal" drops the level to 0 at once.
+        r = "MainEvents_memoryReset"
+        check_cases(self, FILES, [
+            ("device normal", r, [DEV, {"generalMemoryLevel": "normal"}], True),
+            ("device normal, capitals", r, [DEV, {"generalMemoryLevel": "NORMAL"}], True),
+            ("device low", r, [DEV, {"generalMemoryLevel": "low"}], False),
+            ("device critical", r, [DEV, {"generalMemoryLevel": "critical"}], False),
+            ("focus event", r, [DEV, {"appFocused": True}], False),
+            ("channel usage event", r, [APP, {"memoryUsagePercent": 0}], False),
+            ("not an object", r, [DEV, None], False),
+            ("level not a string", r, [DEV, {"generalMemoryLevel": 0}], False),
+        ])
+
     def test_focus(self):
         f = "MainEvents_appFocus"
         check_cases(self, FILES, [
