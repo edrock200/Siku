@@ -314,6 +314,9 @@ end sub
 ' ---------- Loading ----------
 
 sub reload()
+    ' The Retry button and the grid hide below; park focus on the page so the answer can move it
+    ' (setCards / showEmpty / showError act only while the page itself holds focus).
+    if m.retryBtn.hasFocus() or m.grid.hasFocus() then m.top.setFocus(true)
     m.cards = []
     m.nextCursor = ""
     m.hasMore = false

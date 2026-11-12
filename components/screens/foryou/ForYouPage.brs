@@ -28,6 +28,11 @@ end sub
 
 sub load()
     m.loading = true
+    ' Retry / Refresh hides with the status card: park focus on the page so the answer moves it
+    ' to the rows (buildRows acts only while the page itself holds focus).
+    if m.feed.state = "error" or m.feed.state = "empty" then
+        if m.top.isInFocusChain() then m.top.setFocus(true)
+    end if
     m.feed.state = "loading"
     Api_get("/api/v2/recommendations/discover", { image_size: "medium" }, "onDiscover")
 end sub
