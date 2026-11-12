@@ -57,6 +57,7 @@ sub init()
     m.lastFocus = invalid
     m.pageY = 0
     m.artistTracks = invalid
+    m.artistGen = 0
 
     m.playBtn.observeField("buttonSelected", "onPlay")
     m.shuffleBtn.observeField("buttonSelected", "onShuffle")
@@ -87,6 +88,13 @@ end sub
 
 sub onScreenHidden()
     m.lastFocus = focusedZoneNode()
+    ' Leaving the page cancels an artist Play / Shuffle that is still fetching albums, so the
+    ' player does not open over another screen.
+    if m.artistTracks <> invalid then
+        m.artistTracks = invalid
+        m.artistGen = m.artistGen + 1
+        m.spinner.visible = false
+    end if
 end sub
 
 sub load()
@@ -301,7 +309,11 @@ sub renderAudiobook()
     m.metaLabel.text = Str_joinDots(meta)
 
     ' Resume / finished, as TvAudiobookDetailHero: resume when 30 s < position < duration - 5 s.
-    posSec = AudioTimeline_num(ud.position_seconds)
+    ' This device's record (AudioResume.brs) wins while the server still holds what we left it at:
+    ' it keeps the start and the end of the book, which the server's thresholds drop.
+    posSec = Num_or(ud.position_seconds)
+    localPos = AudioResume_position(Settings_identity(), Str_orEmpty(it.content_id), posSec)
+    if localPos >= 0 then posSec = localPos
     dur = AudioTimeline_num(ud.duration_seconds)
     if dur <= 0 then dur = total
     m.resume = -1.0
@@ -666,40 +678,61 @@ function trackQueue(tracks as object, album as object) as object
     return q
 end function
 
+' index is a row of m.tracks; the queue leaves out tracks without a content id, so the row maps to
+' its queue position (a row that can't play starts the next one that can).
 sub playTracks(index as integer, shuffle as boolean)
     q = trackQueue(m.tracks, m.item)
     if q.Count() = 0 then
         m.global.toast = Tx("Nothing to play")
         return
     end if
-    if index >= q.Count() then index = 0
-    openPlayer({ queue: q, index: index, shuffle: shuffle })
+    qi = 0
+    for j = 0 to m.tracks.Count() - 1
+        if j >= index then exit for
+        if Audio_queueEntry(m.tracks[j]).contentId <> "" then qi = qi + 1
+    end for
+    if qi >= q.Count() then qi = 0
+    openPlayer({ queue: q, index: qi, shuffle: shuffle })
 end sub
 
-' Artist Play / Shuffle: fetch each album's tracks (up to 20 albums), then queue them in album order.
+' Artist Play / Shuffle: fetch each album's tracks (up to 50 albums, three requests at a time so a
+' large discography does not start dozens of tasks at once), then queue them in album order.
 sub playArtist(shuffle as boolean)
     if m.albums.Count() = 0 or m.artistTracks <> invalid then return
     m.artistShuffle = shuffle
     m.artistTracks = []
     n = m.albums.Count()
-    if n > 20 then n = 20
-    m.artistPending = n
+    if n > 50 then n = 50
     for i = 0 to n - 1
         m.artistTracks.Push([])
-        a = m.albums[i]
-        Api_get("/api/v2/catalog/items/" + Str_urlEncode(Str_orEmpty(a.content_id)), { image_size: "medium" }, "onArtistAlbum", { index: i })
     end for
+    m.artistPending = n
+    m.artistNext = 0
+    m.artistGen = m.artistGen + 1
     m.spinner.visible = true
+    fetchNextArtistAlbum()
+    fetchNextArtistAlbum()
+    fetchNextArtistAlbum()
+end sub
+
+sub fetchNextArtistAlbum()
+    if m.artistTracks = invalid or m.artistNext >= m.artistTracks.Count() then return
+    i = m.artistNext
+    m.artistNext = i + 1
+    a = m.albums[i]
+    Api_get("/api/v2/catalog/items/" + Str_urlEncode(Str_orEmpty(a.content_id)), { image_size: "medium" }, "onArtistAlbum", { index: i, gen: m.artistGen })
 end sub
 
 sub onArtistAlbum(event as object)
     resp = Api_result(event)
-    if m.artistTracks = invalid then return
-    i = resp.context.index
-    if resp.ok and resp.data <> invalid then
+    ctx = resp.context
+    if m.artistTracks = invalid or ctx = invalid or ctx.gen <> m.artistGen then return
+    i = ctx.index
+    if resp.ok and Type(resp.data) = "roAssociativeArray" then
         m.artistTracks[i] = trackQueue(Arr_or(resp.data.tracks), resp.data)
     end if
     m.artistPending = m.artistPending - 1
+    fetchNextArtistAlbum()
     if m.artistPending > 0 then return
     m.spinner.visible = false
     q = []

@@ -3,7 +3,8 @@
   Full-screen now-playing UI for music queues and audiobooks (Android TV TvAudiobookPlayerScreen):
   large cover on the left; eyebrow, title, author/artist and chapter/album on the right; progress bar
   with elapsed / remaining; transport row (previous, skip back, play/pause, skip forward, next);
-  utility pills (Chapters or Up Next, Sleep timer). Panels open on the right (AudioPanel).
+  utility pills (Chapters or Up Next, Sleep timer, and for audiobooks Skip interval: AudioSkip.brs).
+  Panels open on the right (AudioPanel); Play / Pause and the skip keys still work while one is open.
 
   params (all optional except what each mode needs):
     Music / generic queue (`queue` present and non-empty):
@@ -12,7 +13,7 @@
                      poster_url, duration_seconds}). Entries without a fileId are resolved through
                      GET /api/v2/catalog/items/{contentId} (versions[], user_data.last_file_id).
       index          integer, the queue entry to start with (default 0)
-      startPosition  seconds into that first track (default 0)
+      startPosition  seconds into that first track (default 0, never the server's resume point)
       shuffle        bool: shuffle the queue, keeping `index` first
     Audiobook (no queue):
       itemId         the audiobook content_id
@@ -22,10 +23,11 @@
 
   Protocol (docs/api-spec.md §8): GET /api/v2/playback/capabilities (cached on m.global.playbackCaps,
   shared with PlayerScreen) → POST /api/v2/playback/start (AudioCaps_startBody) per file → Audio node
-  → POST /api/v2/playback/{session}/progress every 10 s → DELETE /api/v2/playback/{session}.
+  → POST /api/v2/playback/{session}/progress every 10 s (paused too) → DELETE /api/v2/playback/{session}.
   Music sessions use progress_persistence "server". Audiobooks play one part per session with
   progress_persistence "client" and a part-local start_position; whole-book progress is written with
-  POST /api/v2/sync/progress {items:[{media_item_id, position_ms, duration_ms}]}.
+  POST /api/v2/sync/progress {items:[{media_item_id, position_ms, duration_ms}]}, and an on-device
+  record (AudioResume.brs) keeps the stretches the server's resume thresholds drop.
   Back closes an open panel, otherwise stops playback and closes; m.global.homeDirty is set on exit.
   Session answers (Silo Android #708, AudioSessionRecovery.brs): a progress post answering 404 "Playback
   session not found" starts a fresh audiobook session at the position (on Play when paused; at most 3 in
@@ -37,12 +39,16 @@
   <interface>
     <!-- A Roku voice transport command routed by MainScene.handleTransport; returns { status }. -->
     <function name="voiceTransport" />
+    <!-- Set by Settings_notify when a Settings_load this screen started lands (skip intervals). -->
+    <field id="settingsLoaded" type="boolean" alwaysNotify="true" onChange="onSettingsLoaded" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/player/AudioPlayerScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/PlaybackCaps.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioCaps.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioTimeline.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/AudioResume.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/AudioSkip.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioSessionRecovery.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/VoiceTransport.brs" />
   <children>
@@ -102,6 +108,7 @@
         <Group id="utility" translation="[0, 876]">
           <PillButton id="listBtn" text="Chapters" iconUri="pkg:/images/icons/chapters.png" height="64" padX="32" fontSize="25" scaleOnFocus="1.0" />
           <PillButton id="sleepBtn" text="Sleep Timer" iconUri="pkg:/images/icons/sleep.png" height="64" padX="32" fontSize="25" scaleOnFocus="1.0" />
+          <PillButton id="skipBtn" text="Skip interval" iconUri="pkg:/images/icons/tune.png" height="64" padX="32" fontSize="25" scaleOnFocus="1.0" visible="false" />
         </Group>
       </Group>
     </Group>
@@ -125,7 +132,7 @@
 
     <Timer id="progressTimer" duration="10" repeat="true" />
     <Timer id="sleepTimer" duration="1" repeat="true" />
-    <Timer id="stopTimeout" duration="2.5" />
+    <Timer id="stopTimeout" duration="3" />
     <Timer id="refreshTimeout" duration="12" />
   </children>
 </component>
