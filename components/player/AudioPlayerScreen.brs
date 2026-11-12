@@ -132,7 +132,7 @@ sub startPipeline()
     q = Arr_or(p.queue)
     if q.Count() > 0 then
         setupQueue(q, p)
-        playQueueIndex(m.qIndex, startParam(p))
+        playQueueIndex(m.qIndex, musicStart(p))
         return
     end if
     m.contentId = Str_orEmpty(p.itemId)
@@ -179,7 +179,16 @@ function startParam(p as object) as float
     return -1.0
 end function
 
+' Music starts at params.startPosition or at 0:00, never at the server's resume point (an omitted
+' start_position asks for it), like every later track in the queue.
+function musicStart(p as object) as float
+    s = startParam(p)
+    if s < 0 then s = 0.0
+    return s
+end function
+
 sub onItem(event as object)
+
     resp = Api_result(event)
     if m.closing then return
     if not resp.ok or resp.data = invalid then
@@ -194,7 +203,7 @@ sub onItem(event as object)
     else
         ' A single track (or other audio item): a one-entry queue.
         setupQueue([it], m.top.params)
-        playQueueIndex(0, startParam(m.top.params))
+        playQueueIndex(0, musicStart(m.top.params))
     end if
 end sub
 
