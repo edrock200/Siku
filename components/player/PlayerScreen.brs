@@ -156,6 +156,7 @@ sub resetPlaybackState()
     m.hudTab = 0
     m.hudFocus = "tabs"
     m.hudRow = 0
+    m.hudRowOffset = 0
     m.hudRows = []
     m.hudTabs = []
     m.hudChoices = []
@@ -1827,9 +1828,10 @@ sub openHud(tabIndex as integer)
         m.hudTabs.Push(chip)
     end for
     m.hudTabsGroup.translation = [Int((1920 - x + 12) / 2), 100]
-    buildHudRows()
     m.hudFocus = "tabs"
     m.hudRow = 0
+    m.hudRowOffset = 0
+    buildHudRows()
     m.hud.visible = true
     focusHud()
     if names[tabIndex] = "Subtitles" then Subs_onPaneShown()
@@ -1844,7 +1846,7 @@ end sub
 
 sub focusHud()
     if m.hudFocus = "rows" and m.hudRows.Count() > 0 then
-        if m.hudRow >= m.hudRows.Count() then m.hudRow = m.hudRows.Count() - 1
+        if m.hudSpecs <> invalid and m.hudRow >= m.hudSpecs.Count() then m.hudRow = m.hudSpecs.Count() - 1
         applyHudRowFocus()
         m.focusSink.setFocus(true)
     else
@@ -1861,6 +1863,8 @@ sub selectHudTab(i as integer)
         m.hudTabs[j].selected = (j = i)
     end for
     m.hudTabs[i].setFocus(true)
+    m.hudRow = 0
+    m.hudRowOffset = 0
     buildHudRows()
     tabNames = hudTabNames()
     if tabNames[i] = "Subtitles" then Subs_onPaneShown()
@@ -2047,11 +2051,19 @@ sub buildHudRows()
     rowW = 1440 - 80
     rowH = 68
     y = 0
-    maxRows = 8
-    n = specs.Count()
+    ' At most hudMaxRows rows show; m.hudRowOffset is the first one shown and m.hudRow the focused
+    ' row's index in specs, so a long pane (24 chapters) scrolls with the focus.
+    maxRows = hudMaxRows()
+    if m.hudRow >= specs.Count() then m.hudRow = 0
+    if m.hudRowOffset = invalid or m.hudRowOffset < 0 then m.hudRowOffset = 0
+    if m.hudRow < m.hudRowOffset then m.hudRowOffset = m.hudRow
+    if m.hudRow >= m.hudRowOffset + maxRows then m.hudRowOffset = m.hudRow - maxRows + 1
+    if m.hudRowOffset > specs.Count() - maxRows then m.hudRowOffset = specs.Count() - maxRows
+    if m.hudRowOffset < 0 then m.hudRowOffset = 0
+    n = specs.Count() - m.hudRowOffset
     if n > maxRows then n = maxRows
-    for i = 0 to n - 1
-        spec = specs[i]
+    for r = 0 to n - 1
+        spec = specs[m.hudRowOffset + r]
         row = m.hudRowsGroup.createChild("Group")
         row.translation = [0, y]
         bg = row.createChild("Poster")
@@ -2109,14 +2121,50 @@ sub buildHudRows()
     if h < 312 then h = 312
     m.hudBg.height = h
     m.hudRing.height = h
-    if m.hudRow >= m.hudRows.Count() then m.hudRow = 0
+    ' More rows than fit: say which part of the list shows, in the pane's bottom corner.
+    if specs.Count() > n then
+        hint = m.hudRowsGroup.createChild("Label")
+        hint.text = (m.hudRowOffset + 1).ToStr() + "–" + (m.hudRowOffset + n).ToStr() + " of " + specs.Count().ToStr()
+        hint.translation = [0, y + 4]
+        hint.width = rowW - 24
+        hint.horizAlign = "right"
+        hint.color = "0xEDEDED8C"
+        hf = CreateObject("roSGNode", "Font")
+        hf.uri = "pkg:/fonts/Inter-regular.otf"
+        hf.size = 21
+        hint.font = hf
+    end if
     applyHudRowFocus()
 end sub
+
+function hudMaxRows() as integer
+    return 8
+end function
+
+' Moves the HUD row focus to spec index i, scrolling the window when it leaves it.
+sub setHudRow(i as integer)
+    if m.hudSpecs = invalid or i < 0 or i >= m.hudSpecs.Count() then return
+    m.hudRow = i
+    if i < m.hudRowOffset or i >= m.hudRowOffset + hudMaxRows() then
+        buildHudRows()
+    else
+        applyHudRowFocus()
+    end if
+end sub
+
+' The chapter playing now (the last one starting at or before the position), for the Chapters pane.
+function currentChapterIndex() as integer
+    idx = 0
+    for i = 0 to m.chapters.Count() - 1
+        if Content_num(m.chapters[i].start_seconds) <= m.position then idx = i
+    end for
+    return idx
+end function
 
 sub applyHudRowFocus()
     for i = 0 to m.hudRows.Count() - 1
         row = m.hudRows[i]
-        f = (m.hudFocus = "rows" and i = m.hudRow)
+        f = (m.hudFocus = "rows" and m.hudRowOffset + i = m.hudRow)
         Node_find(row, "bg").visible = f
         if f then
             Node_find(row, "label").color = "0x000000FF"
@@ -2141,8 +2189,13 @@ sub activateHudRow()
     else if id = "quality" then
         openPicker("quality")
     else if id = "autoplay" then
+        ' playback.auto_play_next is the server's value (Settings_autoPlayNext reads it first), so
+        ' write it as the Settings screen does; the device pref stays the offline fallback.
+        value = not autoPlayNext()
+        Settings_setLocal("playback.auto_play_next", "profile_device", value)
+        Settings_put("playback.auto_play_next", "profile_device", value, "onHudSettingWritten")
         p = AA_copy(m.global.prefs)
-        p.autoPlayNext = not (p.autoPlayNext <> false)
+        p.autoPlayNext = value
         Prefs_save(p)
         buildHudRows()
     else if id = "hdr" then
@@ -2484,6 +2537,9 @@ function handleHudKey(key as string) as boolean
             if m.hudRows.Count() > 0 then
                 m.hudFocus = "rows"
                 m.hudRow = 0
+                names = hudTabNames()
+                if names[m.hudTab] = "Chapters" then m.hudRow = currentChapterIndex()
+                buildHudRows()
                 focusHud()
             end if
         else if key = "up" then
@@ -2494,17 +2550,13 @@ function handleHudKey(key as string) as boolean
     ' Rows
     if key = "up" then
         if m.hudRow > 0 then
-            m.hudRow = m.hudRow - 1
-            applyHudRowFocus()
+            setHudRow(m.hudRow - 1)
         else
             m.hudFocus = "tabs"
             focusHud()
         end if
     else if key = "down" then
-        if m.hudRow < m.hudRows.Count() - 1 then
-            m.hudRow = m.hudRow + 1
-            applyHudRowFocus()
-        end if
+        if m.hudSpecs <> invalid and m.hudRow < m.hudSpecs.Count() - 1 then setHudRow(m.hudRow + 1)
     else if key = "OK" then
         activateHudRow()
     end if
