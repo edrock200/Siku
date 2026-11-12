@@ -178,23 +178,33 @@ function Accounts_fit(list as object, keepId as string, quiet = false as boolean
     while list.Count() > Accounts_max()
         i = Accounts_oldest(list, keepId, false)
         if i < 0 then exit while
+        if not quiet then Accounts_revokeDropped(list[i])
         list.Delete(i)
     end while
     while Len(FormatJson(list)) > Accounts_budget()
         i = Accounts_oldest(list, keepId, true)
         if i >= 0 then
+            if not quiet then Accounts_revokeDropped(list[i])
             list[i].Delete("session")
             list[i].expired = true
             if not quiet then Diag_log("[siku-accounts] registry budget: an account not used lately needs to sign in again")
         else
             i = Accounts_oldest(list, keepId, false)
             if i < 0 then exit while
+            if not quiet then Accounts_revokeDropped(list[i])
             list.Delete(i)
             if not quiet then Diag_log("[siku-accounts] registry budget: forgot an account not used lately")
         end if
     end while
     return list
 end function
+
+' A stored sign-in this device forgets (the account limit or the registry budget) is ended on its
+' server too, so it does not stay alive there where nobody can see or revoke it.
+sub Accounts_revokeDropped(e as dynamic)
+    if e = invalid or Type(e) <> "roAssociativeArray" then return
+    if Accounts_hasSignIn(e) then Session_queueRevoke(Str_orEmpty(e.url), e.session)
+end sub
 
 ' Index of the least recently used entry other than keepId (withSignIn: only those that hold a
 ' stored sign-in), or -1.
