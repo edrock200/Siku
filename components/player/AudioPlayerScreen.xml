@@ -12,7 +12,7 @@
                      poster_url, duration_seconds}). Entries without a fileId are resolved through
                      GET /api/v2/catalog/items/{contentId} (versions[], user_data.last_file_id).
       index          integer, the queue entry to start with (default 0)
-      startPosition  seconds into that first track (default 0)
+      startPosition  seconds into that first track (default 0, never the server's resume point)
       shuffle        bool: shuffle the queue, keeping `index` first
     Audiobook (no queue):
       itemId         the audiobook content_id
