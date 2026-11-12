@@ -274,6 +274,7 @@ end sub
 
 sub onRest()
     rf = m.pendingFocus
+    if rf = invalid then rf = m.rowList.rowItemFocused
     if rf = invalid or rf.Count() < 2 then return
     node = cardAt(rf[0], rf[1])
     if node = invalid then return
@@ -597,6 +598,13 @@ sub onItemPatch()
                 if m.focusRow >= m.rowList.content.getChildCount() then m.focusRow = m.rowList.content.getChildCount() - 1
                 syncRowMetrics()
             end if
+        end if
+        ' The next card slides into the focused slot without a rowItemFocused change, so the
+        ' marquee would keep the removed title. Re-read the focus once the RowList has settled.
+        if m.top.hasRows then
+            m.pendingFocus = invalid
+            m.restTimer.control = "stop"
+            m.restTimer.control = "start"
         end if
         return
     end if
