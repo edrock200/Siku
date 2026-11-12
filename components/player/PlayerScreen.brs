@@ -162,6 +162,7 @@ sub resetPlaybackState()
     m.closing = false
     m.finished = false
     m.resumeAfterStart = invalid
+    m.mountPlayed = false
     m.watchBackTarget = invalid
     m.waitingForToken = false
     if m.subs <> invalid then Subs_resetPlayback()
@@ -560,15 +561,23 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
     if LCase(Left(url, 5)) = "https" then content.HttpCertificatesFile = "common:/certs/ca-bundle.crt"
     if m.duration > 0 then content.Length = Int(m.duration)
     m.resumeAfterStart = invalid
+    m.mountPlayed = false
     if opts.resumeAt <> invalid then
         ' Continue where we were (a replan or a subtitle remount); the server may already have
         ' anchored player_start_seconds there, and onVideoState seeks if it didn't.
         startAt = opts.resumeAt - m.timelineOffset
         if startAt > 0 then content.PlayStart = Int(startAt)
         m.resumeAfterStart = opts.resumeAt
-    else if Content_num(tl.player_start_seconds) > 0 then
-        content.PlayStart = Int(Content_num(tl.player_start_seconds))
+        m.position = opts.resumeAt * 1.0
+    else
+        if Content_num(tl.player_start_seconds) > 0 then content.PlayStart = Int(Content_num(tl.player_start_seconds))
+        ' Until the Video node reports a position, the plan's start is where playback is: a replan
+        ' sent during the first buffer (the silent-remux recovery) must not ask for 0:00.
+        startSrc = Content_num(tl.source_start_seconds)
+        if startSrc <= 0 then startSrc = Content_num(tl.player_start_seconds) + m.timelineOffset
+        m.position = startSrc
     end if
+    m.scrubber.position = m.position
 
     ' Subtitles: only WebVTT/SRT sidecars can be rendered by the Video node (Subs_buildTrack adds
     ' the `token=` fallback and the timestamp_offset for the timeline offset and the viewer's delay).
@@ -642,11 +651,23 @@ function planAudioLanguage(plan as object) as string
     return Str_orEmpty(tracks[idx].language)
 end function
 
+' The subtitle track to keep across a remount or replan: the one showing, or the one chosen for a
+' mount that has not started playing yet (its pending choice would otherwise be dropped).
+function currentSubtitleChoice() as string
+    if m.pendingSubtitleTrackId <> "" then return m.pendingSubtitleTrackId
+    return Subs_selectedTrackId()
+end function
+
 ' Fetches the mounted sidecar again (a delay change or new server timing): the Video node keeps the
 ' cues it parsed, so the same plan is remounted at the current position with the same track.
 sub remountSubtitles()
+    remountAtPosition()
+end sub
+
+' Mounts the current plan again at the current position with the current subtitle choice.
+sub remountAtPosition()
     if m.plan = invalid or m.closing then return
-    keepId = Subs_selectedTrackId()
+    keepId = currentSubtitleChoice()
     resumeAt = m.position
     m.video.control = "stop"
     applyPlan(m.plan, { resumeAt: resumeAt, subtitleTrackId: keepId })
@@ -664,6 +685,7 @@ sub onVideoState()
         m.bufferLabel.text = "Buffering"
         m.isPaused = false
         m.playPauseBtn.iconUri = "pkg:/images/icons/pause.png"
+        m.mountPlayed = true
         if m.resumeAfterStart <> invalid then
             ' Only when PlayStart didn't land us there already.
             if Abs(m.video.position + m.timelineOffset - m.resumeAfterStart) > 3 then seekToSource(m.resumeAfterStart)
@@ -742,6 +764,9 @@ end sub
 
 sub onVideoPosition()
     if m.plan = invalid then return
+    ' Position notifications before the mount first plays can read 0 while the Video node buffers
+    ' towards PlayStart; m.position keeps the plan's start until then.
+    if not m.mountPlayed then return
     m.position = m.video.position + m.timelineOffset
     if not m.scrubbing then m.scrubber.position = m.position
     checkMarkers()
@@ -2163,7 +2188,7 @@ sub onReplan(event as object)
     print PlaybackCaps_diagLine(m.lastRequestBody, plan)
     resumeAt = m.position
     m.video.control = "stop"
-    applyPlan(plan, { resumeAt: resumeAt, subtitleTrackId: Subs_selectedTrackId() })
+    applyPlan(plan, { resumeAt: resumeAt, subtitleTrackId: currentSubtitleChoice() })
     if m.replanKind = "audio" and m.pendingAudioIndex >= 0 then m.chosenAudioIndex = m.pendingAudioIndex
     m.pendingAudioIndex = -1
     ' The overlay was rebuilt when the picker closed, before this answer: refresh it with the new plan.
