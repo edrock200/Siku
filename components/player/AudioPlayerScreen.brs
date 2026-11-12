@@ -67,6 +67,8 @@ sub init()
     m.voiceDebugDone = false   ' debugVoice injected (simulator aid)
     m.pendingSeek = -1.0
     m.waitingForToken = false
+    m.autoRetried = false       ' one automatic restart after a stream error (expired token, dropped connection)
+    m.autoRetryAt = 0.0
     m.renewals = 0              ' fresh sessions since the last good progress answer (#708)
     m.sessionExpired = false    ' the server forgot the session while paused: Play starts a fresh one
     m.endedByServer = false     ' 410 playback_session_ended: never start another on our own
@@ -250,6 +252,7 @@ sub playQueueIndex(idx as integer, startAt as float)
     ' Retire the outgoing track first so its stop reports where it actually was.
     stopSession(true)
     m.fileActive = false
+    if idx <> m.qIndex then m.autoRetried = false
     m.qIndex = idx
     m.ended = false
     e = m.queue[idx]
@@ -498,14 +501,26 @@ sub startFile(fileId as string, localStart as float, persistence as string)
     ensureFreshToken()
 end sub
 
-' The Audio node can't refresh headers mid-stream: refresh first when the token is about to expire.
+' The Audio node can't refresh headers mid-stream, and every range request (buffer refills, a seek
+' inside the part) carries the token. Refresh first when the token would expire before the file has
+' played out. Capped at an hour: tokens are issued for hours, so the cap keeps every start from
+' refreshing, and the automatic retry in onAudioState covers a part that outlives its token.
 sub ensureFreshToken()
     s = m.global.session
-    if not Str_isEmpty(s.refreshToken) and s.expiresAt > 0 and s.expiresAt - Time_nowSeconds() < 300 then
+    need = 300.0
+    pd = m.pending
+    if pd <> invalid and m.fileDuration > 0 then
+        remaining = m.fileDuration - Num_or(pd.localStart)
+        if remaining > need then need = remaining
+    end if
+    if need > 3600 then need = 3600.0
+    expiresAt = Num_or(s.expiresAt)
+    if not Str_isEmpty(s.refreshToken) and expiresAt > 0 and expiresAt - Time_nowSeconds() < need then
         auth = m.global.authTask
         if auth <> invalid then
             m.waitingForToken = true
-            auth.observeField("generation", "onTokenRefreshed")
+            ' Scoped: other waiters on the shared AuthTask keep their own observers.
+            auth.observeFieldScoped("generation", "onTokenRefreshed")
             m.refreshTimeout.control = "start"
             auth.refreshRequest = { token: s.accessToken }
             return
@@ -519,7 +534,7 @@ sub onTokenRefreshed()
     m.waitingForToken = false
     m.refreshTimeout.control = "stop"
     auth = m.global.authTask
-    if auth <> invalid then auth.unobserveField("generation")
+    if auth <> invalid then auth.unobserveFieldScoped("generation")
     if m.closing then return
     fetchCapabilities()
 end sub
@@ -893,6 +908,15 @@ sub onAudioState()
         ' The Audio node's text can quote the signed stream URL: masked on the console.
         print "[AudioPlayer] audio error "; m.audio.errorCode; " "; CreateObject("roRegex", "[a-z][a-z0-9+.-]*://[^\s]*", "i").ReplaceAll(msg, "<url>")
         m.progressTimer.control = "stop"
+        if not m.autoRetried and not m.closing and not m.endedByServer and (m.mode = "audiobook" or m.mode = "music") then
+            ' Retry once by itself with a new session (and a fresh token when it is due); the
+            ' error shows only if that fails too.
+            m.autoRetried = true
+            m.autoRetryAt = m.globalPos
+            Diag_log(Diag_join(["[siku-audio] stream error ", Str_orEmpty(m.audio.errorCode), "; starting again once at ", Int(m.globalPos).ToStr(), " s"]))
+            restartHere()
+            return
+        end if
         if m.mode = "music" then
             stopSession(true)
             trackFailed(msg)
@@ -921,7 +945,18 @@ sub onAudioPosition()
     else
         m.globalPos = m.localPos
     end if
+    ' Thirty seconds of good playback since the automatic retry re-arm it.
+    if m.autoRetried and m.globalPos > m.autoRetryAt + 30 then m.autoRetried = false
     updateProgressUi()
+end sub
+
+' A new session for the current file at the current position.
+sub restartHere()
+    if m.mode = "audiobook" and m.timeline <> invalid then
+        seekGlobal(m.globalPos, true)
+    else if m.mode = "music" and m.queue.Count() > 0 then
+        playQueueIndex(m.qIndex, m.localPos)
+    end if
 end sub
 
 sub onFinished()
