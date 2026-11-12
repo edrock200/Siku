@@ -127,7 +127,7 @@
 
     <Timer id="progressTimer" duration="10" repeat="true" />
     <Timer id="sleepTimer" duration="1" repeat="true" />
-    <Timer id="stopTimeout" duration="2.5" />
+    <Timer id="stopTimeout" duration="3" />
     <Timer id="refreshTimeout" duration="12" />
   </children>
 </component>
