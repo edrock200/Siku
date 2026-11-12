@@ -1,6 +1,7 @@
 #!/bin/sh
 # Uploads out/siku.zip to a Roku in developer mode.
 # Usage: ROKU_IP=192.168.1.50 ROKU_PASSWORD=secret npm run deploy
+# Add SIKU_DEBUG=1 to deploy a development build with the debug deep links on.
 set -e
 cd "$(dirname "$0")/.."
 : "${ROKU_IP:?Set ROKU_IP to your Roku's IP address}"

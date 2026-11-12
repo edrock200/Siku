@@ -541,6 +541,9 @@ end sub
 ' ---------- Focus ----------
 
 sub restoreFocus()
+    ' Reads keep landing after another screen was pushed on top; taking focus then would leave
+    ' the visible screen dead. onScreenShown calls this again when the screen comes back.
+    if m.top.active <> true then return
     if m.menu.visible then
         m.menu.setFocus(true)
         return

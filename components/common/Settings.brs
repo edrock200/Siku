@@ -401,18 +401,52 @@ function Settings_uiSignature() as string
 end function
 
 ' ---------- Home Sections layout (device-local, like Android TV's TvHomeSectionPreferences) ----------
+' Kept per server + profile (Settings_identity) in prefs.homeLayouts[identity] = { hidden, order },
+' as Android keys its store by server, account and profile. Builds before that kept one layout
+' for the whole device in prefs.hiddenSections / prefs.sectionOrder; the first profile to read
+' its layout inherits those lists, and they are then dropped.
+
+function Settings_homeLayout() as object
+    p = Settings_prefs()
+    identity = Settings_identity()
+    layouts = p.homeLayouts
+    if Type(layouts) = "roAssociativeArray" then
+        e = layouts[identity]
+        if Type(e) = "roAssociativeArray" then return { hidden: Arr_or(e.hidden), order: Arr_or(e.order) }
+    end if
+    legacyHidden = Arr_or(p.hiddenSections)
+    legacyOrder = Arr_or(p.sectionOrder)
+    hl = { hidden: legacyHidden, order: legacyOrder }
+    if legacyHidden.Count() > 0 or legacyOrder.Count() > 0 then Settings_saveHomeLayout(hl)
+    return hl
+end function
+
+sub Settings_saveHomeLayout(hl as object)
+    p = AA_copy(Settings_prefs())
+    layouts = {}
+    if Type(p.homeLayouts) = "roAssociativeArray" then
+        for each k in p.homeLayouts
+            layouts[k] = p.homeLayouts[k]
+        end for
+    end if
+    layouts[Settings_identity()] = { hidden: Arr_or(hl.hidden), order: Arr_or(hl.order) }
+    p.homeLayouts = layouts
+    p.hiddenSections = []
+    p.sectionOrder = []
+    Prefs_save(p)
+end sub
 
 ' Applies the saved order, then (unless includingHidden) the hidden set, to the server's sections.
 function Settings_arrangeSections(sections as object, includingHidden = false as boolean) as object
-    p = Settings_prefs()
+    hl = Settings_homeLayout()
     rank = {}
     i = 0
-    for each id in Arr_or(p.sectionOrder)
+    for each id in hl.order
         rank[Str_orEmpty(id)] = i
         i = i + 1
     end for
     hidden = {}
-    for each h in Arr_or(p.hiddenSections)
+    for each h in hl.hidden
         hidden[Str_orEmpty(h)] = true
     end for
     ranked = []
@@ -444,27 +478,27 @@ function Settings_arrangeSections(sections as object, includingHidden = false as
 end function
 
 function Settings_sectionHidden(sectionId as string) as boolean
-    for each h in Arr_or(Settings_prefs().hiddenSections)
+    for each h in Settings_homeLayout().hidden
         if Str_orEmpty(h) = sectionId then return true
     end for
     return false
 end function
 
 sub Settings_setSectionHidden(sectionId as string, hidden as boolean)
-    p = AA_copy(Settings_prefs())
+    hl = Settings_homeLayout()
     list = []
-    for each h in Arr_or(p.hiddenSections)
+    for each h in hl.hidden
         if Str_orEmpty(h) <> sectionId then list.Push(h)
     end for
     if hidden then list.Push(sectionId)
-    p.hiddenSections = list
-    Prefs_save(p)
+    hl.hidden = list
+    Settings_saveHomeLayout(hl)
     m.global.homeDirty = true
 end sub
 
 ' Replaces the order of the known rows, keeping remembered rows that are absent right now.
 sub Settings_setSectionOrder(sectionIds as object)
-    p = AA_copy(Settings_prefs())
+    hl = Settings_homeLayout()
     seen = {}
     list = []
     for each id in sectionIds
@@ -474,15 +508,15 @@ sub Settings_setSectionOrder(sectionIds as object)
             list.Push(sid)
         end if
     end for
-    for each id in Arr_or(p.sectionOrder)
+    for each id in hl.order
         sid = Str_orEmpty(id)
         if sid <> "" and not seen.DoesExist(sid) then
             seen[sid] = true
             list.Push(sid)
         end if
     end for
-    p.sectionOrder = list
-    Prefs_save(p)
+    hl.order = list
+    Settings_saveHomeLayout(hl)
     m.global.homeDirty = true
 end sub
 

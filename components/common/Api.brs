@@ -66,15 +66,48 @@ sub Api_onFired(event as object)
     end if
 end sub
 
-' Signs out: revokes the login session on the server (best effort, with the token we still hold)
-' and clears the local tokens and profile. Callers then route with Nav_reset("@start").
-sub Api_signOut()
+' Starts a request whose answer nobody waits for and that must finish even when the caller
+' leaves its screen right away (sign-out, change server). Api_call keeps the task only in the
+' calling screen's m.apiTasks, which Nav_reset frees together with the screen, so the task is
+' parented to the scene instead. Finished ones from earlier calls are removed here.
+sub Api_detached(request as object)
+    task = CreateObject("roSGNode", "ApiTask")
+    task.request = request
+    scene = m.top.getScene()
+    if scene <> invalid then
+        for i = scene.getChildCount() - 1 to 0 step -1
+            c = scene.getChild(i)
+            if c <> invalid and c.subtype() = "ApiTask" then
+                if c.state = "stop" or c.state = "done" then scene.removeChildIndex(i)
+            end if
+        end for
+        scene.appendChild(task)
+    end if
+    task.control = "RUN"
+end sub
+
+' Revokes the login session on the server (best effort) with the token and server we hold now.
+' Both are passed explicitly because the caller clears the session right after this returns,
+' before the task thread reads m.global.session.
+sub Api_revokeSession()
     s = m.global.session
     token = Str_orEmpty(s.accessToken)
-    if token <> "" then
-        Api_call({ method: "POST", path: "/api/v2/auth/logout", auth: false, profile: false, headers: { Authorization: "Bearer " + token }, timeout: 8 }, "Api_onFired")
-    end if
-    Session_signOutLocal(s)
+    if token = "" or Str_isEmpty(s.serverUrl) then return
+    Api_detached({ method: "POST", path: "/api/v2/auth/logout", baseUrl: s.serverUrl, auth: false, profile: false, headers: { Authorization: "Bearer " + token }, timeout: 8 })
+end sub
+
+' Signs out: revokes the login session on the server and clears the local tokens and profile.
+' Callers then route with Nav_reset("@start").
+sub Api_signOut()
+    Api_revokeSession()
+    Session_signOutLocal(m.global.session)
+end sub
+
+' Change server: revokes the login session, then forgets the server. Callers then route with
+' Nav_reset("ServerConnectScreen").
+sub Api_leaveServer()
+    Api_revokeSession()
+    Session_clearServer()
 end sub
 
 ' Cancels all in-flight tasks this component started (call when leaving a screen).

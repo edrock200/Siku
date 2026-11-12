@@ -776,13 +776,11 @@ sub replaceCode(stillLive as boolean)
     requestCode()
 end sub
 
+' Detached, with the server named explicitly: Change server clears the session and leaves this
+' screen right after, which would otherwise drop the task or send it nowhere. A 404 is harmless.
 sub cancelCode(deviceCode as string)
     if deviceCode = "" then return
-    Api_call({ method: "POST", path: "/api/v2/auth/device/cancel", body: { device_code: deviceCode }, auth: false, profile: false, timeout: 5 }, "onCancelDone")
-end sub
-
-sub onCancelDone(event as object)
-    Api_result(event) ' 404 is harmless
+    Api_detached({ method: "POST", path: "/api/v2/auth/device/cancel", baseUrl: Str_orEmpty(m.global.session.serverUrl), body: { device_code: deviceCode }, auth: false, profile: false, timeout: 5 })
 end sub
 
 ' Leaving the code: withdraw it on the server and stop polling.

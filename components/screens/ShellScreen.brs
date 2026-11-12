@@ -549,7 +549,7 @@ sub onProfileAction(id as string)
         Nav_push("SettingsScreen", {})
     else if id = "switch_server" then
         closePanel()
-        Session_clearServer()
+        Api_leaveServer()
         Nav_reset("ServerConnectScreen", {})
     else if id = "sign_out" then
         closePanel()

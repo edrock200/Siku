@@ -165,7 +165,32 @@ end sub
 
 sub handleDeepLink(args as dynamic)
     if args = invalid then return
-    ' Developer aids for the simulator (tools/simulate.py, tools/mock_server.py).
+    ' Developer aids (mock session, any screen, debugItem/debugFile/debugUrl) exist only in builds
+    ' packaged with DEBUG=true (`npm run package:dev`, tools/simulate.py), so nobody on the LAN
+    ' can overwrite the saved sign-in or open arbitrary screens over ECP in a release build.
+    ' Release builds keep one field diagnostic the README points users to: the stream test
+    ' screen with its built-in streams.
+#if DEBUG
+        if handleDebugLink(args) then return
+#else
+        if Str_orEmpty(args.debugScreen) = "StreamTestScreen" then
+            resetTo("StreamTestScreen", {})
+            return
+        end if
+#end if
+    if Str_isEmpty(args.contentId) then return
+    if Str_isEmpty(m.global.session.profileId) then return
+    mediaType = LCase(Str_orEmpty(args.mediaType))
+    if mediaType = "album" or mediaType = "artist" or mediaType = "audiobook" or mediaType = "track" then
+        pushScreen("AudioDetailScreen", { itemId: args.contentId, itemType: mediaType })
+    else if mediaType = "movie" or mediaType = "episode" or mediaType = "series" or mediaType = "season" or mediaType = "" then
+        pushScreen("DetailScreen", { itemId: args.contentId })
+    end if
+end sub
+
+#if DEBUG
+' Returns true when the link opened a debug screen and nothing else should run.
+function handleDebugLink(args as object) as boolean
     if args.debugSession = "mock" then
         s = AA_copy(m.global.session)
         s.serverUrl = "http://127.0.0.1:8097"
@@ -189,17 +214,11 @@ sub handleDeepLink(args as dynamic)
         if not Str_isEmpty(args.debugFile) then params.fileId = args.debugFile ' PlayerScreen: play this version (mock 4K files: 52, 56)
         if not Str_isEmpty(args.debugUrl) then params.url = args.debugUrl ' StreamTestScreen: an extra stream to try
         resetTo(args.debugScreen, params)
-        return
+        return true
     end if
-    if Str_isEmpty(args.contentId) then return
-    if Str_isEmpty(m.global.session.profileId) then return
-    mediaType = LCase(Str_orEmpty(args.mediaType))
-    if mediaType = "album" or mediaType = "artist" or mediaType = "audiobook" or mediaType = "track" then
-        pushScreen("AudioDetailScreen", { itemId: args.contentId, itemType: mediaType })
-    else if mediaType = "movie" or mediaType = "episode" or mediaType = "series" or mediaType = "season" or mediaType = "" then
-        pushScreen("DetailScreen", { itemId: args.contentId })
-    end if
-end sub
+    return false
+end function
+#end if
 
 ' ---------- Keys ----------
 

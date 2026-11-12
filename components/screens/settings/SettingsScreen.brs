@@ -74,6 +74,7 @@ sub init()
     m.pickerFirst = 0
     m.pickerMode = ""        ' "options" | "confirm"
     m.pendingWrites = 0
+    m.saving = false
     m.writeFailed = false
     m.serverVersion = ""
     m.supportsDolbyVision = displaySupportsDolbyVision()
@@ -88,6 +89,8 @@ end sub
 
 sub onScreenShown()
     m.top.setFocus(true)
+    ' A reload for another profile (Switch Profile) is dropped without notice; don't stay locked.
+    if m.pendingWrites <= 0 then m.saving = false
     fillAccount()
     ' Back from Switch Profile: the snapshot may belong to another profile now.
     if not Settings_available() then Settings_load()
@@ -221,7 +224,7 @@ function buildPane(catId as string) as object
         out.Push({ kind: "row", row: rowDef("skipCredits", "toggle", "Skip Credits") })
         out.Push({ kind: "row", row: rowDef("rewindOnResume", "choice", "Rewind on Resume") })
         out.Push({ kind: "row", row: rowDef("stillWatching", "choice", "Still Watching Prompt") })
-        out.Push({ kind: "footer", text: "Rewind on Resume skips back when you return to a partly watched title. Still Watching Prompt sets how many episodes play in a row before Silo asks whether you're still watching." })
+        out.Push({ kind: "footer", text: "Rewind on Resume skips back when you return to a partly watched title. Still Watching Prompt sets how many episodes play in a row before Siku asks whether you're still watching." })
 
         out.Push({ kind: "header", text: "Video" })
         out.Push({ kind: "row", row: rowDef("skipBack", "choice", "Skip Back") })
@@ -273,7 +276,7 @@ function buildPane(catId as string) as object
             out.Push({ kind: "row", row: rowDef("address", "info", "Address") })
         end if
         out.Push({ kind: "row", row: rowDef("serverVersion", "info", "Server Version") })
-        out.Push({ kind: "row", row: rowDef("manageServers", "action", "Manage Servers") })
+        out.Push({ kind: "row", row: rowDef("manageServers", "action", "Change Server") })
         out.Push({ kind: "header", text: "About" })
         out.Push({ kind: "row", row: rowDef("appVersion", "info", "App Version") })
     end if
@@ -791,6 +794,7 @@ end sub
 
 ' A load this screen started landed (settingsLoaded), or the screen is shown again.
 sub onSettingsChanged()
+    if m.pendingWrites <= 0 then m.saving = false
     showStatus("")
     renderPane()
 end sub
@@ -929,9 +933,14 @@ end sub
 
 ' ---------- Writes ----------
 
+' Writes add up: a second change while one is in flight must not reset the count, or the first
+' completion reloads early. Until the reload lands (onSettingsChanged) the rows still show the
+' old snapshot, so activateRow ignores further changes while m.saving is set.
 sub beginWrites(count as integer)
-    m.pendingWrites = count
-    m.writeFailed = false
+    if count <= 0 then return
+    if m.pendingWrites <= 0 then m.writeFailed = false
+    m.pendingWrites = m.pendingWrites + count
+    m.saving = true
     showStatus("Saving…")
 end sub
 
@@ -987,9 +996,13 @@ end sub
 
 ' playback.subtitle_appearance at profile_device (the full object; textOpacity only when the
 ' server's manifest knows it).
+' The body is built from quoted camelCase names: on a Roku, unquoted AA-literal keys and keys
+' read back from such an AA are lower-cased ("fontsize"), and the contract's schema
+' (additionalProperties: false) refuses those. AA lookups are case-insensitive, so a[k] still
+' finds the value whatever case it was stored under.
 sub writeAppearance(a as object)
     body = {}
-    for each k in Settings_defaultAppearance()
+    for each k in ["fontSize", "fontFamily", "fontColor", "textOpacity", "backgroundColor", "backgroundStyle", "backgroundOpacity", "textOutline", "textOutlineColor", "position"]
         if a[k] <> invalid then body[k] = a[k]
     end for
     if not textOpacitySupported() then body.Delete("textOpacity")
@@ -1068,8 +1081,10 @@ sub applyChoice(row as object, value as dynamic)
         putValue("player.dv_profile7_hdr10_fallback", "profile_device", value = true)
     else if id = "forceHdr" then
         savePref("forceHdrPassthrough", value = true)
+        refreshValues()
     else if id = "forceDolby" then
         savePref("forceDolbyPassthrough", value = true)
+        refreshValues()
     else if id = "progressiveRemux" then
         savePref("progressiveRemux", value = true)
         refreshValues()
@@ -1134,6 +1149,10 @@ sub performConfirmed(actionId as string)
         Api_signOut()
         Settings_clear()
         Nav_reset("@start")
+    else if actionId = "changeServer" then
+        Api_leaveServer()
+        Settings_clear()
+        Nav_reset("ServerConnectScreen")
     else if actionId = "resetOverrides" then
         ' Clear every server-side device override for this profile on this Roku, and the
         ' device-local playback keys that have no server row.
@@ -1158,6 +1177,7 @@ end sub
 
 sub activateRow(row as object)
     id = row.id
+    if m.saving = true and (row.kind = "choice" or row.kind = "toggle") then return
     if row.kind = "choice" then
         openPicker(row)
     else if row.kind = "toggle" then
@@ -1175,8 +1195,11 @@ sub activateRow(row as object)
     else if id = "resetAppearance" then
         openConfirm("resetAppearance", "Reset Custom Appearance?", "This restores all custom subtitle appearance options to their defaults.", "Reset")
     else if id = "manageServers" then
-        Session_clearServer()
-        Nav_reset("ServerConnectScreen")
+        ' Leaving the server discards this sign-in (tokens are kept only for the active server),
+        ' so it is confirmed like Sign Out.
+        server = Str_orEmpty(m.global.session.serverName)
+        if server = "" then server = Str_orEmpty(m.global.session.serverUrl)
+        openConfirm("changeServer", "Change Server?", "You will be signed out of " + server + " and can then connect to another server.", "Change Server")
     else if id = "retry" then
         showStatus("Loading…")
         Settings_load()
