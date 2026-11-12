@@ -163,6 +163,7 @@ sub resetPlaybackState()
     m.finished = false
     m.resumeAfterStart = invalid
     m.mountPlayed = false
+    m.subtitleResolved = false
     m.watchBackTarget = invalid
     m.waitingForToken = false
     if m.subs <> invalid then Subs_resetPlayback()
@@ -216,6 +217,7 @@ sub startPipeline()
         if m.shuffle = invalid or m.shuffle.id <> p.shuffleId then m.shuffle = { id: Str_orEmpty(p.shuffleId), latest: p.shuffle, exhausted: false }
     end if
     m.forceSubtitlesOff = p.subtitleTrackIndex <> invalid and p.subtitleTrackIndex = -1
+    m.startPaused = PlaybackCaps_truthy(p.startPaused)
     m.errorGroup.visible = false
     setBuffering(true)
     m.focusSink.setFocus(true)
@@ -228,9 +230,38 @@ sub startPipeline()
 end sub
 
 sub retry()
+    restartAt(m.position)
+end sub
+
+' Starts a fresh playback session for the same item at a source position (Try again after an
+' error, or a session the server lost), keeping the file and the track choices. A position of 0
+' keeps the launch parameters as they were.
+sub restartAt(position as float)
+    p = AA_copy(m.top.params)
+    if position > 0 then
+        p.startPosition = position
+        p.skipResumeRewind = true
+    end if
+    if m.fileId <> "" then p.fileId = m.fileId
+    if m.plan <> invalid and m.subtitleResolved then
+        keepId = currentSubtitleChoice()
+        if keepId <> "" then
+            p.subtitleTrackId = keepId
+            p.subtitleTrackIndex = invalid
+        else
+            p.subtitleTrackId = invalid
+            p.subtitleTrackIndex = -1
+        end if
+    end if
+    if m.chosenAudioIndex >= 0 and m.fileId <> "" then
+        p.audioTrackId = Tracks_audioId(m.fileId, m.chosenAudioIndex)
+        p.audioTrackIndex = invalid
+    end if
+    p.startPaused = m.isPaused and position > 0
     m.errorGroup.visible = false
     stopSession()
     m.video.control = "stop"
+    m.top.params = p
     resetPlaybackState()
     startPipeline()
 end sub
@@ -420,7 +451,7 @@ sub startSession(installation as string)
     ' Rewind on Resume (Settings → Playback → Episodes): back up a few seconds when continuing a
     ' partly watched title. Only when the caller passed the resume position; a server-side resume
     ' (no start_position) cannot be adjusted here.
-    if startPos <> invalid and startPos > 0 then
+    if startPos <> invalid and startPos > 0 and not PlaybackCaps_truthy(p.skipResumeRewind) then
         rewind = Settings_resumeRewindSeconds()
         if rewind > 0 then
             startPos = startPos - rewind
@@ -562,6 +593,7 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
     if m.duration > 0 then content.Length = Int(m.duration)
     m.resumeAfterStart = invalid
     m.mountPlayed = false
+    m.subtitleResolved = false
     if opts.resumeAt <> invalid then
         ' Continue where we were (a replan or a subtitle remount); the server may already have
         ' anchored player_start_seconds there, and onVideoState seeks if it didn't.
@@ -691,11 +723,21 @@ sub onVideoState()
             if Abs(m.video.position + m.timelineOffset - m.resumeAfterStart) > 3 then seekToSource(m.resumeAfterStart)
             m.resumeAfterStart = invalid
         end if
-        if m.pendingSubtitleTrackId <> "" then
+        if not m.subtitleResolved then
+            ' Once per mount: the chosen track, else captions off, so the Video node never keeps
+            ' an earlier title's (or the device's) caption mode while the HUD says Off.
+            m.subtitleResolved = true
+            chosen = -1
             for i = 0 to m.subtitleTracks.Count() - 1
-                if m.subtitleTracks[i].trackId = m.pendingSubtitleTrackId then setSubtitle(i)
+                if m.pendingSubtitleTrackId <> "" and m.subtitleTracks[i].trackId = m.pendingSubtitleTrackId then chosen = i
             end for
             m.pendingSubtitleTrackId = ""
+            setSubtitle(chosen)
+        end if
+        if m.startPaused then
+            ' A restarted session continues the way the viewer left it.
+            m.startPaused = false
+            m.video.control = "pause"
         end if
     else if st = "paused" then
         m.isPaused = true
@@ -812,8 +854,9 @@ end sub
 
 ' ---------- Progress and stop ----------
 
+' Every tick, paused or not: the server reaps a session it has not heard from (30 minutes when
+' paused), which ends its stream URLs and transcode.
 sub onProgressTick()
-    if m.isPaused then return
     sendProgress()
 end sub
 
@@ -823,14 +866,24 @@ sub sendProgress()
     if inst = "" then return
     m.sequence = m.sequence + 1
     body = { installation_id: inst, sequence: m.sequence, position: m.position, is_paused: m.isPaused }
-    Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/progress", body, "onProgressResult")
+    Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/progress", body, "onProgressResult", { sid: m.sessionId })
 end sub
 
+' 410 playback_session_ended: an administrator ended the session, so playback stops (as on
+' Android TV). 404: the server lost it (expiry, restart); a fresh session continues at the
+' current position. A late answer about an earlier session is ignored.
 sub onProgressResult(event as object)
     resp = Api_result(event)
-    if resp.status = 404 or resp.status = 410 then
-        ' The session is gone on the server; stop reporting.
+    if m.closing or resp.context = invalid or Str_orEmpty(resp.context.sid) <> m.sessionId or m.sessionId = "" then return
+    if resp.status = 410 then
         m.sessionId = ""
+        m.global.toast = "Playback was ended on the server."
+        exitPlayer()
+    else if resp.status = 404 then
+        m.sessionId = ""
+        if m.finished or m.upNext.visible or m.errorGroup.visible then return
+        print "[siku-playback] session not found on the server; starting a new one at " + Str_orEmpty(Int(m.position))
+        restartAt(m.position)
     end if
 end sub
 
