@@ -34,6 +34,9 @@ clears one); GET /mock/switch lists them.
   stop_fail=<n>                  the next n DELETE /playback/{id} answer 503 (Siku resends the same stop
                                  after 2, 4, 8 ... s). Log: STOP sid= stop_id= seq= pos= status=
   replan_410=1                   POST /playback/{id}/replan answers 410 playback_session_ended
+  start_delay=<s>                POST /playback/start (video) answers after s seconds
+  replan_delay=<s>               POST /playback/{id}/replan answers after s seconds; a second replan for the same
+                                 session while one is held answers 409 stale_playback_plan (log REPLAN OVERLAP)
   replan_version=<file id>       a quality_change replan moves to that version, subtitles Off (Silo Android #684)
   user_code=<code>               the device sign-in code to show (default 4821-7730)
   native_recovery=1              every plan gets its own plan_attempt_key (v3:<file>:<delivery>:<height>);
@@ -52,7 +55,8 @@ clears one); GET /mock/switch lists them.
                                  refused with that 422; slow: the capability read takes 30 s; fail:
                                  it answers 500. Rows carry up to 24 cards without item_limit.
   item_limit_max=<n>             the advertised section_item_limit_max (default 100)
-  ai_live=1|off|fail             live AI subtitle lines over the playback control socket (silo.playback-control.v2).
+  ai_live=1|off|fail|drop        live AI subtitle lines over the playback control socket (silo.playback-control.v2);
+                                 drop closes the socket after the second batch (as at token expiry) and streams on (4 s a batch) to a reconnected one.
                                  1 (or unset): GET /playback/sessions/control/capabilities says available, POST
                                  .../control/ws-ticket mints a ticket and GET .../control/ws upgrades with it; a
                                  translate job for a session whose socket is open streams subtitle_translation_started,
@@ -239,6 +243,7 @@ import io
 import json
 import random
 import re
+import socket
 import threading
 import time
 import uuid
@@ -2209,7 +2214,9 @@ def ai_live_stream(job, sid, start):
     def ev(name, **payload):
         body = {"session_id": sid, "file_id": fid, "job_id": jid, "track_key": key}
         body.update(payload)
-        return ws.send_text(json.dumps({"type": "event", "session_id": sid, "name": name, "payload": body}))
+        # The session's socket now (a reconnected one in drop mode); nothing is replayed.
+        cur = AI_LIVE["sockets"].get(sid) or ws
+        return cur.send_text(json.dumps({"type": "event", "session_id": sid, "name": name, "payload": body}))
 
     time.sleep(0.5)
     ev("subtitle_translation_started", language=job["target_language"], label="AI", total_cues=len(cues))
@@ -2228,7 +2235,19 @@ def ai_live_stream(job, sid, start):
             print("AI LIVE failed job=%s" % job["id"], flush=True)
             return
         job.update(progress=done / len(cues))
-        time.sleep(1.0)
+        if ai_live_mode() == "drop" and i == 8:
+            cur = AI_LIVE["sockets"].get(sid)
+            if cur is not None:
+                cur.send_frame(8, (1000).to_bytes(2, "big"))
+                cur.alive = False
+                try:
+                    cur.h.connection.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                AI_LIVE["sockets"].pop(sid, None)
+                print("AI LIVE socket dropped job=%s (as at token expiry)" % job["id"], flush=True)
+        # drop: slower batches, so the simulator's reconnect lands while the job still runs.
+        time.sleep(4.0 if ai_live_mode() == "drop" else 1.0)
     src = job["source_language"] or "en"
     rec = sub_store(job["media_file_id"], "translated", job["target_language"], "%s → %s (AI)" % (src, job["target_language"]), auto_sync=False)
     job.update(status="completed", progress=1.0, progress_message="", result_subtitle_id=rec["id"])
@@ -3251,6 +3270,9 @@ class Handler(BaseHTTPRequestHandler):
                                    "outcome": "terminal", "playback_attempt_id": b.get("playback_attempt_id"),
                                    "terminal": {"reason": reason, "message": "The server can't prepare this title (mock %s)." % reason, "retryable": False}})
         if p == "/api/v2/playback/start" and method == "POST":
+            if float(STATE["switches"].get("start_delay") or 0) > 0:
+                # start_delay=<s>: the video start answers late (Back meanwhile must stop the session).
+                time.sleep(float(STATE["switches"]["start_delay"]))
             sid = uuid.uuid4().hex
             STATE["sessions"][sid] = b
             LOG.append("START " + json.dumps(b)[:400])
@@ -3270,6 +3292,17 @@ class Handler(BaseHTTPRequestHandler):
             print("REPLAN", b.get("operation"), b.get("position_seconds"), playback_summary(b), flush=True)
             if m.group(1) not in STATE["sessions"]:
                 return self.problem(410, "playback_session_ended", "Session ended")
+            delay = float(STATE["switches"].get("replan_delay") or 0)
+            if delay > 0:
+                held = STATE.setdefault("replan_held", {})
+                if held.get(m.group(1)):
+                    print("REPLAN OVERLAP op=%s: another replan of this session is in flight" % b.get("operation"), flush=True)
+                    return self.problem(409, "stale_playback_plan", "Another replan of this session is in flight")
+                held[m.group(1)] = True
+                try:
+                    time.sleep(delay)
+                finally:
+                    held.pop(m.group(1), None)
             start = STATE["sessions"][m.group(1)]
             if STATE["switches"].get("native_recovery"):
                 keys = b.get("attempted_plan_keys") or []

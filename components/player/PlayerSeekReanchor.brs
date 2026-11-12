@@ -137,6 +137,14 @@ function SeekReanchor_intercept(target as float) as boolean
     if m.position > mountedEnd then mountedEnd = m.position
     reason = SeekReanchor_decide(m.plan, target, mountedEnd)
     if reason = "" then return false
+    if Replan_otherBusy() then
+        ' A track, quality or subtitle replan is in flight (PlayerReplanFence.brs): a second replan
+        ' now would be refused as stale. The target follows once its plan is mounted.
+        m.reanchorQueued = target
+        m.scrubber.position = target
+        Diag_log("[siku-playback] seek reanchor queued target=" + PlaybackCaps_str(Int(target)) + " behind=" + Replan_busyWith())
+        return true
+    end if
     return SeekReanchor_send(target, reason)
 end function
 
@@ -144,6 +152,8 @@ end function
 function SeekReanchor_send(target as float, reason as string) as boolean
     inst = installationId()
     if inst = "" or m.sessionId = "" or m.plan = invalid then return false
+    ' Never beside another replan (the start check then seeks locally instead).
+    if Replan_otherBusy() then return false
     selected = {}
     if m.plan.selected_tracks <> invalid then selected = m.plan.selected_tracks
     body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, "seek_reanchor", m.qualityPref, target, selected)
@@ -176,7 +186,12 @@ function SeekReanchor_send(target as float, reason as string) as boolean
 end function
 
 sub onSeekReanchor(event as object)
-    resp = Api_result(event)
+    SeekReanchor_take(Api_result(event))
+    ' A replan queued behind this re-anchor goes out once it is handled (it waits out a hold).
+    Replan_drain()
+end sub
+
+sub SeekReanchor_take(resp as object)
     Recovery_onReplanAnswered()
     if m.closing then return
     target = m.reanchorTarget
@@ -242,6 +257,11 @@ end sub
 ' The hold is over: the lead-in plan is handed to the Video node, unless the player closed or
 ' another replan mounted its own plan meanwhile.
 sub SeekReanchor_onHoldTimer()
+    SeekReanchor_takeHold()
+    Replan_drain()
+end sub
+
+sub SeekReanchor_takeHold()
     if not m.reanchorHolding then return
     plan = m.reanchorHeldPlan
     m.reanchorHolding = false
@@ -334,5 +354,10 @@ sub SeekReanchor_next()
     if m.reanchorQueued < 0 then return
     q = m.reanchorQueued
     m.reanchorQueued = -1.0
+    ' The same spot asked for twice (two presses computed from one position): already mounted.
+    if ReplanFence_nearMounted(q, m.position) then
+        Diag_log("[siku-playback] seek reanchor queued target=" + PlaybackCaps_str(Int(q)) + " dropped: already at " + PlaybackCaps_str(Int(m.position)))
+        return
+    end if
     if not SeekReanchor_send(q, "queued") then Diag_log("[siku-playback] seek reanchor queued target dropped: no session")
 end sub

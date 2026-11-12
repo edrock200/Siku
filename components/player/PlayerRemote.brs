@@ -77,7 +77,7 @@ function Remote_state() as object
         "subtitleTracks": []
         "qualityOptions": []
         "activeQualityId": "auto"
-        "isQualitySwitching": m.replanKind = "quality"
+        "isQualitySwitching": Remote_isQualitySwitching()
         "playbackSpeed": 1.0
         "videoGravity": "fit"
         "hdrEnabled": false
@@ -169,6 +169,8 @@ sub Remote_onCommand()
         if c.trackId <> invalid then idx = Int(Num_or(c.trackId, -1))
         AiLive_onUserSubtitle()
         setSubtitle(idx)
+        ' Like a pick in the player's own panel: it applies to the series and the next episode.
+        rememberSubtitlePick()
     else if name = "set_muted" then
         Remote_setMuted(PlaybackCaps_truthy(c.enabled))
     else if name = "set_volume" then
@@ -189,9 +191,22 @@ sub Remote_selectAudio(idx as integer)
         requestAudioTrackChange(idx)
     else
         tracks = Arr_or(m.video.availableAudioTracks)
-        if idx < tracks.Count() then m.video.audioTrack = tracks[idx].Track
+        if idx < tracks.Count() then
+            m.video.audioTrack = tracks[idx].Track
+            ' As onPickerChosen: a direct-played file lists its tracks in catalog order, and the
+            ' pick is remembered for the series (a server-side pick is saved when its replan lands).
+            catalog = serverAudioTracks()
+            if catalog.Count() = tracks.Count() then saveSeriesAudio(SeriesChoice_audioFromCatalog(catalog[idx], idx))
+        end if
     end if
 end sub
+
+' The phone's quality picker waits only while a quality change (the viewer's or the buffering
+' controller's) is on its way; m.replanKind keeps the last kind after the answer lands.
+function Remote_isQualitySwitching() as boolean
+    if not m.replanPending then return false
+    return m.replanKind = "quality" or m.replanKind = "bq"
+end function
 
 sub Remote_setMuted(muted as boolean)
     if not m.video.hasField("mute") then return

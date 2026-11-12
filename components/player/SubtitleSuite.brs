@@ -1356,6 +1356,11 @@ sub Subs_adoptStored(storedId as string, origin as string)
         Subs_adoptFailed(origin, Tx("The subtitle list could not be refreshed."))
         return
     end if
+    if m.replanPending = true or m.reanchorBusy = true or Str_orEmpty(m.subs.adoptId) <> "" then
+        ' One replan at a time (PlayerReplanFence.brs): adopted once the one in flight has landed.
+        Replan_queue({ slot: "adopt", storedId: storedId, origin: origin })
+        return
+    end if
     m.subs.adoptId = storedId
     m.subs.adoptOrigin = origin
     selected = {}
@@ -1370,8 +1375,23 @@ sub Subs_adoptStored(storedId as string, origin as string)
 end sub
 
 sub Subs_onAdoptReplan(event as object)
-    resp = Api_result(event)
-    if m.closing or not Subs_sameFile(resp) or Str_orEmpty(resp.context.sessionId) <> m.sessionId then return
+    Subs_takeAdoptReplan(Api_result(event))
+    Replan_drain()
+end sub
+
+sub Subs_takeAdoptReplan(resp as object)
+    if m.closing then return
+    if not Subs_sameFile(resp) or Str_orEmpty(resp.context.sessionId) <> m.sessionId then
+        ' The session was renewed meanwhile: this adoption is over (its answer names the old
+        ' session), so it must not hold the replan fence for good.
+        if resp.context <> invalid and Str_orEmpty(m.subs.adoptId) <> "" and Str_orEmpty(resp.context.storedId) = m.subs.adoptId then
+            Diag_log("[siku-playback] subtitle adoption answer dropped: the session changed meanwhile")
+            origin = m.subs.adoptOrigin
+            m.subs.adoptId = ""
+            Subs_adoptFailed(origin, Subs_adoptFailedText(origin))
+        end if
+        return
+    end if
     storedId = Str_orEmpty(resp.context.storedId)
     origin = m.subs.adoptOrigin
     m.subs.adoptId = ""
