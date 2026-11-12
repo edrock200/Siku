@@ -52,6 +52,7 @@ sub init()
     m.isFavorite = false
     m.loaded = false
     m.reloadOnShow = false
+    m.loadedRev = -1
     m.zone = "actions"
     m.actionIndex = 0
     m.lastFocus = invalid
@@ -79,7 +80,9 @@ sub onScreenShown()
         load()
         return
     end if
-    if m.reloadOnShow or m.global.homeDirty = true then
+    ' The shared data revision (DataRevision.brs), not homeDirty itself: Home may have folded the
+    ' flag into the revision before this page came back.
+    if m.reloadOnShow or DataRev_current() <> m.loadedRev then
         m.reloadOnShow = false
         reload()
     end if
@@ -109,6 +112,7 @@ sub reload()
 end sub
 
 sub fetchItem()
+    m.loadedRev = DataRev_current()
     p = m.top.params
     query = { image_size: "medium" }
     if not Str_isEmpty(p.libraryId) then query.library_id = p.libraryId
