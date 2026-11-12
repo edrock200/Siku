@@ -60,13 +60,24 @@ sub init()
     m.logo.observeField("loadStatus", "onLogoLoaded")
     m.logoGraceTimer.observeField("fire", "onLogoGrace")
     ' Card overlays (CardOverlayKeys.brs): a new document changes every card's image key, and the
-    ' Task starting to listen means requests made before were lost.
-    CardOverlay_observe("onCardOverlays")
+    ' Task starting to listen means requests made before were lost. Watched only while the page
+    ' showing this feed is (overlaysWatched), so nothing on m.global holds a page let go.
+    m.overlayRev = CardOverlay_revision()
     layoutBand()
     applyState()
 end sub
 
+' The host page shows (true) or is covered or left (false).
+sub onOverlaysWatched()
+    if m.top.overlaysWatched then
+        if CardOverlay_watch("onCardOverlays", m.overlayRev) then onCardOverlays()
+    else
+        CardOverlay_unwatch()
+    end if
+end sub
+
 sub onCardOverlays()
+    m.overlayRev = CardOverlay_revision()
     prefetchOverlays()
     CardOverlay_refresh(m.rowList.content)
 end sub

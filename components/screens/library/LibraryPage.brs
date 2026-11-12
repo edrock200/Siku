@@ -27,8 +27,10 @@ sub init()
 
     m.grid.observeField("itemFocused", "onGridFocused")
     m.grid.observeField("itemSelected", "onGridSelected")
-    ' Card overlays (CardOverlayKeys.brs): draw the grid's cards again with a new document.
-    CardOverlay_observe("onCardOverlays")
+    ' Card overlays (CardOverlayKeys.brs): draw the grid's cards again with a new document, watched
+    ' only while the page shows (onPageShown / onPageHidden), so nothing on m.global holds a page
+    ' the shell or an "Explore all" screen has let go.
+    m.overlayRev = CardOverlay_revision()
     m.backPill.observeField("buttonSelected", "onBackPill")
     m.sortPill.observeField("buttonSelected", "openSortPanel")
     m.filterPill.observeField("buttonSelected", "openFilterPanel")
@@ -353,6 +355,11 @@ sub onPageShown()
     ' The Shuffle pill follows the server's capability (hidden until it says available).
     Shuffle_refreshCaps("onShuffleCaps")
     updateShufflePill()
+    if CardOverlay_watch("onCardOverlays", m.overlayRev) then onCardOverlays()
+end sub
+
+sub onPageHidden()
+    CardOverlay_unwatch()
 end sub
 
 sub onShuffleCaps(event as object)
@@ -798,6 +805,7 @@ sub appendCards(items as object)
 end sub
 
 sub onCardOverlays()
+    m.overlayRev = CardOverlay_revision()
     prefetchOverlays()
     CardOverlay_refresh(m.grid.content)
 end sub

@@ -22,7 +22,12 @@ sub init()
     m.top.focusable = true
 end sub
 
+sub onPageHidden()
+    m.feed.overlaysWatched = false
+end sub
+
 sub onPageShown()
+    m.feed.overlaysWatched = true
     if m.global.homeDirty = true or (not m.loaded and not m.loading) then
         load()
     else if not m.loading and Fresh_isStale(m.loadedAt, Time_nowSeconds()) then

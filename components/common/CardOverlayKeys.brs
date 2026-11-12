@@ -64,7 +64,8 @@ end function
 
 ' The key of item c's overlay image on a card of shape, w x h, "" for nothing to draw: the
 ' document's name ("none" for the episodes-left disc alone), size and shape, whether a progress
-' bar lifts the bottom row, the data's key and the episodes left.
+' bar lifts the bottom row, the data's key, the episodes left and the interface language (badge
+' text such as "Returning" is drawn into the image).
 function CardOverlay_keyFor(c as object, shape as string, w as integer, h as integer, progress as boolean) as string
     if shape = "" or w <= 0 or h <= 0 then return ""
     if not c.hasField("overlayKey") then return ""
@@ -86,7 +87,7 @@ function CardOverlay_keyFor(c as object, shape as string, w as integer, h as int
     if doc <> "none" then dataKey = c.overlayKey
     flags = Left(shape, 1)
     if progress then flags = flags + "p"
-    return "ov" + doc + "_" + w.ToStr() + "x" + h.ToStr() + flags + "_" + dataKey + "_" + count.ToStr()
+    return "ov" + doc + "_" + w.ToStr() + "x" + h.ToStr() + flags + "_" + dataKey + "_" + count.ToStr() + "_" + I18n_locale()
 end function
 
 ' What OverlayArtTask needs to draw key; prefetch for a card not on screen yet (it waits behind
@@ -152,17 +153,7 @@ sub CardOverlay_prefetch(content as dynamic, style as string, w as integer, h as
     CardOverlay_send(batch)
 end sub
 
-' Calls callback when the cards' overlays should draw again: a new document, or OverlayArtTask
-' started listening (requests made before then are lost). Only long-lived views observe these: an
-' observer on m.global keeps its component alive.
-sub CardOverlay_observe(callback as string)
-    if not m.global.hasField("cardOverlaysRevision") then m.global.addFields({ cardOverlaysRevision: 0, cardOverlaysKey: "" })
-    if not m.global.hasField("overlayArtRevision") then m.global.addFields({ overlayArtRevision: 0 })
-    m.global.observeField("cardOverlaysRevision", callback)
-    m.global.observeField("overlayArtRevision", callback)
-end sub
-
-' For screens that come and go (a detail page): watch for a new document, or the Task starting to
+' For views that come and go (a detail page, a shell page, a feed): watch for a new document, or the Task starting to
 ' listen (requests made before are lost), only while on top, with scoped observers the screen
 ' removes again when it is covered, so nothing on m.global holds it. Returns true when either
 ' changed since since (CardOverlay_revision as this screen saw it last).

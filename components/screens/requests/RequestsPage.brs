@@ -47,7 +47,12 @@ sub init()
 end sub
 
 ' Re-read on every return, as the TV page does; unchanged rows are not re-applied, so focus stays put.
+sub onPageHidden()
+    m.feed.overlaysWatched = false
+end sub
+
 sub onPageShown()
+    m.feed.overlaysWatched = true
     if not m.loading then load()
 end sub
 

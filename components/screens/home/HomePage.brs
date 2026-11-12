@@ -38,7 +38,12 @@ function libraryId() as string
     return Str_orEmpty(p.libraryId)
 end function
 
+sub onPageHidden()
+    m.feed.overlaysWatched = false
+end sub
+
 sub onPageShown()
+    m.feed.overlaysWatched = true
     if m.global.homeDirty = true and libraryId() = "" then
         m.global.homeDirty = false
         load()

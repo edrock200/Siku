@@ -32,6 +32,7 @@ sub serve()
     m.seenActivity = m.top.activity
     m.ovStats = OverlayArt_newStats()
     m.copy = Ovl_words()
+    m.copyLocale = I18n_locale()
     ' Requests queued before the Task observed the queue are read now.
     m.readSeq = 0
     readQueue()
@@ -184,6 +185,11 @@ sub answer(request as object, done as object)
         end if
     end if
     m.asked[request.key] = "done"
+    ' The badge words follow the interface language (a request's key names the language it is for).
+    if m.copyLocale <> I18n_locale() then
+        m.copy = Ovl_words()
+        m.copyLocale = I18n_locale()
+    end if
     ' A failure while drawing (graphics memory, say) costs this card its overlays, not every card
     ' after it.
     try

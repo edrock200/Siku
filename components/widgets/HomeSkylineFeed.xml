@@ -34,6 +34,8 @@
     <field id="focusedCard" type="assocarray" alwaysNotify="true" />
     <field id="exploreSelected" type="assocarray" alwaysNotify="true" />
     <field id="hasRows" type="boolean" value="false" />
+    <!-- (in) true while the host page shows: the feed then watches for new card overlays (CardOverlay_watch). -->
+    <field id="overlaysWatched" type="boolean" value="false" onChange="onOverlaysWatched" />
     <!-- Bumped when a card's server image fails to load (Freshness.brs): the page may read again. -->
     <field id="artworkFailed" type="integer" value="0" alwaysNotify="true" />
   </interface>

@@ -853,7 +853,13 @@ sub I18n_apply(folder as string, reason as string)
         end if
     end if
     m.global.strings = table
+    changed = I18n_locale() <> folder
     m.global.appLocale = folder
+    ' Card overlay images carry badge words in the language (CardOverlay_keyFor): views draw again.
+    if changed then
+        if not m.global.hasField("cardOverlaysRevision") then m.global.addFields({ cardOverlaysRevision: 0, cardOverlaysKey: "" })
+        m.global.cardOverlaysRevision = m.global.cardOverlaysRevision + 1
+    end if
     Diag_log("[siku-i18n] language " + folder + " (" + reason + ", " + table.Count().ToStr() + " strings)")
 end sub
 
