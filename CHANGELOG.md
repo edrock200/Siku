@@ -3,6 +3,55 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.3.0
+
+Fixes from two full reviews of Siku (November 12, 2026): our own, and one another project did of an older version, checked against today's Siku. Also profile management from Silo's Android TV app.
+
+**New**
+- **Manage profiles from "Who's watching?".** Choose Manage (with the primary profile's PIN if it has one) to rename a profile, set, change or remove its PIN, turn Kids on or off, delete it (never the primary profile) or add a new one, like Silo's Android TV app.
+- **Audiobook skip interval.** In the audiobook player, pick how far the skip buttons jump (it applies to every device on your profile on servers that support it).
+- **Voice typing** in Search and in the server address and user name fields (never in password fields).
+- **Hold Up or Down to keep moving** in the A–Z bar, side panels, the "more" menu and the subtitle dialog.
+
+**Fixed**
+- **Phone handoff:** "Add server" while a phone has handed off a profile no longer signs the TV out and deletes its account.
+- **Safety:** a malformed message from another device on your network can no longer close Siku.
+- **Playback:**
+  - Changing quality, audio or subtitles while another change is still on its way no longer mixes them up ("Couldn't change the audio track").
+  - Quick skips during a seek on 4K/HEVC streams add up and reload once.
+  - A resumed title no longer restarts at 0:00, and a slow start no longer resets your Continue Watching place.
+  - Up Next counts down the time actually left instead of cutting off the credits, and pressing Up Next yourself shows the card without a countdown.
+  - "Try again" continues where playback stopped, with the same audio and subtitles.
+  - The sign-in is renewed for the whole length of a film; if the server refuses the video once, Siku renews and reconnects.
+  - Pressing Back while a video is starting no longer leaves a session running on the server.
+  - Player menus scroll past 8 rows ("9–16 of 24"), and Chapters opens on the current chapter.
+  - The Auto-play toggle in the player now sticks, and an error closes open menus instead of appearing behind them.
+  - Auto-skipped credits say "Credits skipped".
+  - Live AI subtitles reconnect when the connection drops mid-job, keeping the lines already shown.
+- **Audiobooks and music:**
+  - Your place in a book is kept in its first 5% and last 10%, where the server doesn't save it.
+  - Pausing for over 30 minutes no longer loses the session, and a stream error retries once.
+  - Sleep timer: "End of chapter" follows seeks, the timer only counts while something plays, and "End of track" really stops.
+  - A part that reports finished too early restarts instead of being skipped. Back waits for your place to be saved.
+  - Music: an artist's first track starts at 0:00, and picking a track plays the right one.
+- **Sign-in and accounts:**
+  - Signing out (or forgetting an old account) ends its session on the server, even when its sign-in had expired.
+  - Renewed sign-ins are no longer lost while you switch accounts or a phone has a profile.
+  - Change Account during a phone handoff hands the phone's profile back first.
+  - Network errors say what happened (a timeout, an answer too large) instead of always "check your connection", and a page that fails because the connection dropped is tried once more.
+- **Browsing:**
+  - Library and Home pages are freed when you leave them (memory no longer grows with every tab switch).
+  - On a slow server, switching seasons quickly no longer shows another season's episodes.
+  - Search loads more than 40 titles as you scroll, says "1 result", and "All" no longer shows ebooks or comics. Filmographies load more than 60 titles and show a count.
+  - Row titles in For You and Requests, badge text and the saved Home screen follow your language.
+  - Favorites, Watchlist and History refresh when something changes; Back from them returns Home.
+  - Retry buttons get focus, and the Movies and Series tabs come back by themselves if they failed to load at start.
+  - Home's background picture follows focus back to the previous card, and the marquee follows the card that slides in after a removal.
+- **Settings:** your subtitle style is sent the way the server expects; Force HDR and Force Dolby show their new value at once; Home Sections are saved per server and profile; the profile picker scrolls with 13 or more profiles.
+- **Deep links** from outside the app play only movies, episodes and videos.
+
+**Needs testing on a real Roku:** the Up Next countdown, resuming, Try again, long films past an hour, quick skips during a 4K seek, live AI subtitles past an hour, audiobook resume near a book's ends, long pauses and the sleep timer, hold-to-scroll, profile renames on the Roku keyboard, voice typing, and memory staying flat across tab switches.
+
 ## v0.2.0
 
 One change from Silo's Android TV app (November 12, 2026). Siku's version now goes up by 0.1 with every release.
