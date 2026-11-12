@@ -65,6 +65,11 @@ end sub
 sub Session_rememberServer(s as object)
     if Str_isEmpty(s.serverUrl) then return
     servers = Registry_read("servers", [])
+    ' Already first in the list with the same name and id (every token refresh lands here): skip the write.
+    if Type(servers) = "roArray" and servers.Count() > 0 and Type(servers[0]) = "roAssociativeArray" then
+        first = servers[0]
+        if Str_orEmpty(first.url) = s.serverUrl and Str_orEmpty(first.name) = Str_orEmpty(s.serverName) and Str_orEmpty(first.id) = Str_orEmpty(s.serverId) then return
+    end if
     out = [{ url: s.serverUrl, name: s.serverName, id: s.serverId }]
     for each e in servers
         if e.url <> s.serverUrl then out.Push(e)

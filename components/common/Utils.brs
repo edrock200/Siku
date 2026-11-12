@@ -14,8 +14,10 @@ end function
 
 sub Registry_write(key as string, value as dynamic)
     sec = CreateObject("roRegistrySection", "siku")
-    sec.Write(key, FormatJson({ v: value }))
-    sec.Flush()
+    ok = sec.Write(key, FormatJson({ v: value }))
+    if ok then ok = sec.Flush()
+    ' A full registry (16 KB per channel) fails silently otherwise; say so on the console.
+    if not ok then print "[siku-registry] could not save "; key
 end sub
 
 sub Registry_delete(key as string)
