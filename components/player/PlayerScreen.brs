@@ -166,6 +166,12 @@ sub resetPlaybackState()
     m.subtitleResolved = false
     m.watchBackTarget = invalid
     m.waitingForToken = false
+    m.tokenAction = ""
+    m.mountedToken = ""
+    m.authRecoveryTried = false
+    m.errorRecoveryKeys = {}
+    m.errorRecoveryMsg = ""
+    m.attemptedPlanKeys = []
     if m.subs <> invalid then Subs_resetPlayback()
 end sub
 
@@ -364,30 +370,46 @@ sub collectMarkers()
     m.markers = out
 end sub
 
-' Refresh the token first when it is about to expire: the Video node can't refresh headers mid-stream.
+' Refresh the token first when it would expire during the title: the Video node can't refresh
+' headers mid-stream (a token that runs out is handled on the error path, recoverFromVideoError).
 sub ensureFreshToken()
+    margin = 300
+    if m.duration > 0 then margin = Int(m.duration) + 300
     s = m.global.session
-    if not Str_isEmpty(s.refreshToken) and s.expiresAt > 0 and s.expiresAt - Time_nowSeconds() < 300 then
-        auth = m.global.authTask
-        if auth <> invalid then
-            m.waitingForToken = true
-            auth.observeField("generation", "onTokenRefreshed")
-            m.refreshTimeout.control = "start"
-            auth.refreshRequest = { token: s.accessToken }
-            return
-        end if
+    if not Str_isEmpty(s.refreshToken) and s.expiresAt > 0 and s.expiresAt - Time_nowSeconds() < margin then
+        if startTokenRefresh("start") then return
     end if
     fetchCapabilities()
 end sub
+
+' Asks the shared AuthTask for a new access token; onTokenRefreshed continues with `action`
+' ("start": fetch capabilities and start; "remount": remount the plan at the current position).
+function startTokenRefresh(action as string) as boolean
+    s = m.global.session
+    auth = m.global.authTask
+    if auth = invalid or Str_isEmpty(s.refreshToken) then return false
+    m.tokenAction = action
+    m.waitingForToken = true
+    ' Scoped: other components (ApiTask, the audio player) observe the same field and remove
+    ' their own observers; an unscoped unobserve could drop ours.
+    auth.observeFieldScoped("generation", "onTokenRefreshed")
+    m.refreshTimeout.control = "start"
+    auth.refreshRequest = { token: s.accessToken }
+    return true
+end function
 
 sub onTokenRefreshed()
     if m.waitingForToken <> true then return
     m.waitingForToken = false
     m.refreshTimeout.control = "stop"
     auth = m.global.authTask
-    if auth <> invalid then auth.unobserveField("generation")
+    if auth <> invalid then auth.unobserveFieldScoped("generation")
     if m.closing then return
-    fetchCapabilities()
+    if m.tokenAction = "remount" then
+        remountAtPosition()
+    else
+        fetchCapabilities()
+    end if
 end sub
 
 function cachedCaps() as dynamic
@@ -579,6 +601,7 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
         fmt = container
     end if
     content.StreamFormat = fmt
+    m.mountedToken = Str_orEmpty(s.accessToken)
     headers = ["Authorization: Bearer " + s.accessToken]
     if stream.headers <> invalid then
         for each k in stream.headers
@@ -718,6 +741,7 @@ sub onVideoState()
         m.isPaused = false
         m.playPauseBtn.iconUri = "pkg:/images/icons/pause.png"
         m.mountPlayed = true
+        m.authRecoveryTried = false
         if m.resumeAfterStart <> invalid then
             ' Only when PlayStart didn't land us there already.
             if Abs(m.video.position + m.timelineOffset - m.resumeAfterStart) > 3 then seekToSource(m.resumeAfterStart)
@@ -753,10 +777,48 @@ sub onVideoState()
         if m.plan <> invalid then delivery = Str_orEmpty(m.plan.delivery)
         print "[siku-playback] video error delivery=" + delivery + " code=" + Str_orEmpty(m.video.errorCode) + " msg=" + Str_orEmpty(m.video.errorMsg) + " str=" + Str_orEmpty(m.video.errorStr)
         if msg = "" then msg = "The video could not be played."
-        if m.video.errorCode <> invalid and m.video.errorCode <> 0 then msg = msg + " (" + Str_orEmpty(m.video.errorCode) + ")"
-        showError(msg)
+        code = Int(Num_or(m.video.errorCode, 0))
+        if code <> 0 then msg = msg + " (" + code.ToStr() + ")"
+        if not recoverFromVideoError(code, msg) then showError(msg)
     end if
 end sub
+
+' Tries once to keep playing after a Video node error, before the error screen:
+'  - the access token baked into the stream headers changed or is about to expire: refresh it if
+'    needed and remount the same plan at the current position;
+'  - a decoder or format error (-3 unknown, -4 empty, -5 unsupported) on a plan not yet recovered:
+'    ask the server for another route (failure_recovery), which excludes the failed plan, so a
+'    direct play the Roku rejects can fall back to a transcode. Network errors (-1, -2) are not
+'    recovered this way: another route would not help and would force a needless transcode.
+function recoverFromVideoError(code as integer, msg as string) as boolean
+    if m.plan = invalid or m.closing then return false
+    s = m.global.session
+    if not m.authRecoveryTried then
+        changed = Str_orEmpty(s.accessToken) <> m.mountedToken
+        expiring = s.expiresAt > 0 and s.expiresAt - Time_nowSeconds() < 120
+        if expiring and startTokenRefresh("remount") then
+            m.authRecoveryTried = true
+            print "[siku-playback] video error with an expiring access token; refreshing and remounting"
+            setBuffering(true)
+            return true
+        else if changed then
+            m.authRecoveryTried = true
+            print "[siku-playback] video error after the access token changed; remounting with the new one"
+            remountAtPosition()
+            return true
+        end if
+    end if
+    if m.sessionId = "" or (code <> -3 and code <> -4 and code <> -5) then return false
+    key = Str_orEmpty(m.plan.plan_attempt_key)
+    if key = "" then key = Str_orEmpty(m.plan.plan_id)
+    if m.errorRecoveryKeys[key] = true then return false
+    m.errorRecoveryKeys[key] = true
+    m.errorRecoveryMsg = msg
+    print "[siku-playback] video error " + code.ToStr() + "; asking the server for another route"
+    failure = { classification: "decoder_error", message: Left("Roku Video node error " + code.ToStr() + ": " + msg, 500) }
+    sendReplan("failure_recovery", "error_recovery", failure)
+    return true
+end function
 
 ' bufferingStatus: { percentage, isUnderrun, prebufferDone } while the Video node buffers; it can
 ' be invalid or partial. The label is full-width and centered, so no measuring is needed.
@@ -963,6 +1025,16 @@ sub showError(msg as string)
     m.controls.visible = false
     m.hud.visible = false
     m.skipGroup.visible = false
+    ' Pickers and dialogs are drawn above the error group and would stay on screen, dead.
+    m.picker.visible = false
+    if m.subs <> invalid then m.subs.dialog = ""
+    m.subsDialog.visible = false
+    m.countdownTimer.control = "stop"
+    m.countdown = -1
+    if m.upNext.visible then
+        m.upNext.visible = false
+        restoreVideoPane()
+    end if
     m.progressTimer.control = "stop"
     m.errorLabel.text = msg
     m.errorGroup.visible = true
@@ -2210,7 +2282,19 @@ sub sendReplan(operation as string, kind as string, failure = invalid as dynamic
     ' A viewer's own change (track, quality, output) starts a new route choice on the server, so a
     ' remux_hls answer to it gets one more recovery attempt.
     if operation = "track_change" or operation = "quality_change" or operation = "output_change" then m.remuxRecoveryTried = false
-    body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, operation, m.qualityPref, m.position, selected, failure)
+    attempted = invalid
+    if operation = "failure_recovery" then
+        ' Every plan that failed in this attempt, so the server skips all of them (attempt_count
+        ' is capped at 8 by the server).
+        key = Str_orEmpty(m.plan.plan_attempt_key)
+        known = false
+        for each k in m.attemptedPlanKeys
+            if k = key then known = true
+        end for
+        if key <> "" and not known and m.attemptedPlanKeys.Count() < 8 then m.attemptedPlanKeys.Push(key)
+        attempted = m.attemptedPlanKeys
+    end if
+    body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, operation, m.qualityPref, m.position, selected, failure, attempted)
     m.lastRequestBody = body
     m.replanKind = kind
     setBuffering(true)
@@ -2224,6 +2308,13 @@ sub onReplan(event as object)
     if m.replanKind = "output" then failText = "Couldn't change the video output"
     if m.replanKind = "audio" then failText = "Couldn't change the audio track"
     if m.replanKind = "recovery" then failText = "No sound expected: the server has no other way to stream this file to a Roku"
+    failed = not resp.ok or resp.data = invalid or resp.data.outcome <> "playable" or resp.data.playback_plan = invalid
+    if not failed then failed = PlaybackCaps_planProblem(resp.data) <> ""
+    if failed and m.replanKind = "error_recovery" then
+        ' No other route: the original error stands.
+        showError(m.errorRecoveryMsg)
+        return
+    end if
     if not resp.ok or resp.data = invalid or resp.data.outcome <> "playable" or resp.data.playback_plan = invalid then
         setBuffering(false)
         m.global.toast = failText
