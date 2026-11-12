@@ -67,6 +67,9 @@ sub init()
     ' The server ended the session while we were paused: Play starts a fresh one there.
     m.sessionLost = false
     m.pausedTicks = 0
+    ' One automatic restart after a stream error (an expired token, a dropped connection).
+    m.autoRetried = false
+    m.autoRetryAt = 0.0
     m.pendingSeek = -1.0
     m.waitingForToken = false
     m.chapterIdx = -1
@@ -234,6 +237,7 @@ sub playQueueIndex(idx as integer, startAt as float)
     ' Retire the outgoing track first so its stop reports where it actually was.
     stopSession(true)
     m.fileActive = false
+    if idx <> m.qIndex then m.autoRetried = false
     m.qIndex = idx
     m.ended = false
     e = m.queue[idx]
@@ -476,10 +480,21 @@ sub startFile(fileId as string, localStart as float, persistence as string)
     ensureFreshToken()
 end sub
 
-' The Audio node can't refresh headers mid-stream: refresh first when the token is about to expire.
+' The Audio node can't refresh headers mid-stream, and every range request (buffer refills, a seek
+' inside the part) carries the token. Refresh first when the token would expire before the file
+' has played out. Capped at an hour: tokens are issued for hours, so a cap keeps every start from
+' refreshing, and the automatic retry in onAudioState covers a part that outlives its token.
 sub ensureFreshToken()
     s = m.global.session
-    if not Str_isEmpty(s.refreshToken) and s.expiresAt > 0 and s.expiresAt - Time_nowSeconds() < 300 then
+    need = 300.0
+    pd = m.pending
+    if pd <> invalid and m.fileDuration > 0 then
+        remaining = m.fileDuration - Num_or(pd.localStart)
+        if remaining > need then need = remaining
+    end if
+    if need > 3600 then need = 3600.0
+    expiresAt = Num_or(s.expiresAt)
+    if not Str_isEmpty(s.refreshToken) and expiresAt > 0 and expiresAt - Time_nowSeconds() < need then
         auth = m.global.authTask
         if auth <> invalid then
             m.waitingForToken = true
@@ -829,6 +844,15 @@ sub onAudioState()
         if msg = "" then msg = "This could not be played."
         print "[AudioPlayer] audio error "; m.audio.errorCode; " "; msg
         m.progressTimer.control = "stop"
+        if not m.autoRetried and not m.closing and (m.timeline <> invalid or m.queue.Count() > 0) then
+            ' Retry once by itself with a new session (and a fresh token when it is due); the
+            ' error shows only if that fails too.
+            m.autoRetried = true
+            m.autoRetryAt = m.globalPos
+            print "[AudioPlayer] restarting once after the error"
+            restartHere()
+            return
+        end if
         if m.mode = "music" then
             stopSession(true)
             trackFailed(msg)
@@ -854,8 +878,11 @@ sub onAudioPosition()
     else
         m.globalPos = m.localPos
     end if
+    ' Thirty seconds of good playback since the automatic retry re-arms it.
+    if m.autoRetried and m.globalPos > m.autoRetryAt + 30 then m.autoRetried = false
     updateProgressUi()
 end sub
+
 
 sub onFinished()
     if m.ended then return
