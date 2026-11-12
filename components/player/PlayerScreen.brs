@@ -140,6 +140,7 @@ sub resetPlaybackState()
     m.forceSubtitlesOff = false
     m.explicitSubtitleId = ""
     m.remuxRecoveryTried = false
+    m.seekTarget = 0.0
     m.pendingAudioIndex = -1
     m.chosenAudioIndex = -1
     m.plannedAudioApplied = true
@@ -147,6 +148,8 @@ sub resetPlaybackState()
     m.upNextShown = false
     m.upNextDismissed = false
     m.countdown = -1
+    m.countdownToEnd = false
+    m.nextUpPrompt = invalid
     m.scrubbing = false
     m.scrubPos = 0.0
     m.holdTicks = 0
@@ -155,6 +158,7 @@ sub resetPlaybackState()
     m.hudTab = 0
     m.hudFocus = "tabs"
     m.hudRow = 0
+    m.hudRowOffset = 0
     m.hudRows = []
     m.hudTabs = []
     m.hudChoices = []
@@ -162,8 +166,16 @@ sub resetPlaybackState()
     m.closing = false
     m.finished = false
     m.resumeAfterStart = invalid
+    m.mountPlayed = false
+    m.subtitleResolved = false
     m.watchBackTarget = invalid
     m.waitingForToken = false
+    m.tokenAction = ""
+    m.mountedToken = ""
+    m.authRecoveryTried = false
+    m.errorRecoveryKeys = {}
+    m.errorRecoveryMsg = ""
+    m.attemptedPlanKeys = []
     if m.subs <> invalid then Subs_resetPlayback()
 end sub
 
@@ -215,6 +227,7 @@ sub startPipeline()
         if m.shuffle = invalid or m.shuffle.id <> p.shuffleId then m.shuffle = { id: Str_orEmpty(p.shuffleId), latest: p.shuffle, exhausted: false }
     end if
     m.forceSubtitlesOff = p.subtitleTrackIndex <> invalid and p.subtitleTrackIndex = -1
+    m.startPaused = PlaybackCaps_truthy(p.startPaused)
     m.errorGroup.visible = false
     setBuffering(true)
     m.focusSink.setFocus(true)
@@ -227,9 +240,38 @@ sub startPipeline()
 end sub
 
 sub retry()
+    restartAt(m.position)
+end sub
+
+' Starts a fresh playback session for the same item at a source position (Try again after an
+' error, or a session the server lost), keeping the file and the track choices. A position of 0
+' keeps the launch parameters as they were.
+sub restartAt(position as float)
+    p = AA_copy(m.top.params)
+    if position > 0 then
+        p.startPosition = position
+        p.skipResumeRewind = true
+    end if
+    if m.fileId <> "" then p.fileId = m.fileId
+    if m.plan <> invalid and m.subtitleResolved then
+        keepId = currentSubtitleChoice()
+        if keepId <> "" then
+            p.subtitleTrackId = keepId
+            p.subtitleTrackIndex = invalid
+        else
+            p.subtitleTrackId = invalid
+            p.subtitleTrackIndex = -1
+        end if
+    end if
+    if m.chosenAudioIndex >= 0 and m.fileId <> "" then
+        p.audioTrackId = Tracks_audioId(m.fileId, m.chosenAudioIndex)
+        p.audioTrackIndex = invalid
+    end if
+    p.startPaused = m.isPaused and position > 0
     m.errorGroup.visible = false
     stopSession()
     m.video.control = "stop"
+    m.top.params = p
     resetPlaybackState()
     startPipeline()
 end sub
@@ -332,30 +374,46 @@ sub collectMarkers()
     m.markers = out
 end sub
 
-' Refresh the token first when it is about to expire: the Video node can't refresh headers mid-stream.
+' Refresh the token first when it would expire during the title: the Video node can't refresh
+' headers mid-stream (a token that runs out is handled on the error path, recoverFromVideoError).
 sub ensureFreshToken()
+    margin = 300
+    if m.duration > 0 then margin = Int(m.duration) + 300
     s = m.global.session
-    if not Str_isEmpty(s.refreshToken) and s.expiresAt > 0 and s.expiresAt - Time_nowSeconds() < 300 then
-        auth = m.global.authTask
-        if auth <> invalid then
-            m.waitingForToken = true
-            auth.observeField("generation", "onTokenRefreshed")
-            m.refreshTimeout.control = "start"
-            auth.refreshRequest = { token: s.accessToken }
-            return
-        end if
+    if not Str_isEmpty(s.refreshToken) and s.expiresAt > 0 and s.expiresAt - Time_nowSeconds() < margin then
+        if startTokenRefresh("start") then return
     end if
     fetchCapabilities()
 end sub
+
+' Asks the shared AuthTask for a new access token; onTokenRefreshed continues with `action`
+' ("start": fetch capabilities and start; "remount": remount the plan at the current position).
+function startTokenRefresh(action as string) as boolean
+    s = m.global.session
+    auth = m.global.authTask
+    if auth = invalid or Str_isEmpty(s.refreshToken) then return false
+    m.tokenAction = action
+    m.waitingForToken = true
+    ' Scoped: other components (ApiTask, the audio player) observe the same field and remove
+    ' their own observers; an unscoped unobserve could drop ours.
+    auth.observeFieldScoped("generation", "onTokenRefreshed")
+    m.refreshTimeout.control = "start"
+    auth.refreshRequest = { token: s.accessToken }
+    return true
+end function
 
 sub onTokenRefreshed()
     if m.waitingForToken <> true then return
     m.waitingForToken = false
     m.refreshTimeout.control = "stop"
     auth = m.global.authTask
-    if auth <> invalid then auth.unobserveField("generation")
+    if auth <> invalid then auth.unobserveFieldScoped("generation")
     if m.closing then return
-    fetchCapabilities()
+    if m.tokenAction = "remount" then
+        remountAtPosition()
+    else
+        fetchCapabilities()
+    end if
 end sub
 
 function cachedCaps() as dynamic
@@ -419,7 +477,7 @@ sub startSession(installation as string)
     ' Rewind on Resume (Settings → Playback → Episodes): back up a few seconds when continuing a
     ' partly watched title. Only when the caller passed the resume position; a server-side resume
     ' (no start_position) cannot be adjusted here.
-    if startPos <> invalid and startPos > 0 then
+    if startPos <> invalid and startPos > 0 and not PlaybackCaps_truthy(p.skipResumeRewind) then
         rewind = Settings_resumeRewindSeconds()
         if rewind > 0 then
             startPos = startPos - rewind
@@ -547,6 +605,7 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
         fmt = container
     end if
     content.StreamFormat = fmt
+    m.mountedToken = Str_orEmpty(s.accessToken)
     headers = ["Authorization: Bearer " + s.accessToken]
     if stream.headers <> invalid then
         for each k in stream.headers
@@ -560,15 +619,24 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
     if LCase(Left(url, 5)) = "https" then content.HttpCertificatesFile = "common:/certs/ca-bundle.crt"
     if m.duration > 0 then content.Length = Int(m.duration)
     m.resumeAfterStart = invalid
+    m.mountPlayed = false
+    m.subtitleResolved = false
     if opts.resumeAt <> invalid then
         ' Continue where we were (a replan or a subtitle remount); the server may already have
         ' anchored player_start_seconds there, and onVideoState seeks if it didn't.
         startAt = opts.resumeAt - m.timelineOffset
         if startAt > 0 then content.PlayStart = Int(startAt)
         m.resumeAfterStart = opts.resumeAt
-    else if Content_num(tl.player_start_seconds) > 0 then
-        content.PlayStart = Int(Content_num(tl.player_start_seconds))
+        m.position = opts.resumeAt * 1.0
+    else
+        if Content_num(tl.player_start_seconds) > 0 then content.PlayStart = Int(Content_num(tl.player_start_seconds))
+        ' Until the Video node reports a position, the plan's start is where playback is: a replan
+        ' sent during the first buffer (the silent-remux recovery) must not ask for 0:00.
+        startSrc = Content_num(tl.source_start_seconds)
+        if startSrc <= 0 then startSrc = Content_num(tl.player_start_seconds) + m.timelineOffset
+        m.position = startSrc
     end if
+    m.scrubber.position = m.position
 
     ' Subtitles: only WebVTT/SRT sidecars can be rendered by the Video node (Subs_buildTrack adds
     ' the `token=` fallback and the timestamp_offset for the timeline offset and the viewer's delay).
@@ -642,11 +710,23 @@ function planAudioLanguage(plan as object) as string
     return Str_orEmpty(tracks[idx].language)
 end function
 
+' The subtitle track to keep across a remount or replan: the one showing, or the one chosen for a
+' mount that has not started playing yet (its pending choice would otherwise be dropped).
+function currentSubtitleChoice() as string
+    if m.pendingSubtitleTrackId <> "" then return m.pendingSubtitleTrackId
+    return Subs_selectedTrackId()
+end function
+
 ' Fetches the mounted sidecar again (a delay change or new server timing): the Video node keeps the
 ' cues it parsed, so the same plan is remounted at the current position with the same track.
 sub remountSubtitles()
+    remountAtPosition()
+end sub
+
+' Mounts the current plan again at the current position with the current subtitle choice.
+sub remountAtPosition()
     if m.plan = invalid or m.closing then return
-    keepId = Subs_selectedTrackId()
+    keepId = currentSubtitleChoice()
     resumeAt = m.position
     m.video.control = "stop"
     applyPlan(m.plan, { resumeAt: resumeAt, subtitleTrackId: keepId })
@@ -664,16 +744,28 @@ sub onVideoState()
         m.bufferLabel.text = "Buffering"
         m.isPaused = false
         m.playPauseBtn.iconUri = "pkg:/images/icons/pause.png"
+        m.mountPlayed = true
+        m.authRecoveryTried = false
         if m.resumeAfterStart <> invalid then
             ' Only when PlayStart didn't land us there already.
             if Abs(m.video.position + m.timelineOffset - m.resumeAfterStart) > 3 then seekToSource(m.resumeAfterStart)
             m.resumeAfterStart = invalid
         end if
-        if m.pendingSubtitleTrackId <> "" then
+        if not m.subtitleResolved then
+            ' Once per mount: the chosen track, else captions off, so the Video node never keeps
+            ' an earlier title's (or the device's) caption mode while the HUD says Off.
+            m.subtitleResolved = true
+            chosen = -1
             for i = 0 to m.subtitleTracks.Count() - 1
-                if m.subtitleTracks[i].trackId = m.pendingSubtitleTrackId then setSubtitle(i)
+                if m.pendingSubtitleTrackId <> "" and m.subtitleTracks[i].trackId = m.pendingSubtitleTrackId then chosen = i
             end for
             m.pendingSubtitleTrackId = ""
+            setSubtitle(chosen)
+        end if
+        if m.startPaused then
+            ' A restarted session continues the way the viewer left it.
+            m.startPaused = false
+            m.video.control = "pause"
         end if
     else if st = "paused" then
         m.isPaused = true
@@ -689,10 +781,48 @@ sub onVideoState()
         if m.plan <> invalid then delivery = Str_orEmpty(m.plan.delivery)
         print "[siku-playback] video error delivery=" + delivery + " code=" + Str_orEmpty(m.video.errorCode) + " msg=" + Str_orEmpty(m.video.errorMsg) + " str=" + Str_orEmpty(m.video.errorStr)
         if msg = "" then msg = "The video could not be played."
-        if m.video.errorCode <> invalid and m.video.errorCode <> 0 then msg = msg + " (" + Str_orEmpty(m.video.errorCode) + ")"
-        showError(msg)
+        code = Int(Num_or(m.video.errorCode, 0))
+        if code <> 0 then msg = msg + " (" + code.ToStr() + ")"
+        if not recoverFromVideoError(code, msg) then showError(msg)
     end if
 end sub
+
+' Tries once to keep playing after a Video node error, before the error screen:
+'  - the access token baked into the stream headers changed or is about to expire: refresh it if
+'    needed and remount the same plan at the current position;
+'  - a decoder or format error (-3 unknown, -4 empty, -5 unsupported) on a plan not yet recovered:
+'    ask the server for another route (failure_recovery), which excludes the failed plan, so a
+'    direct play the Roku rejects can fall back to a transcode. Network errors (-1, -2) are not
+'    recovered this way: another route would not help and would force a needless transcode.
+function recoverFromVideoError(code as integer, msg as string) as boolean
+    if m.plan = invalid or m.closing then return false
+    s = m.global.session
+    if not m.authRecoveryTried then
+        changed = Str_orEmpty(s.accessToken) <> m.mountedToken
+        expiring = s.expiresAt > 0 and s.expiresAt - Time_nowSeconds() < 120
+        if expiring and startTokenRefresh("remount") then
+            m.authRecoveryTried = true
+            print "[siku-playback] video error with an expiring access token; refreshing and remounting"
+            setBuffering(true)
+            return true
+        else if changed then
+            m.authRecoveryTried = true
+            print "[siku-playback] video error after the access token changed; remounting with the new one"
+            remountAtPosition()
+            return true
+        end if
+    end if
+    if m.sessionId = "" or (code <> -3 and code <> -4 and code <> -5) then return false
+    key = Str_orEmpty(m.plan.plan_attempt_key)
+    if key = "" then key = Str_orEmpty(m.plan.plan_id)
+    if m.errorRecoveryKeys[key] = true then return false
+    m.errorRecoveryKeys[key] = true
+    m.errorRecoveryMsg = msg
+    print "[siku-playback] video error " + code.ToStr() + "; asking the server for another route"
+    failure = { classification: "decoder_error", message: Left("Roku Video node error " + code.ToStr() + ": " + msg, 500) }
+    sendReplan("failure_recovery", "error_recovery", failure)
+    return true
+end function
 
 ' bufferingStatus: { percentage, isUnderrun, prebufferDone } while the Video node buffers; it can
 ' be invalid or partial. The label is full-width and centered, so no measuring is needed.
@@ -724,7 +854,7 @@ sub onDownloadedSegment()
     endS = startS + durS + m.timelineOffset
     if endS > m.bufferedEnd then
         m.bufferedEnd = endS
-        if not m.scrubbing then m.scrubber.buffered = m.bufferedEnd
+        if not m.scrubbing and m.controls.visible then m.scrubber.buffered = m.bufferedEnd
     end if
 end sub
 
@@ -742,10 +872,19 @@ end sub
 
 sub onVideoPosition()
     if m.plan = invalid then return
+    ' Position notifications before the mount first plays can read 0 while the Video node buffers
+    ' towards PlayStart; m.position keeps the plan's start until then.
+    if not m.mountPlayed then return
     m.position = m.video.position + m.timelineOffset
-    if not m.scrubbing then m.scrubber.position = m.position
+    ' The scrubber redraws every mark on each position change; it is only visible with the controls
+    ' (showControls brings it up to date).
+    if not m.scrubbing and m.controls.visible then m.scrubber.position = m.position
     checkMarkers()
     checkUpNext()
+    if m.countdownToEnd and m.countdown > 0 and m.upNext.visible and not m.finished then
+        m.countdown = remainingSeconds()
+        m.unPlayBtn.text = "Play Now · " + m.countdown.ToStr()
+    end if
 end sub
 
 function sourcePosition() as float
@@ -755,11 +894,39 @@ end function
 sub seekToSource(seconds as float)
     if seconds < 0 then seconds = 0
     if m.duration > 0 and seconds > m.duration - 1 then seconds = m.duration - 1
+    if seekNeedsReanchor(seconds) then
+        ' Outside what this stream can seek to (a copy remux or a growing transcode starts at its
+        ' origin and ends at what has been produced): the server re-anchors the stream there.
+        m.seekTarget = seconds
+        m.scrubber.position = seconds
+        sendReplan("seek_reanchor", "seek")
+        return
+    end if
+    seekNative(seconds)
+end sub
+
+sub seekNative(seconds as float)
     resetBuffered()
     m.video.seek = seconds - m.timelineOffset
     m.position = seconds
     m.scrubber.position = seconds
 end sub
+
+' timeline.can_seek_anywhere = false: only [seek_window_start, seek_window_end] is seekable in the
+' stream as mounted; an open end means up to what has been produced (the furthest buffered or
+' played point). Plans without the field, or that can seek anywhere, always seek natively.
+function seekNeedsReanchor(target as float) as boolean
+    if m.plan = invalid or m.sessionId = "" or m.plan.timeline = invalid then return false
+    tl = m.plan.timeline
+    if tl.can_seek_anywhere = invalid or PlaybackCaps_truthy(tl.can_seek_anywhere) then return false
+    windowStart = m.timelineOffset
+    if tl.seek_window_start_seconds <> invalid then windowStart = Content_num(tl.seek_window_start_seconds)
+    if target < windowStart then return true
+    if tl.seek_window_end_seconds <> invalid then return target > Content_num(tl.seek_window_end_seconds)
+    head = m.position
+    if m.bufferedEnd > head then head = m.bufferedEnd
+    return target > head
+end function
 
 sub onFinished()
     if m.finished then return
@@ -770,6 +937,15 @@ sub onFinished()
         return
     end if
     if (m.isEpisode or m.shuffle <> invalid) and m.nextEpisode <> invalid then
+        if m.upNext.visible and m.countdownToEnd and m.countdown > 0 then
+            ' The pre-end countdown ran to the end of the stream.
+            m.countdownToEnd = false
+            m.countdown = -1
+            if m.autoAdvances = invalid then m.autoAdvances = 0
+            m.autoAdvances = m.autoAdvances + 1
+            playNext()
+            return
+        end if
         if not m.upNext.visible then showUpNext()
         if m.countdown < 0 and m.shuffle = invalid then
             ' No auto-play: wait for the user on the overlay.
@@ -787,8 +963,9 @@ end sub
 
 ' ---------- Progress and stop ----------
 
+' Every tick, paused or not: the server reaps a session it has not heard from (30 minutes when
+' paused), which ends its stream URLs and transcode.
 sub onProgressTick()
-    if m.isPaused then return
     sendProgress()
 end sub
 
@@ -798,14 +975,24 @@ sub sendProgress()
     if inst = "" then return
     m.sequence = m.sequence + 1
     body = { installation_id: inst, sequence: m.sequence, position: m.position, is_paused: m.isPaused }
-    Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/progress", body, "onProgressResult")
+    Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/progress", body, "onProgressResult", { sid: m.sessionId })
 end sub
 
+' 410 playback_session_ended: an administrator ended the session, so playback stops (as on
+' Android TV). 404: the server lost it (expiry, restart); a fresh session continues at the
+' current position. A late answer about an earlier session is ignored.
 sub onProgressResult(event as object)
     resp = Api_result(event)
-    if resp.status = 404 or resp.status = 410 then
-        ' The session is gone on the server; stop reporting.
+    if m.closing or resp.context = invalid or Str_orEmpty(resp.context.sid) <> m.sessionId or m.sessionId = "" then return
+    if resp.status = 410 then
         m.sessionId = ""
+        m.global.toast = "Playback was ended on the server."
+        exitPlayer()
+    else if resp.status = 404 then
+        m.sessionId = ""
+        if m.finished or m.upNext.visible or m.errorGroup.visible then return
+        print "[siku-playback] session not found on the server; starting a new one at " + Str_orEmpty(Int(m.position))
+        restartAt(m.position)
     end if
 end sub
 
@@ -885,6 +1072,16 @@ sub showError(msg as string)
     m.controls.visible = false
     m.hud.visible = false
     m.skipGroup.visible = false
+    ' Pickers and dialogs are drawn above the error group and would stay on screen, dead.
+    m.picker.visible = false
+    if m.subs <> invalid then m.subs.dialog = ""
+    m.subsDialog.visible = false
+    m.countdownTimer.control = "stop"
+    m.countdown = -1
+    if m.upNext.visible then
+        m.upNext.visible = false
+        restoreVideoPane()
+    end if
     m.progressTimer.control = "stop"
     m.errorLabel.text = msg
     m.errorGroup.visible = true
@@ -967,6 +1164,10 @@ end sub
 sub showControls()
     ' A shuffle offers no sequential next on the transport row.
     m.upNextBtn.visible = m.nextEpisode <> invalid and m.shuffle = invalid
+    if not m.scrubbing then
+        m.scrubber.position = m.position
+        m.scrubber.buffered = m.bufferedEnd
+    end if
     layoutTransport()
     m.controls.visible = true
     positionSkipPill()
@@ -1022,7 +1223,8 @@ end sub
 sub onUpNextButton()
     if m.nextEpisode = invalid or m.shuffle <> invalid then return
     m.upNextDismissed = false
-    showUpNext()
+    ' Opened by hand to see what is next: no countdown (TvPlayerViewModel.onUserRequestedNextUp).
+    showUpNext(true)
 end sub
 
 ' Scrubber: Left/Right nudge ±10 s; holding accelerates; OK commits.
@@ -1103,9 +1305,7 @@ function markerLabel(kind as string) as string
 end function
 
 sub checkMarkers()
-    ' playback.intro_skip_mode (never | ask | always) and playback.auto_skip_credits, from the server.
-    mode = Settings_introSkipMode()
-    skipCredits = Settings_autoSkipCredits()
+    if m.markers.Count() = 0 then return
     active = invalid
     for each mk in m.markers
         if mk.kind <> "preview" and m.position >= mk.start and m.position < mk["end"] - 1 then active = mk
@@ -1117,6 +1317,10 @@ sub checkMarkers()
     end if
     key = active.kind + ":" + Str_orEmpty(active.start)
     m.activeMarker = active
+    ' playback.intro_skip_mode (never | ask | always) and playback.auto_skip_credits, from the
+    ' server; read only inside a marker (each read copies the global settings map).
+    mode = Settings_introSkipMode()
+    skipCredits = Settings_autoSkipCredits()
     if mode = "never" and not (active.kind = "credits" and skipCredits) then return
     if (mode = "always" and active.kind <> "credits") or (active.kind = "credits" and skipCredits) then
         if m.autoSkipped[key] <> true then
@@ -1141,11 +1345,17 @@ end sub
 
 sub showSkippedCaption(mk as object)
     kindText = "Intro skipped"
-    if mk.kind = "recap" then kindText = "Recap skipped"
+    watchText = "Watch Intro"
+    if mk.kind = "recap" then
+        kindText = "Recap skipped"
+        watchText = "Watch Recap"
+    else if mk.kind = "credits" then
+        kindText = "Credits skipped"
+        watchText = "Watch Credits"
+    end if
     m.skippedCaption.text = kindText
     m.skippedCaption.visible = true
-    m.skipBtn.text = "Watch Intro"
-    if mk.kind = "recap" then m.skipBtn.text = "Watch Recap"
+    m.skipBtn.text = watchText
     m.skipBtn.visible = true
     m.skipGroup.visible = true
     m.skipShownFor = "watch:" + Str_orEmpty(mk.start)
@@ -1395,7 +1605,9 @@ sub checkUpNext()
     if (not m.isEpisode and m.shuffle = invalid) or m.nextEpisode = invalid or m.upNextShown or m.upNextDismissed then return
     if m.duration <= 0 then return
     ' playback.next_up_prompt_seconds: how long before the end the card appears (0 = at the end).
-    trigger = m.duration - Settings_nextUpPromptSeconds()
+    ' Read once per item: each settings read copies the global settings map, and this runs every second.
+    if m.nextUpPrompt = invalid then m.nextUpPrompt = Settings_nextUpPromptSeconds()
+    trigger = m.duration - m.nextUpPrompt
     for each mk in m.markers
         if mk.kind = "credits" and mk.start < trigger and mk.start > m.duration * 0.5 then trigger = mk.start
     end for
@@ -1416,14 +1628,31 @@ function stillWatchingDue() as boolean
     return m.autoAdvances >= threshold
 end function
 
+' At the end of the stream: a 10 s wall clock. Before the end (the card raised at the prompt time or
+' the credits marker): the countdown is the playback time left, updated from the position, and
+' the next item starts when this one finishes, so the rest of the episode is not cut off.
 sub startCountdown()
-    m.countdown = 10
-    m.unPlayBtn.text = "Play Now · " + m.countdown.ToStr()
     m.countdownTimer.control = "stop"
-    m.countdownTimer.control = "start"
+    if m.finished then
+        m.countdownToEnd = false
+        m.countdown = 10
+        m.countdownTimer.control = "start"
+    else
+        m.countdownToEnd = true
+        m.countdown = remainingSeconds()
+    end if
+    m.unPlayBtn.text = "Play Now · " + m.countdown.ToStr()
 end sub
 
-sub showUpNext()
+function remainingSeconds() as integer
+    remain = m.duration - m.position
+    if remain < 1 then return 1
+    n = Int(remain)
+    if n < remain then n = n + 1
+    return n
+end function
+
+sub showUpNext(userRequested = false as boolean)
     if m.nextEpisode = invalid and m.shuffle = invalid then return
     m.upNextShown = true
     hideControlsNow()
@@ -1438,7 +1667,7 @@ sub showUpNext()
     m.videoFrame.translation = [152, 284]
     m.videoFrame.visible = true
 
-    if m.nextEpisode <> invalid and autoPlayNext() and not stillWatchingDue() then
+    if m.nextEpisode <> invalid and not userRequested and autoPlayNext() and not stillWatchingDue() then
         startCountdown()
     else
         if stillWatchingDue() then m.autoAdvances = 0
@@ -1645,9 +1874,10 @@ sub openHud(tabIndex as integer)
         m.hudTabs.Push(chip)
     end for
     m.hudTabsGroup.translation = [Int((1920 - x + 12) / 2), 100]
-    buildHudRows()
     m.hudFocus = "tabs"
     m.hudRow = 0
+    m.hudRowOffset = 0
+    buildHudRows()
     m.hud.visible = true
     focusHud()
     if names[tabIndex] = "Subtitles" then Subs_onPaneShown()
@@ -1662,7 +1892,7 @@ end sub
 
 sub focusHud()
     if m.hudFocus = "rows" and m.hudRows.Count() > 0 then
-        if m.hudRow >= m.hudRows.Count() then m.hudRow = m.hudRows.Count() - 1
+        if m.hudSpecs <> invalid and m.hudRow >= m.hudSpecs.Count() then m.hudRow = m.hudSpecs.Count() - 1
         applyHudRowFocus()
         m.focusSink.setFocus(true)
     else
@@ -1679,6 +1909,8 @@ sub selectHudTab(i as integer)
         m.hudTabs[j].selected = (j = i)
     end for
     m.hudTabs[i].setFocus(true)
+    m.hudRow = 0
+    m.hudRowOffset = 0
     buildHudRows()
     tabNames = hudTabNames()
     if tabNames[i] = "Subtitles" then Subs_onPaneShown()
@@ -1865,11 +2097,19 @@ sub buildHudRows()
     rowW = 1440 - 80
     rowH = 68
     y = 0
-    maxRows = 8
-    n = specs.Count()
+    ' At most hudMaxRows rows show; m.hudRowOffset is the first one shown and m.hudRow the focused
+    ' row's index in specs, so a long pane (24 chapters) scrolls with the focus.
+    maxRows = hudMaxRows()
+    if m.hudRow >= specs.Count() then m.hudRow = 0
+    if m.hudRowOffset = invalid or m.hudRowOffset < 0 then m.hudRowOffset = 0
+    if m.hudRow < m.hudRowOffset then m.hudRowOffset = m.hudRow
+    if m.hudRow >= m.hudRowOffset + maxRows then m.hudRowOffset = m.hudRow - maxRows + 1
+    if m.hudRowOffset > specs.Count() - maxRows then m.hudRowOffset = specs.Count() - maxRows
+    if m.hudRowOffset < 0 then m.hudRowOffset = 0
+    n = specs.Count() - m.hudRowOffset
     if n > maxRows then n = maxRows
-    for i = 0 to n - 1
-        spec = specs[i]
+    for r = 0 to n - 1
+        spec = specs[m.hudRowOffset + r]
         row = m.hudRowsGroup.createChild("Group")
         row.translation = [0, y]
         bg = row.createChild("Poster")
@@ -1927,14 +2167,50 @@ sub buildHudRows()
     if h < 312 then h = 312
     m.hudBg.height = h
     m.hudRing.height = h
-    if m.hudRow >= m.hudRows.Count() then m.hudRow = 0
+    ' More rows than fit: say which part of the list shows, in the pane's bottom corner.
+    if specs.Count() > n then
+        hint = m.hudRowsGroup.createChild("Label")
+        hint.text = (m.hudRowOffset + 1).ToStr() + "–" + (m.hudRowOffset + n).ToStr() + " of " + specs.Count().ToStr()
+        hint.translation = [0, y + 4]
+        hint.width = rowW - 24
+        hint.horizAlign = "right"
+        hint.color = "0xEDEDED8C"
+        hf = CreateObject("roSGNode", "Font")
+        hf.uri = "pkg:/fonts/Inter-regular.otf"
+        hf.size = 21
+        hint.font = hf
+    end if
     applyHudRowFocus()
 end sub
+
+function hudMaxRows() as integer
+    return 8
+end function
+
+' Moves the HUD row focus to spec index i, scrolling the window when it leaves it.
+sub setHudRow(i as integer)
+    if m.hudSpecs = invalid or i < 0 or i >= m.hudSpecs.Count() then return
+    m.hudRow = i
+    if i < m.hudRowOffset or i >= m.hudRowOffset + hudMaxRows() then
+        buildHudRows()
+    else
+        applyHudRowFocus()
+    end if
+end sub
+
+' The chapter playing now (the last one starting at or before the position), for the Chapters pane.
+function currentChapterIndex() as integer
+    idx = 0
+    for i = 0 to m.chapters.Count() - 1
+        if Content_num(m.chapters[i].start_seconds) <= m.position then idx = i
+    end for
+    return idx
+end function
 
 sub applyHudRowFocus()
     for i = 0 to m.hudRows.Count() - 1
         row = m.hudRows[i]
-        f = (m.hudFocus = "rows" and i = m.hudRow)
+        f = (m.hudFocus = "rows" and m.hudRowOffset + i = m.hudRow)
         Node_find(row, "bg").visible = f
         if f then
             Node_find(row, "label").color = "0x000000FF"
@@ -1959,8 +2235,13 @@ sub activateHudRow()
     else if id = "quality" then
         openPicker("quality")
     else if id = "autoplay" then
+        ' playback.auto_play_next is the server's value (Settings_autoPlayNext reads it first), so
+        ' write it as the Settings screen does; the device pref stays the offline fallback.
+        value = not autoPlayNext()
+        Settings_setLocal("playback.auto_play_next", "profile_device", value)
+        Settings_put("playback.auto_play_next", "profile_device", value, "onHudSettingWritten")
         p = AA_copy(m.global.prefs)
-        p.autoPlayNext = not (p.autoPlayNext <> false)
+        p.autoPlayNext = value
         Prefs_save(p)
         buildHudRows()
     else if id = "hdr" then
@@ -2132,7 +2413,21 @@ sub sendReplan(operation as string, kind as string, failure = invalid as dynamic
     ' A viewer's own change (track, quality, output) starts a new route choice on the server, so a
     ' remux_hls answer to it gets one more recovery attempt.
     if operation = "track_change" or operation = "quality_change" or operation = "output_change" then m.remuxRecoveryTried = false
-    body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, operation, m.qualityPref, m.position, selected, failure)
+    attempted = invalid
+    if operation = "failure_recovery" then
+        ' Every plan that failed in this attempt, so the server skips all of them (attempt_count
+        ' is capped at 8 by the server).
+        key = Str_orEmpty(m.plan.plan_attempt_key)
+        known = false
+        for each k in m.attemptedPlanKeys
+            if k = key then known = true
+        end for
+        if key <> "" and not known and m.attemptedPlanKeys.Count() < 8 then m.attemptedPlanKeys.Push(key)
+        attempted = m.attemptedPlanKeys
+    end if
+    replanPos = m.position
+    if kind = "seek" then replanPos = m.seekTarget
+    body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, operation, m.qualityPref, replanPos, selected, failure, attempted)
     m.lastRequestBody = body
     m.replanKind = kind
     setBuffering(true)
@@ -2146,6 +2441,23 @@ sub onReplan(event as object)
     if m.replanKind = "output" then failText = "Couldn't change the video output"
     if m.replanKind = "audio" then failText = "Couldn't change the audio track"
     if m.replanKind = "recovery" then failText = "No sound expected: the server has no other way to stream this file to a Roku"
+    failed = not resp.ok or resp.data = invalid or resp.data.outcome <> "playable" or resp.data.playback_plan = invalid
+    if not failed then failed = PlaybackCaps_planProblem(resp.data) <> ""
+    if failed and m.replanKind = "error_recovery" then
+        ' No other route: the original error stands.
+        showError(m.errorRecoveryMsg)
+        return
+    end if
+    if failed and m.replanKind = "seek" then
+        ' The server could not re-anchor: seek as far as this stream allows.
+        setBuffering(false)
+        target = m.seekTarget
+        tl = m.plan.timeline
+        if tl <> invalid and tl.seek_window_start_seconds <> invalid and target < Content_num(tl.seek_window_start_seconds) then target = Content_num(tl.seek_window_start_seconds)
+        m.global.toast = "Couldn't jump there in this stream"
+        seekNative(target)
+        return
+    end if
     if not resp.ok or resp.data = invalid or resp.data.outcome <> "playable" or resp.data.playback_plan = invalid then
         setBuffering(false)
         m.global.toast = failText
@@ -2162,13 +2474,15 @@ sub onReplan(event as object)
     end if
     print PlaybackCaps_diagLine(m.lastRequestBody, plan)
     resumeAt = m.position
+    if m.replanKind = "seek" then resumeAt = m.seekTarget
     m.video.control = "stop"
-    applyPlan(plan, { resumeAt: resumeAt, subtitleTrackId: Subs_selectedTrackId() })
+    applyPlan(plan, { resumeAt: resumeAt, subtitleTrackId: currentSubtitleChoice() })
     if m.replanKind = "audio" and m.pendingAudioIndex >= 0 then m.chosenAudioIndex = m.pendingAudioIndex
     m.pendingAudioIndex = -1
     ' The overlay was rebuilt when the picker closed, before this answer: refresh it with the new plan.
     if m.hud.visible then buildHudRows()
-    maybeRecoverSilentRemux(plan)
+    ' A seek keeps the route; its remux answer was already recovered (or announced) once.
+    if m.replanKind <> "seek" then maybeRecoverSilentRemux(plan)
 end sub
 
 ' On a direct-played file the server names the track to play (client_selected_audio_track_v1) and
@@ -2283,6 +2597,9 @@ function handleHudKey(key as string) as boolean
             if m.hudRows.Count() > 0 then
                 m.hudFocus = "rows"
                 m.hudRow = 0
+                names = hudTabNames()
+                if names[m.hudTab] = "Chapters" then m.hudRow = currentChapterIndex()
+                buildHudRows()
                 focusHud()
             end if
         else if key = "up" then
@@ -2293,17 +2610,13 @@ function handleHudKey(key as string) as boolean
     ' Rows
     if key = "up" then
         if m.hudRow > 0 then
-            m.hudRow = m.hudRow - 1
-            applyHudRowFocus()
+            setHudRow(m.hudRow - 1)
         else
             m.hudFocus = "tabs"
             focusHud()
         end if
     else if key = "down" then
-        if m.hudRow < m.hudRows.Count() - 1 then
-            m.hudRow = m.hudRow + 1
-            applyHudRowFocus()
-        end if
+        if m.hudSpecs <> invalid and m.hudRow < m.hudSpecs.Count() - 1 then setHudRow(m.hudRow + 1)
     else if key = "OK" then
         activateHudRow()
     end if

@@ -278,7 +278,9 @@ function PlaybackCaps_truthy(v as dynamic) as boolean
     return false
 end function
 
-' client_features we advertise. We don't implement seek_reanchor or header refresh.
+' client_features we advertise. Header refresh is not implemented. seek_reanchor_v1 is not
+' declared: the player sends a seek_reanchor replan only for a plan whose timeline says it cannot
+' seek natively (PlayerScreen.seekNeedsReanchor), which the server accepts without the feature.
 function PlaybackCaps_clientFeatures() as object
     return ["playback_plan_v3"]
 end function
@@ -448,8 +450,12 @@ end function
 
 ' POST /api/v2/playback/{session}/replan body for a quality or output change. The replan replaces
 ' the session's cap (the server copies bandwidth_cap_kbps from every replan), so it is sent again.
-function PlaybackCaps_replanBody(installation as string, attemptId as string, plan as object, operation as string, qualityPreference as string, positionSeconds as float, selectedTracks as object, failure = invalid as dynamic) as object
+' attemptedKeys: the plan keys that already failed in this attempt (failure recovery); invalid
+' sends the current plan's key alone.
+function PlaybackCaps_replanBody(installation as string, attemptId as string, plan as object, operation as string, qualityPreference as string, positionSeconds as float, selectedTracks as object, failure = invalid as dynamic, attemptedKeys = invalid as dynamic) as object
     di = CreateObject("roDeviceInfo")
+    keys = [Str_orEmpty(plan.plan_attempt_key)]
+    if attemptedKeys <> invalid and attemptedKeys.Count() > 0 then keys = attemptedKeys
     body = {
         protocol_version: 3
         installation_id: installation
@@ -460,8 +466,8 @@ function PlaybackCaps_replanBody(installation as string, attemptId as string, pl
         failed_plan_id: Str_orEmpty(plan.plan_id)
         plan_attempt_id: di.GetRandomUUID()
         plan_attempt_key: Str_orEmpty(plan.plan_attempt_key)
-        attempted_plan_keys: [Str_orEmpty(plan.plan_attempt_key)]
-        attempt_count: 1
+        attempted_plan_keys: keys
+        attempt_count: keys.Count()
         quality_preference: qualityPreference
         position_seconds: positionSeconds
         metered: false

@@ -1168,6 +1168,10 @@ sub Subs_adoptStored(storedId as string, origin as string)
     selected = {}
     if m.plan.selected_tracks <> invalid then selected = m.plan.selected_tracks
     body = PlaybackCaps_replanBody(inst, m.attemptId, m.plan, "track_change", m.qualityPref, m.position, selected)
+    ' Like any track_change (sendReplan): a new route choice on the server, logged on the console,
+    ' whose remux_hls answer gets one more silent-remux recovery.
+    m.lastRequestBody = body
+    m.remuxRecoveryTried = false
     Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/replan", body, "Subs_onAdoptReplan", { fileId: m.fileId, sessionId: m.sessionId, storedId: storedId })
 end sub
 
@@ -1202,9 +1206,12 @@ sub Subs_onAdoptReplan(event as object)
         m.global.toast = "Subtitle saved on the server, but Roku can't show this format."
         trackId = Subs_selectedTrackId()
     end if
+    print PlaybackCaps_diagLine(m.lastRequestBody, plan)
     m.video.control = "stop"
     applyPlan(plan, { resumeAt: m.position, subtitleTrackId: trackId })
     Subs_adoptDone(origin)
+    if m.hud.visible then buildHudRows()
+    maybeRecoverSilentRemux(plan)
 end sub
 
 function Subs_adoptPrefix(origin as string) as string
