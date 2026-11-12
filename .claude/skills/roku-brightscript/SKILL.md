@@ -707,7 +707,9 @@ OS 16.0.4), adopted in v0.1.31, plus tool quirks found while building it:
 
 One line per release: what that build taught about running on a real Roku. Add an entry for
 every release, even when the lesson is "nothing new". The release workflow warns when the
-released version is missing here.
+released version is missing here. From the release after v0.1.47 every release adds 0.1 to the
+version (the user's decision, 2026-11-12): `minor_version` + 1 and `build_version=00000`, so
+v0.2.0, v0.3.0, …
 
 - **v0.1.1** First install on a device. Nothing was known yet; everything below came from it.
 - **v0.1.2** Roku's compiler rejects indexing a function result (`f()[i]`); bsc accepts it.

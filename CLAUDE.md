@@ -24,8 +24,10 @@ API spec. `docs/upstream/` holds requests we have written for the Silo server te
   the mock server. See the `roku-brightscript` skill for the exact commands. The simulator cannot
   play video, does not clip list items, searches `findNode` differently and reports a 720p stereo
   box, so playback, layout-clipping and capability changes need a real Roku; say so in your report.
-- Pushes to the default branch publish a GitHub Release automatically when `build_version` in
-  `manifest` changes. To ship a build: bump `build_version` AND add a `## vX.Y.Z` section to
+- Pushes to the default branch publish a GitHub Release automatically when the manifest's version
+  (`major_version.minor_version.build_version`) has no release yet. **Versioning (the user's decision,
+  2026-11-12): every release adds 0.1**: raise `minor_version` by one and set `build_version=00000`
+  (v0.1.47 was followed by v0.2.0, then v0.3.0, …). To ship a build: bump the version that way AND add a `## vX.Y.Z` section to
   `CHANGELOG.md` written for users in plain language (what they will notice, not how it was
   done). The release page shows that section as its notes; the workflow warns if it is missing.
   Documentation-only changes are pushed without a bump and make no release.
@@ -93,7 +95,7 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   announce step instead, and run the script by hand only when that step failed or was skipped.
   Never commit, print or log the webhook URL: it is a secret, and Discord revokes webhooks found on GitHub.
 - Pushes to `main` or a session branch listed in `.github/workflows/release.yml` publish a
-  release when `build_version` changes. The notes are that version's `CHANGELOG.md` section, the
+  release when the manifest version (raised by 0.1 each release, see above) changes. The notes are that version's `CHANGELOG.md` section, the
   full `CHANGELOG.md` is attached, and the README's feature table must say what is new and what
   still needs a device test.
 
