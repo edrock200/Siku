@@ -236,6 +236,13 @@ sub Bufq_sendReplan(o as object)
         BQ_onReplanFailed(m.bq, Bufq_now())
         return
     end if
+    if Replan_busy() then
+        ' One replan at a time (PlayerReplanFence.brs): the plan in flight replaces this one's
+        ' basis, and the controller re-arms by itself, as after a refused lowering.
+        Diag_log("[siku-playback] buffering replan deferred: " + Replan_busyWith() + " is on its way")
+        BQ_onReplanFailed(m.bq, Bufq_now())
+        return
+    end if
     extra = {}
     if o.estimateKbps > 0 then extra.bandwidth_estimate_kbps = o.estimateKbps
     if o.estimateSource <> "" then extra.bandwidth_estimate_source = o.estimateSource

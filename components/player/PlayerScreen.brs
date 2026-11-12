@@ -174,6 +174,7 @@ sub resetPlaybackState()
     m.lastRequestBody = invalid   ' the start/replan body the current plan answered (diagnostics)
     m.replanKind = ""             ' "quality" | "output": what the pending replan was for
     m.replanPending = false       ' a replan answer is on its way (voice commands wait for it)
+    Replan_reset()                ' the queue of intents waiting for it (PlayerReplanFence.brs)
     m.skipShownFor = ""
     m.autoSkipped = {}
     m.activeMarker = invalid
@@ -606,7 +607,7 @@ sub startSession(installation as string)
         body = PlaybackCaps_startBody(installation, m.fileId, m.attemptId, m.renew.at, m.renew.audioId, m.renew.subtitleTrackId)
         Bufq_decorateBody(body, invalid)
         m.lastRequestBody = body
-        Api_send("POST", "/api/v2/playback/start", body, "onStart", { attemptId: m.attemptId })
+        Api_send("POST", "/api/v2/playback/start", body, "onStart", { attemptId: m.attemptId, renewAt: m.renew.at })
         return
     end if
     p = m.top.params
@@ -648,6 +649,45 @@ sub startSession(installation as string)
     Api_send("POST", "/api/v2/playback/start", body, "onStart", { attemptId: m.attemptId })
 end sub
 
+'  A start answer that will never be played (onStart: the player closed, or the answer belongs to an
+' earlier attempt) may still have opened a server session: stop it through MainScene's durable
+' stop job (it outlives this screen). The position keeps Continue Watching where it was: a
+' renewal's (the live position when the player is closing on it, else where it renewed), else
+' where the server anchored the plan, else the start position asked for. Nothing is sent when
+' the answer carries no session.
+sub stopUnusedSession(resp as object, reason as string)
+    if resp = invalid or not resp.ok or Type(resp.data) <> "roAssociativeArray" then return
+    d = resp.data
+    sid = Str_orEmpty(d.session_id)
+    plan = d.playback_plan
+    if sid = "" and Type(plan) = "roAssociativeArray" then sid = Str_orEmpty(plan.session_id)
+    if sid = "" then return
+    inst = installationId()
+    if inst = "" then return
+    ctx = resp.context
+    position = invalid
+    sameAttempt = ctx <> invalid and Str_orEmpty(ctx.attemptId) = m.attemptId
+    if ctx <> invalid and ctx.renewAt <> invalid then
+        position = Num_or(ctx.renewAt, 0)
+        ' Closing on the renewal itself: the stream played on while it was asked for.
+        if reason = "closing" and sameAttempt and m.position > position then position = m.position
+    else if Type(plan) = "roAssociativeArray" and Type(plan.timeline) = "roAssociativeArray" then
+        tl = plan.timeline
+        position = Num_or(tl.timeline_offset_seconds, 0) + Num_or(tl.player_start_seconds, 0)
+    end if
+    if position = invalid and sameAttempt and m.lastRequestBody <> invalid and m.lastRequestBody.start_position <> invalid then position = Num_or(m.lastRequestBody.start_position, 0)
+    body = { installation_id: inst, stop_id: m.di.GetRandomUUID(), sequence: 1, is_paused: true }
+    if position <> invalid then body.position = position
+    posText = "-"
+    if position <> invalid then posText = Int(position).ToStr()
+    Diag_log("[siku-playback] unused session stopped reason=" + reason + " position=" + posText)
+    job = { sid: sid, body: body, baseUrl: Str_orEmpty(m.global.session.serverUrl), identity: PlaybackJobs_identity(m.global.session), player: invalid }
+    scene = m.top.getScene()
+    if scene <> invalid and PlaybackCaps_truthy(scene.callFunc("playbackStop", job)) then return
+    ' onStopped ignores it: its sid is not this close's.
+    Api_send("DELETE", "/api/v2/playback/" + Str_urlEncode(sid), body, "onStopped", { sid: sid })
+end sub
+
 ' Whether the subtitle id ("file:<id>:subtitle:<combined index>") names a catalog track of the
 ' playing version that the server cannot show (Tracks_subtitleUnplayable).
 function unplayableCatalogSubtitle(subId as string) as boolean
@@ -664,11 +704,17 @@ end function
 
 sub onStart(event as object)
     resp = Api_result(event)
-    if m.closing then return
+    if m.closing then
+        ' Back (or a covering screen) while the start was on its way: the server opened a session
+        ' nobody will play or stop. Close it, or it counts against stream limits until it expires.
+        stopUnusedSession(resp, "closing")
+        return
+    end if
     ' An answer for an earlier attempt (Up Next moved on, or a 409 restarted the attempt) never
     ' mounts on this one.
     if resp.context = invalid or Str_orEmpty(resp.context.attemptId) <> m.attemptId then
         Diag_log("[siku-playback] start answer dropped: it belongs to an earlier attempt")
+        stopUnusedSession(resp, "stale")
         return
     end if
     if resp.status = 409 and not m.retriedInstall then
@@ -1275,6 +1321,8 @@ function renewSession(reason as string) as boolean
     m.attemptId = m.di.GetRandomUUID()
     m.retriedInstall = false
     m.replanPending = false
+    m.pendingAudioIndex = -1
+    Replan_clear("renewal")
     Recovery_reset()
     startSession(inst)
     return true
@@ -1481,7 +1529,8 @@ end sub
 sub skipBy(delta as integer)
     if m.plan = invalid then return
     viewerInteracted()
-    seekToSource(m.position + delta)
+    ' From where a re-anchor in flight (or queued) is going, so quick presses add up.
+    seekToSource(seekBase() + delta)
     if delta < 0 then
         showFeedback("-" + Abs(delta).ToStr() + "s")
     else
@@ -1784,12 +1833,25 @@ sub resolveNextEpisode()
     m.nextSeriesId = sid
     m.nextPool = []
     m.nextPending = 0
-    Api_get("/api/v2/catalog/series/" + Str_urlEncode(sid) + "/seasons", { include_artwork: "false" }, "onNextSeasons")
+    ' Each lookup has its own number: a Retry or the next episode starts another, and answers of an
+    ' earlier one (which may arrive after m.watch was cleared) are dropped.
+    if m.nextLookup = invalid then m.nextLookup = 0
+    m.nextLookup = m.nextLookup + 1
+    Api_get("/api/v2/catalog/series/" + Str_urlEncode(sid) + "/seasons", { include_artwork: "false" }, "onNextSeasons", { forItem: m.itemId, attempt: m.nextLookup })
 end sub
+
+' The answer belongs to the lookup in progress for the item playing now.
+function nextLookupCurrent(resp as object) as boolean
+    if m.closing or m.watch = invalid or m.nextLookup = invalid then return false
+    ctx = resp.context
+    if ctx = invalid or Type(ctx) <> "roAssociativeArray" then return false
+    return Str_orEmpty(ctx.forItem) = m.itemId and Int(Num_or(ctx.attempt, -1)) = m.nextLookup
+end function
 
 sub onNextSeasons(event as object)
     resp = Api_result(event)
-    if m.closing or not resp.ok or resp.data = invalid then return
+    if not nextLookupCurrent(resp) then return
+    if not resp.ok or resp.data = invalid then return
     cur = Int(Content_num(m.watch.season_number))
     seasons = Arr_or(resp.data.items)
     toLoad = [cur]
@@ -1806,12 +1868,13 @@ sub onNextSeasons(event as object)
     if nextNum <> invalid then toLoad.Push(nextNum)
     m.nextPending = toLoad.Count()
     for each n in toLoad
-        Api_get("/api/v2/catalog/series/" + Str_urlEncode(m.nextSeriesId) + "/seasons/" + n.ToStr() + "/episodes", { image_size: "medium" }, "onNextEpisodes")
+        Api_get("/api/v2/catalog/series/" + Str_urlEncode(m.nextSeriesId) + "/seasons/" + n.ToStr() + "/episodes", { image_size: "medium" }, "onNextEpisodes", { forItem: m.itemId, attempt: m.nextLookup })
     end for
 end sub
 
 sub onNextEpisodes(event as object)
     resp = Api_result(event)
+    if not nextLookupCurrent(resp) then return
     m.nextPending = m.nextPending - 1
     if resp.ok and resp.data <> invalid then
         for each ep in Arr_or(resp.data.items)
@@ -2413,7 +2476,9 @@ end sub
 function currentAudioName() as string
     if useServerAudioList() then
         tracks = serverAudioTracks()
-        if m.pendingAudioIndex >= 0 and m.pendingAudioIndex < tracks.Count() then return TxF("{0} · Applying…", [Tracks_audioTitle(tracks[m.pendingAudioIndex], m.pendingAudioIndex)])
+        applying = m.pendingAudioIndex
+        if applying < 0 then applying = Replan_queuedAudioIndex()
+        if applying >= 0 and applying < tracks.Count() then return TxF("{0} · Applying…", [Tracks_audioTitle(tracks[applying], applying)])
         idx = currentServerAudioIndex()
         if idx >= 0 then return Tracks_audioTitle(tracks[idx], idx)
     end if
@@ -3126,6 +3191,11 @@ end sub
 ' Quality change: replan and hand the new plan to the player at the current position.
 sub requestQualityChange(label as string)
     if m.plan = invalid or m.sessionId = "" then return
+    if Replan_busy() then
+        ' One replan at a time: this pick follows when the one in flight has landed.
+        Replan_queue({ slot: "quality", label: label })
+        return
+    end if
     m.prevQualityPref = m.qualityPref
     m.qualityPref = label
     Bufq_onQualityPickSent()
@@ -3161,6 +3231,15 @@ sub sendReplan(operation as string, kind as string, failure = invalid as dynamic
         replanNotSent(kind)
         return
     end if
+    ' One replan at a time (PlayerReplanFence.brs). The recovery ladder and the reconnect have their
+    ' own waits (m.rec.inFlight, the reconnect timer) and are never queued; a viewer's quality or
+    ' audio pick and the buffering controller are fenced before they change any state.
+    if Replan_busy() and kind <> "native" and kind <> "reconnect" then
+        planId = ""
+        if kind = "subtitle" or kind = "recovery" then planId = Replan_planId()
+        Replan_queue({ slot: kind, operation: operation, kind: kind, failure: failure, planId: planId })
+        return
+    end if
     selected = {}
     if m.plan.selected_tracks <> invalid then selected = m.plan.selected_tracks
     if selectedOverride <> invalid then selected = selectedOverride
@@ -3180,8 +3259,13 @@ sub sendReplan(operation as string, kind as string, failure = invalid as dynamic
     m.lastRequestBody = body
     m.replanKind = kind
     m.replanPending = true
+    m.replanSeq = m.replanSeq + 1
     setBuffering(true)
-    Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/replan", body, "onReplan", { attemptId: m.attemptId, sessionId: m.sessionId })
+    ' The answer is read with this request's own kind and state, never with a later request's.
+    ctx = { attemptId: m.attemptId, sessionId: m.sessionId, seq: m.replanSeq, kind: kind, audioIndex: -1 }
+    if (kind = "quality" or kind = "bq") and m.prevQualityPref <> invalid then ctx.prevQuality = m.prevQualityPref
+    if kind = "audio" then ctx.audioIndex = m.pendingAudioIndex
+    Api_send("POST", "/api/v2/playback/" + Str_urlEncode(m.sessionId) + "/replan", body, "onReplan", ctx)
 end sub
 
 ' A replan that could not be sent (no installation id or session): undo what the caller set up
@@ -3196,14 +3280,30 @@ sub replanNotSent(kind as string)
 end sub
 
 sub onReplan(event as object)
-    resp = Api_result(event)
+    takeReplan(Api_result(event))
+    ' The next queued intent (or a seek that waited) goes out once this answer is handled.
+    Replan_drain()
+end sub
+
+sub takeReplan(resp as object)
     if m.closing then return
     ' An answer for an earlier attempt or session (the next episode started meanwhile) is stale:
-    ' the bookkeeping below belongs to the current one.
-    if resp.context = invalid or Str_orEmpty(resp.context.attemptId) <> m.attemptId or Str_orEmpty(resp.context.sessionId) <> m.sessionId then
+    ' the bookkeeping below belongs to the current one. So is one a newer replan replaced.
+    stale = ReplanFence_stale(resp.context, m.attemptId, m.sessionId, m.replanSeq)
+    if stale = "attempt" then
         Diag_log("[siku-playback] replan answer dropped: it belongs to an earlier attempt or session")
         return
     end if
+    if stale = "seq" then
+        Diag_log("[siku-playback] replan answer dropped: a newer replan was sent (seq=" + Str_orEmpty(resp.context.seq) + " current=" + m.replanSeq.ToStr() + ")")
+        return
+    end if
+    ctx = resp.context
+    kind = Str_orEmpty(ctx.kind)
+    if kind = "" then kind = m.replanKind
+    m.replanKind = kind
+    prevQuality = ctx.prevQuality
+    audioIndex = Int(Num_or(ctx.audioIndex, -1))
     m.replanPending = false
     Recovery_onReplanAnswered()
     if isSessionEndedByServer(resp) then
@@ -3212,18 +3312,18 @@ sub onReplan(event as object)
         return
     end if
     failText = Tx("Couldn't change the quality")
-    if m.replanKind = "output" then failText = Tx("Couldn't change the video output")
-    if m.replanKind = "audio" then failText = Tx("Couldn't change the audio track")
-    if m.replanKind = "subtitle" then failText = Tx("Couldn't show these subtitles")
-    if m.replanKind = "recovery" then failText = Tx("No sound expected: the server has no other way to stream this file to a Roku")
-    if m.replanKind = "bq" then failText = "" ' the buffering controller's own lowering: it re-arms by itself
-    if m.replanKind = "reconnect" then failText = ""
+    if kind = "output" then failText = Tx("Couldn't change the video output")
+    if kind = "audio" then failText = Tx("Couldn't change the audio track")
+    if kind = "subtitle" then failText = Tx("Couldn't show these subtitles")
+    if kind = "recovery" then failText = Tx("No sound expected: the server has no other way to stream this file to a Roku")
+    if kind = "bq" then failText = "" ' the buffering controller's own lowering: it re-arms by itself
+    if kind = "reconnect" then failText = ""
     if not resp.ok or resp.data = invalid or resp.data.outcome <> "playable" or resp.data.playback_plan = invalid then
         if Recovery_takeFailedReplan(resp) then return
         setBuffering(false)
         if failText <> "" then m.global.toast = failText
-        if m.plan <> invalid and (m.replanKind = "quality" or m.replanKind = "bq") and m.prevQualityPref <> invalid then m.qualityPref = m.prevQualityPref
-        Bufq_onReplanFailed(m.replanKind)
+        if m.plan <> invalid and (kind = "quality" or kind = "bq") and prevQuality <> invalid then m.qualityPref = prevQuality
+        Bufq_onReplanFailed(kind)
         m.pendingAudioIndex = -1
         if m.hud.visible then buildHudRows()
         return
@@ -3233,8 +3333,10 @@ sub onReplan(event as object)
         if Recovery_takeFailedReplan(resp) then return
         setBuffering(false)
         if failText <> "" then m.global.toast = failText
-        if (m.replanKind = "quality" or m.replanKind = "bq") and m.prevQualityPref <> invalid then m.qualityPref = m.prevQualityPref
-        Bufq_onReplanFailed(m.replanKind)
+        if (kind = "quality" or kind = "bq") and prevQuality <> invalid then m.qualityPref = prevQuality
+        Bufq_onReplanFailed(kind)
+        m.pendingAudioIndex = -1
+        if m.hud.visible then buildHudRows()
         return
     end if
     PlaybackCaps_notePlanFeatures(resp.data)
@@ -3244,8 +3346,8 @@ sub onReplan(event as object)
     ' The audio pick this replan was for, described on the file it was picked on.
     audioBody = invalid
     oldAudio = serverAudioTracks()
-    if m.replanKind = "audio" and m.pendingAudioIndex >= 0 and m.pendingAudioIndex < oldAudio.Count() then audioBody = SeriesChoice_audioFromCatalog(oldAudio[m.pendingAudioIndex], m.pendingAudioIndex)
-    opts = { resumeAt: resumeAt, subtitleTrackId: Subs_selectedTrackId(), mountKind: m.replanKind }
+    if kind = "audio" and audioIndex >= 0 and audioIndex < oldAudio.Count() then audioBody = SeriesChoice_audioFromCatalog(oldAudio[audioIndex], audioIndex)
+    opts = { resumeAt: resumeAt, subtitleTrackId: Subs_selectedTrackId(), mountKind: kind }
     newFile = planFileId(plan)
     movedFile = newFile <> "" and newFile <> m.fileId
     if movedFile then
@@ -3258,11 +3360,11 @@ sub onReplan(event as object)
     m.video.control = "stop"
     applyPlan(plan, opts)
     ' A reconnect keeps the viewer's pause.
-    if m.replanKind = "reconnect" and m.rec.outagePaused then m.pauseAfterStart = true
+    if kind = "reconnect" and m.rec.outagePaused then m.pauseAfterStart = true
     Trickplay_bind(m.itemId, planFileId(plan))
     if planFileId(plan) <> m.markersFileId then adoptFileMarkers(planFileId(plan))
-    if m.replanKind = "audio" and m.pendingAudioIndex >= 0 then
-        m.chosenAudioIndex = m.pendingAudioIndex
+    if kind = "audio" and audioIndex >= 0 then
+        m.chosenAudioIndex = audioIndex
         if audioBody <> invalid and audioCommitted(audioBody, plan, movedFile) then saveSeriesAudio(audioBody)
     end if
     m.pendingAudioIndex = -1
@@ -3344,6 +3446,12 @@ sub requestAudioTrackChange(idx as integer)
     selected = {}
     if m.plan.selected_tracks <> invalid then selected = AA_copy(m.plan.selected_tracks)
     selected.audio = { id: Tracks_audioId(m.fileId, idx), index: idx }
+    if Replan_busy() then
+        ' One replan at a time: shown as "Applying…" and sent when the one in flight has landed.
+        Replan_queue({ slot: "audio", index: idx })
+        if m.hud.visible then buildHudRows()
+        return
+    end if
     ' Shown as "Greek · Applying…" until the new plan is in; the HUD is rebuilt when it lands.
     m.pendingAudioIndex = idx
     sendReplan("track_change", "audio", invalid, selected)

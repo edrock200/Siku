@@ -88,7 +88,8 @@ sub HoldSeek_begin(direction as integer)
     sign = 1
     if direction < 0 then sign = -1
     m.hs.rate = sign
-    m.hs.preview = m.position
+    ' From where a re-anchor in flight (or queued) is going, like skip back/forward.
+    m.hs.preview = seekBase()
     if m.hs.preview < 0 then m.hs.preview = 0
     m.hs.lastTick = HoldSeek_now()
     m.hs.rampStep = 0
