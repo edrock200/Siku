@@ -98,7 +98,7 @@ class Trimming(unittest.TestCase):
         entries = [{"section": section, "rawItems": [CARD] * 40}] + [{"section": {"id": "s%d" % i}, "rawItems": []} for i in range(40)]
         check_cases(self, FILES, [
             ("bounded sections and items", "HomeCache_payload", [entries],
-             lambda v: v["schema"] == 1 and len(v["sections"]) == 30 and len(v["sections"][0]["items"]) == 24),
+             lambda v: v["schema"] == 2 and len(v["sections"]) == 30 and len(v["sections"][0]["items"]) == 24),
             ("section metadata", "HomeCache_payload", [entries],
              lambda v: v["sections"][0]["id"] == "recent" and v["sections"][0]["section_type"] == "recently_added"
              and v["sections"][0]["total_count"] == 40 and "description_url" not in v["sections"][0]),
@@ -106,6 +106,25 @@ class Trimming(unittest.TestCase):
             ("falls back to inline items", "HomeCache_payload", [[{"section": section, "items": [CARD]}]],
              lambda v: len(v["sections"][0]["items"]) == 1),
             ("under the size limit", "HomeCache_payload", [entries], lambda v: len(json.dumps(v)) < 1048576),
+        ])
+
+    def test_title_keys_and_brands(self):
+        """Schema 2: a section keeps title_key / title_args (TxKey shows them in the interface
+        language), a card its first studio and network (card overlay badges)."""
+        section = {"id": "recent-in", "title": "Recently Added in Movies", "title_key": "home.section.recentlyAddedIn",
+                   "title_args": {"library": "Movies", "icon_url": "/x", "nested": {"a": 1}}}
+        card = dict(CARD, studios=["", "  A24 ", "Neon"], networks=["HBO"])
+        check_cases(self, FILES, [
+            ("schema", "HomeCache_schema", [], 2),
+            ("title key and args", "HomeCache_trimSection", [section, []],
+             lambda v: v["title_key"] == "home.section.recentlyAddedIn" and v["title_args"] == {"library": "Movies"}),
+            ("no key, no args", "HomeCache_trimSection", [{"id": "x", "title": "Mine"}, []],
+             lambda v: "title_key" not in v and "title_args" not in v),
+            ("first studio and network", "HomeCache_trimCard", [card],
+             lambda v: v["studios"] == ["A24"] and v["networks"] == ["HBO"]),
+            ("none sent", "HomeCache_trimCard", [CARD], lambda v: "studios" not in v and "networks" not in v),
+            ("not strings", "HomeCache_trimCard", [dict(CARD, studios=[{"name": "A24"}], networks="HBO")],
+             lambda v: "studios" not in v and "networks" not in v),
         ])
 
     def test_full_home_fits(self):
@@ -120,7 +139,7 @@ class Trimming(unittest.TestCase):
             ("a CJK card", "HomeCache_trimCard", [cjk], lambda v: len(v["overview"]) == 150),
         ])
         for label, card in (("English", r[1]["value"]), ("CJK", r[2]["value"])):
-            snapshot = {"schema": 1, "owner": HASH, "savedAt": NOW,
+            snapshot = {"schema": 2, "owner": HASH, "savedAt": NOW,
                         "sections": [{"id": "s%d" % i, "title": "\u6620" * 30, "section_type": "custom", "items": [card] * 24}
                                      for i in range(30)]}
             size = len(json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
@@ -128,7 +147,7 @@ class Trimming(unittest.TestCase):
 
 class Check(unittest.TestCase):
     def snap(self, **kw):
-        base = {"schema": 1, "owner": HASH, "savedAt": NOW - 60, "sections": [{"id": "recent", "items": [{"title": "A"}]}]}
+        base = {"schema": 2, "owner": HASH, "savedAt": NOW - 60, "sections": [{"id": "recent", "items": [{"title": "A"}]}]}
         base.update(kw)
         return base
 
@@ -139,7 +158,9 @@ class Check(unittest.TestCase):
             ("another owner", "HomeCache_check", [self.snap(owner="b" * 64), HASH, NOW], lambda v: v["status"] == "miss" and v["reason"] == "owner"),
             ("no owner asked", "HomeCache_check", [self.snap(owner=""), "", NOW], lambda v: v["status"] == "miss"),
             ("old schema", "HomeCache_check", [self.snap(schema=0), HASH, NOW], lambda v: v["reason"] == "schema"),
-            ("schema as string", "HomeCache_check", [self.snap(schema="1"), HASH, NOW], lambda v: v["reason"] == "schema"),
+            ("schema 1 (no title keys) is a miss", "HomeCache_check", [self.snap(schema=1), HASH, NOW],
+             lambda v: v["status"] == "miss" and v["reason"] == "schema"),
+            ("schema as string", "HomeCache_check", [self.snap(schema="2"), HASH, NOW], lambda v: v["reason"] == "schema"),
             ("stale", "HomeCache_check", [self.snap(savedAt=NOW - 90000), HASH, NOW], lambda v: v["status"] == "stale"),
             ("future", "HomeCache_check", [self.snap(savedAt=NOW + 9000), HASH, NOW],
              lambda v: v["status"] == "stale" and v["reason"] == "future"),
@@ -188,7 +209,7 @@ if __name__ == "__main__":
 
 IO_FILES = ["tests/home_cache_io.brs", "components/tasks/HomeCacheTask.brs", "components/common/HomeCache.brs",
             "components/common/Utils.brs"]
-PAYLOAD = {"schema": 1, "sections": [{"id": "recent", "title": "Recently Added", "items": [{"content_id": "m1", "title": "A"}]}]}
+PAYLOAD = {"schema": 2, "sections": [{"id": "recent", "title": "Recently Added", "items": [{"content_id": "m1", "title": "A"}]}]}
 
 
 def io(steps):
@@ -211,7 +232,7 @@ class FileIo(unittest.TestCase):
         """The write limit counts bytes as the read does: a Home whose characters are under the
         limit but whose UTF-8 bytes are over it is not written (it used to be, then refused)."""
         def payload(n):
-            return {"schema": 1, "sections": [{"id": "s", "title": "x", "items": [{"title": "\u00e9" * n}]}]}
+            return {"schema": 2, "sections": [{"id": "s", "title": "x", "items": [{"title": "\u00e9" * n}]}]}
         self.run_io("non-ASCII Home caches", [{"op": "write", "payload": payload(1000)}, {"op": "read"}],
                     lambda v: v[0]["status"] == "written" and v[0]["bytes"] > 2000 and v[1]["status"] == "hit")
         self.run_io("bytes over, characters under", [{"op": "write", "payload": payload(600000)}, {"op": "list"}],

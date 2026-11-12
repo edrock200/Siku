@@ -524,8 +524,9 @@ function Req_discoverCarousels(data as dynamic) as object
                 for each it in Arr_or(sec.results)
                     if Type(it) = "roAssociativeArray" and Req_isSupportedType(it.media_type) then results.Push(it)
                 end for
-                title = Str_orEmpty(sec.title)
-                if title = "" then title = Str_orEmpty(row.title)
+                ' title_key: a row name the server wrote, in the interface language (home.section.*).
+                title = TxKey(sec.title_key, sec.title_args, Str_orEmpty(sec.title))
+                if title = "" then title = TxKey(row.title_key, row.title_args, Str_orEmpty(row.title))
                 if results.Count() > 0 then out.Push({ key: k, title: title, results: results })
             end if
         end if

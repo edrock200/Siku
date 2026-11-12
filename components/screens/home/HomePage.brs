@@ -226,7 +226,9 @@ sub onSections(event as object)
         m.sections.Push(entry)
         if scope <> "" then
             if scopeSection(entry, m.sections.Count() - 1, scope) then m.pendingSections = m.pendingSections + 1
-        else if items.Count() = 0 and total > 0 then
+        else if entry.rawItems.Count() = 0 and total > 0 then
+            ' Only a section the server sent without its cards is read on its own: a row that
+            ' hide-watched emptied would come back just as watched (the server filters the same way).
             m.pendingSections = m.pendingSections + 1
             idx = m.sections.Count() - 1
             lib = libraryId()

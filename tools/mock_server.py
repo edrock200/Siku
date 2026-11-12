@@ -1479,6 +1479,8 @@ def requests_route(handler, method, p, q, b):
         for key, title, ts in sections:
             sec = req_page(handler, ts)
             sec.update({"key": key, "title": title})
+            if layout and key == "trending_movies":
+                sec.update({"title": "Trending This Week", "title_key": "home.section.trendingThisWeek"})
             items.append(sec)
         out = {"items": items}
         if layout:
@@ -3083,9 +3085,10 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/v2/recommendations/discover":
             ms = all_movies()
             return self.send(200, {"items": [
-                {"type": "cluster", "key": "a", "title": "Because you watched Heat", "items": ms[0:10]},
+                {"type": "cluster", "key": "a", "title": "Because you watched Heat", "title_key": "home.section.becauseYouWatchedTitle",
+                 "title_args": {"title": "Heat"}, "items": ms[0:10]},
                 {"type": "popular", "key": "b", "title": "Popular on Mock Silo", "items": ms[10:20]},
-                {"type": "top_rated", "key": "c", "title": "Top Rated", "items": all_series()},
+                {"type": "top_rated", "key": "c", "title": "Top Rated", "title_key": "home.section.topRated", "items": all_series()},
             ]})
         if p == "/api/v2/history":
             return self.send(200, page(all_movies()[:6], q))
