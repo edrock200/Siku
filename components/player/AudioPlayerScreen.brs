@@ -71,6 +71,7 @@ sub init()
     m.waitingForToken = false
     m.autoRetried = false       ' one automatic restart after a stream error (expired token, dropped connection)
     m.autoRetryAt = 0.0
+    m.earlyEndAt = -1.0         ' whole-book time of the last "finished" well before a part's end
     m.renewals = 0              ' fresh sessions since the last good progress answer (#708)
     m.sessionExpired = false    ' the server forgot the session while paused: Play starts a fresh one
     m.endedByServer = false     ' 410 playback_session_ended: never start another on our own
@@ -990,6 +991,18 @@ sub onFinished()
     if m.ended then return
     if m.mode = "audiobook" then
         tl = m.timeline
+        if m.fileDuration > 0 and m.localPos < m.fileDuration - 15 and not m.closing then
+            if m.earlyEndAt < 0 or Abs(m.globalPos - m.earlyEndAt) > 30 then
+                ' "finished" well before the part's duration: a dropped or truncated stream rather
+                ' than the end of the part. Start here again once; a second early end at the same
+                ' place means the file really ends there, and the book moves on.
+                Diag_log(Diag_join(["[siku-audio] part finished early at ", Int(m.localPos).ToStr(), " s of ", Int(m.fileDuration).ToStr(), " s; starting it again there"]))
+                m.earlyEndAt = m.globalPos
+                seekGlobal(m.globalPos, true)
+                return
+            end if
+        end if
+        m.earlyEndAt = -1.0
         if m.trackIdx >= 0 and m.trackIdx < tl.tracks.Count() - 1 then
             cur = tl.tracks[m.trackIdx]
             if m.sleepMode = "chapter" and m.sleepChapterEnd > 0 and m.sleepChapterEnd <= cur.offset + cur.duration + 1 then
