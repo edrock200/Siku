@@ -18,6 +18,8 @@ sub init()
     m.loadedAt = 0
     m.artReloadAt = 0
     m.hasRows = false
+    m.loadSeq = 0
+    m.loadedRev = -1         ' DataRev_current() when the rows were last requested
     m.optionsTarget = invalid
     m.top.focusable = true
 end sub
@@ -28,7 +30,7 @@ end sub
 
 sub onPageShown()
     m.feed.overlaysWatched = true
-    if m.global.homeDirty = true or (not m.loaded and not m.loading) then
+    if DataRev_current() <> m.loadedRev or (not m.loaded and not m.loading) then
         load()
     else if not m.loading and Fresh_isStale(m.loadedAt, Time_nowSeconds()) then
         ' Signed artwork in an old answer may have expired (Freshness.brs): read again quietly.
@@ -55,13 +57,17 @@ end sub
 
 sub load()
     m.loading = true
+    m.loadSeq = m.loadSeq + 1
+    m.loadedRev = DataRev_current()
     ' A re-read keeps the drawn rows (the feed keeps the focused card) instead of a spinner.
     if not m.hasRows then m.feed.state = "loading"
-    Api_get("/api/v2/recommendations/discover", Artwork_query({ image_size: "medium" }, "discover", Theme_posterScale()), "onDiscover")
+    Api_get("/api/v2/recommendations/discover", Artwork_query({ image_size: "medium" }, "discover", Theme_posterScale()), "onDiscover", { seq: m.loadSeq })
 end sub
 
 sub onDiscover(event as object)
     resp = Api_result(event)
+    ' An answer to an earlier read (a refresh started while it was on its way) is dropped.
+    if resp.context = invalid or resp.context.seq <> m.loadSeq then return
     m.loading = false
     if not resp.ok then
         if m.hasRows then

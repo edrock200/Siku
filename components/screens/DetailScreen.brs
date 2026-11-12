@@ -4,6 +4,7 @@
 sub init()
     ' The card overlays this page's rows were drawn under (onCardOverlays).
     m.overlayRev = CardOverlay_revision()
+    m.loadedRev = -1         ' DataRev_current() when the item was last read (DataRevision.brs)
     m.page = m.top.findNode("page")
     m.hero = m.top.findNode("hero")
     m.backdrop = m.top.findNode("backdrop")
@@ -159,7 +160,7 @@ sub onScreenShown()
         if not m.loading then load()
         return
     end if
-    if m.global.homeDirty = true then refreshUserState()
+    if DataRev_current() <> m.loadedRev then refreshUserState()
     if m.ytDialog.visible then
         m.ytDialog.setFocus(true)
     else
@@ -220,6 +221,7 @@ sub load()
     m.spinner.visible = true
     ensureSettings()
     m.spoilerSig = spoilerSignature()
+    m.loadedRev = DataRev_current()
     Api_get(itemPath(), Artwork_query({ image_size: "large" }, "detail"), "onItem")
 end sub
 
@@ -299,6 +301,7 @@ end sub
 
 ' After playback or a state change elsewhere: refetch user state silently.
 sub refreshUserState()
+    m.loadedRev = DataRev_current()
     Api_get(itemPath(), Artwork_query({ image_size: "large" }, "detail"), "onItemRefreshed")
     ' The box set row's watched marks follow too; a failed read keeps what it shows.
     loadMovieBoxSet()

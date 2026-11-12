@@ -21,6 +21,7 @@ sub init()
     m.rows = []
     m.pendingSections = 0
     m.loadSeq = 0
+    m.loadedRev = -1         ' DataRev_current() when the rows were last requested
     m.optionsTarget = invalid
     ' Home cache (HomeCache.brs): asked once per page, drawn only until the server answers.
     m.cacheAsked = false
@@ -44,8 +45,9 @@ end sub
 
 sub onPageShown()
     m.feed.overlaysWatched = true
-    if m.global.homeDirty = true and libraryId() = "" then
-        m.global.homeDirty = false
+    ' Read again after playback or a watched / favorite / watchlist change made anywhere; a
+    ' library's Recommended page follows too (DataRevision.brs).
+    if DataRev_current() <> m.loadedRev then
         load()
     else if not m.loaded and not m.loading then
         load()
@@ -84,6 +86,7 @@ end sub
 sub load()
     m.loading = true
     m.loadSeq = m.loadSeq + 1
+    m.loadedRev = DataRev_current()
     ' A refresh keeps the rows already drawn (from the cache or the last answer) instead of a
     ' spinner; buildRows swaps them in place and the feed keeps the focused card.
     if m.rows.Count() = 0 then m.feed.state = "loading"
@@ -618,10 +621,7 @@ sub CardActions_onDismissed(event as object)
     resp = Api_result(event)
     if not resp.ok then m.global.toast = TxF("Couldn't remove it: {0}", [Api_errorText(resp)])
     m.global.homeDirty = true
-    if m.top.active and libraryId() = "" then
-        m.global.homeDirty = false
-        load()
-    end if
+    if m.top.active and libraryId() = "" then load()
 end sub
 
 ' A refresh replaced the card a menu left open was opened on (Silo Android #803): close the menu,
