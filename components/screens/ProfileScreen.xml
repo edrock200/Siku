@@ -30,7 +30,10 @@
       <Label id="subtitle" width="1920" translation="[0, 78]" horizAlign="center" color="0xEDEDED9E">
         <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
       </Label>
-      <Group id="grid" translation="[0, 194]" />
+      <!-- More than two rows of profiles scroll inside this clip (ProfileScreen.scrollToFocus). -->
+      <Group id="gridClip" translation="[0, 194]">
+        <Group id="grid" />
+      </Group>
       <Label id="error" width="1920" horizAlign="center" wrap="true" color="0xFF6961FF" visible="false">
         <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
       </Label>

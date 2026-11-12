@@ -1,7 +1,7 @@
 ' Home Sections editor (Android TV TvHomeSectionsEditor): a full-screen overlay of the populated
 ' Home rows with an eye button per row (visible / hidden) and, in edit mode, move up / move down
-' buttons. The layout is device-local per server + profile, saved in prefs.hiddenSections and
-' prefs.sectionOrder and applied by HomePage through Settings_arrangeSections.
+' buttons. The layout is device-local per server + profile, saved in prefs.homeLayouts
+' (Settings_homeLayout) and applied by HomePage through Settings_arrangeSections.
 ' Included by SettingsScreen.xml; shares the screen's m scope.
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -167,7 +167,7 @@ sub Hs_render()
         if m.hsLoading then
             m.hsMessage.text = Tx("Loading Home sections…")
         else if m.hsError <> "" then
-            m.hsMessage.text = Tx("Silo couldn't refresh the Home rows. Try again when the server is reachable.")
+            m.hsMessage.text = Tx("Siku couldn't refresh the Home rows. Try again when the server is reachable.")
         else
             m.hsMessage.text = Tx("Home has no populated rows to arrange yet.")
         end if

@@ -5,6 +5,7 @@
 sub init()
     m.content = m.top.findNode("content")
     m.subtitle = m.top.findNode("subtitle")
+    m.gridClip = m.top.findNode("gridClip")
     m.gridGroup = m.top.findNode("grid")
     m.errorLabel = m.top.findNode("error")
     m.buttonsGroup = m.top.findNode("buttons")
@@ -33,6 +34,9 @@ sub init()
     m.loaded = false
     m.active = false
     m.cols = 6
+    m.rowH = 220 + 44 + 40 + 60
+    m.maxRows = 2 ' rows that fit above the buttons; more scroll (scrollToFocus)
+    m.scrollRow = 0
 
     m.nameFont = CreateObject("roSGNode", "Font")
     m.nameFont.uri = "pkg:/fonts/Inter-semibold.otf"
@@ -193,7 +197,7 @@ sub buildGrid()
     n = m.profiles.Count()
     colW = 256
     gap = 28
-    rowH = 220 + 44 + 40 + 60
+    rowH = m.rowH
     for i = 0 to n - 1
         p = m.profiles[i]
         row = i \ m.cols
@@ -234,6 +238,7 @@ sub buildGrid()
 end sub
 
 sub renderTiles()
+    scrollToFocus()
     for i = 0 to m.tiles.Count() - 1
         t = m.tiles[i]
         focused = m.active and m.focusZone = "grid" and m.focusIndex = i
@@ -279,6 +284,14 @@ sub layout()
     layoutButtons()
     n = m.profiles.Count()
     rows = (n + m.cols - 1) \ m.cols
+    if rows > m.maxRows then
+        ' Clip to the rows that fit; scrollToFocus moves the grid. 30 px above the first row and
+        ' 10 px below the last name leave room for the focused avatar's ring and lowered name.
+        m.gridClip.clippingRect = [0, -30, 1920, m.maxRows * m.rowH - 60 + 40]
+        rows = m.maxRows
+    else
+        m.gridClip.clippingRect = [0, 0, 0, 0]
+    end if
     gridH = 0
     if rows > 0 then gridH = rows * (220 + 44 + 40) + (rows - 1) * 60
     h = 194 + gridH
@@ -294,8 +307,24 @@ end sub
 
 ' ---------- Focus and keys ----------
 
+' Keeps the focused row inside the rows shown (more than 12 profiles).
+sub scrollToFocus()
+    if m.focusZone = "grid" and m.tiles.Count() > 0 then
+        row = m.focusIndex \ m.cols
+        if row < m.scrollRow then m.scrollRow = row
+        if row > m.scrollRow + m.maxRows - 1 then m.scrollRow = row - m.maxRows + 1
+    end if
+    rows = (m.tiles.Count() + m.cols - 1) \ m.cols
+    if m.scrollRow > rows - m.maxRows then m.scrollRow = rows - m.maxRows
+    if m.scrollRow < 0 then m.scrollRow = 0
+    m.gridGroup.translation = [0, -m.scrollRow * m.rowH]
+end sub
+
+' The buttons count only once the page is drawn: while the profiles load the group is hidden,
+' and a hidden focused button still takes OK (Change account, Sign out).
 function visibleButtons() as object
     out = []
+    if not m.buttonsGroup.visible then return out
     for each b in [m.retryButton, m.changeAccountButton, m.signOutButton]
         if b.visible then out.Push(b)
     end for
@@ -317,7 +346,11 @@ sub applyFocus()
         m.tiles[m.focusIndex].group.setFocus(true)
     else
         bs = visibleButtons()
-        if bs.Count() = 0 then return
+        if bs.Count() = 0 then
+            ' Nothing to focus yet (still loading): hold focus on the screen itself (pitfall 7).
+            m.top.setFocus(true)
+            return
+        end if
         if m.buttonIndex >= bs.Count() then m.buttonIndex = bs.Count() - 1
         m.focusZone = "buttons"
         bs[m.buttonIndex].setFocus(true)
@@ -331,6 +364,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
     if m.pinDialog <> invalid then return true ' the dialog handles its own keys
     if key = "back" then return false
     if m.busy then return true
+    if not m.content.visible then return true ' still loading: only Back does anything
     if m.focusZone = "grid" then
         n = m.tiles.Count()
         i = m.focusIndex

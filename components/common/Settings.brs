@@ -71,8 +71,11 @@ function Settings_deviceKeys() as object
     return ["playback.preferred_quality", "playback.max_bitrate_kbps", "playback.audio_language", "playback.intro_skip_mode", "playback.buffering_quality_mode", "playback.auto_skip_credits", "playback.auto_play_next", "playback.next_up_prompt_seconds", "playback.subtitle_appearance", "player.subtitle_sync_ms", "player.hdr_enabled", "player.dolby_vision_enabled", "player.dv_profile7_hdr10_fallback"]
 end function
 
+' Quoted keys keep their camelCase: Roku lower-cases unquoted AA-literal keys, FormatJson writes
+' them that way, and the contract's schema (additionalProperties: false) refuses "fontsize".
+' writeAppearance copies these keys. The fallback is contract revision 6's (a 75% opaque box).
 function Settings_defaultAppearance() as object
-    return { fontSize: "large", fontFamily: "sans-serif", fontColor: "#ffffff", textOpacity: 100, backgroundColor: "#000000", backgroundStyle: "shadow", backgroundOpacity: 75, textOutline: false, textOutlineColor: "#000000", position: "bottom" }
+    return { "fontSize": "large", "fontFamily": "sans-serif", "fontColor": "#ffffff", "textOpacity": 100, "backgroundColor": "#000000", "backgroundStyle": "box", "backgroundOpacity": 75, "textOutline": false, "textOutlineColor": "#000000", "position": "bottom" }
 end function
 
 ' ---------- State ----------
@@ -621,18 +624,75 @@ function Settings_withoutHiddenLibraries(libraries as object) as object
 end function
 
 ' ---------- Home Sections layout (device-local, like Android TV's TvHomeSectionPreferences) ----------
+' Kept per server + profile (Settings_identity), as Android keys its store by server, account and
+' profile (android.homeSections.v1.<server>.<account><profile>): prefs.homeLayouts is a list of
+' { key, hidden, order }, the most recently changed first, at most Settings_homeLayoutsMax() entries
+' and Settings_homeLayoutsBudget() bytes of JSON (the prefs share the 16 KB registry with the accounts). Builds before that kept one layout for the whole Roku in
+' prefs.hiddenSections / prefs.sectionOrder; the first profile to change its layout inherits those
+' lists, and they are then dropped, so the other profiles start from the server's order.
+
+function Settings_homeLayoutsMax() as integer
+    return 8
+end function
+
+function Settings_homeLayoutsBudget() as integer
+    return 2500
+end function
+
+' The layout { hidden, order } for `key` in `prefs` (pure; tests/test_home_layout.py).
+function Settings_homeLayoutFor(prefs as dynamic, key as string) as object
+    if prefs = invalid or Type(prefs) <> "roAssociativeArray" then return { hidden: [], order: [] }
+    list = Arr_or(prefs.homeLayouts)
+    for i = 0 to list.Count() - 1
+        e = list[i]
+        if Type(e) = "roAssociativeArray" and Str_orEmpty(e.key) = key then return { hidden: Arr_or(e.hidden), order: Arr_or(e.order) }
+    end for
+    ' Not stored yet: the device-wide lists of an older build, if any.
+    return { hidden: Arr_or(prefs.hiddenSections), order: Arr_or(prefs.sectionOrder) }
+end function
+
+' prefs.homeLayouts with `key`'s layout replaced and moved first, capped (pure).
+function Settings_homeLayoutsWith(prefs as dynamic, key as string, hl as object) as object
+    out = [{ key: key, hidden: Arr_or(hl.hidden), order: Arr_or(hl.order) }]
+    old = []
+    if prefs <> invalid and Type(prefs) = "roAssociativeArray" then old = Arr_or(prefs.homeLayouts)
+    for i = 0 to old.Count() - 1
+        e = old[i]
+        if out.Count() >= Settings_homeLayoutsMax() then exit for
+        if Type(e) = "roAssociativeArray" and Str_orEmpty(e.key) <> key and Str_orEmpty(e.key) <> "" then out.Push(e)
+    end for
+    ' Over the byte budget the layouts changed longest ago go first; this one always stays.
+    while out.Count() > 1 and Len(FormatJson(out)) > Settings_homeLayoutsBudget()
+        out.Pop()
+    end while
+    return out
+end function
+
+function Settings_homeLayout() as object
+    return Settings_homeLayoutFor(Settings_prefs(), Settings_identity())
+end function
+
+sub Settings_saveHomeLayout(hl as object)
+    p = AA_copy(Settings_prefs())
+    p.homeLayouts = Settings_homeLayoutsWith(p, Settings_identity(), hl)
+    ' The device-wide lists now belong to this profile only.
+    p.hiddenSections = []
+    p.sectionOrder = []
+    Prefs_save(p)
+    m.global.homeDirty = true
+end sub
 
 ' Applies the saved order, then (unless includingHidden) the hidden set, to the server's sections.
 function Settings_arrangeSections(sections as object, includingHidden = false as boolean) as object
-    p = Settings_prefs()
+    hl = Settings_homeLayout()
     rank = {}
     i = 0
-    for each id in Arr_or(p.sectionOrder)
+    for each id in hl.order
         rank[Str_orEmpty(id)] = i
         i = i + 1
     end for
     hidden = {}
-    for each h in Arr_or(p.hiddenSections)
+    for each h in hl.hidden
         hidden[Str_orEmpty(h)] = true
     end for
     ranked = []
@@ -664,27 +724,26 @@ function Settings_arrangeSections(sections as object, includingHidden = false as
 end function
 
 function Settings_sectionHidden(sectionId as string) as boolean
-    for each h in Arr_or(Settings_prefs().hiddenSections)
+    for each h in Settings_homeLayout().hidden
         if Str_orEmpty(h) = sectionId then return true
     end for
     return false
 end function
 
 sub Settings_setSectionHidden(sectionId as string, hidden as boolean)
-    p = AA_copy(Settings_prefs())
+    hl = Settings_homeLayout()
     list = []
-    for each h in Arr_or(p.hiddenSections)
+    for each h in hl.hidden
         if Str_orEmpty(h) <> sectionId then list.Push(h)
     end for
     if hidden then list.Push(sectionId)
-    p.hiddenSections = list
-    Prefs_save(p)
-    m.global.homeDirty = true
+    hl.hidden = list
+    Settings_saveHomeLayout(hl)
 end sub
 
 ' Replaces the order of the known rows, keeping remembered rows that are absent right now.
 sub Settings_setSectionOrder(sectionIds as object)
-    p = AA_copy(Settings_prefs())
+    hl = Settings_homeLayout()
     seen = {}
     list = []
     for each id in sectionIds
@@ -694,16 +753,15 @@ sub Settings_setSectionOrder(sectionIds as object)
             list.Push(sid)
         end if
     end for
-    for each id in Arr_or(p.sectionOrder)
+    for each id in hl.order
         sid = Str_orEmpty(id)
         if sid <> "" and not seen.DoesExist(sid) then
             seen[sid] = true
             list.Push(sid)
         end if
     end for
-    p.sectionOrder = list
-    Prefs_save(p)
-    m.global.homeDirty = true
+    hl.order = list
+    Settings_saveHomeLayout(hl)
 end sub
 
 ' ---------- Option tables (ported from the shared Kotlin models) ----------

@@ -207,7 +207,8 @@ clears one); GET /mock/switch lists them.
                                  out as an older server does): the profile menu offers Add Profile with one
                                  profile while the limit is above 1 or unknown, no profile row at 1
   profiles=1                     every household lists only its primary profile (plus profiles added with
-                                 POST /api/v2/profiles), for the one-profile menu rows
+                                 POST /api/v2/profiles), for the one-profile menu rows; profiles=<n> above
+                                 the household's own pads it with guests (n <= 40; the picker scrolls past 12)
   primary_pin=1                  the primary profile (Laura, or <Name> for other users) has a PIN (1234); Add
                                  Profile then asks it first. POST /api/v2/profiles needs X-Profile-Id = the
                                  primary profile (and X-Profile-Token ptok-1 with primary_pin), answers 409 at
@@ -4018,8 +4019,13 @@ def household(user):
             {"id": "p-%s-main" % uid, "name": user["username"].title(), "avatar_url": "", "has_pin": primary_pin, "is_primary": True},
             {"id": "p-%s-max" % uid, "name": "Max", "avatar_url": "", "has_pin": False, "is_primary": False},
         ]
-    if str(STATE["switches"].get("profiles") or "") == "1":
+    want = str(STATE["switches"].get("profiles") or "")
+    if want == "1":
         items = items[:1]
+    elif want.isdigit() and int(want) > len(items):
+        # profiles=<n> above the household's own: pad with guests (a picker with more than two rows).
+        items = items + [{"id": "p-guest-%d" % i, "name": "Guest %d" % i, "avatar_url": "", "has_pin": False}
+                         for i in range(len(items) + 1, min(int(want), 40) + 1)]
     return items + STATE.setdefault("created_profiles", {}).get(uid, [])
 
 

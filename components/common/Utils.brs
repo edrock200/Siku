@@ -14,8 +14,10 @@ end function
 
 sub Registry_write(key as string, value as dynamic)
     sec = CreateObject("roRegistrySection", "siku")
-    sec.Write(key, FormatJson({ v: value }))
-    sec.Flush()
+    ok = sec.Write(key, FormatJson({ v: value }))
+    if ok = true then ok = sec.Flush()
+    ' A full registry (16 KB per channel) fails without a word otherwise; the key only, never the value.
+    if ok <> true then Diag_log("[siku-diag] registry write failed key=" + key)
 end sub
 
 sub Registry_delete(key as string)
@@ -421,6 +423,18 @@ function Node_find(parent as object, id as string) as object
     end while
     return invalid
 end function
+
+' ---------- Keyboards ----------
+
+' Lets a StandardKeyboardDialog take dictation from the voice remote's microphone (Android TV's
+' search has voice input). Its text box is a VoiceTextEditBox on firmware that has one; the field
+' is set only where it exists. Never call it for a password field.
+sub Keyboard_enableVoice(dlg as object)
+    if dlg = invalid then return
+    editBox = invalid
+    if dlg.hasField("textEditBox") then editBox = dlg.textEditBox
+    if editBox <> invalid and editBox.hasField("voiceEnabled") then editBox.voiceEnabled = true
+end sub
 
 ' ---------- Diagnostics log ----------
 

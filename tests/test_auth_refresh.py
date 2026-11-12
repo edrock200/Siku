@@ -95,3 +95,33 @@ class ProbeHeaders(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TransportStatus(unittest.TestCase):
+    """Http_send/Http_download clamp Roku's negative curl codes to status 0 (callers test
+    `status = 0` for "no answer") and keep the code in the failure text."""
+
+    def test_failure_text(self):
+        f = "Http_failureText"
+        check_cases(self, HTTP, [
+            ("curl code with a reason", f, [-6, "Couldn't resolve host name"], "Couldn't resolve host name (curl -6)"),
+            ("curl code without a reason", f, [-7, ""], "(curl -7)"),
+            ("curl code, reason missing", f, [-28, None], "(curl -28)"),
+            ("an HTTP answer keeps its reason", f, [502, "Bad Gateway"], "Bad Gateway"),
+            ("timeout path (status 0)", f, [0, ""], ""),
+        ])
+
+    def test_get_retried_once_on_transport_failure(self):
+        f = "ApiTask_retryTransport"
+        files = ["components/tasks/ApiTask.brs", "components/tasks/Http.brs", "components/common/Utils.brs"]
+        refused = {"status": 0, "transportCode": -7}
+        check_cases(self, files, [
+            ("GET, connection refused", f, [{"path": "/api/v2/home"}, refused], True),
+            ("explicit GET", f, [{"method": "get", "path": "/api/v2/home"}, refused], True),
+            ("POST is never resent", f, [{"method": "POST", "path": "/api/v2/x"}, refused], False),
+            ("our own timeout (no transportCode)", f, [{"path": "/api/v2/home"}, {"status": 0}], False),
+            ("curl timeout", f, [{"path": "/api/v2/home"}, {"status": 0, "transportCode": -28}], False),
+            ("an HTTP answer", f, [{"path": "/api/v2/home"}, {"status": 503}], False),
+            ("anonymous probe", f, [{"path": "/api/v2/system/identity", "anonymous": True}, refused], False),
+            ("probe of another address", f, [{"path": "/api/v2/system/identity", "baseUrl": "http://10.0.0.2:8097"}, refused], False),
+        ])

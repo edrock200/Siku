@@ -398,5 +398,7 @@
   "The server took too long to answer. Try again.": "Der Server hat zu lange für die Antwort gebraucht. Versuche es erneut.",
   "The server's answer was too large for this Roku.": "Die Antwort des Servers ist zu groß für dieses Roku-Gerät.",
   "The server took too long to answer.": "Der Server hat zu lange für die Antwort gebraucht.",
-  "The server's answer was too large.": "Die Antwort des Servers war zu groß."
+  "The server's answer was too large.": "Die Antwort des Servers war zu groß.",
+  "Siku couldn't refresh the Home rows. Try again when the server is reachable.": "Siku konnte die Reihen der Startseite nicht aktualisieren. Versuche es erneut, wenn der Server erreichbar ist.",
+  "Rewind on Resume skips back when you return to a partly watched title. Still Watching Prompt sets how many episodes play in a row before Siku asks whether you're still watching.": "„Beim Fortsetzen zurückspulen“ springt zurück, wenn du zu einem teilweise angesehenen Titel zurückkehrst. „Nachfrage beim Weiterschauen“ legt fest, wie viele Folgen nacheinander laufen, bevor Siku fragt, ob du noch zuschaust."
 }

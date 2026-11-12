@@ -223,8 +223,16 @@ end sub
 
 ' ---------- Keyboard ----------
 
+' StandardKeyboardDialog takes dictation from the voice remote (Keyboard_enableVoice); its text,
+' buttonSelected and wasClosed behave like the legacy KeyboardDialog's, which stays the fallback.
 sub openKeyboard()
-    kb = CreateObject("roSGNode", "KeyboardDialog")
+    kb = CreateObject("roSGNode", "StandardKeyboardDialog")
+    if kb <> invalid then
+        Keyboard_enableVoice(kb)
+    else
+        kb = CreateObject("roSGNode", "KeyboardDialog")
+        if kb = invalid then return
+    end if
     kb.title = Tx("Search")
     kb.text = m.query
     kb.buttons = [Tx("Search"), Tx("Cancel")]

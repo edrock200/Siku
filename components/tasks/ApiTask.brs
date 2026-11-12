@@ -16,6 +16,11 @@ sub execute()
         return
     end if
     resp = perform(req)
+    if ApiTask_retryTransport(req, resp) then
+        print "[ApiTask] connection failed (curl "; resp.transportCode; "); trying the GET once more"
+        Sleep(700)
+        resp = perform(req)
+    end if
     ' A 401 means the access token was rejected: refresh once (single-flight via AuthTask) and retry.
     ' With no token at all (signed out meanwhile, e.g. the logout call itself) there is nothing to refresh.
     ' noRefresh (a playback route event): one attempt with the token at hand, nothing more.
@@ -30,6 +35,9 @@ sub execute()
             m.global.authExpired = true
         end if
     end if
+    ' Callers read the parsed tree; the raw body would only double the copy across the thread
+    ' boundary. It stays when the body was not JSON (ServerConnectScreen reads a plain-text 404).
+    if resp.data <> invalid then resp.text = ""
     resp.ok = resp.status >= 200 and resp.status < 300
     reportStaleProfile(req, resp)
     resp.context = req.context
@@ -56,6 +64,20 @@ sub reportStaleProfile(req as object, resp as object)
     print "[ApiTask] stale profile proof: "; method; " "; path
     m.global.staleProfile = { profileId: sent.profileId, profileToken: sent.profileToken, serverUrl: sent.serverUrl, at: CreateObject("roDateTime").AsSeconds(), path: path }
 end sub
+
+' True when a request whose connection failed outright (a transport failure, e.g. the network is
+' not up yet after the TV wakes) is sent once more (pure; tests/test_auth_refresh.py). Only a GET to
+' the session's server: a mutation may have reached the server (Req_isUncertain relies on that), a
+' timeout already took its full time, and probes of other addresses (anonymous or with a baseUrl)
+' run under their own budgets.
+function ApiTask_retryTransport(req as object, resp as object) as boolean
+    if resp = invalid or Int(Num_or(resp.status, -1)) <> 0 or resp.transportCode = invalid then return false
+    if Int(Num_or(resp.transportCode, 0)) = -28 then return false ' curl's own timeout
+    method = UCase(Str_orEmpty(req.method))
+    if method <> "" and method <> "GET" then return false
+    if isAnonymous(req) or not Str_isEmpty(req.baseUrl) then return false
+    return true
+end function
 
 ' True when the caller asked for no token refresh (read loosely: a missing flag is false).
 function noRefresh(req as object) as boolean
