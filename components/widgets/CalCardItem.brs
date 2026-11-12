@@ -32,10 +32,12 @@ sub forward()
     m.inner.focusPercent = m.top.focusPercent
     m.inner.itemHasFocus = m.top.itemHasFocus
     m.inner.rowHasFocus = m.top.rowHasFocus
+    m.inner.rowListHasFocus = m.top.rowListHasFocus
     m.inner.gridHasFocus = m.top.gridHasFocus
     ' Keep the badge over the (scaled) poster corner; the poster itself sits cardInsetY px down.
     p = m.top.focusPercent
-    if not (m.top.rowHasFocus or m.top.gridHasFocus) then p = 0
+    ' rowHasFocus stays true on the focused row while the RowList itself is unfocused.
+    if not ((m.top.rowHasFocus and m.top.rowListHasFocus) or m.top.gridHasFocus) then p = 0
     off = 12 - Int(m.top.width * 0.05 * p)
     insetY = 0
     c = m.top.itemContent
