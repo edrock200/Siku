@@ -3,6 +3,16 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.5.0
+
+From Silo's Android TV app (November 14, 2026).
+
+**Better**
+- **Badges on Continue Watching cards and episode thumbnails follow Poster Size.** They now grow and shrink with the Poster Size setting (Settings › General), like badges on posters already did.
+- **An episode's watched check grows with Poster Size too,** so it matches the badges.
+
+**Needs testing on a real Roku:** how readable and crowded Large badges are on wide cards, Compact badges on small cards, and that changing Poster Size redraws the cards smoothly.
+
 ## v0.4.0
 
 From Silo's Android TV app and Silo's own Roku app (November 13, 2026).

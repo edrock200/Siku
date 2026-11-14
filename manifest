@@ -1,7 +1,7 @@
 title=Siku
 subtitle=A Roku client for Silo
 major_version=0
-minor_version=4
+minor_version=5
 build_version=00000
 
 mm_icon_focus_fhd=pkg:/images/channel_poster_fhd.png
