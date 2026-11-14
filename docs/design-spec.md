@@ -528,7 +528,7 @@ The page background is opaque: the sampled tint at 42% over black (default `rgb(
 - **Action row** (18 px gaps; focus entering the row always lands on Play):
   1. **Primary pill** "Play", or "Resume 1:23:45". Series: "Play S2:E3" / "Resume S2:E3"; season pages: "Play E4". Height 76 px, 54 px horizontal padding, play glyph. Fixed 340 px wide on series pages.
   2. **Start Over** (⏮), a circle shown only when a resume point exists.
-  3. **Version / Audio / Subtitles selectors.** Circles that widen on focus. The menus have headers "VERSION", "AUDIO", "SUBTITLES", entries "Auto", "Off", "Start without subtitles", "Use your subtitle preferences", and so on.
+  3. **Edition / Version / Audio / Subtitles selectors.** Circles that widen on focus. The menus have headers "EDITION", "VERSION", "AUDIO", "SUBTITLES", entries "Auto", "Off", "Start without subtitles", "Use your subtitle preferences", and so on. Edition (a stack glyph) shows only for a title with two or more editions and has no Auto row; Version (a several-videos glyph) offers Auto and the current edition's files, and Auto never leaves the edition (Silo Android #899, `Edition.brs`).
   4. **Watchlist** (bookmark, filled when active), label "Watchlist".
   5. **More** (⋯). Opens the "More Actions" dialog:
      - Shuffle Series / Shuffle Season N.

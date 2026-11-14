@@ -348,6 +348,13 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   pause/play, skip, scrub/hold-seek commit, chapter, skip pill, voice or phone-remote pause/seek (`[siku-playback] still watching
   count reset (viewer)` when it was above 0); intro auto-skip and re-anchors do not.
 - v0.3.0 (two reviews + profile management): `[siku-playback] replan queued|dequeued|answer dropped …` (`PlayerReplanFence.brs`; mock `--switch replan_delay=<s>`, `start_delay=<s>`), `unused session stopped reason=`, `ai live reconnect …` (mock `ai_live=drop`), `try again at N s file=`, `media refused status=N …` (`debugVideoError=auth[:N]`, mock `server_resume=<s>`), HUD panes scroll (mock `chapters=<n>`); `[siku-auth] logout outcome=` (`Api_revoke`, mock `stale_logout=1`), `refresh answer kept for …`; `[siku-accounts] forgot N account(s) on servers no longer saved`; `[siku-audio] stream error N; starting again once`, `part finished early`; `[siku-search] titles page …`, `people search media_scope supported=` (mock `search_hidden=1`, `people_scope=0|fail`); `[siku-profiles] manage mode …`, `edit: save|delete outcome=` (ProfileManage.brs, EditProfileScreen; `debugManage=1`, `debugProfileName=`; mock `policy_revision=1`, `profile_write=fail`, `profiles=<n>`); `[siku-diag] registry write failed key=`.
+- Editions (Silo Android #899, silo-roku 7bb02a9; `Edition.brs`, host tests `tests/test_edition.py`): Edition picks the cut,
+  Version Auto the best first-part file of that cut for `playback.preferred_quality`; the page opens on `last_edition_key`,
+  then the edition of `last_file_id`, else the cut whose Auto file compares best; Play sends the shown file unless it is the
+  last-played Auto file. `[siku-detail] edition source=last_edition|last_file|best|pinned editions= versions= quality= shown=`
+  (once per decision), `edition picked versions= shown= (Version on Auto)`, `play file=sent|player reason=pinned|tracks|auto|last_played
+  shown=`, `shown file changed; audio and subtitle picks back to Auto`. Mock: `--switch editions=1|lastfile|none` (Iron Orchard,
+  `movie:iron-orchard`: Theatrical 70/71, Director's Cut 72/73; log `EDITIONS detail`).
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

@@ -24,6 +24,7 @@ sub init()
     m.playBtn = m.top.findNode("playBtn")
     m.startOverBtn = m.top.findNode("startOverBtn")
     m.trailerBtn = m.top.findNode("trailerBtn")
+    m.editionBtn = m.top.findNode("editionBtn")
     m.versionBtn = m.top.findNode("versionBtn")
     m.audioBtn = m.top.findNode("audioBtn")
     m.subtitlesBtn = m.top.findNode("subtitlesBtn")
@@ -33,6 +34,7 @@ sub init()
     ' DetailCircleButton's `label` field is not one I18n_translateTree reads (keep in step with the XML).
     m.startOverBtn.label = Tx("Start Over")
     m.trailerBtn.label = Tx("Trailer")
+    m.editionBtn.label = Tx("Edition")
     m.versionBtn.label = Tx("Version")
     m.audioBtn.label = Tx("Audio")
     m.subtitlesBtn.label = Tx("Subtitles")
@@ -97,6 +99,9 @@ sub init()
     m.menuKind = "more"
     ' Playback selections for the title the selectors describe (the item, or a series' next-up episode).
     m.selFileId = ""            ' "" = Auto
+    m.selEdition = invalid      ' the Edition picked (an Edition_list id, "" = unnamed); invalid = the last-played one
+    m.shownFile = ""            ' the file the selectors showed last (target|file_id): tracks belong to a file
+    m.editionLogKey = ""        ' the edition choice last logged
     m.selAudio = invalid        ' ordinal into audio_tracks; invalid = Auto
     m.selSubtitle = invalid     ' combined subtitle index; invalid = Auto; -1 = Off
     m.playDetail = invalid      ' the next-up episode's item detail (series/season pages)
@@ -111,10 +116,11 @@ sub init()
     m.watchlistBtn.observeField("buttonSelected", "onWatchlistToggle")
     m.favBtn.observeField("buttonSelected", "onFavoriteToggle")
     m.moreBtn.observeField("buttonSelected", "onMore")
+    m.editionBtn.observeField("buttonSelected", "onEditionButton")
     m.versionBtn.observeField("buttonSelected", "onVersionButton")
     m.audioBtn.observeField("buttonSelected", "onAudioButton")
     m.subtitlesBtn.observeField("buttonSelected", "onSubtitlesButton")
-    for each b in [m.startOverBtn, m.trailerBtn, m.versionBtn, m.audioBtn, m.subtitlesBtn, m.watchlistBtn, m.favBtn, m.moreBtn]
+    for each b in [m.startOverBtn, m.trailerBtn, m.editionBtn, m.versionBtn, m.audioBtn, m.subtitlesBtn, m.watchlistBtn, m.favBtn, m.moreBtn]
         b.observeField("width", "layoutActions")
     end for
     m.playBtn.observeField("width", "layoutActions")
@@ -234,6 +240,8 @@ end function
 ' protection changes (hero, episode rail).
 sub onSettingsLoaded()
     if m.onTop = true and m.item <> invalid then ThemeMusic_show(m.item)
+    ' Version Auto follows the quality preference, which may only now be known.
+    if m.item <> invalid then updateSelectors()
     sig = spoilerSignature()
     if sig = m.spoilerSig then return
     m.spoilerSig = sig
@@ -389,6 +397,26 @@ function yearOf(it as object) as string
     return ""
 end function
 
+' The hero's facts line: year · length (of the file the page shows) · seasons · genres · rating.
+function heroMetaText(it as object, t as string) as string
+    tokens = []
+    y = yearOf(it)
+    if y <> "" then tokens.Push(y)
+    lengthSec = detailLengthSeconds(it, t)
+    if lengthSec > 0 then tokens.Push(Time_runtime(lengthSec))
+    if t = "series" and it.season_count <> invalid then
+        sc = toInt(it.season_count)
+        if sc = 1 then tokens.Push(Tx("1 season")) else tokens.Push(TxF("{0} seasons", [sc]))
+    end if
+    genres = namesOf(it.genres)
+    if genres.Count() > 0 then tokens.Push(joinNames(genres, 3))
+    ratings = Arr_or(it.ratings)
+    if ratings.Count() > 0 and not Str_isEmpty(ratings[0].display) then
+        tokens.Push(Str_orEmpty(ratings[0].name) + " " + ratings[0].display)
+    end if
+    return Str_joinDots(tokens)
+end function
+
 sub renderHero()
     it = m.item
     t = m.itemType
@@ -421,22 +449,7 @@ sub renderHero()
     m.episodeLine.text = epLine
     m.episodeLine.visible = epLine <> ""
 
-    tokens = []
-    y = yearOf(it)
-    if y <> "" then tokens.Push(y)
-    lengthSec = detailLengthSeconds(it, t)
-    if lengthSec > 0 then tokens.Push(Time_runtime(lengthSec))
-    if t = "series" and it.season_count <> invalid then
-        sc = toInt(it.season_count)
-        if sc = 1 then tokens.Push(Tx("1 season")) else tokens.Push(TxF("{0} seasons", [sc]))
-    end if
-    genres = namesOf(it.genres)
-    if genres.Count() > 0 then tokens.Push(joinNames(genres, 3))
-    ratings = Arr_or(it.ratings)
-    if ratings.Count() > 0 and not Str_isEmpty(ratings[0].display) then
-        tokens.Push(Str_orEmpty(ratings[0].name) + " " + ratings[0].display)
-    end if
-    m.metaLabel.text = Str_joinDots(tokens)
+    m.metaLabel.text = heroMetaText(it, t)
     rating = Str_orEmpty(it.content_rating)
     m.ratingChip.visible = rating <> ""
     m.ratingLabel.text = rating
@@ -536,7 +549,7 @@ sub layoutActions()
     x = 0
     gap = 18
     m.actionButtons = []
-    for each b in [m.playBtn, m.startOverBtn, m.trailerBtn, m.versionBtn, m.audioBtn, m.subtitlesBtn, m.watchlistBtn, m.favBtn, m.moreBtn]
+    for each b in [m.playBtn, m.startOverBtn, m.trailerBtn, m.editionBtn, m.versionBtn, m.audioBtn, m.subtitlesBtn, m.watchlistBtn, m.favBtn, m.moreBtn]
         if b.visible then
             b.translation = [x, 0]
             x = x + b.width + gap
@@ -623,26 +636,36 @@ function playVersions() as object
     return Arr_or(m.item.versions)
 end function
 
-' The version the selectors show: the chosen file, else the last played file, else the default
-' variant, else the first version.
+' The item detail the selectors describe: the title itself, or a series' next-up episode once its
+' detail landed; invalid meanwhile.
+function selectorDetail() as dynamic
+    if m.itemType = "series" or m.itemType = "season" then
+        if m.playDetail = invalid or Str_orEmpty(m.playDetail.content_id) <> selectorTargetId() then return invalid
+        return m.playDetail
+    end if
+    return m.item
+end function
+
+' The editions and the file the selectors show (Edition.brs, Silo Android #899): the Version pick,
+' else Version Auto within the picked or last-played edition for the quality preference.
+function selectorState() as object
+    return Edition_resolve(selectorDetail(), m.selFileId, m.selEdition, Settings_quality())
+end function
+
+' The version the selectors show and Play starts.
 function displayVersion() as dynamic
-    versions = playVersions()
-    if versions.Count() = 0 then return invalid
-    src = m.item
-    if m.itemType = "series" or m.itemType = "season" then src = m.playDetail
-    want = m.selFileId
-    if want = "" and src <> invalid and src.user_data <> invalid then want = Str_orEmpty(src.user_data.last_file_id)
-    if want = "" and src <> invalid then
-        for each pv in Arr_or(src.playback_variants)
-            if want = "" and not Str_isEmpty(pv.default_file_id) then want = Str_orEmpty(pv.default_file_id)
-        end for
-    end if
-    if want <> "" then
-        for each v in versions
-            if Str_orEmpty(v.file_id) = want then return v
-        end for
-    end if
-    return versions[0]
+    return selectorState().version
+end function
+
+' The files the Version menu offers: the current edition's (first parts), else every version.
+function editionFiles(st as object) as object
+    if st.edition >= 0 and st.edition < st.editions.Count() then return st.editions[st.edition].files
+    return playVersions()
+end function
+
+function editionName(e as object) as string
+    if e.label = "" then return Tx("Standard")
+    return e.label
 end function
 
 ' Fetches the next-up episode's detail (its versions and tracks) for series/season pages.
@@ -652,6 +675,8 @@ sub loadPlayDetail()
     if m.playDetail <> invalid and Str_orEmpty(m.playDetail.content_id) = target then return
     m.playDetail = invalid
     m.selFileId = ""
+    ' A new next-up target opens on its own last-played edition.
+    m.selEdition = invalid
     m.selAudio = invalid
     m.selSubtitle = invalid
     updateSelectors()
@@ -683,12 +708,35 @@ function subtitleValueLabel(v as object) as string
     return Tracks_subtitleSummary(tracks[o], o)
 end function
 
-' Each selector shows only when there is more than one real choice ("Auto" and "Off" don't count).
+' Each selector shows only when there is more than one real choice ("Auto" and "Off" don't count):
+' Edition with two editions or more, Version with two files or more in the current edition.
 sub updateSelectors()
-    versions = playVersions()
-    v = displayVersion()
-    m.versionBtn.visible = versions.Count() > 1
+    st = selectorState()
+    v = st.version
+    files = editionFiles(st)
+    showEditions = st.editions.Count() > 1
+    m.editionBtn.visible = showEditions and v <> invalid
+    if m.editionBtn.visible then m.editionBtn.label = TxF("Edition · {0}", [editionName(st.editions[st.edition])])
+    m.versionBtn.visible = files.Count() > 1
     if v <> invalid then
+        ' Track picks belong to a file: when the shown file changes under them (a new quality
+        ' preference, a refreshed history), they start over from Auto, as Android TV does.
+        shown = selectorTargetId() + "|" + Str_orEmpty(v.file_id)
+        if m.shownFile <> "" and shown <> m.shownFile and Left(m.shownFile, Len(selectorTargetId()) + 1) = selectorTargetId() + "|" then
+            if m.selAudio <> invalid or m.selSubtitle <> invalid then Diag_log("[siku-detail] shown file changed; audio and subtitle picks back to Auto")
+            m.selAudio = invalid
+            m.selSubtitle = invalid
+        end if
+        if shown <> m.shownFile and m.itemType <> "series" and m.itemType <> "season" and m.shownFile <> "" then
+            ' The header's length is the shown file's (another cut can run longer).
+            meta = heroMetaText(m.item, m.itemType)
+            if meta <> m.metaLabel.text then
+                m.metaLabel.text = meta
+                layoutHero()
+            end if
+        end if
+        m.shownFile = shown
+        logEdition(st)
         compact = Tracks_versionCompact(v) ' Tx("Auto") when nothing is known
         if m.selFileId = "" and compact <> Tx("Auto") then compact = TxF("Auto · {0}", [compact])
         m.versionBtn.label = TxF("Version · {0}", [compact])
@@ -705,6 +753,19 @@ sub updateSelectors()
     layoutActions()
 end sub
 
+' One console line each time the edition the page shows is decided anew (titles with editions only).
+sub logEdition(st as object)
+    if st.editions.Count() < 2 or st.edition < 0 then return
+    key = selectorTargetId() + "|" + st.editions[st.edition].id + "|" + st.source + "|" + Settings_quality()
+    if key = m.editionLogKey then return
+    m.editionLogKey = key
+    if st.source = "picked" then return ' onSelectorChosen logs the pick
+    line = "[siku-detail] edition source=" + st.source + " editions=" + st.editions.Count().ToStr() + " versions=" + editionFiles(st).Count().ToStr()
+    line = line + " quality=" + Settings_quality() + " shown=" + Tracks_versionCompact(st.version)
+    if st.laterPart then line = line + " (resuming a later part)"
+    Diag_log(line)
+end sub
+
 sub openSelectorMenu(kind as string, title as string, acts as object)
     m.menuKind = kind
     m.menu.title = title
@@ -713,9 +774,23 @@ sub openSelectorMenu(kind as string, title as string, acts as object)
     m.menu.setFocus(true)
 end sub
 
+' Edition (Silo Android #899): one row per cut, each with the file Version Auto would play in it.
+' There is no Auto row; picking a cut puts Version back on Auto within it.
+sub onEditionButton()
+    st = selectorState()
+    q = Settings_quality()
+    acts = []
+    for i = 0 to st.editions.Count() - 1
+        e = st.editions[i]
+        acts.Push({ id: "e:" + e.id, label: editionName(e), detail: Tracks_versionShort(Edition_autoFile(e, q)), checked: i = st.edition })
+    end for
+    openSelectorMenu("edition", Tx("Edition"), acts)
+end sub
+
+' Version: Auto (the best file of the current edition) and that edition's files.
 sub onVersionButton()
     acts = [{ id: "auto", label: Tx("Auto"), detail: Tx("Best match for this device"), checked: m.selFileId = "" }]
-    for each v in playVersions()
+    for each v in editionFiles(selectorState())
         fid = Str_orEmpty(v.file_id)
         acts.Push({ id: "v:" + fid, label: Tracks_versionShort(v), detail: Tracks_versionDetail(v), checked: fid = m.selFileId })
     end for
@@ -757,7 +832,16 @@ sub onSubtitlesButton()
 end sub
 
 sub onSelectorChosen(kind as string, id as string)
-    if kind = "version" then
+    if kind = "edition" then
+        if Left(id, 2) <> "e:" then return
+        m.selEdition = Mid(id, 3)
+        ' Version goes back to Auto within the cut; tracks are per file and start from Auto too.
+        m.selFileId = ""
+        m.selAudio = invalid
+        m.selSubtitle = invalid
+        st = selectorState()
+        Diag_log("[siku-detail] edition picked versions=" + editionFiles(st).Count().ToStr() + " shown=" + Tracks_versionCompact(st.version) + " (Version on Auto)")
+    else if kind = "version" then
         if id = "auto" then
             m.selFileId = ""
         else if Left(id, 2) = "v:" then
@@ -832,11 +916,29 @@ end sub
 ' The player turns indexes into "file:<id>:audio:<n>" / "file:<id>:subtitle:<n>" ids; Off sends nothing.
 sub applySelections(params as object, targetId as string)
     if targetId = "" or targetId <> selectorTargetId() then return
+    d = selectorDetail()
     v = displayVersion()
-    if v = invalid then return
+    if v = invalid or d = invalid then return
     fid = Str_orEmpty(v.file_id)
     hasTrack = m.selAudio <> invalid or (m.selSubtitle <> invalid and m.selSubtitle >= 0)
-    if m.selFileId <> "" or hasTrack then params.fileId = fid
+    ' Play starts the file the page shows (Silo Android #899 detailPlaybackFileId): a pick or a
+    ' file with picked tracks always, an Auto file unless it is the last played (the player picks
+    ' that one itself).
+    lastFileId = ""
+    if Type(d.user_data) = "roAssociativeArray" then lastFileId = Str_orEmpty(d.user_data.last_file_id)
+    sendFid = Edition_playFileId(v, m.selFileId <> "", hasTrack, lastFileId)
+    if sendFid <> "" then params.fileId = sendFid
+    reason = "last_played"
+    if m.selFileId <> "" then
+        reason = "pinned"
+    else if hasTrack then
+        reason = "tracks"
+    else if sendFid <> "" then
+        reason = "auto"
+    end if
+    sent = "player"
+    if sendFid <> "" then sent = "sent"
+    Diag_log("[siku-detail] play file=" + sent + " reason=" + reason + " shown=" + Tracks_versionCompact(v))
     if m.selAudio <> invalid then
         params.audioTrackIndex = m.selAudio
         params.audioTrackId = Tracks_audioId(fid, m.selAudio)

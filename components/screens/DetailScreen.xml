@@ -21,6 +21,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/Paging.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Shuffle.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Edition.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/SeriesChoice.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/SeriesReturn.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Trailers.brs" />
@@ -74,6 +75,7 @@
           <!-- Plays the title's trailer (local first, else YouTube); shown only when it has one. Siku-only: Android TV offers trailers in the row alone. -->
           <DetailCircleButton id="trailerBtn" iconUri="pkg:/images/icons/trailer.png" label="Trailer" visible="false" />
           <!-- Version / Audio / Subtitles selectors: shown only when the title offers a real choice. -->
+          <DetailCircleButton id="editionBtn" iconUri="pkg:/images/icons/edition.png" label="Edition" visible="false" />
           <DetailCircleButton id="versionBtn" iconUri="pkg:/images/icons/video_library.png" label="Version" visible="false" />
           <DetailCircleButton id="audioBtn" iconUri="pkg:/images/icons/audio.png" label="Audio" visible="false" />
           <DetailCircleButton id="subtitlesBtn" iconUri="pkg:/images/icons/subtitles.png" label="Subtitles" visible="false" />

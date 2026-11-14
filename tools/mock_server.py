@@ -103,6 +103,11 @@ clears one); GET /mock/switch lists them.
                                  prints PASSWORD_CHANGE_REQUIRED 403 <method> <path>
   no_runtime=1                   detail pages carry runtime 0 (a server without a stored running time);
                                  the files keep their measured duration
+  editions=1|lastfile|none        Iron Orchard has two editions (Silo Android #899): Theatrical Cut (files 70
+                                 2160p HDR, 71 1080p) and Director's Cut (72 2160p HDR, 73 1080p), with
+                                 playback_variants. 1: last played file 73 with last_edition_key directors_cut;
+                                 lastfile: only last_file_id 73; none: no history (the page opens on the cut whose
+                                 Auto file compares best: Theatrical). Log: EDITIONS detail <mode>
   parent_artwork=1               episode cards, episode lists and episode detail carry series_poster_url,
                                  series_backdrop_url and season_poster_url (+ *_thumbhash), as servers with
                                  episode_parent_artwork send them (Silo #711)
@@ -728,12 +733,47 @@ def detail(cid):
             v["file_id"] = str(50 + n)
             v["resolution"] = ["1080p", "720p", "2160p", "480p"][n % 4]
             d["versions"].append(v)
+    ed = STATE["switches"].get("editions")
+    if ed and cid == "movie:iron-orchard":
+        mock_editions(d, str(ed))
     if STATE["switches"].get("unplayable_sub"):
         # An MKV S_TEXT/WEBVTT track the server's probe did not recognise: no codec (Silo Android #776).
         for v in d["versions"]:
             v["subtitle_tracks"] = v["subtitle_tracks"] + [{"index": len(v["subtitle_tracks"]), "language": "fre", "codec": "", "forced": False,
                                                             "default": False, "external": False, "title": "Français (WebVTT)"}]
     return d
+
+
+def mock_editions(d, mode):
+    """Two cuts of two files each (Silo Android #899): Edition picks the cut, Version Auto the file."""
+    base = d["versions"][-1]
+    dur = d.get("duration_seconds", 3000)
+    cuts = [("theatrical", "Theatrical Cut", ["70", "71"], dur), ("directors_cut", "Director's Cut", ["72", "73"], dur + 1260)]
+    files = []
+    variants = []
+    for key, raw, fids, length in cuts:
+        group = []
+        for fid, res in zip(fids, ["2160p", "1080p"]):
+            v = dict(base)
+            v.update({"file_id": fid, "resolution": res, "hdr": res == "2160p", "codec_video": "hevc" if res == "2160p" else "h264",
+                      "codec_audio": "eac3" if res == "2160p" else "aac", "container": "mkv", "duration": length,
+                      "file_size": (18000000000 if res == "2160p" else 6000000000) + int(fid),
+                      "edition_key": key, "edition_raw": raw, "presentation_kind": "single", "presentation_group_key": key})
+            files.append(v)
+            group.append(v)
+        variants.append({"variant_id": key + "|single", "edition_key": key, "edition_raw": raw, "part_count": 1, "total_duration": length,
+                         "presentation_kind": "single", "presentation_group_key": key, "default_file_id": fids[0],
+                         "parts": [{"part_index": 1, "default_file_id": fids[0], "total_duration": length, "versions": group}]})
+    d["versions"] = files
+    d["playback_variants"] = variants
+    ud = d["user_data"]
+    ud.pop("last_file_id", None)
+    if mode in ("1", "true", "lastfile"):
+        ud["last_file_id"] = "73"
+        ud["last_resolution"] = "1080p"
+    if mode in ("1", "true"):
+        ud["last_edition_key"] = "directors_cut"
+    print("EDITIONS detail %s last_file_id=%s last_edition_key=%s" % (mode, ud.get("last_file_id", "-"), ud.get("last_edition_key", "-")), flush=True)
 
 
 def page(items, q):

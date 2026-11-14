@@ -95,7 +95,7 @@ function Tracks_versionShort(v as dynamic) as string
         if tracks.Count() > 0 then ac = Tracks_audioCodec(tracks[0].codec)
     end if
     if ac <> "" then tokens.Push(ac)
-    if not Str_isEmpty(v.edition_key) then tokens.Unshift(Str_orEmpty(v.edition_key))
+    ' No edition token: the Edition selector names the cut (Silo Android #899, silo-roku 7bb02a9).
     if tokens.Count() = 0 then return Tx("Auto")
     return Str_joinDots(tokens)
 end function

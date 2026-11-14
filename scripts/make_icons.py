@@ -39,6 +39,8 @@ ICONS = {
     # The detail page's Version selector: several videos (Silo Android #905, Material VideoLibrary,
     # Apple TV's play.rectangle.on.rectangle)
     "video_library": "video_library",
+    # The detail page's Edition selector (Silo Android TV's Icons.Filled.Layers, Apple TV's rectangle.stack)
+    "edition": "layers",
 }
 
 
