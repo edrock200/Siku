@@ -83,6 +83,10 @@ class Insets(unittest.TestCase):
             ("landscape over a bar lifts one edge step", f, ["landscape", 1.0, True, 28], near(32)),
             ("episode rail without progress: 12", f, ["episode", 1.0, False, 28], near(12)),
             ("episode rail over a bar: the clearance (TvEpisodeCard)", f, ["episode", 1.0, True, 28], near(28)),
+            ("a Large landscape card's inset grows with it (Silo Android #912)", f, ["landscape", 1.2, False, 28], near(28.8)),
+            ("a Compact landscape card's inset keeps its size at scale 1", f, ["landscape", 0.86, False, 28], near(24)),
+            ("a Compact episode still's too", f, ["episode", 0.86, False, 28], near(12)),
+            ("a Compact poster's inset still follows its width", f, ["poster", 0.5, False, 28], near(4)),
         ])
 
     def test_top_row_end(self):
@@ -102,6 +106,8 @@ class WatchStatus(unittest.TestCase):
             ("square art too", f, ["square", 185], {"size": 22, "inset": 8}),
             ("landscape draws none", f, ["landscape", 320], {"size": 0, "inset": 0}),
             ("episode rail keeps its own check", f, ["episode", 320], {"size": 44, "inset": 12}),
+            ("episode rail's check at a Large wide scale (Silo Android #912)", f, ["episode", 320, 1.2], {"size": 53, "inset": 14}),
+            ("episode rail's check at a Compact wide scale", f, ["episode", 320, 0.86], {"size": 38, "inset": 10}),
         ])
 
     def test_status(self):
@@ -112,6 +118,62 @@ class WatchStatus(unittest.TestCase):
             ("watched shows the check, even with a count", f, [True, 6, True], "check"),
             ("unknown watched flag (pitfall 16)", f, [None, 0, True], ""),
             ("landscape art never shows it", f, [True, 6, False], ""),
+        ])
+
+
+class OverlayScale(unittest.TestCase):
+    """A port of Silo Android #912's OverlayScaleTest: overlay scale = card scale x text factor."""
+
+    def near(self, want):
+        return lambda v: abs(v - want) < 1e-4
+
+    def test_text_factor(self):
+        f = "CardOverlay_textFactor"
+        n = self.near
+        check_cases(self, KEYS, [
+            ("smaller text never shrinks badges", f, [0.85], n(1.0)),
+            ("default text", f, [1.0], n(1.0)),
+            ("larger text", f, [1.15], n(1.15)),
+            ("up to the cap", f, [1.35], n(1.35)),
+            ("held at the cap", f, [2.0], n(1.35)),
+            ("an unset font scale (Roku has none)", f, [None], n(1.0)),
+        ])
+
+    def test_card_scale(self):
+        f = "CardOverlay_cardScale"
+        n = self.near
+        check_cases(self, KEYS, [
+            ("a poster's width against the web reference", f, ["poster", 185, 1.2], n(1.0)),
+            ("half the reference width", f, ["poster", 92.5, 0.86], n(0.5)),
+            ("square art measures its width too", f, ["square", 370, 1.0], n(2.0)),
+            ("a Compact wide card", f, ["landscape", 280, 0.86], n(0.86)),
+            ("a Standard wide card", f, ["landscape", 280, 1.0], n(1.0)),
+            ("a Large wide card", f, ["landscape", 280, 1.2], n(1.2)),
+            ("an episode still follows Poster Size", f, ["episode", 360, 1.2], n(1.2)),
+            ("a hero ignores Poster Size", f, ["hero", 900, 1.2], n(1.0)),
+            ("Poster Size multipliers", "CardOverlay_posterScaleOf", ["compact"], n(0.86)),
+            ("Large", "CardOverlay_posterScaleOf", ["Large"], n(1.2)),
+            ("unknown is Standard", "CardOverlay_posterScaleOf", ["huge"], n(1.0)),
+            ("none is Standard", "CardOverlay_posterScaleOf", [None], n(1.0)),
+        ])
+
+    def test_value(self):
+        f = "CardOverlay_scale"
+        n = self.near
+        check_cases(self, KEYS, [
+            ("card scale times the held text factor", f, [1.2, 1.6], n(1.2 * 1.35)),
+            ("smaller text leaves the card scale", f, [0.86, 0.9], n(0.86)),
+            ("larger text", f, [1.0, 1.3], n(1.3)),
+        ])
+
+    def test_scale_for_the_open_profile(self):
+        f = "CardOverlay_scaleFor"
+        n = self.near
+        large = {"global": {"cardPosterScale": 1.2}}
+        check_cases(self, KEYS, [
+            ("a wide card at the recorded Poster Size", f, ["landscape", 360], n(1.2), large),
+            ("a poster ignores it", f, ["poster", 370], n(2.0), large),
+            ("before ShellScreen recorded one: Standard", f, ["episode", 360], n(1.0)),
         ])
 
 

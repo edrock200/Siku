@@ -290,7 +290,11 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   are on (emerald check node in MediaCardItem, 22 at the 185 px reference and 8 in; episodes left drawn in the overlay image;
   landscape cards show neither), bottom corners share rows and wrap (`Ovl_bottomLayout`) and lift clear of the progress bar
   (`Ovl_bottomInset`: at least 28 px, the keyline bar's clearance, Silo Android #902 `WatchProgress.brs`; the bar is 8 px tall,
-  20 px in, 16 px up, 8 px under a box set's film count; tests `tests/test_watch_progress.py`), text keeps the presets' letter spacing; host tests `tests/test_overlay_layout.py`. Mock:
+  20 px in, 16 px up, 8 px under a box set's film count; tests `tests/test_watch_progress.py`), text keeps the presets' letter spacing; host tests `tests/test_overlay_layout.py`. Scale (Silo Android #912, `CardOverlay_scale*` in
+  `CardOverlayKeys.brs`): card scale × text factor; a poster's width / 185, a wide card's (landscape, episode still) Poster Size
+  multiplier 0.86 / 1 / 1.2 (`m.global.cardPosterScale`, set by ShellScreen; in the image key and the request's `k`), text factor 1
+  (Roku gives a channel no system text size); the episode rail's watched check (44 px 12 in) uses the wide scale; a wide card's
+  bottom inset never drops below its scale-1 size. Mock:
   `--switch card_overlays=1|<preset>[+rails|+corners|+combined]|off|404|500` (default off; on, it marks some titles watched and Orbital started),
   `overlay_profile=<preset>`, `overlay_profile_enabled=0|1`, `overlay_images=1|missing`; log `OVERLAY CONFIG`, `OVERLAY IMAGE`.
   The simulator draws translucent fills opaque (brs-engine ignores bitmap alpha); `scratchpad/pngfix.py` opens its PNGs.

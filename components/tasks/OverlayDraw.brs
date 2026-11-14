@@ -101,8 +101,11 @@ sub OvDraw_badges(c as object, spec as object, prefs as object, copy as object)
     look = Ovl_lookOf(prefs.preset, prefs.style)
     resolved = Ovl_resolve(prefs, spec.data, look, copy)
     shape = spec.shape
-    k = Ovl_wideScale()
-    if shape = "poster" then k = c.width / Ovl_referenceWidth()
+    ' The card's overlay scale (Silo Android #912, CardOverlay_scaleFor): a poster's width over 185,
+    ' a wide card's Poster Size multiplier, times the text factor.
+    k = 1.0
+    if Ovl_isNum(spec.k) then k = spec.k
+    if k <= 0 then k = 1.0
     c.look = look
     c.k = k
     c.inset = 8 * k

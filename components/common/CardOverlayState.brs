@@ -25,6 +25,7 @@ end function
 ' Starts a read for the open profile: ShellScreen calls it when it starts, after a profile switch,
 ' and whenever it re-reads the settings, so a change made on the web shows here.
 sub CardOverlays_read()
+    CardOverlays_notePosterScale()
     key = CardOverlays_key()
     known = invalid
     if key <> "" and m.global.hasField("cardOverlaysKnown") then known = m.global.cardOverlaysKnown[key]
@@ -59,9 +60,25 @@ end sub
 
 ' The settings snapshot changed (ShellScreen.onSettingsChanged): settle again with it.
 sub CardOverlays_onSettings()
+    CardOverlays_notePosterScale()
     r = m.ovReading
     if r = invalid then return
     if r.answered and not r.failed then CardOverlays_settle()
+end sub
+
+' Records the profile's Poster Size multiplier for the cards (CardOverlay_posterScale): wide cards'
+' badges and the episode rail's check follow it (Silo Android #912). A change makes the views draw
+' their cards again, as a new document does.
+sub CardOverlays_notePosterScale()
+    scale = CardOverlay_posterScaleOf(Settings_cardPresentation().posterSize)
+    if not m.global.hasField("cardPosterScale") then
+        m.global.addFields({ cardPosterScale: scale })
+        return
+    end if
+    if Abs(m.global.cardPosterScale - scale) < 0.001 then return
+    m.global.cardPosterScale = scale
+    if not m.global.hasField("cardOverlaysRevision") then m.global.addFields({ cardOverlaysRevision: 0, cardOverlaysKey: "" })
+    m.global.cardOverlaysRevision = m.global.cardOverlaysRevision + 1
 end sub
 
 ' Settles what cards draw once the config answered and the profile's settings are in.

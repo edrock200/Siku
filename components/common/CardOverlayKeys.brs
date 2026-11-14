@@ -36,16 +36,78 @@ function CardOverlay_hasProgress(c as object) as boolean
     return p > 0.01 and p < 0.995
 end function
 
+' ---------- Overlay scale (Silo Android #912 OverlayScale, silo-apple #1158) ----------
+' Every badge length and the watch-status corner are their reference lengths times one overlay
+' scale: the card's scale times the text factor.
+
+' Badges grow with the system text size up to this much; past it they would cover a small poster.
+function CardOverlay_maxTextFactor() as float
+    return 1.35
+end function
+
+' How much text has grown from the default size, held to 1..1.35 (smaller text never shrinks badges);
+' anything but a number is 1. Roku gives a channel no system text size (roDeviceInfo has only the
+' captions' size), so Siku passes invalid and every card draws at its card scale.
+function CardOverlay_textFactor(fontScale as dynamic) as float
+    t = Type(fontScale)
+    if t <> "roFloat" and t <> "Float" and t <> "roDouble" and t <> "Double" and t <> "roInt" and t <> "Integer" and t <> "roInteger" then return 1.0
+    f = fontScale * 1.0
+    if not (f >= 1.0) then return 1.0
+    if f > CardOverlay_maxTextFactor() then return CardOverlay_maxTextFactor()
+    return f
+end function
+
+' Poster Size's multiplier (CardPosterSize.posterScale): Compact 0.86, Standard 1, Large 1.2.
+function CardOverlay_posterScaleOf(size as dynamic) as float
+    t = Type(size)
+    if t <> "String" and t <> "roString" then return 1.0
+    s = LCase(size)
+    if s = "compact" then return 0.86
+    if s = "large" then return 1.2
+    return 1.0
+end function
+
+' A card's scale: a poster's (or square card's) width against the web's 185 px reference card; a
+' wide card (landscape, episode still) draws its reference lengths on a Standard card and follows
+' the Poster Size setting (posterScale) from there, whatever its width; a hero has no size setting.
+function CardOverlay_cardScale(shape as string, w as float, posterScale as float) as float
+    if shape = "landscape" or shape = "episode" then return posterScale
+    if shape = "hero" then return 1.0
+    return w / 185.0
+end function
+
+' The overlay scale: the card's scale times the text factor.
+function CardOverlay_scale(cardScale as float, fontScale as dynamic) as float
+    return cardScale * CardOverlay_textFactor(fontScale)
+end function
+
+' The open profile's Poster Size multiplier as ShellScreen recorded it (CardOverlayState.brs), 1
+' before it did.
+function CardOverlay_posterScale() as float
+    if not m.global.hasField("cardPosterScale") then return 1.0
+    v = m.global.cardPosterScale
+    t = Type(v)
+    if t <> "roFloat" and t <> "Float" and t <> "roDouble" and t <> "Double" then return 1.0
+    return v
+end function
+
+' The overlay scale of a card of shape, w px wide, for the open profile.
+function CardOverlay_scaleFor(shape as string, w as float) as float
+    return CardOverlay_scale(CardOverlay_cardScale(shape, w, CardOverlay_posterScale()), invalid)
+end function
+
 ' The watch-status corner on a card of shape, w px wide (Silo Android #882, the web's
 ' CardWatchStatus): { size, inset }. Poster-shaped art (posters, square cards) draws it at the web's
 ' 22 and 8 at the 185 px reference poster width; landscape cards never draw it (size 0); the episode
-' rail keeps its own 44 px check 12 px in (DetailEpisodeItem). The top badge row stops short of it
-' and the episodes-left count takes its place.
-function CardOverlay_check(shape as string, w as integer) as object
-    if shape = "episode" then return { size: 44, inset: 12 }
+' rail draws its own 44 px check 12 px in (DetailEpisodeItem) at the wide cards' overlay scale k, so
+' it matches their badges (Silo Android #912). The top badge row stops short of it and the
+' episodes-left count takes its place. k is the card's overlay scale (CardOverlay_scaleFor), 0 for
+' a poster's width over 185.
+function CardOverlay_check(shape as string, w as integer, k = 0.0 as float) as object
     if shape = "landscape" or w <= 0 then return { size: 0, inset: 0 }
-    unit = w / 185.0
-    return { size: Int(22 * unit + 0.5), inset: Int(8 * unit + 0.5) }
+    if k <= 0 then k = CardOverlay_scale(CardOverlay_cardScale(shape, w, 1.0), invalid)
+    if shape = "episode" then return { size: Int(44 * k + 0.5), inset: Int(12 * k + 0.5) }
+    return { size: Int(22 * k + 0.5), inset: Int(8 * k + 0.5) }
 end function
 
 ' What a card's top-right corner shows (Silo Android #882 CardWatchStatus.of): "check" on a watched
@@ -64,7 +126,7 @@ end function
 
 ' The key of item c's overlay image on a card of shape, w x h, "" for nothing to draw: the
 ' document's name ("none" for the episodes-left disc alone), size and shape, whether a progress
-' bar lifts the bottom row, the data's key, the episodes left and the interface language (badge
+' bar lifts the bottom row, a wide card's overlay scale (a poster's is its width), the data's key, the episodes left and the interface language (badge
 ' text such as "Returning" is drawn into the image).
 function CardOverlay_keyFor(c as object, shape as string, w as integer, h as integer, progress as boolean) as string
     if shape = "" or w <= 0 or h <= 0 then return ""
@@ -87,6 +149,8 @@ function CardOverlay_keyFor(c as object, shape as string, w as integer, h as int
     if doc <> "none" then dataKey = c.overlayKey
     flags = Left(shape, 1)
     if progress then flags = flags + "p"
+    ' A wide card's scale follows Poster Size, not its width (Silo Android #912), so it is in the key.
+    if shape <> "poster" then flags = flags + Int(CardOverlay_scaleFor(shape, w) * 100 + 0.5).ToStr()
     return "ov" + doc + "_" + w.ToStr() + "x" + h.ToStr() + flags + "_" + dataKey + "_" + count.ToStr() + "_" + I18n_locale()
 end function
 
@@ -96,7 +160,8 @@ function CardOverlay_requestFor(c as object, key as string, shape as string, w a
     count = 0
     if CardOverlay_status(c.watched, c.remaining, shape = "poster") = "count" then count = c.remaining
     doc = Mid(key, 3, Instr(1, key, "_") - 3)
-    return { key: key, doc: doc, data: c.overlayData, w: w, h: h, shape: shape, progress: progress, remaining: count, radius: 16, check: CardOverlay_check(shape, w), prefetch: prefetch }
+    k = CardOverlay_scaleFor(shape, w)
+    return { key: key, doc: doc, data: c.overlayData, w: w, h: h, shape: shape, progress: progress, remaining: count, radius: 16, k: k, check: CardOverlay_check(shape, w, k), prefetch: prefetch }
 end function
 
 ' The app's OverlayArtTask, started by the first view that needs it.

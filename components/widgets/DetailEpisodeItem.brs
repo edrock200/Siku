@@ -11,6 +11,8 @@ sub init()
     m.track = m.top.findNode("progressTrack")
     m.fill = m.top.findNode("progressFill")
     m.badge = m.top.findNode("watchedBadge")
+    m.watchedBg = m.top.findNode("watchedBg")
+    m.watchedIcon = m.top.findNode("watchedIcon")
     m.focusRing = m.top.findNode("focusRing")
     m.eyebrow = m.top.findNode("eyebrow")
     m.title = m.top.findNode("title")
@@ -68,7 +70,17 @@ sub layout()
     m.focusRing.width = w
     m.focusRing.height = h
     CardFocus_layoutShadow(m.shadow, w, h)
-    m.badge.translation = [w - 44 - 12, 12]
+    ' The watched check at the wide cards' overlay scale, so it matches their badges (Silo Android
+    ' #912): 44 px 12 in on a Standard card, with Poster Size from there.
+    corner = CardOverlay_check("episode", Int(w), CardOverlay_scaleFor("episode", w))
+    bs = corner.size
+    m.badge.translation = [w - bs - corner.inset, corner.inset]
+    m.watchedBg.width = bs
+    m.watchedBg.height = bs
+    icon = Int(bs * 30 / 44 + 0.5)
+    m.watchedIcon.width = icon
+    m.watchedIcon.height = icon
+    m.watchedIcon.translation = [Int((bs - icon) / 2), Int((bs - icon) / 2)]
 
     c = m.top.itemContent
     progress = fieldOr(c, "progress", 0)

@@ -12,18 +12,15 @@
 '
 ' Used on the render thread (ShellScreen settles the document, CardOverlayState.brs) and in
 ' OverlayArtTask, which draws the badges (OverlayDraw.brs); self-contained so both can include it.
-' Lengths are the web's, in px at the 185 px reference poster width: a poster scales them by its
-' width over 185 and a wide card (landscape, episode still) by Ovl_wideScale() (Android TV's
-' TvCardOverlayScale 0.7 dp, 1.4 px on Siku's 1080p canvas).
+' Lengths are the web's, in px at the 185 px reference poster width, times the card's overlay scale
+' (Silo Android #912, CardOverlay_scaleFor in CardOverlayKeys.brs): a poster's width over 185, a
+' wide card's (landscape, episode still) Poster Size multiplier 0.86 / 1 / 1.2, times the text
+' factor (1 on Roku). Badge text is sized in exact pixels from it. Wide cards draw at 1 on a
+' Standard card as Silo's Roku app and the web do (Android TV's TvCardOverlayScale 0.7 dp, 1.4 px,
+' made a busy "rails" layout overlap on a 202 px card).
 
 function Ovl_referenceWidth() as float
     return 185.0
-end function
-
-function Ovl_wideScale() as float
-    ' Silo's Roku app and the web draw wide-card badges at 1 (Android TV's 1.4 px
-    ' made a busy "rails" layout overlap on a 202 px card).
-    return 1.0
 end function
 
 ' A corner draws at most this many badges and a rail one more; the rest are dropped.
@@ -753,8 +750,11 @@ end function
 ' and an episode still 12 (its side inset). Over a progress bar (Silo Android #902) a poster or
 ' landscape row lifts one edge step more (8) and an episode still's row goes to the bar's
 ' clearance; either way it ends at least `clearance` px up (WatchProgress_metrics: the bar's
-' inset, height and a gap), because the bar keeps its size on small cards.
+' inset, height and a gap), because the bar keeps its size on small cards. A wide card's inset never
+' drops below its size at scale 1 (Silo Android #912), so Compact cards' badges still clear the title
+' or bar along their bottom.
 function Ovl_bottomInset(shape as string, k as float, progress as boolean, clearance as float) as float
+    if (shape = "landscape" or shape = "episode") and k < 1 then k = 1.0
     edge = 8 * k
     base = edge
     if shape = "landscape" then base = 24 * k
