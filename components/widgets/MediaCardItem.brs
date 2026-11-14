@@ -11,7 +11,6 @@ sub init()
     m.initialsText = m.top.findNode("initialsText")
     m.mask = m.top.findNode("mask")
     m.image = m.top.findNode("image")
-    m.shade = m.top.findNode("shade")
     m.track = m.top.findNode("progressTrack")
     m.fill = m.top.findNode("progressFill")
     m.badge = m.top.findNode("watchedBadge")
@@ -243,30 +242,14 @@ sub layout()
         m.exploreLabel.translation = [8, top + 88 + 16]
     end if
 
-    ' Progress bar (6 px) on landscape and poster cards that have progress.
+    ' Watch progress on landscape and poster cards that have progress: the keyline bar (Silo
+    ' Android #902), under a box set's film count when it shows one.
     c = m.top.itemContent
     progress = 0
     if c <> invalid and c.progress <> invalid then progress = c.progress
     ' A box set's bar is the share of its films watched, which may be all of them.
     hasProgress = progress > 0.01 and (progress < 0.995 or m.isBoxSet)
-    m.track.visible = hasProgress
-    m.fill.visible = hasProgress
-    m.shade.visible = hasProgress
-    if hasProgress then
-        m.shade.width = w
-        m.shade.height = h / 2
-        m.shade.translation = [0, h / 2]
-        m.shade.opacity = 0.6
-        barX = 12
-        barW = w - 24
-        barY = h - 18
-        m.track.translation = [barX, barY]
-        m.track.width = barW
-        m.track.height = 6
-        m.fill.translation = [barX, barY]
-        m.fill.width = Int(barW * progress)
-        m.fill.height = 6
-    end if
+    WatchProgress_place(m.track, m.fill, w, h, progress, hasProgress, m.isBoxSet and m.cornerTag.visible)
 
     ' Watch status (Silo Android #882, the web's CardWatchStatus): the check on a watched title,
     ' 22 at the 185 px reference poster width and 8 in, on poster-shaped art only; a started

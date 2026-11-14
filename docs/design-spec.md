@@ -37,7 +37,7 @@ There is no chromatic accent. Every "accent" is white at some opacity.
 | DarkOutline / OutlineVariant | white @ 12% / 8% | |
 | Card focus shadow (CardOutline.shadowColor) | black @ 45% | focused card drop shadow, 12 dp elevation (was the white SiloBlueGlow before Silo Android #781) |
 | SiloBlueBorderIdle | white @ 16% | |
-| ProgressTrack / ProgressFill | white @ 20% / `#EDEDED` | resume bars (3 dp tall, i.e. 6 px) |
+| ProgressTrack / ProgressFill | black @ 55% with a black 35% keyline and soft shadow / `#EDEDED` with a black 40% hairline | watch-progress bars on card art (Silo Android #902: 4 dp tall, i.e. 8 px, inset 20 px from the sides and 16 px from the bottom; `WatchProgress.brs`) |
 | CardShadow | black @ 55% | |
 | Hero scrims | `#00000000` → black 40% → 75% → 95% | |
 | ErrorRed | `#B00020` | Material error |
@@ -442,7 +442,7 @@ The page is not a scrolling stack of a static hero and rows. It has three layers
 - **Continue Watching** and **Next Up**:
   - Backdrop style, using `TvEpisodeCard`, **16:9 at 180×101 dp (360×203 px)**, scaled by the poster-size preference.
   - Bottom gradient to black 60%.
-  - Progress bar 6 px, white on white @ 20%.
+  - Progress: the keyline bar (8 px, inset; see ProgressTrack / ProgressFill). Bottom badges rise 28 px clear of it.
   - Optional "S2 · E8" overlay chip.
   - Caption: line 1 is the series title (15.5 sp); line 2 is "S02E08 • Episode title" (14 sp at 75%).
   - Audiobook items are split out into a separate "Continue Listening" poster row.
@@ -541,7 +541,7 @@ The page background is opaque: the sampled tint at 42% over black (default `rgb(
 
 1. **Series only, "Episodes":**
    - **Season row**: capsule chips, 52 px tall, 24 px horizontal padding, 14 sp. A "Show" chip first, then "Specials" / "Season 1" …. Selected chip: white fill with black text. Focused: translucent fill.
-   - **Episode rail**: 16:9 stills, 360 px wide, 40 px gaps, with a progress bar (10 px) and a watched check.
+   - **Episode rail**: 16:9 stills, 360 px wide, 40 px gaps, with the keyline progress bar and a watched check.
    - Episode card text (upstream #644, `EpisodeCardCaption`): "S01E02 · Title" (18 sp SemiBold, one line), then "Feb 18, 2026  ·  52m" (14 sp; air date, then runtime as "52m" / "1h 5m"; kept as an empty line when unknown so cards line up), and a 3-line synopsis at 16 sp. Android TV's Series page moves the focused episode's synopsis into the hero; Siku's hero does not follow rail focus, so its cards keep the synopsis, as Android TV does on season and episode pages. Spoiler protection empties the synopsis and replaces the still with the default artwork.
    - The current episode has a ring and is centered.
    - OK on a card plays that episode on the series page (combined Series page). On season/episode pages it opens the episode.

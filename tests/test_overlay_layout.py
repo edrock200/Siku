@@ -74,13 +74,15 @@ class Insets(unittest.TestCase):
         f = "Ovl_bottomInset"
         near = lambda want: (lambda v: abs(v - want) < 0.01)  # noqa: E731
         check_cases(self, FILES, [
-            ("poster: the edge inset", f, ["poster", 1.0, False, 18], near(8)),
-            ("poster scales with its width", f, ["poster", 1.5, False, 18], near(12)),
-            ("poster over a bar: clear of Siku's floating bar by an edge step", f, ["poster", 1.0, True, 18], near(26)),
-            ("poster over a low bar: one edge step more", f, ["poster", 1.0, True, 0], near(16)),
-            ("landscape: Android TV's 24", f, ["landscape", 1.0, False, 18], near(24)),
-            ("landscape over a bar lifts one edge step", f, ["landscape", 1.0, True, 18], near(32)),
-            ("episode rail never lifts", f, ["episode", 1.0, True, 18], near(12)),
+            ("poster: the edge inset", f, ["poster", 1.0, False, 28], near(8)),
+            ("poster scales with its width", f, ["poster", 1.5, False, 28], near(12)),
+            ("poster over the keyline bar: its clearance (Silo Android #902 BadgeClearance)", f, ["poster", 1.0, True, 28], near(28)),
+            ("a large poster over a bar: one edge step more when that is higher", f, ["poster", 2.0, True, 28], near(32)),
+            ("poster with no clearance asked: one edge step more", f, ["poster", 1.0, True, 0], near(16)),
+            ("landscape: Android TV's 24", f, ["landscape", 1.0, False, 28], near(24)),
+            ("landscape over a bar lifts one edge step", f, ["landscape", 1.0, True, 28], near(32)),
+            ("episode rail without progress: 12", f, ["episode", 1.0, False, 28], near(12)),
+            ("episode rail over a bar: the clearance (TvEpisodeCard)", f, ["episode", 1.0, True, 28], near(28)),
         ])
 
     def test_top_row_end(self):

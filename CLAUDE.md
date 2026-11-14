@@ -289,7 +289,8 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   rails (a stored top-right is the right rail; corners 3, rails 4), the poster's top-right is watch status whether or not badges
   are on (emerald check node in MediaCardItem, 22 at the 185 px reference and 8 in; episodes left drawn in the overlay image;
   landscape cards show neither), bottom corners share rows and wrap (`Ovl_bottomLayout`) and lift clear of the progress bar
-  (`Ovl_bottomInset`), text keeps the presets' letter spacing; host tests `tests/test_overlay_layout.py`. Mock:
+  (`Ovl_bottomInset`: at least 28 px, the keyline bar's clearance, Silo Android #902 `WatchProgress.brs`; the bar is 8 px tall,
+  20 px in, 16 px up, 8 px under a box set's film count; tests `tests/test_watch_progress.py`), text keeps the presets' letter spacing; host tests `tests/test_overlay_layout.py`. Mock:
   `--switch card_overlays=1|<preset>[+rails|+corners|+combined]|off|404|500` (default off; on, it marks some titles watched and Orbital started),
   `overlay_profile=<preset>`, `overlay_profile_enabled=0|1`, `overlay_images=1|missing`; log `OVERLAY CONFIG`, `OVERLAY IMAGE`.
   The simulator draws translucent fills opaque (brs-engine ignores bitmap alpha); `scratchpad/pngfix.py` opens its PNGs.

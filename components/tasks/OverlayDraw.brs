@@ -108,7 +108,7 @@ sub OvDraw_badges(c as object, spec as object, prefs as object, copy as object)
     c.inset = 8 * k
     ' The bottom corners sit higher on wide cards (Android TV's Wide variant 24, the episode rail
     ' 12) and lift clear of a progress bar (Silo Android #882; Siku's bar floats 18 px up).
-    c.bottomInset = Ovl_bottomInset(shape, k, Ovl_isTrue(spec.progress), OvDraw_barTop())
+    c.bottomInset = Ovl_bottomInset(shape, k, Ovl_isTrue(spec.progress), WatchProgress_metrics().clearance)
     ' The top row stops short of the watch-status corner (none on a landscape card).
     reserve = Ovl_topRowEnd(spec.check.inset, spec.check.size, k)
     if look.band then
@@ -190,12 +190,6 @@ sub OvDraw_bottomRows(c as object, lt as object, rt as object)
         OvDraw_paintBadge(c, rp[i], c.inset + at.rx[i], top + at.ry[i])
     end for
 end sub
-
-' How far above the card's bottom edge its progress bar's top sits (MediaCardItem.layout: a 6 px
-' bar 12 px up).
-function OvDraw_barTop() as float
-    return 18.0
-end function
 
 sub OvDraw_bandTop(c as object, list as object, limit as float)
     if list.Count() = 0 then return

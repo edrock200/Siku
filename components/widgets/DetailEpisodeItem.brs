@@ -73,16 +73,7 @@ sub layout()
     c = m.top.itemContent
     progress = fieldOr(c, "progress", 0)
     hasProgress = progress > 0.01 and progress < 0.995
-    m.track.visible = hasProgress
-    m.fill.visible = hasProgress
-    if hasProgress then
-        m.track.translation = [0, h - 10]
-        m.track.width = w
-        m.track.height = 10
-        m.fill.translation = [0, h - 10]
-        m.fill.width = Int(w * progress)
-        m.fill.height = 10
-    end if
+    WatchProgress_place(m.track, m.fill, w, h, progress, hasProgress, false)
 
     ' Caption: "S01E02 · Title" over "Feb 18, 2026  ·  52m", then the description (#644). The
     ' meta line keeps its place when empty so every card in the rail lines up.

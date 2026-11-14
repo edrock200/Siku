@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Episode rail card (design-spec §4.3 Episodes): a 16:9 still with a 10 px progress bar and a watched
+  Episode rail card (design-spec §4.3 Episodes): a 16:9 still with the keyline progress bar and a watched
   check, then the caption "S01E02 · Title" over "Feb 18, 2026  ·  52m" (an optional eyebrow above
   it) and a 3-line synopsis. Focus: the card look of every card (components/common/CardFocus.brs,
   Silo Android TV #781): a 5% lift, a 4 px white outline at 70% and a black drop shadow; the title
@@ -32,6 +32,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/CardFocus.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/CardOverlayKeys.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/CardOverlayCard.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/WatchProgress.brs" />
   <children>
     <Group id="card">
       <Poster id="shadow" uri="pkg:/images/ui/card_shadow.9.png" blendColor="0x00000080" visible="false" />
@@ -42,8 +43,9 @@
         <Poster id="defaultArt" uri="pkg:/images/ui/art_default_landscape.png" loadDisplayMode="scaleToFill" />
         <Poster id="placeholderIcon" uri="pkg:/images/icons/tv.png" blendColor="0xFFFFFF21" />
         <Poster id="image" loadDisplayMode="scaleToZoom" />
-        <Rectangle id="progressTrack" color="0xFFFFFF33" visible="false" />
-        <Rectangle id="progressFill" color="0xEDEDEDFF" visible="false" />
+        <!-- Watch progress (Silo Android #902): the keyline bar, components/common/WatchProgress.brs. -->
+        <Poster id="progressTrack" uri="pkg:/images/ui/progress_track.9.png" blendColor="0x000000FF" visible="false" />
+        <Poster id="progressFill" uri="pkg:/images/ui/progress_fill.9.png" visible="false" />
       </MaskGroup>
       <Group id="watchedBadge" visible="false">
         <Poster id="watchedBg" uri="pkg:/images/ui/circle.png" blendColor="0xEDEDEDFF" width="44" height="44" />

@@ -123,6 +123,55 @@ def card_shadow():
     circle(200, ring=4).save(os.path.join(OUT, "card_ring_circle.png"))
 
 
+def progress_bar():
+    """The watch-progress keyline bar on card art (Silo Android #902 WatchProgressBar, the web's
+    and Apple's bar), 8 px tall (Android TV's 4 dp), as two 9-patches drawn by
+    components/common/WatchProgress.brs:
+    - progress_track: the black 55% capsule with a 2 px black 35% keyline and a soft drop shadow
+      (capsules 2/4/6 px out at 12/8/5%, 2 px lower) outside it, all black, so the alpha carries
+      the shades; tinted 0x000000FF. PAD px of room on every side for the shadow.
+    - progress_fill: the near-white (#EDEDED) fill with a 1 px black 40% hairline outside it,
+      drawn in its own colours (blendColor white), 1 px of room on every side."""
+    h, r, pad, mid = 8, 4, 8, 1
+    w = 2 * r + mid
+    W, H = w + 2 * pad, h + 2 * pad
+
+    def capsule(x0, y0, x1, y1, rad):
+        m = Image.new("L", (W * SS, H * SS), 0)
+        ImageDraw.Draw(m).rounded_rectangle([x0 * SS, y0 * SS, x1 * SS - 1, y1 * SS - 1], radius=rad * SS, fill=255)
+        return m.resize((W, H), Image.LANCZOS)
+
+    track = capsule(pad, pad, pad + w, pad + h, r)
+    alpha = [0.0] * (W * H)
+
+    def over(mask, a, outside_only):
+        tp, mp = track.load(), mask.load()
+        for y in range(H):
+            for x in range(W):
+                cov = mp[x, y] / 255.0
+                if outside_only:
+                    cov *= 1 - tp[x, y] / 255.0
+                src = a * cov
+                i = y * W + x
+                alpha[i] = src + alpha[i] * (1 - src)
+
+    for spread, a in ((1, 0.12), (2, 0.08), (3, 0.05)):
+        s2 = spread * 2
+        over(capsule(pad - s2, pad - s2 + 2, pad + w + s2, pad + h + s2 + 2, r + s2), a, True)
+    over(capsule(pad - 2, pad - 2, pad + w + 2, pad + h + 2, r + 2), 0.35, True)
+    over(track, 0.55, False)
+    img = Image.new("RGBA", (W, H), (255, 255, 255, 0))
+    img.putalpha(Image.frombytes("L", (W, H), bytes(int(round(a * 255)) for a in alpha)))
+    ninepatch(img, "progress_track")
+
+    fw, fh = w + 2, h + 2
+    big = Image.new("RGBA", (fw * SS, fh * SS), (0, 0, 0, 0))
+    d = ImageDraw.Draw(big)
+    d.rounded_rectangle([0, 0, fw * SS - 1, fh * SS - 1], radius=(r + 1) * SS, fill=(0, 0, 0, 102))
+    d.rounded_rectangle([SS, SS, (fw - 1) * SS - 1, (fh - 1) * SS - 1], radius=r * SS, fill=(0xED, 0xED, 0xED, 255))
+    ninepatch(big.resize((fw, fh), Image.LANCZOS), "progress_fill")
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     for r in (6, 8, 12, 14, 16, 20, 22, 26, 28, 30, 32, 38, 40, 42):
@@ -153,6 +202,7 @@ def main():
             px[x, y] = (255, 255, 255, int(255 * ha * va))
     img.save(os.path.join(OUT, "mask_backdrop.png"))
     card_shadow()
+    progress_bar()
 
 
 if __name__ == "__main__":

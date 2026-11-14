@@ -33,5 +33,6 @@
   <script type="text/brightscript" uri="pkg:/components/tasks/OverlayArtTask.brs" />
   <script type="text/brightscript" uri="pkg:/components/tasks/OverlayDraw.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Overlays.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/WatchProgress.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
 </component>

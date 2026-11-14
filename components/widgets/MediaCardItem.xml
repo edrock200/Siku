@@ -15,7 +15,8 @@
   exploreAll (optional boolean field on the content node): the row's "Explore all" card (no image,
   no caption; HomeSkylineFeed adds it).
   boxSet / cornerLabel (Content.brs): a box set card draws sleeves above the poster, a "BOX SET"
-  pill and the film count, and its progress bar is the share of its films watched (a full bar too).
+  pill and the film count, and its progress bar is the share of its films watched (a full bar too),
+  drawn under the film count.
   Card overlays (Silo Android TV TvMediaCard CardOverlays): posters and landscape cards carry the
   badges the profile's ui.card_overlays document picks, and a started series or season poster the
   episodes left in the watched check's place (poster-shaped art only: landscape cards show neither,
@@ -46,6 +47,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/CardOverlayCard.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/CardFocus.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/FocusText.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/WatchProgress.brs" />
   <children>
     <Group id="inner">
       <Group id="card">
@@ -70,9 +72,9 @@
           <!-- Missing artwork: a faint glow in Siku's colours (scripts/make_default_artwork.py). -->
           <Poster id="defaultArt" loadDisplayMode="scaleToFill" visible="false" />
           <Poster id="image" loadDisplayMode="scaleToZoom" />
-          <Poster id="shade" uri="pkg:/images/ui/scrim_bottom.png" opacity="0" />
-          <Rectangle id="progressTrack" color="0xFFFFFF33" visible="false" />
-          <Rectangle id="progressFill" color="0xEDEDEDFF" visible="false" />
+          <!-- Watch progress (Silo Android #902): the keyline bar, components/common/WatchProgress.brs. -->
+          <Poster id="progressTrack" uri="pkg:/images/ui/progress_track.9.png" blendColor="0x000000FF" visible="false" />
+          <Poster id="progressFill" uri="pkg:/images/ui/progress_fill.9.png" visible="false" />
         </MaskGroup>
         <Group id="playGlyph" visible="false">
           <Poster id="playGlyphBg" uri="pkg:/images/ui/circle.png" blendColor="0x0000008C" width="60" height="60" />

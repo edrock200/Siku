@@ -750,17 +750,19 @@ end function
 
 ' How far a card's bottom badges sit from its bottom edge, in px, for shape at scale k (Silo Android
 ' #882 overlayInsets): a poster the edge inset (8), a landscape card 24 (Android TV's Wide variant)
-' and an episode still 12 (its side inset and thin bar). Over a progress bar the row lifts one edge
-' step more (8), and at least that far clear of Siku's bar, which floats barTop px above the
-' bottom (MediaCardItem: 6 px tall, 12 px up); the episode rail never lifts, as on Android TV.
-function Ovl_bottomInset(shape as string, k as float, progress as boolean, barTop as float) as float
+' and an episode still 12 (its side inset). Over a progress bar (Silo Android #902) a poster or
+' landscape row lifts one edge step more (8) and an episode still's row goes to the bar's
+' clearance; either way it ends at least `clearance` px up (WatchProgress_metrics: the bar's
+' inset, height and a gap), because the bar keeps its size on small cards.
+function Ovl_bottomInset(shape as string, k as float, progress as boolean, clearance as float) as float
     edge = 8 * k
     base = edge
     if shape = "landscape" then base = 24 * k
-    if shape = "episode" then return 12 * k
+    if shape = "episode" then base = 12 * k
     if not progress then return base
     lifted = base + edge
-    if lifted < barTop + edge then lifted = barTop + edge
+    if shape = "episode" then lifted = base
+    if lifted < clearance then lifted = clearance
     return lifted
 end function
 
