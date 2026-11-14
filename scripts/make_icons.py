@@ -36,6 +36,9 @@ ICONS = {
     "notifications_none": "notifications_none", "notifications": "notifications",
     # The profile menu's Add Profile (Silo Android #881)
     "person_add": "person_add",
+    # The detail page's Version selector: several videos (Silo Android #905, Material VideoLibrary,
+    # Apple TV's play.rectangle.on.rectangle)
+    "video_library": "video_library",
 }
 
 
