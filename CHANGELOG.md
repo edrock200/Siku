@@ -3,6 +3,20 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.4.0
+
+From Silo's Android TV app and Silo's own Roku app (November 13, 2026).
+
+**New**
+- **Edition button.** Titles with several editions (such as Theatrical and Director's Cut) now have an Edition button on their page. Pick the cut you want; Version's Auto then chooses the best file of that cut for your quality setting and never switches to another cut.
+- **The page opens on the edition you watched last,** and Play always starts the file the page shows.
+
+**Better**
+- **Watch-progress bars stay visible on bright artwork.** Bars on posters, episode cards and Continue Watching are now an outlined dark bar with a bright fill, and card badges sit clear of them.
+- The Version button shows a stack of videos instead of a camera.
+
+**Needs testing on a real Roku:** the new progress bars at TV distance, the Edition and Version icons, German and French Edition labels, and playing a picked edition on a server whose files carry editions.
+
 ## v0.3.0
 
 Fixes from two full reviews of Siku (November 12, 2026): our own, and one another project did of an older version, checked against today's Siku. Also profile management from Silo's Android TV app.
