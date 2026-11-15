@@ -3,6 +3,19 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.8.0
+
+From Silo's Android TV app and Silo's own Roku app (November 15, 2026).
+
+**Better**
+- **The seek bar marks every intro, recap, credits and preview section,** each in its own colour (blue, orange, purple, cyan), and the marks stay visible after you pass them.
+- **Specials come first** in a series' season list, before Season 1. A show you haven't started still opens on a regular season, and a special's page offers "Go to Specials".
+
+**Fixed**
+- **Seeking from a Skip button:** with the player controls showing, Left and Right now skip back and forward while a Skip Intro, Recap or Credits button is selected, and holding them starts fast seeking.
+
+**Needs testing on a real Roku:** holding Left or Right on a Skip button, and how the coloured marks look over the bar.
+
 ## v0.7.0
 
 Asked for by a user (November 15, 2026), matching Silo's Android TV app.
