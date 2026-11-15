@@ -51,3 +51,36 @@ function Markers_upNextCreditsStart(markers as dynamic) as float
     end for
     return start
 end function
+
+' The scrubber's marker bands (Silo Android #933 / #934; adapted from silo-roku 42249ca): every
+' intro, recap, credits and preview range, each occurrence its own band, clamped to the file's
+' duration, in TheIntroDB's segment palette that every Silo client shares, at 34% opacity (45% while
+' the scrubber is focused or scrubbing). Drawn kind by kind in that order, so a later kind lies over
+' an earlier one where they overlap. Other kinds and empty ranges are left out.
+' Returns [{ kind, start, end, color }] with color "0xRRGGBBAA".
+function Markers_bands(markers as dynamic, duration as dynamic, emphasised as boolean) as object
+    out = []
+    dur = Num_or(duration, 0)
+    if dur <= 0 then return out
+    alpha = "57"
+    if emphasised then alpha = "73"
+    for each kind in ["intro", "recap", "credits", "preview"]
+        for each r in Markers_ranges(markers, kind)
+            s = r.start
+            e = r["end"]
+            if s < 0 then s = 0
+            if e > dur then e = dur
+            if e > s then out.Push({ kind: kind, start: s, "end": e, color: Markers_bandColor(kind) + alpha })
+        end for
+    end for
+    return out
+end function
+
+' TheIntroDB's segment colours (Tailwind v4 400 shades) without alpha: intro #51A2FF, recap
+' #FF8904, credits #C27AFF, preview #00D3F2.
+function Markers_bandColor(kind as string) as string
+    if kind = "intro" then return "0x51A2FF"
+    if kind = "recap" then return "0xFF8904"
+    if kind = "preview" then return "0x00D3F2"
+    return "0xC27AFF"
+end function

@@ -466,8 +466,17 @@ sub collectMarkers()
 end sub
 
 ' "[siku-playback] credits ranges=2 upnext_at=2650" when the file has credits (Silo Android #694).
+' Also "[siku-playback] marker bands intro=1 recap=0 credits=2 preview=0" when the scrubber draws any
+' (Silo Android #934: one band per range, in the shared palette).
 sub logCreditsRanges()
-    n = Markers_ranges(m.markers, "credits").Count()
+    counts = { intro: 0, recap: 0, credits: 0, preview: 0 }
+    total = 0
+    for each kind in ["intro", "recap", "credits", "preview"]
+        counts[kind] = Markers_ranges(m.markers, kind).Count()
+        total = total + counts[kind]
+    end for
+    if total > 0 then Diag_log("[siku-playback] marker bands intro=" + counts.intro.ToStr() + " recap=" + counts.recap.ToStr() + " credits=" + counts.credits.ToStr() + " preview=" + counts.preview.ToStr())
+    n = counts.credits
     if n = 0 then return
     Diag_log("[siku-playback] credits ranges=" + n.ToStr() + " upnext_at=" + Int(Markers_upNextCreditsStart(m.markers)).ToStr())
 end sub

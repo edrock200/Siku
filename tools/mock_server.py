@@ -175,6 +175,9 @@ clears one); GET /mock/switch lists them.
                                  A start or replan that names it logs SUBTITLE requested unplayable
   credits_twice=1                every version's marker_segments carry two credits ranges (duration-600..-420
                                  and duration-300..end; the singular credits field the first), Silo Android #694
+  every_marker=1                 every version's marker_segments carry each kind, some twice: recap 0..30,
+                                 intro 60..120 and 1500..1540, credits 2400..2580 and 2700..2970,
+                                 preview 2970..3000 (the plans' 3000 s) (the scrubber's palette bands, Silo Android #934)
   server_resume=<seconds>        a playback start without start_position is planned at <seconds> (the
                                  server's own resume point)
   chapters=<n>                   every version in a watch detail carries n evenly spaced chapters (the player
@@ -3303,6 +3306,17 @@ class Handler(BaseHTTPRequestHandler):
                     v["marker_segments"] = [sg for sg in v["marker_segments"] if sg["kind"] != "credits"] + [
                         dict(first, kind="credits"), dict(last, kind="credits")]
                     print("MARKERS file=%s credits_twice %d-%d %d-%d" % (fid, first["start_seconds"], first["end_seconds"], last["start_seconds"], last["end_seconds"]), flush=True)
+                if STATE["switches"].get("every_marker") and ranges is not None:
+                    # Every kind, two intros and two credits ranges (Silo Android #934 marks each one),
+                    # placed against the 3000 s every mock plan reports as source.duration_seconds.
+                    dur = 3000.0
+                    segs = [("recap", 0, 30), ("intro", 60, 120), ("intro", 1500, 1540), ("credits", dur - 600, dur - 420),
+                            ("credits", dur - 300, dur - 30), ("preview", dur - 30, dur)]
+                    v["marker_segments"] = [{"kind": k, "start_seconds": a, "end_seconds": b} for k, a, b in segs]
+                    for k in ("intro", "recap", "credits", "preview"):
+                        first = next(sg for sg in v["marker_segments"] if sg["kind"] == k)
+                        v[k] = {"start_seconds": first["start_seconds"], "end_seconds": first["end_seconds"]}
+                    print("MARKERS file=%s every_marker segments=%d" % (fid, len(segs)), flush=True)
                 nch = int(STATE["switches"].get("chapters") or 0)
                 if nch > 0:
                     # Many chapters, for the player panel's scrolling Chapters pane.

@@ -81,20 +81,17 @@ sub redraw()
     px = (trackX + Int(trackW * frac)) * 1.0
     if m.top.puckX <> px then m.top.puckX = px
 
-    ' Marker ranges (intro / credits / recap) and chapter ticks. redraw() runs on every position
-    ' tick, so the Rectangles are reused and only re-laid out; they are created or removed only
-    ' when the number of marks changes.
+    ' Marker bands (every occurrence of each kind, in the shared palette; Markers_bands) and chapter
+    ' ticks. redraw() runs on every position tick, so the Rectangles are reused and only re-laid
+    ' out; they are created or removed only when the number of marks changes.
     rangeSpecs = []
     tickSpecs = []
     if dur > 0 then
-        for each mk in Arr_or(m.top.markers)
-            s = mk.start
-            e = mk["end"]
-            if s <> invalid and e <> invalid and e > s then
-                x0 = Int(trackW * (s / dur))
-                x1 = Int(trackW * (e / dur))
-                rangeSpecs.Push({ x: x0, w: x1 - x0 })
-            end if
+        for each band in Markers_bands(m.top.markers, dur, focused or scrubbing)
+            x0 = Int(trackW * (band.start / dur))
+            x1 = Int(trackW * (band["end"] / dur))
+            if x1 <= x0 then x1 = x0 + 1 ' a short range still shows
+            rangeSpecs.Push({ x: x0, w: x1 - x0, color: band.color })
         end for
         for each ch in Arr_or(m.top.chapters)
             s = ch.start_seconds
@@ -106,6 +103,7 @@ sub redraw()
     for i = 0 to rangeSpecs.Count() - 1
         r = m.ranges.getChild(i)
         r.translation = [rangeSpecs[i].x, trackY]
+        r.color = rangeSpecs[i].color
         r.width = rangeSpecs[i].w
         r.height = trackH
     end for

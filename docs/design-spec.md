@@ -687,7 +687,7 @@ Skip feedback shows for 1.2 s. Controls **auto-hide after 5 s**; any key re-arms
   - **Scrubber**: a glass capsule.
     - Track 7 px tall, 12 px while scrubbing.
     - Puck 30 px, 42 px when focused or scrubbing.
-    - Played fill in white. Chapter ticks as 2–3 dp white verticals. Intro, credits and recap ranges are marked.
+    - Played fill in white. Chapter ticks as 2–3 dp white verticals. Every intro, recap, credits and preview range gets its own band over the played fill and under the puck, in TheIntroDB's segment palette that every Silo client shares (intro #51A2FF, recap #FF8904, credits #C27AFF, preview #00D3F2) at 34% opacity, 45% while the scrubber is focused (Silo Android #933 / #934; `Markers_bands`).
     - Time labels, with remaining time shown as "-1:23:45".
     - Tap Left/Right: ±10 s.
     - Hold Left/Right: auto-seek with a rate ladder; a "2x" chip appears.

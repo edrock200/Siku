@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Player scrubber (design-spec §4.10): a glass capsule with the elapsed time, a track with the played
-  fill, intro/credits/recap ranges and chapter ticks, a puck, and the remaining time ("-1:23:45").
+  fill, marker bands over it (every intro / recap / credits / preview range in the shared palette,
+  MarkerTimeline.brs Markers_bands) and chapter ticks, a puck, and the remaining time ("-1:23:45").
   Fields: duration, position (source seconds), scrubPosition, scrubbing, markers [{kind,start,end}],
           chapters [{start_seconds}], buffered (source seconds downloaded ahead; < 0 hides the lighter
           buffered segment), width (default 1600); puckX (output, the puck's centre). Make it focusable; the screen handles keys.
@@ -23,6 +24,7 @@
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/PlayerScrubber.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/MarkerTimeline.brs" />
   <children>
     <Poster id="capsule" uri="pkg:/images/ui/r42.9.png" blendColor="0x0A0A0A99" height="84" />
     <Poster id="capsuleRing" uri="pkg:/images/ui/r42_ring2.9.png" blendColor="0xFFFFFF24" height="84" />
@@ -32,9 +34,10 @@
     <Group id="trackGroup">
       <Rectangle id="track" color="0xFFFFFF3D" />
       <Rectangle id="bufferedFill" color="0xFFFFFF4D" visible="false" />
+      <Rectangle id="fill" color="0xEDEDEDFF" />
+      <!-- Marker bands lie over the played fill and under the puck (Silo Android #934). -->
       <Group id="ranges" />
       <Group id="ticks" />
-      <Rectangle id="fill" color="0xEDEDEDFF" />
       <Poster id="puck" uri="pkg:/images/ui/circle.png" blendColor="0xFFFFFFFF" />
     </Group>
     <Label id="remaining" color="0xEDEDEDFF" height="84" vertAlign="center" horizAlign="left" width="130">
