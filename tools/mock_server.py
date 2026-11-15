@@ -178,6 +178,9 @@ clears one); GET /mock/switch lists them.
   every_marker=1                 every version's marker_segments carry each kind, some twice: recap 0..30,
                                  intro 60..120 and 1500..1540, credits 2400..2580 and 2700..2970,
                                  preview 2970..3000 (the plans' 3000 s) (the scrubber's palette bands, Silo Android #934)
+  specials=1|flagged             Orbital gets a Specials season of 3 episodes: season 0, listed first as the
+                                 server orders seasons (1), or flagged is_specials as season 99 and listed
+                                 last (flagged), which the client must still put first (Silo Android #929)
   server_resume=<seconds>        a playback start without start_position is planned at <seconds> (the
                                  server's own resume point)
   chapters=<n>                   every version in a watch detail carries n evenly spaced chapters (the player
@@ -559,6 +562,14 @@ def episode(si, s, e):
     } | episode_artwork_switches(sr, cid, s) | episode_translation_fields(si, s, e)
 
 
+def mock_specials_season(si):
+    """--switch specials=1|flagged: Orbital's Specials season number (0, or 99 flagged), else None."""
+    mode = str(STATE["switches"].get("specials") or "")
+    if si != 0 or mode in ("", "0", "off"):
+        return None
+    return 99 if mode == "flagged" else 0
+
+
 def season_translation_state():
     """season_translation: "off" (no switch), "pending" (Orbital S1's odd episodes wait for their German
     overview) or "done" (the season's job has run translation_seconds)."""
@@ -671,13 +682,15 @@ def find(cid):
     for i, s in enumerate(all_series()):
         if s["content_id"] == cid:
             return s
-        _, seasons, eps = SERIES[i]
-        for sn in range(1, seasons + 1):
+        _, seasons, eps0 = SERIES[i]
+        sp = mock_specials_season(i)
+        for sn in list(range(1, seasons + 1)) + ([sp] if sp is not None else []):
+            eps = 3 if sn == sp else eps0
             if cid == "season:%s-%d" % (s["content_id"], sn):
                 # play_content_id: the season's first episode not marked watched (deep links play it).
                 nxt = next((episode_id(s["content_id"], sn, en) for en in range(1, eps + 1)
                             if episode_id(s["content_id"], sn, en) not in STATE["watched"]), episode_id(s["content_id"], sn, 1))
-                return {"content_id": cid, "type": "season", "title": "Season %d" % sn, "series_id": s["content_id"],
+                return {"content_id": cid, "type": "season", "title": "Specials" if sn == sp else "Season %d" % sn, "series_id": s["content_id"],
                         "series_title": s["title"], "season_number": sn, "poster_url": s["poster_url"], "backdrop_url": s["backdrop_url"],
                         "play_content_id": nxt}
             for en in range(1, eps + 1):
@@ -3181,10 +3194,19 @@ class Handler(BaseHTTPRequestHandler):
             for i, s in enumerate(all_series()):
                 if s["content_id"] == m.group(1):
                     _, seasons, eps = SERIES[i]
-                    return self.send(200, {"items": [{"content_id": "season:%s-%d" % (s["content_id"], n), "season_number": n,
-                                                       "title": "Season %d" % n, "episode_count": eps, "is_specials": False,
-                                                       "user_data": {"played": all(episode_id(s["content_id"], n, e) in STATE["watched"] for e in range(1, eps + 1))},
-                                                       "poster_url": s["poster_url"]} for n in range(1, seasons + 1)]})
+                    items = [{"content_id": "season:%s-%d" % (s["content_id"], n), "season_number": n,
+                              "title": "Season %d" % n, "episode_count": eps, "is_specials": False,
+                              "user_data": {"played": all(episode_id(s["content_id"], n, e) in STATE["watched"] for e in range(1, eps + 1))},
+                              "poster_url": s["poster_url"]} for n in range(1, seasons + 1)]
+                    sp = mock_specials_season(i)
+                    if sp is not None:
+                        # The server orders seasons by number: season 0 first, a flagged 99 last.
+                        items.append({"content_id": "season:%s-%d" % (s["content_id"], sp), "season_number": sp,
+                                      "title": "Specials", "episode_count": 3, "is_specials": True,
+                                      "user_data": {"played": False}, "poster_url": s["poster_url"]})
+                        items.sort(key=lambda it: it["season_number"])
+                        print("SEASONS %s specials=%d" % (s["content_id"], sp), flush=True)
+                    return self.send(200, {"items": items})
             return self.problem(404, "not_found", "Not found")
         m = re.match(r"^/api/v2/catalog/series/([^/]+)/seasons/(\d+)/episodes$", p)
         if m and STATE["switches"].get("episodes_fail"):
@@ -3196,6 +3218,8 @@ class Handler(BaseHTTPRequestHandler):
                     sn = int(m.group(2))
                     if i == 0 and sn == 1 and STATE["switches"].get("season_translation"):
                         print("EPISODES translation=%s" % season_translation_state(), flush=True)
+                    if sn == mock_specials_season(i):
+                        return self.send(200, {"items": [episode(i, sn, e) for e in range(1, 4)]})
                     return self.send(200, {"items": [episode(i, sn, e) for e in range(1, eps + 1)] if 1 <= sn <= seasons else []})
             return self.problem(404, "not_found", "Not found")
         if p == "/api/v2/catalog/search/capabilities":

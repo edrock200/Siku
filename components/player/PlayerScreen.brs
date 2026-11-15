@@ -2033,10 +2033,12 @@ sub onNextSeasons(event as object)
     cur = Int(Content_num(m.watch.season_number))
     seasons = Arr_or(resp.data.items)
     toLoad = [cur]
-    ' The next regular season (never specials unless we're already in specials).
+    ' The next regular season (never specials unless we're already in specials). Specials are season
+    ' zero or a season flagged is_specials whatever its number (Silo Android #929).
     nextNum = invalid
     for each s in seasons
-        if s.season_number <> invalid then
+        flagged = s.is_specials
+        if s.season_number <> invalid and not ((Type(flagged) = "roBoolean" or Type(flagged) = "Boolean") and flagged) then
             n = Int(Content_num(s.season_number))
             if n > cur and (n <> 0) then
                 if nextNum = invalid or n < nextNum then nextNum = n

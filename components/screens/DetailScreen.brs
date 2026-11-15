@@ -1148,27 +1148,25 @@ sub onSeasons(event as object)
         showEpisodesRetry(Tx("Couldn't load seasons"))
         return
     end if
-    m.seasons = Arr_or(resp.data.items)
+    ' Specials (season zero) first, then numbered seasons by number (Silo Android #929).
+    m.seasons = Seasons_ordered(resp.data.items)
     buildChips()
     ' After a retry the chips zone now sits above the focused Retry button.
     if m.episodesRetryBtn.hasFocus() then m.zoneIndex = zoneIndexOf("episodesRetry")
 
-    ' Initial season: the item's own season, else play_season_number, else the first regular season.
+    ' Initial season: the item's own season, else play_season_number, else a numbered season before
+    ' Specials: the first in progress, partly watched or unwatched (Seasons_initial, Silo Android #929).
     sel = invalid
-    if m.itemType = "season" or m.itemType = "episode" then
-        sel = m.item.season_number
-    else if m.item.play_season_number <> invalid then
-        sel = m.item.play_season_number
-    end if
-    if sel = invalid then
-        for each s in m.seasons
-            if s.is_specials <> true and s.season_number <> invalid then
-                sel = s.season_number
-                exit for
-            end if
-        end for
-    end if
+    if m.itemType = "season" or m.itemType = "episode" then sel = m.item.season_number
+    if sel = invalid then sel = Seasons_initial(m.seasons, m.item.play_season_number)
     if sel = invalid and m.seasons.Count() > 0 then sel = m.seasons[0].season_number
+    specials = 0
+    for each s in m.seasons
+        if Seasons_isSpecials(s) then specials = specials + 1
+    end for
+    opens = "none"
+    if sel <> invalid then opens = toInt(sel).ToStr()
+    Diag_log("[siku-detail] seasons listed=" + m.seasons.Count().ToStr() + " specials_first=" + specials.ToStr() + " opens=" + opens)
     ' A series return that arrived before the seasons did names its own season.
     returnSeason = SeriesReturn_seasonToLoad(m.seriesReturn, invalid, m.seasons)
     if returnSeason >= 0 then sel = returnSeason
@@ -1181,7 +1179,7 @@ sub onSeasons(event as object)
 end sub
 
 function seasonLabel(s as object) as string
-    if s.is_specials = true or (s.season_number <> invalid and toInt(s.season_number) = 0) then return Tx("Specials")
+    if Seasons_isSpecials(s) then return Tx("Specials")
     if not Str_isEmpty(s.title) then return s.title
     return TxF("Season {0}", [Str_orEmpty(s.season_number)])
 end function
@@ -2162,10 +2160,19 @@ sub onMore()
     end if
     if m.itemType = "episode" then
         seasonId = ""
+        seasonEntry = invalid
         for each s in m.seasons
-            if toInt(s.season_number) = toInt(m.item.season_number) then seasonId = Str_orEmpty(s.content_id)
+            if toInt(s.season_number) = toInt(m.item.season_number) then
+                seasonId = Str_orEmpty(s.content_id)
+                seasonEntry = s
+            end if
         end for
-        if seasonId <> "" then acts.Push({ id: "season", label: TxF("Go to Season {0}", [Str_orEmpty(m.item.season_number)]) })
+        if seasonId <> "" then
+            ' Season zero is Specials, labelled as its chip is (Silo Android #931).
+            goLabel = TxF("Go to Season {0}", [Str_orEmpty(m.item.season_number)])
+            if Seasons_isSpecials(seasonEntry) then goLabel = Tx("Go to Specials")
+            acts.Push({ id: "season", label: goLabel })
+        end if
     end if
     if (m.itemType = "episode" or m.itemType = "season") and not Str_isEmpty(m.item.series_id) then
         acts.Push({ id: "series", label: Tx("Go to Series") })
