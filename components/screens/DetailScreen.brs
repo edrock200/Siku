@@ -125,6 +125,9 @@ sub init()
     end for
     m.playBtn.observeField("width", "layoutActions")
     m.episodeRow.observeField("rowItemSelected", "onEpisodeSelected")
+    m.episodeRailScale = -1.0
+    m.ownsPosterScale = false
+    layoutEpisodeRail()
     m.castRow.observeField("rowItemSelected", "onCastSelected")
     m.relatedRow.observeField("rowItemSelected", "onRelatedSelected")
     m.boxSetRow.observeField("rowItemSelected", "onBoxSetRowSelected")
@@ -154,7 +157,11 @@ sub onScreenShown()
     m.onTop = true
     ' Card overlays (CardOverlayKeys.brs): a document that changed while this page was covered (or
     ' before its rows were built) draws its episode stills and posters again.
-    if CardOverlay_watch("onCardOverlays", m.overlayRev) then onCardOverlays()
+    if CardOverlay_watch("onCardOverlays", m.overlayRev) then
+        onCardOverlays()
+    else if layoutEpisodeRail() then
+        relayoutBody()
+    end if
     ' Back on top (Back from a page this one opened): its More Like This rail picks again.
     m.chainLeaving = false
     ' A season job paused while the page was covered polls again.
@@ -204,6 +211,9 @@ end sub
 ' The card overlays that apply changed: the episode stills and the poster rails draw again.
 sub onCardOverlays()
     m.overlayRev = CardOverlay_revision()
+    ' Poster Size may be what changed (CardOverlays_notePosterScale bumps the revision): the rail
+    ' takes its new size first, so the stills draw their badges at it.
+    if layoutEpisodeRail() then relayoutBody()
     CardOverlay_refresh(m.episodeRow.content)
     CardOverlay_refresh(m.relatedRow.content)
     CardOverlay_refresh(m.boxSetRow.content)
@@ -240,6 +250,7 @@ end function
 ' protection changes (hero, episode rail).
 sub onSettingsLoaded()
     if m.onTop = true and m.item <> invalid then ThemeMusic_show(m.item)
+    if layoutEpisodeRail() then relayoutBody()
     ' Version Auto follows the quality preference, which may only now be known.
     if m.item <> invalid then updateSelectors()
     sig = spoilerSignature()
@@ -963,7 +974,7 @@ sub layoutBody()
     gap = 64
     if m.episodesSection.visible then
         m.episodesSection.translation = [x, y]
-        y = y + 110 + 440 + gap
+        y = y + m.episodeRailGeo.sectionH + gap
     end if
     if m.castSection.visible then
         m.castSection.translation = [x, y]
@@ -986,6 +997,59 @@ sub layoutBody()
         y = y + 50 + m.detailsBg.height + gap
     end if
     m.pageHeight = y + 140
+end sub
+
+' The episode rail at the profile's Poster Size (Silo Android TV tvEpisodeCardWidth().cardScaled()):
+' the cards' width and stills grow and shrink, the cell keeps the focused still's headroom
+' (EpisodeRail.brs). The scale is the one the cards' badges and watched check use
+' (CardOverlay_posterScale), so a card and its badges always agree. Returns true when it changed.
+function layoutEpisodeRail() as boolean
+    scale = episodeRailScale()
+    if Abs(scale - m.episodeRailScale) < 0.001 then return false
+    first = m.episodeRailScale < 0
+    m.episodeRailScale = scale
+    g = EpisodeRail_geometry(scale)
+    m.episodeRailGeo = g
+    m.episodeRow.translation = [-20, g.rowY]
+    m.episodeRow.itemSize = [1840, g.cellH]
+    m.episodeRow.rowItemSize = [[g.cardW, g.cellH]]
+    m.episodeRow.rowItemSpacing = [[g.spacing, 0]]
+    root = m.episodeRow.content
+    if root <> invalid then
+        for each row in root.getChildren(-1, 0)
+            for each node in row.getChildren(-1, 0)
+                node.cardInsetY = g.insetY
+            end for
+        end for
+    end if
+    if not first then Diag_log(Diag_join(["[siku-detail] episode rail size card=", g.cardW, " still=", g.stillH, " cell=", g.cellH, " scale=", Int(scale * 100 + 0.5), "%"]))
+    return not first
+end function
+
+' The Poster Size multiplier ShellScreen records (CardOverlays_notePosterScale). Opened without the
+' shell (a debug deep link) nothing records it: this page does, from the settings it read itself.
+function episodeRailScale() as float
+    if not m.global.hasField("cardPosterScale") then
+        m.global.addFields({ cardPosterScale: Theme_posterScale() })
+        m.ownsPosterScale = true
+    else if m.ownsPosterScale = true then
+        m.global.cardPosterScale = Theme_posterScale()
+    end if
+    return CardOverlay_posterScale()
+end function
+
+' The rail changed size while the page was built: the sections under it move, focus keeps its zone.
+sub relayoutBody()
+    if m.item = invalid then return
+    current = zoneName()
+    layoutBody()
+    buildZones()
+    i = zoneIndexOf(current)
+    if i >= 0 then m.zoneIndex = i
+    if current <> "actions" then
+        z = m.zones[m.zoneIndex]
+        scrollTo(-(z.y - 100))
+    end if
 end sub
 
 sub buildZones()
@@ -1266,7 +1330,7 @@ sub onEpisodes(event as object)
         ep = m.episodes[i]
         ' Spoiler protection drops an unwatched episode's still (Content_cardNode) and description.
         node = Content_cardNode(ep, "landscape")
-        node.cardInsetY = 20 ' headroom for the lifted still (DetailScreen.xml episodeRow)
+        node.cardInsetY = m.episodeRailGeo.insetY ' headroom for the lifted still (layoutEpisodeRail)
         node.title = Content_episodeCaptionTitle(ep)
         node.description = Content_episodeCaptionMeta(airDateText(ep.air_date), toInt(ep.runtime)) ' read by the screen reader
         node.addFields({

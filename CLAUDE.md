@@ -296,7 +296,7 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   20 px in, 16 px up, 8 px under a box set's film count; tests `tests/test_watch_progress.py`), text keeps the presets' letter spacing; host tests `tests/test_overlay_layout.py`. Scale (Silo Android #912, `CardOverlay_scale*` in
   `CardOverlayKeys.brs`): card scale × text factor; a poster's width / 185, a wide card's (landscape, episode still) Poster Size
   multiplier 0.86 / 1 / 1.2 (`m.global.cardPosterScale`, set by ShellScreen; in the image key and the request's `k`), text factor 1
-  (Roku gives a channel no system text size); the episode rail's watched check (44 px 12 in) uses the wide scale; a wide card's
+  (Roku gives a channel no system text size); the episode rail's watched check (44 px 12 in) uses the wide scale, and so do the rail's cards themselves (`EpisodeRail_geometry`, Android TV `tvEpisodeCardWidth().cardScaled()`: 310 / 360 / 432 px wide, 16:9 stills, caption text, gaps and 40 px spacing unscaled; cell = headroom + still + 218, the sections below move; DetailScreen `layoutEpisodeRail` on page shown, settings loaded and `cardOverlaysRevision`, `[siku-detail] episode rail size`); a wide card's
   bottom inset never drops below its scale-1 size. Mock:
   `--switch card_overlays=1|<preset>[+rails|+corners|+combined]|off|404|500` (default off; on, it marks some titles watched and Orbital started),
   `overlay_profile=<preset>`, `overlay_profile_enabled=0|1`, `overlay_images=1|missing`; log `OVERLAY CONFIG`, `OVERLAY IMAGE`.

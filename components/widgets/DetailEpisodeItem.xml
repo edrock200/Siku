@@ -8,6 +8,8 @@
   and the bright title without the lift while focus is elsewhere (tvOS's isCurrent).
   cardInsetY on the content node: headroom above the still inside the cell (a real Roku clips items
   to their cell), so the lifted still and its shadow are not cut.
+  Size: the cell's width is the card's (DetailScreen sizes the rail for Poster Size, EpisodeRail.brs:
+  310 / 360 / 432 px); the still is 16:9 of it, the caption's text keeps its size (Android TV's).
   Expected ContentNode fields: title, HDPosterUrl, progress, watched, eyebrow, meta, synopsis, isCurrent,
   Card overlays (Silo Android TV TvEpisodeCard CardOverlays, Wide variant): the profile's badges
   over the still, under the watched check (components/common/CardOverlayCard.brs).
@@ -33,6 +35,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/CardOverlayKeys.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/CardOverlayCard.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/WatchProgress.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/EpisodeRail.brs" />
   <children>
     <Group id="card">
       <Poster id="shadow" uri="pkg:/images/ui/card_shadow.9.png" blendColor="0x00000080" visible="false" />

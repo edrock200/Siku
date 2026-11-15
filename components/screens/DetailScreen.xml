@@ -27,6 +27,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/Trailers.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/ThemeMusic.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/CardOverlayKeys.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/EpisodeRail.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/EpisodeTranslation.brs" />
   <children>
     <Rectangle id="bg" width="1920" height="1080" color="0x040D0FFF" />
@@ -96,7 +97,8 @@
           <!-- Shown when the first seasons/episodes request failed: the only focusable thing there. -->
           <PillButton id="episodesRetryBtn" text="Retry" translation="[0, 200]" visible="false" />
           <!-- Stills sit 20 px down inside 440 px cells (cardInsetY), the row 20 px higher: a real Roku
-               clips items to their cell (pitfall 12), and a focused still lifts and casts a shadow. -->
+               clips items to their cell (pitfall 12), and a focused still lifts and casts a shadow.
+               These are the Standard sizes; layoutEpisodeRail sets them for Poster Size (EpisodeRail.brs). -->
           <RowList id="episodeRow" translation="[-20, 110]" focusXOffset="[20]" itemComponentName="DetailEpisodeItem"
                    itemSize="[1840, 440]" rowItemSize="[[360, 440]]" rowItemSpacing="[[40, 0]]" numRows="1"
                    drawFocusFeedback="false" rowFocusAnimationStyle="fixedFocus" showRowLabel="[false]" />

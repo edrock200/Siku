@@ -52,8 +52,8 @@ end sub
 
 sub layout()
     w = m.top.width
-    if w <= 0 then w = 360
-    h = Int(w * 9 / 16)
+    if w <= 0 then w = EpisodeRail_baseWidth()
+    h = EpisodeRail_stillHeight(w)
     m.placeholder.width = w
     m.placeholder.height = h
     m.defaultArt = m.top.findNode("defaultArt")
@@ -111,7 +111,8 @@ sub layout()
     m.eyebrow.visible = m.eyebrow.text <> ""
     m.meta.visible = m.meta.text <> ""
     ' Compact AI marker at the right end of the meta line; the meta text stops short of it.
-    m.aiIcon.translation = [w - 24, m.insetY + h + 80]
+    ' Centred on the meta line (24 px text, about 30 px tall); it sat 26 px lower and touched the description.
+    m.aiIcon.translation = [w - 24, top + 43]
     if m.aiIcon.visible then m.meta.width = w - 36
     if c <> invalid then CardOverlay_show(c, "episode", Int(w), Int(h), hasProgress)
     onFocus()
@@ -121,8 +122,8 @@ sub onFocus()
     p = m.top.focusPercent
     if not (m.top.rowHasFocus and m.top.rowListHasFocus) then p = 0
     w = m.top.width
-    if w <= 0 then w = 360
-    h = Int(w * 9 / 16)
+    if w <= 0 then w = EpisodeRail_baseWidth()
+    h = EpisodeRail_stillHeight(w)
     current = fieldOr(m.top.itemContent, "isCurrent", false) = true
     CardFocus_apply(m.card, m.focusRing, m.shadow, w, h, p, [0, m.insetY], current)
     CardOverlay_focus(p)
