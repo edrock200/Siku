@@ -360,6 +360,13 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   (once per decision), `edition picked versions= shown= (Version on Auto)`, `play file=sent|player reason=pinned|tracks|auto|last_played
   shown=`, `shown file changed; audio and subtitle picks back to Auto`. Mock: `--switch editions=1|lastfile|none` (Iron Orchard,
   `movie:iron-orchard`: Theatrical 70/71, Director's Cut 72/73; log `EDITIONS detail`).
+- Library sorts (Silo Android #843, silo-roku d4303e5; `CatalogSort.brs`, host tests `tests/test_catalog_sort.py`): the web
+  client's list, names, order and default directions; a library lists the fields for its media (series add Latest Episode
+  Added / Air Date), Favorites, Watchlist and collections leave out Progress / Date Viewed / Plays, the RT sorts only while
+  GET `/api/v2/capabilities/ratings` lists `rt_critic` / `rt_audience` (`[siku-library] rating sources shown=` / `read failed
+  status=`; cached per server and profile on `m.global.ratingSources`), and a restored sort stays listed. The panel shows 9
+  rows and scrolls. Mock `--switch rating_sources=<a,b>|rt|off|fail` (log `RATINGS CAPS`, `CATALOG SORT <sort>`); DEBUG
+  deep link `debugLibraryMode=<movies|series|mixed|audiobooks>` with `debugScreen=LibraryScreen,debugLibrary=<id>`.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

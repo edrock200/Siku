@@ -52,14 +52,9 @@ sub init()
     m.pressTimer.observeField("fire", "onPressHeld")
     m.top.observeField("params", "onParams")
 
-    m.sortOptions = [
-        { id: "title", label: Tx("Title"), defaultDesc: false },
-        { id: "added_at", label: Tx("Date Added"), defaultDesc: true },
-        { id: "release_date", label: Tx("Release Date"), defaultDesc: true },
-        { id: "year", label: Tx("Year"), defaultDesc: true },
-        { id: "rating_imdb", label: Tx("Rating"), defaultDesc: true },
-        { id: "runtime", label: Tx("Runtime"), defaultDesc: true }
-    ]
+    ' The sort list follows the page and the library (CatalogSort.brs, Silo Android #843); the
+    ' server's shown rating sources decide the Rotten Tomatoes rows.
+    m.ratingSources = CatalogSort_cachedSources()
     m.sortField = "title"
     m.sortDesc = false
     m.genre = ""            ' the Genres view's chip (one genre; not the filter panel)
@@ -165,8 +160,11 @@ sub restoreBrowseState()
     p = browsePrefs()
     if p.preserve <> true or p.state = invalid or Type(p.state) <> "roAssociativeArray" then return
     st = p.state
+    ' A known sort comes back even where this library's list would not offer it (it stays listed);
+    ' only a sort this client does not know is dropped (Silo Android #843).
     field = Str_orEmpty(st.sort)
-    if field = "" or sortOption(field) <> invalid then
+    if field <> "" then field = CatalogSort_canonical(field)
+    if Str_orEmpty(st.sort) = "" or field <> "" then
         m.sortField = field
         m.sortDesc = st.desc = true
     end if
@@ -412,6 +410,7 @@ sub reload()
     ' Retry (or Clear filters) and the grid hide below: park focus on the page so the answer can
     ' move it (setCards / showEmpty / showError act only while the page itself holds focus).
     if m.retryBtn.hasFocus() or m.errClearBtn.hasFocus() or m.grid.hasFocus() then m.top.setFocus(true)
+    if showsControls() then requestRatingSources()
     m.loadedAt = 0
     m.refresh = invalid
     m.cards = []
@@ -1297,8 +1296,28 @@ end sub
 
 ' ---------- Sort ----------
 
+' The relevance of this page's sort list: favorites and watchlist list every field, a person's
+' titles the fields that order movies and series alike, everything else follows the library.
+function sortRelevance() as string
+    if m.mode = "favorites" or m.mode = "watchlist" then return "any"
+    if m.mode = "person" then return "video"
+    return CatalogSort_relevance(prm("mode"), prm("mediaType"))
+end function
+
+' Personal lists and collections resolve without a viewer's history: no Progress / Date Viewed / Plays.
+function sortIncludesPersonalized() as boolean
+    if m.mode = "favorites" or m.mode = "watchlist" or m.mode = "collection" then return false
+    if m.drill <> invalid and m.drill.kind = "collection" then return false
+    return true
+end function
+
+function sortOptions() as object
+    return CatalogSort_options(sortRelevance(), sortIncludesPersonalized(), m.ratingSources, m.sortField)
+end function
+
 function sortOption(id as string) as dynamic
-    for each o in m.sortOptions
+    if id = "" then return invalid
+    for each o in sortOptions()
         if o.id = id then return o
     end for
     return invalid
@@ -1307,19 +1326,24 @@ end function
 function directionLabel() as string
     f = m.sortField
     if f = "" then return Tx("Default")
-    if f = "title" then
-        if m.sortDesc then return "Z–A"
-        return "A–Z"
-    else if f = "runtime" then
-        if m.sortDesc then return Tx("Longest")
-        return Tx("Shortest")
-    else if f = "rating_imdb" then
-        if m.sortDesc then return Tx("Highest")
-        return Tx("Lowest")
-    end if
-    if m.sortDesc then return Tx("Newest")
-    return Tx("Oldest")
+    return CatalogSort_directionLabel(f, m.sortDesc)
 end function
+
+' Reads the server's shown rating sources once per server and profile (the RT sorts).
+sub requestRatingSources()
+    if m.ratingSources <> invalid or m.ratingRequested = true then return
+    m.ratingSources = CatalogSort_cachedSources()
+    if m.ratingSources <> invalid then return
+    m.ratingRequested = CatalogSort_requestSources("onRatingSources")
+end sub
+
+sub onRatingSources(event as object)
+    sources = CatalogSort_storeSources(Api_result(event))
+    if sources = invalid then return
+    m.ratingSources = sources
+    ' The RT rows can land while the panel is open: rebuild it with the focus kept on its sort.
+    if m.sortPanel.visible then renderSortPanel(true)
+end sub
 
 sub updateSortPill()
     o = sortOption(m.sortField)
@@ -1344,20 +1368,45 @@ sub updateSortPill()
 end sub
 
 sub openSortPanel()
+    requestRatingSources()
+    renderSortPanel(false)
+    m.sortPanel.translation = [80 + m.sortPill.translation[0], m.controls.translation[1] + 64]
+    m.sortPanel.visible = true
+    m.sortPanel.setFocus(true)
+end sub
+
+' Fills the sort panel. keepFocus: the focus stays on the sort it was on (rows came or went);
+' otherwise it opens on the current sort, as Android TV's panel does.
+sub renderSortPanel(keepFocus as boolean)
+    focusId = ""
+    if keepFocus then
+        old = m.sortPanel.rows
+        fi = m.sortPanel.focusIndex
+        if old <> invalid and fi >= 0 and fi < old.Count() then focusId = Str_orEmpty(old[fi].id)
+    end if
     rows = []
     personal = m.mode = "favorites" or m.mode = "watchlist"
     collectionLike = m.mode = "collection" or (m.drill <> invalid and m.drill.kind = "collection")
     if personal then rows.Push({ id: "__list", label: Tx("Recently Saved"), trailing: trailingFor("") })
     if collectionLike then rows.Push({ id: "__list", label: Tx("Collection Order"), trailing: trailingFor("") })
-    for each o in m.sortOptions
+    for each o in sortOptions()
         rows.Push({ id: o.id, label: o.label, trailing: trailingFor(o.id), "sub": subFor(o.id) })
+    end for
+    if not keepFocus then
+        focusId = m.sortField
+        if focusId = "" then focusId = "__list"
+    end if
+    idx = 0
+    for i = 0 to rows.Count() - 1
+        if rows[i].id = focusId then idx = i
     end for
     m.sortPanel.header = UCase(Tx("Sort by"))
     m.sortPanel.footer = Tx("Press again to flip the direction · Menu closes")
+    ' A series library lists up to 17 sorts: the panel shows 9 at a time and scrolls with the focus.
+    m.sortPanel.maxRows = 9
+    m.sortPanel.width = 600
+    m.sortPanel.focusIndex = idx
     m.sortPanel.rows = rows
-    m.sortPanel.translation = [80 + m.sortPill.translation[0], m.controls.translation[1] + 64]
-    m.sortPanel.visible = true
-    m.sortPanel.setFocus(true)
 end sub
 
 function trailingFor(id as string) as string

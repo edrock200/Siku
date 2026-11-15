@@ -28,6 +28,7 @@
   <script type="text/brightscript" uri="pkg:/components/widgets/HomeCardActions.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Shuffle.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/LibraryFilters.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/CatalogSort.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/GridWindow.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/MemoryPolicy.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/CardOverlayKeys.brs" />

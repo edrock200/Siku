@@ -234,6 +234,19 @@ function drawRow(g as object, r as object, y as integer, w as integer) as intege
         sub1.text = subText
         sub1.width = 200
         sub1.translation = [w - m.padX * 2 - 16 - 200 - 36, 0]
+        ' The name gives up width first, so a long sort name ("Latest Episode Air Date") ends
+        ' before the active row's direction word instead of running under it.
+        if subText <> "" then
+            ' Measured from the font, not the 200 px label box (boundingRect reports the box).
+            subW = 0
+            fnt = sub1.font
+            if fnt <> invalid then
+                if not Str_isEmpty(fnt.uri) then subW = Text_width(subText, fnt.uri, fnt.size)
+            end if
+            if subW <= 0 or subW > 200 then subW = 200
+            nameW = w - m.padX * 2 - 16 - 36 - subW - 16 - x
+            if nameW < lbl.width then lbl.width = nameW
+        end if
         tr = Str_orEmpty(r.trailing)
         if tr = "check" then
             trailing.visible = true

@@ -101,6 +101,10 @@ clears one); GET /mock/switch lists them.
                                  /api/v2/account/password/capability, POST /api/v2/account/password (it
                                  clears the switch, as changing it on a phone would) and sign-out. The log
                                  prints PASSWORD_CHANGE_REQUIRED 403 <method> <path>
+  rating_sources=<a,b>|off|fail  GET /api/v2/capabilities/ratings (Silo Android #843): the shown rating
+                                 sources, default imdb,tmdb (no Rotten Tomatoes sorts); rt adds rt_critic and
+                                 rt_audience; off answers state not_configured; fail answers 500. Log: RATINGS
+                                 CAPS <sources>; every catalog read with a sort logs CATALOG SORT <sort>
   no_runtime=1                   detail pages carry runtime 0 (a server without a stored running time);
                                  the files keep their measured duration
   editions=1|lastfile|none        Iron Orchard has two editions (Silo Android #899): Theatrical Cut (files 70
@@ -1153,9 +1157,13 @@ def catalog_filter(items, q):
         items = [i for i in items if i["content_id"] in keep]
     sort = q.get("sort", ["title"])[0]
     key = sort.lstrip("-")
+    if q.get("sort"):
+        print("CATALOG SORT %s" % sort, flush=True)
+        LOG.append("CATALOG SORT %s" % sort)
     if key == "title":
         items = sorted(items, key=lambda i: sort_title(i["title"]).lower(), reverse=sort.startswith("-"))
-    elif key in ("year", "runtime", "rating", "rating_imdb", "duration_seconds"):
+    elif key in ("year", "runtime", "rating", "rating_imdb", "rating_tmdb", "rating_rt_critic", "rating_rt_audience",
+                 "duration_seconds"):
         items = sorted(items, key=lambda i: (i.get("rating_imdb" if key == "rating" else key) or 0), reverse=sort.startswith("-"))
     return items
 
@@ -3140,6 +3148,21 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(202, {"id": "mai-job-1", "target_kind": kind, "content_id": cid, "target_language": lang,
                                    "status": status, "include_children": kind == "season", "progress": 0.0,
                                    "created_at": req_ts(0), "updated_at": req_ts(0)})
+        if p == "/api/v2/capabilities/ratings":
+            rs = str(STATE["switches"].get("rating_sources") or "imdb,tmdb")
+            print("RATINGS CAPS %s" % rs, flush=True)
+            LOG.append("RATINGS CAPS %s" % rs)
+            if rs == "fail":
+                return self.problem(500, "internal", "Ratings capability failed (rating_sources=fail)")
+            if rs == "off":
+                return self.send(200, {"state": "not_configured", "sources": []})
+            names = {"imdb": "IMDb", "tmdb": "TMDB", "rt_critic": "Rotten Tomatoes", "rt_audience": "Rotten Tomatoes Audience"}
+            srcs = []
+            for n in rs.split(","):
+                for x in (["imdb", "tmdb", "rt_critic", "rt_audience"] if n == "rt" else [n]):
+                    if x and x not in [s_["source"] for s_ in srcs]:
+                        srcs.append({"source": x, "name": names.get(x, x)})
+            return self.send(200, {"state": "available", "sources": srcs})
         if p == "/api/v2/capabilities/metadata-ai":
             on = bool(STATE["switches"].get("season_translation"))
             return self.send(200, {"state": "available" if on else "not_configured", "revision": "mock-mai-1",
