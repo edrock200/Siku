@@ -3,6 +3,18 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.7.0
+
+Asked for by a user (November 15, 2026), matching Silo's Android TV app.
+
+**Better**
+- **Episode cards on a series page follow your Poster Size setting:** smaller on Compact, bigger on Large, with their badges, watched check and progress bar in step. The rows below move to make room.
+
+**Fixed**
+- The "Translated by AI" mark on an episode card now sits on the date line instead of touching the description.
+
+**Needs testing on a real Roku:** the Large episode cards when focused (the lifted picture and its shadow must not be cut off at the top), and text wrapping on Compact cards.
+
 ## v0.6.0
 
 From Silo's Android TV app and Silo's own Roku app (November 14, 2026).
