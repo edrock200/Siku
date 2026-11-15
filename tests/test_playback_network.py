@@ -163,3 +163,27 @@ class Compaction(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EarlyEnd(unittest.TestCase):
+    """A "finished" well short of the file's end (adapted from silo-roku f5078a0, tvOS's
+    isBeforeNaturalEnd): more than 8 s and 1.5% short of source.duration_seconds; the first one at a
+    point reconnects there, a second within 10 s of it is the end."""
+
+    def test_rule(self):
+        e = "Recovery_endedEarly"
+        a = "Recovery_earlyEndAction"
+        check_cases(self, REC, [
+            ("half way through a film is early", e, [3000, 6000], True),
+            ("the credits' last seconds are the end", e, [5995, 6000], False),
+            ("9 s short of a short clip is not 1.5% short", e, [591, 600], False),
+            ("10 s short of a 20-minute episode is under 1.5%: the end", e, [1190, 1200], False),
+            ("19 s short of a 20-minute episode is early", e, [1181, 1200], True),
+            ("8 s short is the end", e, [1192, 1200], False),
+            ("no duration: the end", e, [100, 0], False),
+            ("a string duration is read", e, [100, "3600"], True),
+            ("no position: the end", e, [None, 3600], False),
+            ("the first early end resumes", a, [1500, -1], "resume"),
+            ("another point resumes again", a, [2500, 1500], "resume"),
+            ("the same point again is the end", a, [1504, 1500], "end"),
+        ])

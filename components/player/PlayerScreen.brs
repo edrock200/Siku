@@ -159,6 +159,9 @@ sub resetPlaybackState()
     m.retriedInstall = false
     m.timelineOffset = 0.0
     m.duration = 0.0
+    m.planDuration = 0.0   ' the plan's source.duration_seconds (early-end check)
+    m.earlyEndAt = -1.0    ' where the last early end stopped (Recovery_earlyEndAction)
+    m.endedEarly = false   ' the stream ended early twice at one point: the end, but not finished
     m.position = 0.0
     m.isPaused = false
     m.markers = []
@@ -929,8 +932,10 @@ sub applyPlan(plan as object, opts = invalid as dynamic)
     tl = plan.timeline
     if tl = invalid then tl = {}
     m.timelineOffset = Content_num(tl.timeline_offset_seconds)
+    m.planDuration = 0.0 ' the file's own duration, for the early-end check (Recovery_endedEarly)
     if plan.source <> invalid and Content_num(plan.source.duration_seconds) > 0 then
         m.duration = Content_num(plan.source.duration_seconds)
+        m.planDuration = m.duration
         m.scrubber.duration = m.duration
     end if
 
@@ -1236,6 +1241,7 @@ sub onVideoState()
             Diag_log("[siku-playback] finished ignored reason=" + refusal)
             return
         end if
+        if handleEarlyEnd() then return
         onFinished()
     else if st = "error" then
         ' A dropped connection reconnects; anything else gets a failure_recovery replan first, and
@@ -1321,16 +1327,43 @@ sub seekToSource(seconds as float)
     m.scrubber.position = seconds
 end sub
 
+' A "finished" short of the file's end (Recovery_endedEarly): the first one at a point reconnects
+' there (true: handled); a second one at the same point goes on as the end, marked m.endedEarly.
+function handleEarlyEnd() as boolean
+    if not Recovery_endedEarly(m.position, m.planDuration) then return false
+    stopAt = Int(m.position).ToStr()
+    dur = Int(m.planDuration).ToStr()
+    if Recovery_earlyEndAction(m.position, m.earlyEndAt) = "resume" then
+        m.earlyEndAt = m.position
+        if Recovery_reconnect("early_end") then
+            Diag_log("[siku-playback] ended early at " + stopAt + " s of " + dur + " s; resuming there")
+            return true
+        end if
+    end if
+    Diag_log("[siku-playback] ended early again at " + stopAt + " s of " + dur + " s; treating it as the end (not finished, no auto-play)")
+    m.endedEarly = true
+    return false
+end function
+
 sub onFinished()
     if m.finished then return
     m.finished = true
-    m.reachedCreditsOrEnd = true
+    ' An early end is not the end of the item: the series page does not move on from it (unless the
+    ' credits were reached before), and nothing plays next by itself (the next item would meet the
+    ' same failing source; silo-roku f5078a0).
+    if m.endedEarly <> true then m.reachedCreditsOrEnd = true
     m.progressTimer.control = "stop"
     if m.upNextDismissed then
         exitPlayer()
         return
     end if
     if (m.isEpisode or m.shuffle <> invalid) and m.nextEpisode <> invalid then
+        if m.endedEarly = true then
+            if not m.upNext.visible then showUpNext(true) else renderUpNext()
+            cancelUpNextCountdown()
+            m.unPlayBtn.text = Tx("Play Now")
+            return
+        end if
         if m.upNext.visible and m.countdownToEnd and m.countdown >= 0 then
             ' The card's countdown was the time left in this item: it ran to the end of the stream.
             cancelUpNextCountdown()

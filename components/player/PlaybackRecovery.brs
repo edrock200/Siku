@@ -324,6 +324,29 @@ sub Recovery_notePlaying()
     end if
 end sub
 
+' An early end: the Video node said "finished" well short of the file's own duration (the plan's
+' source.duration_seconds; a catalog runtime can differ from the file by more): more than 8 s and
+' 1.5% short, as tvOS's isBeforeNaturalEnd (adapted from silo-roku f5078a0). The source stopped
+' delivering; Android TV retries such a premature end of stream from where it stopped
+' (MediaLoadRetryPolicy), so Siku reconnects there once per stop point (Recovery_earlyEndAction).
+' Pure.
+function Recovery_endedEarly(position as dynamic, duration as dynamic) as boolean
+    at = Num_or(position, -1)
+    dur = Num_or(duration, 0)
+    if dur <= 0 or at < 0 then return false
+    return dur - at > 8 and at / dur < 0.985
+end function
+
+' "resume" (reconnect at the stop point) for the first early end at a point; "end" when the
+' resumed stream stopped again within 10 s of where the last one did (the file really ends there,
+' or the source keeps failing at it): the player then treats it as the end, but not as finished.
+' lastAt: where the last early end stopped, -1 when none. Pure.
+function Recovery_earlyEndAction(position as dynamic, lastAt as dynamic) as string
+    last = Num_or(lastAt, -1)
+    if last >= 0 and Abs(Num_or(position, 0) - last) < 10 then return "end"
+    return "resume"
+end function
+
 ' The Video node's "finished" is the end of the title only for a plan that played and is still
 ' current: Roku also reports it right after an error (silo-roku hardware evidence, harness defect
 ' 3), and a replan, reconnect or re-anchor is about to replace the plan. "" when it is the end,

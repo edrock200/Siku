@@ -375,6 +375,12 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   fr_CA follow the device). Used for library and collection grid counts, collection cards and person title counts; years,
   episode numbers and other counts stay ungrouped. Host tests `tests/test_grouped_count.py`; mock `--switch big_library=<n>`
   / `person_works=<n>` with `debugLang=<tag>`.
+- Early end (adapted from silo-roku f5078a0; Android TV retries a premature end of stream, MediaLoadRetryPolicy): a
+  Video "finished" more than 8 s and 1.5% short of the plan's `source.duration_seconds` (`Recovery_endedEarly`) reconnects
+  at the stop point through the dropped-connection path: `[siku-playback] ended early at <s> s of <d> s; resuming there`
+  (then `connection lost code=early_end`, `reconnect 1 …`). A second early end within 10 s of that point
+  (`Recovery_earlyEndAction`) is the end, but not finished: `ended early again at …; treating it as the end (not finished,
+  no auto-play)`; Up Next opens without a countdown and the series page does not move on. Simulator cannot play: device only.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 
