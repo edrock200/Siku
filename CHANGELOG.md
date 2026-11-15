@@ -3,6 +3,22 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.6.0
+
+From Silo's Android TV app and Silo's own Roku app (November 14, 2026).
+
+**Better**
+- **Library sorting like Silo's website.** The sort menu now offers the same options, names and starting directions. TV libraries add "Latest Episode Added" and "Latest Episode Air Date"; "Rating" is now "IMDb Rating" next to "TMDB Rating", and "Runtime" is now "Duration". Content Rating, Bitrate, Progress, Date Viewed and Plays are new, and the Rotten Tomatoes sorts appear when your server shows those ratings. Favorites, Watchlist and collections leave out the sorts that depend on your own watching.
+- **The sort menu opens on the current sort and scrolls,** and a sort you saved stays selected.
+- **Large counts are easier to read:** "1,284 titles" ("1.284 Titel", "1 284 titres") on library and collection pages, collection cards and person pages.
+- **No "Explore all" on a Continue Watching or Next Up row that already shows everything.**
+- **More translated text,** from Silo's latest translations.
+
+**Fixed**
+- **A video that stops early picks up again.** If the server or network stops sending before the end, Siku continues where it stopped instead of treating the episode as finished. If it stops at the same point again, nothing plays next by itself and the episode is not counted as finished.
+
+**Needs testing on a real Roku:** the early-stop pick-up, the sort menu layout with long names, and French counts.
+
 ## v0.5.0
 
 From Silo's Android TV app (November 14, 2026).
