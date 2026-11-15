@@ -1,5 +1,6 @@
 ' SPDX-License-Identifier: AGPL-3.0-or-later
-' Hold-to-seek while the controls are hidden (silo-android TvPlayerScreen "clean seek" and
+' Hold-to-seek while the controls are hidden, or from a focused skip pill with them up (Silo Android
+' #928) (silo-android TvPlayerScreen "clean seek" and
 ' TvHoldSeekIndicator, after the tvOS HoldSeekIndicator). A Left/Right tap still skips by the
 ' profile's skip intervals; a press held 0.3 s starts a seek session instead: a preview time runs
 ' at a signed rate from the ladder 1x, 2x, 4x ... 32x (2 s of media per 100 ms at 1x), climbing
@@ -31,7 +32,7 @@ sub HoldSeek_init()
     m.hsTickTimer.observeField("fire", "HoldSeek_onTick")
     m.hsRampTimer.observeField("fire", "HoldSeek_onRamp")
     m.hsClock = CreateObject("roTimespan")
-    m.hs = { active: false, pendingDir: 0, pendingAt: 0, becameHold: false, rate: 0, preview: 0.0, lastTick: 0, rampStep: 0, adjDir: 0, adjAt: 0 }
+    m.hs = { active: false, onPill: false, pendingDir: 0, pendingAt: 0, becameHold: false, rate: 0, preview: 0.0, lastTick: 0, rampStep: 0, adjDir: 0, adjAt: 0 }
 end sub
 
 function HoldSeek_active() as boolean
@@ -45,6 +46,7 @@ end function
 ' Left/Right pressed with the controls hidden.
 sub HoldSeek_press(direction as integer)
     if m.plan = invalid then return
+    m.hs.onPill = false
     m.hs.pendingDir = direction
     m.hs.pendingAt = HoldSeek_now()
     m.hs.becameHold = false
@@ -52,10 +54,22 @@ sub HoldSeek_press(direction as integer)
     m.hsPressTimer.control = "start"
 end sub
 
+' Left/Right pressed on a focused skip pill while the controls are up (Silo Android #928): the same
+' tap-or-hold press, and a hold hides the controls so the hold-seek indicator stands alone.
+sub HoldSeek_pressOnPill(direction as integer)
+    HoldSeek_press(direction)
+    if m.plan <> invalid then m.hs.onPill = true
+end sub
+
+' Whether the controls being up rules out a hold (they do, except for a press on the skip pill).
+function HoldSeek_controlsBlock() as boolean
+    return m.controls.visible and m.hs.onPill <> true
+end function
+
 sub HoldSeek_onPressTimer()
     m.hsPressTimer.control = "stop"
     if m.hs.pendingDir = 0 or m.hs.active then return
-    if m.controls.visible or m.upNext.visible or m.hud.visible or m.errorGroup.visible or m.closing then return
+    if HoldSeek_controlsBlock() or m.upNext.visible or m.hud.visible or m.errorGroup.visible or m.closing then return
     HoldSeek_begin(m.hs.pendingDir)
 end sub
 
@@ -73,16 +87,24 @@ sub HoldSeek_release(direction as integer)
     becameHold = m.hs.becameHold
     m.hs.pendingDir = 0
     if becameHold then return
-    if held >= HS_HOLD_MS() and not m.controls.visible then
+    if held >= HS_HOLD_MS() and not HoldSeek_controlsBlock() then
         ' The timer was late (a busy render thread); the press was a hold all the same.
         HoldSeek_begin(direction)
         return
     end if
+    if m.hs.onPill = true then Diag_log("[siku-playback] skip pill seek dir=" + direction.ToStr() + " kind=tap")
+    m.hs.onPill = false
     if direction < 0 then onSkipBack() else onSkipForward()
 end sub
 
 sub HoldSeek_begin(direction as integer)
     if m.plan = invalid then return
+    if m.hs.onPill = true then
+        Diag_log("[siku-playback] skip pill seek dir=" + direction.ToStr() + " kind=hold")
+        m.hs.onPill = false
+        ' The pill keeps focus (hideControls leaves it there) and the session owns the remote.
+        if m.controls.visible then hideControls()
+    end if
     m.hs.becameHold = true
     m.hs.active = true
     sign = 1
@@ -181,6 +203,7 @@ sub HoldSeek_stop()
     wasActive = m.hs.active
     m.hs.active = false
     m.hs.pendingDir = 0
+    m.hs.onPill = false
     m.hs.adjDir = 0
     m.holdSeek.visible = false
     if wasActive then Trickplay_show(invalid, "")

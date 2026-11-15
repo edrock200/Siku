@@ -1967,8 +1967,9 @@ sub hideSkipPill()
     m.watchBackTarget = invalid
     m.skipShownFor = ""
     if hadFocus then
+        ' With the controls up focus goes to the scrubber, as Android TV's pill hand-off does (#928).
         if m.controls.visible then
-            m.controlsZone = "transport"
+            m.controlsZone = "scrubber"
             focusControls()
         else
             m.focusSink.setFocus(true)
@@ -3979,6 +3980,15 @@ function handleControlsKey(key as string) as boolean
         if key = "down" then
             m.controlsZone = "scrubber"
             focusControls()
+        else if key = "left" or key = "right" then
+            ' A focused skip pill must not block seeking (Silo Android #928): a tap skips by the
+            ' seek interval, a hold starts hold-to-seek, as with the controls hidden; the pill keeps
+            ' focus while it stays up (hideSkipPill hands focus on when it goes).
+            if key = "left" then HoldSeek_pressOnPill(-1) else HoldSeek_pressOnPill(1)
+        else if key = "rewind" or key = "replay" then
+            onSkipBack()
+        else if key = "fastforward" then
+            onSkipForward()
         end if
         return true
     end if
