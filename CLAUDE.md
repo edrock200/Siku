@@ -381,6 +381,20 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   (then `connection lost code=early_end`, `reconnect 1 …`). A second early end within 10 s of that point
   (`Recovery_earlyEndAction`) is the end, but not finished: `ended early again at …; treating it as the end (not finished,
   no auto-play)`; Up Next opens without a countdown and the series page does not move on. Simulator cannot play: device only.
+- Scrubber marker bands (Silo Android #933/#934, adapted from silo-roku 42249ca; `Markers_bands` in `MarkerTimeline.brs`,
+  host tests `tests/test_marker_timeline.py`): one band per intro / recap / credits / preview range, over the played fill and
+  under the puck, in TheIntroDB's palette (intro #51A2FF, recap #FF8904, credits #C27AFF, preview #00D3F2) at 34% / 45%
+  focused. `[siku-playback] marker bands intro= recap= credits= preview=`. Mock `--switch every_marker=1` (two intros, two
+  credits, a recap and a preview against the plans' 3000 s; log `MARKERS file= every_marker`).
+- Skip pill seeking (Silo Android #928): with the controls up and a Skip pill focused, Left/Right tap-skip (pill keeps focus)
+  or hold-seek (`HoldSeek_pressOnPill`; the controls hide for the hold): `[siku-playback] skip pill seek dir=<-1|1>
+  kind=tap|hold`. A focused pill that hides with the controls up hands focus to the scrubber. Hold needs a real Roku.
+- Specials (Silo Android #929/#931, adapted from silo-roku a41d106; `Seasons.brs`, host tests `tests/test_seasons.py`):
+  season 0 or a flagged `is_specials` season is listed first and labelled "Specials" (episode page More: "Go to Specials");
+  a series opens on `play_season_number`, else a numbered season (in progress, partly watched, unwatched) before Specials:
+  `[siku-detail] seasons listed= specials_first= opens=`. The player's next season never moves into a flagged Specials
+  season. Mock `--switch specials=1|flagged` (Orbital: season 0 listed first, or season 99 flagged and listed last; log
+  `SEASONS <id> specials=`). Show Series Info (#932/#936-#938) does not apply: Siku's hero never follows rail focus.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 
