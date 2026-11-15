@@ -54,10 +54,10 @@ end function
 function Paging_titleCount(total as dynamic, loaded as integer, hasMore as boolean) as string
     n = 0
     if Paging_isNum(total) then n = Int(total)
-    if n > 0 then return TxP("{0} title", "{0} titles", n)
+    if n > 0 then return TxP("{0} title", "{0} titles", n, true)
     if loaded <= 0 then return ""
-    if hasMore then return TxP("{0}+ titles", "{0}+ titles", loaded)
-    return TxP("{0} title", "{0} titles", loaded)
+    if hasMore then return TxP("{0}+ titles", "{0}+ titles", loaded, true)
+    return TxP("{0} title", "{0} titles", loaded, true)
 end function
 
 function Paging_isNum(v as dynamic) as boolean

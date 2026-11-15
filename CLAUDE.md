@@ -367,6 +367,11 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   status=`; cached per server and profile on `m.global.ratingSources`), and a restored sort stays listed. The panel shows 9
   rows and scrolls. Mock `--switch rating_sources=<a,b>|rt|off|fail` (log `RATINGS CAPS`, `CATALOG SORT <sort>`); DEBUG
   deep link `debugLibraryMode=<movies|series|mixed|audiobooks>` with `debugScreen=LibraryScreen,debugLibrary=<id>`.
+- Grouped counts (Silo Android #916, silo-roku ed824d3): `TxP(one, other, n, true)` puts the language's thousands separator
+  in the count (`I18n_groupedCount`: "1,284", "1.284" de/pt_BR, narrow no-break space fr, Spanish from five digits, es_MX /
+  fr_CA follow the device). Used for library and collection grid counts, collection cards and person title counts; years,
+  episode numbers and other counts stay ungrouped. Host tests `tests/test_grouped_count.py`; mock `--switch big_library=<n>`
+  / `person_works=<n>` with `debugLang=<tag>`.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

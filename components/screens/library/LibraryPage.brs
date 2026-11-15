@@ -577,7 +577,7 @@ end sub
 sub showCount(data as object, one as string, other as string)
     if data = invalid or data.total = invalid then return
     n = Int(Content_num(data.total))
-    txt = TxP(one, other, n)
+    txt = TxP(one, other, n, true)
     if data.total_exact = false then txt = TxF("About {0}", [txt])
     m.countLabel.text = txt
     m.countLabel.visible = n > 0
@@ -1003,7 +1003,7 @@ sub onCollections(event as object)
         node.cardInsetY = m.insetY
         if c.item_count <> invalid then
             n = Int(Content_num(c.item_count))
-            node.subtitle = TxP("1 item", "{0} items", n)
+            node.subtitle = TxP("1 item", "{0} items", n, true)
             node.description = node.subtitle ' read by the screen reader
         end if
         root.appendChild(node)

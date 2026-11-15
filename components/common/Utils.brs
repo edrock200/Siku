@@ -562,15 +562,61 @@ function TxF(text as string, args as object) as string
     return out
 end function
 
-' A count: `one` for the language's singular, `other` otherwise; {0} is n.
-function TxP(one as string, other as string, n as dynamic) as string
+' A count: `one` for the language's singular, `other` otherwise; {0} is n. grouped: n carries the
+' language's thousands separator (I18n_groupedCount), for counts that can run large (a library's or
+' a collection's size, a person's titles; Silo Android #916).
+function TxP(one as string, other as string, n as dynamic, grouped = false as boolean) as string
     count = 0
     if n <> invalid then
         if Type(n) = "roString" or Type(n) = "String" then count = Int(Val(n)) else count = Int(n)
     end if
     form = other
     if I18n_isOne(I18n_locale(), count) then form = one
+    if grouped then return TxF(form, [I18n_groupedCount(count, I18n_locale(), I18n_deviceLocale())])
     return TxF(form, [count])
+end function
+
+' A count with the thousands separator of the interface language (Silo Android #916, silo-roku
+' ed824d3, Apple's LocaleFormat.groupedCount): "1,284" in English, "1.284" in German and Brazilian
+' Portuguese, "1 284" with a narrow no-break space in French; Spanish groups from five digits ("1284",
+' "12.840"). A device set to Mexican Spanish or Canadian French gets its region's style ("1,284",
+' "1 284" with a no-break space). Years, codes and episode numbers stay ungrouped. Pure.
+function I18n_groupedCount(n as integer, folder as string, deviceLocale as string) as string
+    sep = ","
+    minDigits = 4
+    if folder = "de" or folder = "pt_BR" then
+        sep = "."
+    else if folder = "es" then
+        if deviceLocale <> "es_MX" then
+            sep = "."
+            minDigits = 5
+        end if
+    else if folder = "fr" then
+        if deviceLocale = "fr_CA" then sep = Chr(&hA0) else sep = Chr(&h202F)
+    end if
+    neg = n < 0
+    if neg then n = 0 - n
+    digits = n.ToStr()
+    if Len(digits) >= minDigits then
+        out = ""
+        while Len(digits) > 3
+            out = sep + Right(digits, 3) + out
+            digits = Left(digits, Len(digits) - 3)
+        end while
+        digits = digits + out
+    end if
+    if neg then return "-" + digits
+    return digits
+end function
+
+' The device's locale tag ("es_MX"), read once per component.
+function I18n_deviceLocale() as string
+    if m.i18nDeviceLocale = invalid then
+        m.i18nDeviceLocale = ""
+        di = CreateObject("roDeviceInfo")
+        if di <> invalid then m.i18nDeviceLocale = Str_orEmpty(di.GetCurrentLocale())
+    end if
+    return m.i18nDeviceLocale
 end function
 
 ' CLDR plural "one" for integers: French and Brazilian Portuguese count 0 and 1 as one.
