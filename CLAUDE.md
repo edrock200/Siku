@@ -200,7 +200,10 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   (default present; off = an older server that refuses the parameter, reject = advertised but refused,
   slow = 30 s capability read, fail = 500) and `item_limit_max=<n>`; the mock log prints `HOME CAPS
   item_limit=`, `SECTIONS <path> item_limit=<n|->` and `SECTION CATALOG scope= library= <id>` (404 for
-  an unknown row). "Recently Added in Movies" carries 24 cards without `item_limit`.
+  an unknown row). "Recently Added in Movies" carries 24 cards without `item_limit`. A Continue Watching / In Progress / Next Up row whose
+  `total_count` (≥ 1) is no more than the cards sent and which sent fewer than its limit (`item_limit`, at most 20) shows
+  its whole list and ends without Explore all (Silo Android bb53e20d, silo-roku cfda7be; `SectionRows_showsWholeList`):
+  `[siku-home] explore all left out row=<id>: the row shows its whole list`. The mock's Continue Watching and Next Up are such rows.
 - `[siku-auth]` lines trace token refreshes (AuthTask): `refresh ok`, `refresh failed status= code=
   attempt=` (kept session, retried with back-off), `refresh gave up, keeping the session`, `refresh
   skipped` (the same token failed moments ago), `refresh rejected status= code=` (400/401: the only

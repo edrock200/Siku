@@ -77,6 +77,33 @@ class ExploreAll(unittest.TestCase):
             ("no section", f, [None, 4], False),
         ])
 
+    def test_whole_list(self):
+        """A Continue Watching or Next Up row that shows its whole list ends without Explore all
+        (Silo Android bb53e20d, silo-roku cfda7be): a playback type, a total_count of at least 1 and
+        no more than the cards sent, and fewer cards than its limit."""
+        f = "SectionRows_offersExploreAll"
+        cw = {"id": "continue_watching", "section_type": "continue_watching", "total_count": 1}
+        check_cases(self, FILES, [
+            ("a one-title Continue Watching row has no Explore all", f, [cw, 1, 1], False),
+            ("Next Up holding all three", f, [{"id": "n", "section_type": "next_up", "total_count": 3}, 3, 3], False),
+            ("In Progress holding all", f, [{"id": "p", "section_type": "In_Progress", "total_count": "2"}, 2, 2], False),
+            ("a total above the cards keeps it", f, [{"id": "n", "section_type": "next_up", "total_count": 9}, 3, 3], True),
+            ("a row filled to 20 keeps it", f, [{"id": "c", "section_type": "continue_watching", "total_count": 20}, 20, 20], True),
+            ("more sent than 20, counted before the cut", f,
+             [{"id": "c", "section_type": "continue_watching", "total_count": 25}, 20, 25], True),
+            ("a row filled to its item_limit keeps it", f,
+             [{"id": "c", "section_type": "continue_watching", "total_count": 6, "item_limit": 6}, 6, 6], True),
+            ("under its item_limit it is whole", f,
+             [{"id": "c", "section_type": "continue_watching", "total_count": 5, "item_limit": 6}, 5, 5], False),
+            ("no total_count keeps it", f, [{"id": "c", "section_type": "continue_watching"}, 2, 2], True),
+            ("a zero total_count keeps it", f, [{"id": "c", "section_type": "continue_watching", "total_count": 0}, 2, 2], True),
+            ("other rows keep it however short", f, [{"id": "t", "section_type": "trending_on_server", "total_count": 2}, 2, 2], True),
+            ("an unknown sent count keeps it", f, [cw, 1], True),
+            ("the row's own items answer counts", f,
+             [{"id": "c", "section_type": "continue_watching", "total_count": 40}, 2, 2, 2], False),
+            ("hide-watched leaves fewer cards than sent: still whole", f, [{"id": "c", "section_type": "next_up", "total_count": 4}, 2, 4], False),
+        ])
+
 
 class ActiveLimit(unittest.TestCase):
     """The stored capability applies to the server it was read from only."""

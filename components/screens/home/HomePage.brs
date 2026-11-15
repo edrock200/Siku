@@ -390,6 +390,8 @@ sub onSectionItems(event as object)
         idx = ctx.index
         if idx >= 0 and idx < m.sections.Count() then
             m.sections[idx].rawItems = Arr_or(resp.data.items)
+            ' The row's own answer counts its list (the Explore all rule reads it).
+            m.sections[idx].total = resp.data.total_count
             m.sections[idx].items = hideWatchedItems(m.sections[idx].section, m.sections[idx].rawItems)
         end if
     end if
@@ -438,8 +440,11 @@ sub buildRows(fromCache = false as boolean)
         if items.Count() > 0 then
             st = LCase(Str_orEmpty(s.section_type))
             sid = Str_orEmpty(s.id)
-            ' Every non-featured row ends with "Explore all", opening the section's full page.
-            explore = SectionRows_offersExploreAll(s, items.Count())
+            ' Every non-featured row ends with "Explore all", opening the section's full page, unless
+            ' a Continue Watching or Next Up row shows its whole list (counted before the cut to 20).
+            sent = Arr_or(e.rawItems).Count()
+            explore = SectionRows_offersExploreAll(s, items.Count(), sent, e.total)
+            if not explore and SectionRows_showsWholeList(s, sent, e.total) then Diag_log("[siku-home] explore all left out row=" + sid + ": the row shows its whole list")
             isProgress = st = "continue_watching" or st = "next_up" or sid = "continue_watching" or sid = "next_up"
             if isProgress then
                 video = []

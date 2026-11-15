@@ -40,14 +40,40 @@ end function
 
 ' Whether a row ends with an "Explore all" card: every non-featured row with cards, not only rows
 ' whose total exceeds what they show (Home drops titles another row already shows, so a row can
-' look complete while its full page holds more).
-function SectionRows_offersExploreAll(section as dynamic, cardCount as integer) as boolean
+' look complete while its full page holds more), unless the row shows its whole list
+' (SectionRows_showsWholeList). sentCount: the cards the server sent for the row, before the cut to
+' 20 (-1: unknown, the card stays). total: the row's total_count when it came from another answer
+' than the section (a row's own items answer); invalid reads the section's.
+function SectionRows_offersExploreAll(section as dynamic, cardCount as integer, sentCount = -1 as integer, total = invalid as dynamic) as boolean
     if section = invalid or Type(section) <> "roAssociativeArray" then return false
     if cardCount <= 0 then return false
     if Str_orEmpty(section.id) = "" then return false
     f = section.featured
     if (Type(f) = "Boolean" or Type(f) = "roBoolean") and f then return false
+    if SectionRows_showsWholeList(section, sentCount, total) then return false
     return true
+end function
+
+' Whether a row is known to hold its whole list, so its "Explore all" page would repeat it (Silo
+' Android bb53e20d on fix/explore-all-whole-row, ResolvedSection.showsWholeList; silo-roku cfda7be):
+' only a playback row (section_type continue_watching, in_progress or next_up), whose total_count
+' counts the list itself (the server counts other rows after dropping titles an earlier row shows),
+' with a total_count of at least 1 and no more than the cards it sent, and fewer cards than its
+' limit (item_limit when positive, at most 20): a row filled to its limit was cut there and reports
+' the cut size as its total. A missing total_count proves nothing.
+function SectionRows_showsWholeList(section as dynamic, sentCount as integer, total = invalid as dynamic) as boolean
+    if section = invalid or Type(section) <> "roAssociativeArray" then return false
+    if sentCount < 0 then return false
+    st = LCase(Str_orEmpty(section.section_type))
+    if st <> "continue_watching" and st <> "in_progress" and st <> "next_up" then return false
+    limit = SectionRows_max()
+    il = Int(Num_or(section.item_limit, 0))
+    if il > 0 and il < limit then limit = il
+    if sentCount >= limit then return false
+    if total = invalid then total = section.total_count
+    if total = invalid then return false
+    n = Int(Num_or(total, 0))
+    return n >= 1 and n <= sentCount
 end function
 
 ' The first SectionRows_max() cards of a row.
