@@ -332,14 +332,27 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   set (min 15), so first lines can take minutes. Progress names the job (`Subs_aiProgressTitle`); untagged audio sends `transcribe`
   (v0.1.47). Never the ticket. Mock: `--switch ai_live=1|off|fail` (log `AI LIVE ticket|socket|started|cues|done|failed`); brs-cli has
   a real roWebSocket, so the simulator runs the whole path.
+  Lines on screen together stack bottom-up, earliest at the bottom, each keeping its line while it shows (Silo Android
+  #862; `AiLive_stackOrder` / `AiLive_blockText`).
+- Late stops (Silo Android #954/#955): a stop the server takes (2xx, `PlaybackJobs_isLanded`) sets `homeDirty` and bumps
+  `m.global.playbackStopsLanded`; a DetailScreen on top that read before it (the player's 2.5 s `stopTimeout` ran out, or
+  a retry delivered it) reads again: `[siku-detail] playback stop landed after the page read; reading again`. Mock:
+  `--switch stop_fail=1` (the first DELETE answers 503, the retry 2 s later lands).
 - Detail running time (v0.1.44, `detailLengthSeconds` in DetailScreen): the shown file's measured `duration`, else
   `runtime` minutes; 0 means unknown and hides it. Mock `--switch no_runtime=1` (runtime 0, files keep their duration).
 - Interface languages (v0.1.45, `Tx`/`TxF`/`TxP`/`TxKey` and `I18n_*` in `Utils.brs`): text is keyed by its English;
-  `locale/<es|de|fr|pt_BR>/strings.json` are built by `python3 tools/i18n_build.py` from Silo's catalogs in
+  `locale/<lang>/strings.json` are built by `python3 tools/i18n_build.py` from Silo's catalogs in
   `third_party/silo-translations/` plus Siku's own `i18n/siku/<lang>.json` (`--check` fails on stale files or untranslated
   text; `i18n/missing.json` lists gaps). Server text: `TxKey("@home.section.*"|"error.*")`. MainScene prints
-  `[siku-i18n]` lines when it loads a language. Language: profile `ui.app_language` (mock: settings revision 28), else the
+  `[siku-i18n]` lines when it loads a language. Language: profile `ui.app_language` (mock: `--settings-revision 28`), else the
   device locale; DEBUG builds take `debugLang=<tag>` (e.g. `de`). After adding user-visible text, rerun the build tool.
+  Seventeen languages since silo-roku 1cc1149 / 67f082b (`I18n_folders`: en es de fr pt_BR nl it pl tr sv da nb fi cs hr ru uk;
+  "no" → nb). When Silo's apps add catalog languages, Siku follows (the user's rule): copy the catalogs into
+  `third_party/silo-translations`, add the folder to `LANGS` and `I18n_folders`/`I18n_nativeName`, and translate
+  `i18n/siku/<lang>.json`. Only scripts the fonts draw: `tools/subset_fonts.py` (Inter 4.1, Latin + Cyrillic); Korean,
+  Chinese, Japanese and Arabic stay out. Plurals: `TxP` reads CLDR few/many (and a `{0}` "one" for hr/ru/uk, which covers
+  21, 31, …) as `"<English other>#few"` etc. (`PLURAL_FORMS` in the build tool, `I18n_pluralCategory`), so every count needs
+  a literal `TxP("1 x", "{0} xs", n)` pair; Turkish capitals go through `I18n_upper` (server text keeps `UCase`).
 - Change Account at launch and the profile menu's profile row (Silo Android #880/#881/#883; adapted from silo-roku
   4a22785 / 431c1f1): a launch that asks (Every Time, a lapsed timer) with two or more saved accounts shows Change
   Account in the picker's place (`ProfileLaunch_startScreen`; params `root` + `chooseAccount`; the CURRENT account then
