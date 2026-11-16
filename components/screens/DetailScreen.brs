@@ -8,6 +8,9 @@ sub init()
     m.page = m.top.findNode("page")
     m.hero = m.top.findNode("hero")
     m.backdrop = m.top.findNode("backdrop")
+    ' The card's backdrop stays under the full-size one until it has loaded (onBackdropStatus).
+    m.backdropHold = m.top.findNode("backdropHold")
+    m.backdrop.observeField("loadStatus", "onBackdropStatus")
     m.logo = m.top.findNode("logo")
     m.titleLabel = m.top.findNode("titleLabel")
     m.episodeLine = m.top.findNode("episodeLine")
@@ -76,6 +79,8 @@ sub init()
     m.scrollInterp = m.top.findNode("scrollInterp")
 
     m.item = invalid
+    m.seed = invalid          ' the card this page was opened from, drawn until the detail lands (Nav_detailSeed)
+    m.seedUsed = false        ' a seed is drawn once: a Retry after a failed read shows the spinner
     m.itemType = ""
     m.loading = false
     m.seasons = []
@@ -238,6 +243,10 @@ sub load()
     m.loading = true
     m.errorGroup.visible = false
     m.spinner.visible = true
+    if not m.seedUsed then
+        m.seedUsed = true
+        showSeed(m.top.params.seed)
+    end if
     ensureSettings()
     m.spoilerSig = spoilerSignature()
     m.loadedRev = DataRev_current()
@@ -264,8 +273,45 @@ sub onSettingsLoaded()
     if m.selectedSeason <> invalid then loadEpisodes(m.selectedSeason)
 end sub
 
+' Opened from a movie or series card (Silo Android #971): the hero draws the card's title, facts,
+' overview and artwork at once, with Play reading "Loading…" and the other actions hidden. m.item
+' stays invalid, so every other path still waits for the detail; keys other than Back do nothing.
+sub showSeed(seed as dynamic)
+    if seed = invalid or Type(seed) <> "roAssociativeArray" then return
+    if Str_orEmpty(seed.content_id) <> Str_orEmpty(m.top.params.itemId) then return
+    m.seed = seed
+    m.itemType = LCase(Str_orEmpty(seed["type"]))
+    m.spinner.visible = false
+    m.hero.visible = true
+    renderHero()
+    Diag_log(Diag_join(["[siku-detail] drawn from the card type=", m.itemType, " backdrop=", Session_boolWord(m.backdrop.uri <> ""), " logo=", Session_boolWord(m.logo.visible)]))
+end sub
+
+' The seed's actions: Play only, reading "Loading…" and ignoring OK until the detail lands.
+sub showSeedActions()
+    for each b in [m.startOverBtn, m.trailerBtn, m.editionBtn, m.versionBtn, m.audioBtn, m.subtitlesBtn, m.watchlistBtn, m.favBtn, m.moreBtn]
+        b.visible = false
+    end for
+    m.playBtn.text = Tx("Loading…")
+    m.playBtn.disabled = true
+    if m.itemType = "series" then m.playBtn.fixedWidth = 340
+    m.playBtn.setFocus(true)
+end sub
+
+' The full-size backdrop loaded: the card's copy under it goes.
+sub onBackdropStatus()
+    if m.backdrop.loadStatus = "ready" and m.backdropHold.uri <> "" then m.backdropHold.uri = ""
+end sub
+
 sub showError(msg as string)
     m.spinner.visible = false
+    ' A card seed is never kept in place of the error.
+    if m.seed <> invalid then
+        m.seed = invalid
+        m.hero.visible = false
+        m.backdropHold.uri = ""
+        Diag_log("[siku-detail] detail read failed; the card's copy is cleared")
+    end if
     m.errorGroup.visible = true
     m.errorLabel.text = msg
     m.retryBtn.setFocus(true)
@@ -280,11 +326,13 @@ sub onItem(event as object)
         return
     end if
     m.spinner.visible = false
+    m.hero.visible = true
     ' Series audio/subtitle picks that have not landed: resend them, and show them meanwhile.
     SeriesChoice_flush()
     m.item = SeriesChoice_overlay(resp.data)
     m.itemType = LCase(Str_orEmpty(m.item.type))
     renderHero()
+    m.seed = invalid ' the detail replaced the card (renderHero kept its backdrop until the new one loads)
     renderCast()
     renderTrailers()
     renderDetails()
@@ -444,12 +492,22 @@ end function
 
 sub renderHero()
     it = m.item
+    ' No detail yet: the card it was opened from (showSeed).
+    provisional = it = invalid
+    if provisional then it = m.seed
+    if it = invalid then return
     t = m.itemType
     ' An episode prefers the series backdrop newer servers send (#711; never a still, so spoiler
     ' protection keeps it). Otherwise an unwatched episode's still (or a backdrop the server does
     ' not mark as series art) is not shown (Spoilers.brs).
-    m.backdrop.uri = Url_resolve(Spoilers_heroBackdropUrl(it))
-    if m.backdrop.uri = "" and t = "episode" then m.backdrop.uri = Url_resolve(Spoilers_imageUrl(it, "still"))
+    backdropUri = Url_resolve(Spoilers_heroBackdropUrl(it))
+    if backdropUri = "" and t = "episode" then backdropUri = Url_resolve(Spoilers_imageUrl(it, "still"))
+    ' The detail's larger backdrop replaces the card's: keep the card's drawn until it loads.
+    if m.seed <> invalid and not provisional and backdropUri <> "" and backdropUri <> m.backdrop.uri and m.backdrop.loadStatus = "ready" then
+        m.backdropHold.uri = m.backdrop.uri
+    end if
+    if backdropUri = "" then m.backdropHold.uri = ""
+    m.backdrop.uri = backdropUri
 
     heading = Str_orEmpty(it.title)
     epLine = ""
@@ -489,14 +547,24 @@ sub renderHero()
     factParts = []
     cast = Arr_or(it.cast)
     if cast.Count() > 0 then factParts.Push(TxF("Starring {0}", [joinNames(namesOf(cast), 3)]))
-    directors = crewNames("Director")
-    if directors.Count() > 0 then factParts.Push(TxF("Directed by {0}", [joinNames(directors, 2)]))
+    if not provisional then
+        directors = crewNames("Director")
+        if directors.Count() > 0 then factParts.Push(TxF("Directed by {0}", [joinNames(directors, 2)]))
+    end if
     m.facts.text = Str_joinDots(factParts)
     m.facts.visible = m.facts.text <> ""
 
     m.actions.visible = true
-    updateToggles()
-    updatePrimary()
+    if provisional then
+        showSeedActions()
+    else
+        ' A seed hid these and disabled Play (showSeedActions); the rest follow the detail.
+        m.watchlistBtn.visible = true
+        m.favBtn.visible = true
+        m.moreBtn.visible = true
+        updateToggles()
+        updatePrimary()
+    end if
     layoutHero()
 end sub
 
@@ -641,7 +709,7 @@ end function
 ' The length the header shows (Silo's selectedMediaRuntimeMinutes): the shown file's measured
 ' duration, else the catalog runtime (minutes). Silo sends 0 for either when unknown; 0 = none.
 function detailLengthSeconds(it as object, t as string) as integer
-    if t <> "series" and t <> "season" then
+    if t <> "series" and t <> "season" and m.item <> invalid then
         v = displayVersion()
         if v <> invalid then
             d = Content_num(v.duration)
@@ -1627,11 +1695,19 @@ sub onRelatedSelected()
     if action = "back" then
         Nav_close()
     else if action = "replace" then
-        Nav_replace("DetailScreen", { itemId: picked, itemType: Str_orEmpty(card.type), chainStartId: chainStart })
+        Nav_replace("DetailScreen", chainParams(picked, card, chainStart))
     else
-        Nav_push("DetailScreen", { itemId: picked, itemType: Str_orEmpty(card.type), chainStartId: currentId })
+        Nav_push("DetailScreen", chainParams(picked, card, currentId))
     end if
 end sub
+
+' A More Like This pick's page params: the picked card seeds it (Nav_detailSeed).
+function chainParams(picked as string, card as object, chainStartId as string) as object
+    p = { itemId: picked, itemType: Str_orEmpty(card.type), chainStartId: chainStartId }
+    seed = Nav_detailSeed(card, picked)
+    if seed <> invalid then p.seed = seed
+    return p
+end function
 
 ' ---------- Box set row (Silo Android #646, TvBoxSetRow / loadMovieBoxSet) ----------
 
@@ -1953,6 +2029,7 @@ function playTitle() as string
 end function
 
 sub onPlay()
+    if m.item = invalid then return ' a card seed: Play waits for the detail
     id = playTargetId()
     if id = "" then
         m.global.toast = Tx("Nothing to play yet")
@@ -1971,6 +2048,7 @@ sub onPlay()
 end sub
 
 sub onStartOver()
+    if m.item = invalid then return
     id = playTargetId()
     if id = "" then return
     params = { itemId: id, title: playTitle(), startPosition: 0 }

@@ -34,6 +34,10 @@ clears one); GET /mock/switch lists them.
                                  session at the position; never after ended). start_fail: the next audiobook
                                  POST /playback/start answers 503 once (the error screen; Play / Try again start it
                                  again). Log: AUDIOBOOK SESSION <kind> sid=, AUDIO START file= start_position=
+  detail_delay=<s>               GET /catalog/items/{id} (video detail) answers after s seconds: a page opened from a
+                                 movie or series card shows the card's copy meanwhile (Silo Android #971). Log:
+                                 DETAIL <id> delay=
+  detail_fail=1                  the next video detail read answers 500 (the card's copy is cleared for the error)
   audiobook_wav=1                audiobook parts are WAV (pcm_s16le, Silo Android #707): a start whose original_http
                                  audio_decode_codecs and codecs_audio lack pcm_s16le answers adaptation_unavailable
                                  ("No validated playback route ..."), as the server does. Log: AUDIO WAV file= codec=
@@ -3208,6 +3212,13 @@ class Handler(BaseHTTPRequestHandler):
                                    "on_view": "auto" if on else "off"})
         m = re.match(r"^/api/v2/catalog/items/(.+)$", p)
         if m:
+            delay = float(STATE["switches"].get("detail_delay") or 0)
+            print("DETAIL %s delay=%s" % (m.group(1), delay), flush=True)
+            if delay > 0:
+                time.sleep(delay)  # detail_delay=<s>: a slow detail read, to watch a page drawn from its card
+            if STATE["switches"].get("detail_fail"):
+                STATE["switches"].pop("detail_fail", None)
+                return self.problem(500, "internal", "Detail failed (detail_fail)")
             d = detail(m.group(1))
             return self.send(200, series_effective(self, d, q)) if d else self.problem(404, "not_found", "Not found")
         m = re.match(r"^/api/v2/catalog/series/([^/]+)/seasons$", p)

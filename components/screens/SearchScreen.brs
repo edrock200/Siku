@@ -624,7 +624,7 @@ sub onTitleSelected()
         Nav_push("BoxSetScreen", BoxSet_screenParams(bs, ""))
         return
     end if
-    Nav_openItem(Str_orEmpty(card.content_id), card.type)
+    Nav_openItem(Str_orEmpty(card.content_id), card.type, card)
 end sub
 
 ' ---------- Keys ----------

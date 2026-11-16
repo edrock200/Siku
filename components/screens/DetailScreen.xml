@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Movie / series / season / episode detail (docs/design-spec.md §4.3).
-  params: { itemId, itemType?, libraryId?, chainStartId? (set on a page a More Like This pick opened: the title the chain started from) }
+  params: { itemId, itemType?, libraryId?, chainStartId? (set on a page a More Like This pick opened: the title the chain started from),
+            seed? (the opening movie or series card, Nav_detailSeed: drawn until the detail lands) }
   The whole page scrolls: `page` is translated with `scrollAnim` as focus moves between zones
   (actions → season chips → episode rail → cast → trailers → box set → related → details).
   "Trailers & More" (Trailers.brs) lists local extras, which play in the player, then YouTube
@@ -35,6 +36,8 @@
     <Group id="page">
       <Group id="hero">
         <MaskGroup id="backdropMask" maskUri="pkg:/images/ui/mask_backdrop.png" maskSize="[1229, 756]" translation="[691, 0]">
+          <!-- The opening card's backdrop, kept under `backdrop` until the full-size one loads (Silo Android #971). -->
+          <Poster id="backdropHold" loadWidth="1229" loadHeight="756" width="1229" height="756" loadDisplayMode="scaleToZoom" />
           <Poster id="backdrop" loadWidth="1229" loadHeight="756" width="1229" height="756" loadDisplayMode="scaleToZoom" />
         </MaskGroup>
         <Poster id="logo" loadWidth="650" loadHeight="160" width="650" height="160" loadDisplayMode="limitSize" visible="false" />

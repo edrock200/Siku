@@ -342,6 +342,12 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   `m.global.playbackStopsLanded`; a DetailScreen on top that read before it (the player's 2.5 s `stopTimeout` ran out, or
   a retry delivered it) reads again: `[siku-detail] playback stop landed after the page read; reading again`. Mock:
   `--switch stop_fail=1` (the first DELETE answers 503, the retry 2 s later lands).
+- Detail pages from a card (Silo Android #971, `Nav_detailSeed` in `Nav.brs`): a movie or series card picked on Home, For
+  You, Library, Search, a person page or More Like This passes `params.seed`; DetailScreen draws its title, facts, overview and
+  artwork at once (Play reads "Loading…", disabled; other actions hidden; `m.item` stays invalid until the detail lands) and
+  keeps the card's backdrop under the full-size one until it loads (`backdropHold`). `[siku-detail] drawn from the card type=
+  backdrop= logo=`, `detail read failed; the card's copy is cleared`. Mock `--switch detail_delay=<s>`, `detail_fail=1`
+  (log `DETAIL <id> delay=`). Audiobook pages are not seeded.
 - Detail running time (v0.1.44, `detailLengthSeconds` in DetailScreen): the shown file's measured `duration`, else
   `runtime` minutes; 0 means unknown and hides it. Mock `--switch no_runtime=1` (runtime 0, files keep their duration).
 - Interface languages (v0.1.45, `Tx`/`TxF`/`TxP`/`TxKey` and `I18n_*` in `Utils.brs`): text is keyed by its English;

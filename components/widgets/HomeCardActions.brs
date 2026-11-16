@@ -207,5 +207,5 @@ sub CardActions_openDetail(card as object)
     end if
     id = Str_orEmpty(card.content_id)
     if id = "" then return
-    Nav_openItem(id, card.type)
+    Nav_openItem(id, card.type, card)
 end sub
