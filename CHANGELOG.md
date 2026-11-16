@@ -3,6 +3,19 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.10.0
+
+From Silo's Android TV app (November 16, 2026).
+
+**Better**
+- **Detail pages open instantly:** movie and series pages opened from a card show the title, details and artwork straight away and fill in the rest as it loads. Play says "Loading…" until it's ready.
+- **Long profile names on Who's watching wrap onto a second line,** so names that start the same ("Grandma Jo", "Grandma Bea") are told apart.
+
+**Fixed**
+- **WAV audiobooks play:** Siku now tells the server it can play them, so they are no longer refused with "No validated playback route".
+
+**Needs testing on a real Roku:** a WAV audiobook playing with sound, two-line profile names with many profiles, and no blink when a page's full backdrop replaces the card's.
+
 ## v0.9.0
 
 From Silo's Android TV app and Silo's own Roku app (November 16, 2026).
