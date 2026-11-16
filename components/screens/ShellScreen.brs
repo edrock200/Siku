@@ -452,13 +452,13 @@ sub openTabPanel(ti as integer)
             totalW = 460 + 12 + 300
         else
             m.panelKind = "sections"
-            m.panelMain.header = UCase(tabDef.label)
+            m.panelMain.header = I18n_upper(tabDef.label)
             m.panelMain.footer = Tx("Press opens the section · Menu closes")
             m.panelMain.rows = sectionRows(tabDef)
         end if
     else if tabDef.kind = "foryou" then
         m.panelKind = "foryou"
-        m.panelMain.header = UCase(Tx("For You"))
+        m.panelMain.header = I18n_upper(Tx("For You"))
         m.panelMain.footer = Tx("Press opens the section · Menu closes")
         m.panelMain.rows = [
             { id: "recommendations", label: Tx("Recommendations"), icon: "sparkle" },

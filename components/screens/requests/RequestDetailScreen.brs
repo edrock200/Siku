@@ -7,7 +7,7 @@
 sub init()
     m.page = m.top.findNode("page")
     ' One key for "Requested" in any case: Roku table lookups ignore case (I18n in Utils.brs).
-    m.top.findNode("fieldRequestedLabel").text = UCase(Tx("Requested"))
+    m.top.findNode("fieldRequestedLabel").text = I18n_upper(Tx("Requested"))
     m.backdrop = m.top.findNode("backdrop")
     m.hero = m.top.findNode("hero")
     m.titleLabel = m.top.findNode("heroTitle")

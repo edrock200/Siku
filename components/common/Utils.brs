@@ -482,12 +482,15 @@ end function
 ' when a screen is built (I18n_translateTree). m.global.strings maps English to the applied
 ' language's text (pkg:/locale/<folder>/strings.json, built by tools/i18n_build.py from Silo's
 ' AGPL catalogs and i18n/siku); a missing entry shows the English. m.global.appLocale is the
-' applied folder ("en", "es", "de", "fr", "pt_BR"); MainScene applies it (I18n_apply) from the
+' applied folder (I18n_folders: "en", "es", "de", …); MainScene applies it (I18n_apply) from the
 ' profile's ui.app_language, else the Roku's language. Each component copies the table once:
 ' a language change rebuilds the screens.
 
+' The shipped languages, in the App language picker's order (silo-roku 67f082b's list). Korean and
+' Traditional Chinese (in Silo's Android catalogs) stay out like in silo-roku: Siku's Inter fonts
+' have no Hangul or CJK glyphs, and Roku has no fallback font for a channel's own fonts.
 function I18n_folders() as object
-    return ["en", "es", "de", "fr", "pt_BR"]
+    return ["en", "es", "de", "fr", "pt_BR", "nl", "it", "pl", "tr", "sv", "da", "nb", "fi", "cs", "hr", "ru", "uk"]
 end function
 
 ' The applied language folder.
@@ -548,8 +551,39 @@ end function
 
 ' Tx with {0}, {1}, … replaced by args (strings or numbers).
 function TxF(text as string, args as object) as string
-    out = Tx(text)
     if Type(args) <> "roArray" then args = [args]
+    return TxFill(Tx(text), args)
+end function
+
+' A count: `one` for the language's singular, `other` otherwise; {0} is n. Languages with more
+' forms (CLDR few / many, and a "one" that also covers 21, 31, …) find them under the English other
+' text plus "#few", "#many" or "#one" (tools/i18n_build.py writes them), else use the other form.
+' grouped: n carries the language's thousands separator (I18n_groupedCount), for counts that can
+' run large (a library's or a collection's size, a person's titles; Silo Android #916).
+function TxP(one as string, other as string, n as dynamic, grouped = false as boolean) as string
+    count = 0
+    if n <> invalid then
+        if Type(n) = "roString" or Type(n) = "String" then count = Int(Val(n)) else count = Int(n)
+    end if
+    loc = I18n_locale()
+    cat = I18n_pluralCategory(loc, count)
+    out = invalid
+    if cat = "one" and count = 1 then
+        out = Tx(one)
+    else if cat <> "other" then
+        t = I18n_table()
+        v = t[other + "#" + cat]
+        if (Type(v) = "roString" or Type(v) = "String") and v <> "" then out = v
+        if out = invalid and cat = "one" and Instr(1, Tx(one), "{0}") > 0 then out = Tx(one)
+    end if
+    if out = invalid then out = Tx(other)
+    if grouped then return TxFill(out, [I18n_groupedCount(count, loc, I18n_deviceLocale())])
+    return TxFill(out, [count])
+end function
+
+' text (already translated) with {0}, {1}, … replaced by args.
+function TxFill(text as string, args as object) as string
+    out = text
     for i = 0 to args.Count() - 1
         a = args[i]
         if a = invalid then
@@ -562,30 +596,24 @@ function TxF(text as string, args as object) as string
     return out
 end function
 
-' A count: `one` for the language's singular, `other` otherwise; {0} is n. grouped: n carries the
-' language's thousands separator (I18n_groupedCount), for counts that can run large (a library's or
-' a collection's size, a person's titles; Silo Android #916).
-function TxP(one as string, other as string, n as dynamic, grouped = false as boolean) as string
-    count = 0
-    if n <> invalid then
-        if Type(n) = "roString" or Type(n) = "String" then count = Int(Val(n)) else count = Int(n)
-    end if
-    form = other
-    if I18n_isOne(I18n_locale(), count) then form = one
-    if grouped then return TxF(form, [I18n_groupedCount(count, I18n_locale(), I18n_deviceLocale())])
-    return TxF(form, [count])
-end function
-
 ' A count with the thousands separator of the interface language (Silo Android #916, silo-roku
 ' ed824d3, Apple's LocaleFormat.groupedCount): "1,284" in English, "1.284" in German and Brazilian
 ' Portuguese, "1 284" with a narrow no-break space in French; Spanish groups from five digits ("1284",
 ' "12.840"). A device set to Mexican Spanish or Canadian French gets its region's style ("1,284",
-' "1 284" with a no-break space). Years, codes and episode numbers stay ungrouped. Pure.
+' "1 284" with a no-break space). The languages silo-roku 1cc1149 / 67f082b added follow CLDR:
+' a period in Dutch, Italian, Turkish, Croatian and Danish; a no-break space in Russian, Ukrainian,
+' Czech, Swedish, Norwegian and Finnish, and in Polish from five digits. Years, codes and episode
+' numbers stay ungrouped. Pure.
 function I18n_groupedCount(n as integer, folder as string, deviceLocale as string) as string
     sep = ","
     minDigits = 4
-    if folder = "de" or folder = "pt_BR" then
+    if Instr(1, "|de|pt_BR|nl|it|tr|hr|da|", "|" + folder + "|") > 0 then
         sep = "."
+    else if Instr(1, "|ru|uk|cs|sv|nb|fi|", "|" + folder + "|") > 0 then
+        sep = Chr(&hA0)
+    else if folder = "pl" then
+        sep = Chr(&hA0)
+        minDigits = 5
     else if folder = "es" then
         if deviceLocale <> "es_MX" then
             sep = "."
@@ -621,13 +649,52 @@ end function
 
 ' CLDR plural "one" for integers: French and Brazilian Portuguese count 0 and 1 as one.
 function I18n_isOne(folder as string, n as integer) as boolean
-    if folder = "fr" or folder = "pt_BR" then return n = 0 or n = 1
-    return n = 1
+    return I18n_pluralCategory(folder, n) = "one"
+end function
+
+' The CLDR plural category ("one", "few", "many" or "other") of a whole number in a language folder
+' (CLDR 49, as silo-roku's generated pluralRules.bs; Spanish, French, Italian and Portuguese
+' "many" for millions is left out: Siku's texts have no such form). Pure.
+function I18n_pluralCategory(folder as string, count as integer) as string
+    n = count
+    if n < 0 then n = 0 - n
+    m10 = n mod 10
+    m100 = n mod 100
+    if folder = "fr" or folder = "pt_BR" then
+        if n <= 1 then return "one"
+        return "other"
+    else if folder = "pl" then
+        if n = 1 then return "one"
+        if m10 >= 2 and m10 <= 4 and (m100 < 12 or m100 > 14) then return "few"
+        return "many"
+    else if folder = "cs" then
+        if n = 1 then return "one"
+        if n >= 2 and n <= 4 then return "few"
+        return "other"
+    else if folder = "hr" then
+        if m10 = 1 and m100 <> 11 then return "one"
+        if m10 >= 2 and m10 <= 4 and (m100 < 12 or m100 > 14) then return "few"
+        return "other"
+    else if folder = "ru" or folder = "uk" then
+        if m10 = 1 and m100 <> 11 then return "one"
+        if m10 >= 2 and m10 <= 4 and (m100 < 12 or m100 > 14) then return "few"
+        return "many"
+    end if
+    if n = 1 then return "one"
+    return "other"
+end function
+
+' Interface text in capitals in the applied language: UCase knows no language, so Turkish i and ı
+' become İ and I first (silo-roku 67f082b, i18n.upper). Server text (titles, library and profile
+' names) keeps plain UCase.
+function I18n_upper(text as string) as string
+    if I18n_locale() = "tr" then text = text.Replace("i", Chr(&h130)).Replace(Chr(&h131), "I")
+    return UCase(text)
 end function
 
 ' The folder for a ui.app_language value (a BCP 47 tag; "" or invalid = the device's language)
 ' and the Roku's locale (GetCurrentLocale, e.g. "de_DE"). A regional tag matches its language
-' (es-MX → es, pt-PT → pt_BR); an unshipped language falls back to English.
+' (es-MX → es, pt-PT → pt_BR, Norwegian no → nb); an unshipped language falls back to English.
 function I18n_resolve(override as dynamic, deviceLocale as string) as string
     tag = ""
     if override <> invalid and (Type(override) = "roString" or Type(override) = "String") then tag = override
@@ -649,7 +716,9 @@ function I18n_match(tag as string) as string
         if r = "xa" or r = "xb" then return ""
     end if
     if lang = "pt" then return "pt_BR"
-    for each f in ["en", "es", "de", "fr"]
+    ' Norwegian: "no" is Bokmål's folder; Nynorsk ("nn") has none.
+    if lang = "no" then lang = "nb"
+    for each f in I18n_folders()
         if lang = f then return f
     end for
     return ""
@@ -663,7 +732,7 @@ end function
 
 ' The language's own name, for the App language picker.
 function I18n_nativeName(folder as string) as string
-    names = { en: "English", es: "Español", de: "Deutsch", fr: "Français", pt_BR: "Português (Brasil)" }
+    names = { en: "English", es: "Español", de: "Deutsch", fr: "Français", pt_BR: "Português (Brasil)", nl: "Nederlands", it: "Italiano", pl: "Polski", tr: "Türkçe", sv: "Svenska", da: "Dansk", nb: "Norsk bokmål", fi: "Suomi", cs: "Čeština", hr: "Hrvatski", ru: "Русский", uk: "Українська" }
     v = names[folder]
     if v = invalid then return folder
     return v

@@ -32,6 +32,12 @@ class Grouped(unittest.TestCase):
             g("Spanish leaves four digits alone", 1284, "es", "1284"),
             g("Spanish groups from five digits", 12840, "es", "12.840"),
             g("Mexican Spanish groups from four with a comma", 1284, "es", "1,284", "es_MX"),
+            g("Dutch groups with a dot (silo-roku 1cc1149)", 1284, "nl", "1.284"),
+            g("Italian, Turkish, Croatian and Danish group with a dot", 1284, "tr", "1.284"),
+            g("Russian groups with a no-break space", 1284, "ru", "1" + NBSP + "284"),
+            g("Finnish groups with a no-break space", 12840, "fi", "12" + NBSP + "840"),
+            g("Polish leaves four digits alone", 1284, "pl", "1284"),
+            g("Polish groups from five digits", 12840, "pl", "12" + NBSP + "840"),
             g("zero", 0, "de", "0"),
             g("negative", -1284, "en", "-1,284"),
         ])

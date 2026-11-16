@@ -573,11 +573,18 @@ sub readPaging(data as object)
     end if
 end sub
 
-' one / other: the count's TxP forms ("1 title", "{0} titles").
-sub showCount(data as object, one as string, other as string)
+' kind: what is counted ("titles", "authors", "series"); each has its own TxP forms, written out so
+' tools/i18n_build.py finds the pairs (some languages need more plural forms).
+sub showCount(data as object, kind as string)
     if data = invalid or data.total = invalid then return
     n = Int(Content_num(data.total))
-    txt = TxP(one, other, n, true)
+    if kind = "authors" then
+        txt = TxP("1 author", "{0} authors", n, true)
+    else if kind = "series" then
+        txt = TxP("1 series", "{0} series", n, true)
+    else
+        txt = TxP("1 title", "{0} titles", n, true)
+    end if
     if data.total_exact = false then txt = TxF("About {0}", [txt])
     m.countLabel.text = txt
     m.countLabel.visible = n > 0
@@ -629,7 +636,7 @@ sub onPage(event as object)
     end if
     ' A group drill keeps the group's own "3 books · 2h" line; a row's page shows none (its total
     ' would count cards a Movies / Series view hides).
-    if not isMore and not inGroupDrill() and m.mode <> "section" then showCount(data, Tx("1 title"), Tx("{0} titles"))
+    if not isMore and not inGroupDrill() and m.mode <> "section" then showCount(data, "titles")
     if isMore then
         start = m.cards.Count()
         appendCards(items)
@@ -886,9 +893,9 @@ sub onGroups(event as object)
     readPaging(data)
     if not isMore then
         if m.mode = "authors" then
-            showCount(data, Tx("1 author"), Tx("{0} authors"))
+            showCount(data, "authors")
         else
-            showCount(data, Tx("1 series"), Tx("{0} series"))
+            showCount(data, "series")
         end if
     end if
     if isMore then
@@ -1400,7 +1407,7 @@ sub renderSortPanel(keepFocus as boolean)
     for i = 0 to rows.Count() - 1
         if rows[i].id = focusId then idx = i
     end for
-    m.sortPanel.header = UCase(Tx("Sort by"))
+    m.sortPanel.header = I18n_upper(Tx("Sort by"))
     m.sortPanel.footer = Tx("Press again to flip the direction · Menu closes")
     ' A series library lists up to 17 sorts: the panel shows 9 at a time and scrolls with the focus.
     m.sortPanel.maxRows = 9
@@ -1450,7 +1457,7 @@ sub openFilterPanel()
     loadFacets()
     m.draftSel = LibF_copy(m.facetSel)
     m.draftMatch = m.matchAll
-    m.filterPanel.header = UCase(Tx("Filter by"))
+    m.filterPanel.header = I18n_upper(Tx("Filter by"))
     m.filterPanel.footer = Tx("→ picks values · Back applies")
     m.filterPanel.maxRows = 9 ' ends above the title-safe bottom edge
     m.filterPanel.focusIndex = 0
@@ -1550,7 +1557,7 @@ sub showFlyFor(facet as string)
             rows.Push({ id: "v:" + o.id, label: o.label, trailing: checkIf(LibF_isSelected(m.draftSel, facet, o.id)) })
         end for
     end if
-    m.filterFly.header = UCase(def.label)
+    m.filterFly.header = I18n_upper(def.label)
     m.filterFly.footer = ""
     m.filterFly.maxRows = 10
     m.filterFly.rows = rows

@@ -501,9 +501,8 @@ end function
 
 function nextUpPromptLabel(seconds as integer) as string
     if seconds <= 0 then return Tx("At end")
-    if seconds < 60 then return TxF("{0} seconds before end", [seconds])
-    if seconds = 60 then return Tx("1 minute before end")
-    return TxF("{0} minutes before end", [seconds \ 60])
+    if seconds < 60 then return TxP("{0} seconds before end", "{0} seconds before end", seconds)
+    return TxP("1 minute before end", "{0} minutes before end", seconds \ 60)
 end function
 
 ' Picker options for a choice row: [{value, label}].
@@ -687,7 +686,7 @@ end sub
 
 function addHeader(text as string, y as integer, w as integer) as integer
     lbl = m.pane.createChild("Label")
-    lbl.text = UCase(text)
+    lbl.text = I18n_upper(text)
     lbl.color = "0xEDEDED80"
     lbl.width = w - 48
     Label_setFont(lbl, "semibold", 24)

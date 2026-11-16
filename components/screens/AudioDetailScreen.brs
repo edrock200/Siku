@@ -254,7 +254,7 @@ sub fillTrackList()
     parts = []
     if it.year <> invalid then parts.Push(Str_orEmpty(it.year))
     if m.kind = "album" and m.tracks.Count() > 0 then
-        if m.tracks.Count() = 1 then parts.Push(Tx("1 track")) else parts.Push(TxF("{0} tracks", [m.tracks.Count()]))
+        parts.Push(TxP("1 track", "{0} tracks", m.tracks.Count()))
     end if
     if total <= 0 then total = AudioTimeline_num(it.duration_seconds)
     if total > 0 then parts.Push(Time_runtime(total))
@@ -274,7 +274,7 @@ sub renderArtist()
     m.subtitleLabel.text = Str_joinDots(gs)
     m.albums = Arr_or(it.albums)
     n = m.albums.Count()
-    if n = 1 then m.metaLabel.text = Tx("1 album") else m.metaLabel.text = TxF("{0} albums", [n])
+    m.metaLabel.text = TxP("1 album", "{0} albums", n)
     if n = 0 then m.metaLabel.text = ""
     m.shuffleBtn.visible = n > 0
     m.playBtn.disabled = n = 0

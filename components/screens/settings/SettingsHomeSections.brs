@@ -14,7 +14,7 @@ sub Hs_init()
     Label_setFont(m.top.findNode("hsTitle"), "semibold", 38)
     Label_setFont(m.top.findNode("hsEyebrow"), "semibold", 24)
     ' The XML's upper-case eyebrow is the same words as the title; set from the translated title.
-    m.top.findNode("hsEyebrow").text = UCase(Tx("Home Sections"))
+    m.top.findNode("hsEyebrow").text = I18n_upper(Tx("Home Sections"))
     Label_setFont(m.hsMessage, "regular", 24)
     Label_setFont(m.hsFooter, "regular", 24)
     m.hsVisible = false

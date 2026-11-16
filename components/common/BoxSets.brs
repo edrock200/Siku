@@ -40,8 +40,7 @@ end function
 ' "8 films", or "1 film".
 function BoxSet_filmCount(count as dynamic) as string
     n = Int(Num_or(count, 0))
-    if n = 1 then return Tx("1 film")
-    return TxF("{0} films", [n])
+    return TxP("1 film", "{0} films", n)
 end function
 
 ' "2001 – 2011", one year when the box set spans one, or "" with no year.

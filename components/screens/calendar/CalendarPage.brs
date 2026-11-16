@@ -234,7 +234,7 @@ sub updateStrip()
     for i = 0 to 6
         dt = Cal_addDays(m.weekStart, i)
         g = Node_find(m.stripItems, "day" + i.ToStr())
-        Node_find(g, "dow").text = UCase(Cal_dowName(dt))
+        Node_find(g, "dow").text = I18n_upper(Cal_dowName(dt))
         Node_find(g, "num").text = dt.GetDayOfMonth().ToStr()
         ymd = m.weekDates[i]
         Node_find(g, "dot").visible = m.eventsByDate.DoesExist(ymd) and m.eventsByDate[ymd].Count() > 0

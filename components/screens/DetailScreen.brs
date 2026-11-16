@@ -431,7 +431,7 @@ function heroMetaText(it as object, t as string) as string
     if lengthSec > 0 then tokens.Push(Time_runtime(lengthSec))
     if t = "series" and it.season_count <> invalid then
         sc = toInt(it.season_count)
-        if sc = 1 then tokens.Push(Tx("1 season")) else tokens.Push(TxF("{0} seasons", [sc]))
+        tokens.Push(TxP("1 season", "{0} seasons", sc))
     end if
     genres = namesOf(it.genres)
     if genres.Count() > 0 then tokens.Push(joinNames(genres, 3))

@@ -13,7 +13,13 @@ from brs import ROOT, check_cases
 UTILS = ["components/common/Utils.brs"]
 DE = {"appLocale": "de", "strings": {"Play": "Wiedergeben", "Sign in on {0}": "Bei {0} anmelden",
                                      "1 season": "1 Staffel", "{0} seasons": "{0} Staffeln"}}
-FR = {"appLocale": "fr", "strings": {"1 season": "1 saison", "{0} seasons": "{0} saisons"}}
+FR = {"appLocale": "fr", "strings": {"1 season": "1 saison", "{0} seasons": "{0} saisons", "{0} title": "{0} titre", "{0} titles": "{0} titres"}}
+RU = {"appLocale": "ru", "strings": {"1 season": "1 сезон", "{0} seasons": "{0} сезона",
+                                     "{0} seasons#one": "{0} сезон", "{0} seasons#few": "{0} сезона",
+                                     "{0} seasons#many": "{0} сезонов"}}
+PL = {"appLocale": "pl", "strings": {"1 season": "1 sezon", "{0} seasons": "{0} sezonu",
+                                     "{0} seasons#few": "{0} sezony", "{0} seasons#many": "{0} sezonów"}}
+CS = {"appLocale": "cs", "strings": {"1 season": "1 řada", "{0} seasons": "{0} řad", "{0} seasons#few": "{0} řady"}}
 
 
 class Resolve(unittest.TestCase):
@@ -29,8 +35,17 @@ class Resolve(unittest.TestCase):
             ("unshipped override falls back to the Roku", r, ["ja", "de_DE"], "de"),
             ("nothing shipped is English", r, ["ja", "ko_KR"], "en"),
             ("pseudo-locale never matches", r, ["en-XA", "fr_FR"], "fr"),
+            ("Dutch (silo-roku 1cc1149)", r, ["nl-BE", "en_US"], "nl"),
+            ("Norwegian no is Bokmål", r, ["no", "en_US"], "nb"),
+            ("a Norwegian Roku is Bokmål", r, ["", "no_NO"], "nb"),
+            ("Nynorsk has no folder", r, ["nn", "en_US"], "en"),
+            ("Ukrainian Roku", r, ["", "uk_UA"], "uk"),
+            ("Korean stays out (no font)", r, ["ko", "en_US"], "en"),
             ("tag of Brazilian", "I18n_tagOf", ["pt_BR"], "pt-BR"),
+            ("tag of Bokmål", "I18n_tagOf", ["nb"], "nb"),
             ("native name", "I18n_nativeName", ["de"], "Deutsch"),
+            ("native name in Cyrillic", "I18n_nativeName", ["uk"], "Українська"),
+            ("seventeen languages", "I18n_folders", [], lambda v: len(v) == 17 and v[0] == "en" and v[-1] == "uk"),
         ])
 
 
@@ -44,8 +59,40 @@ class Lookup(unittest.TestCase):
             ("format a number", "TxF", ["Sign in on {0}", [3]], "Bei 3 anmelden", {"global": DE}),
             ("German one", "TxP", ["1 season", "{0} seasons", 1], "1 Staffel", {"global": DE}),
             ("German other", "TxP", ["1 season", "{0} seasons", 0], "0 Staffeln", {"global": DE}),
-            ("French zero is one", "TxP", ["1 season", "{0} seasons", 0], "1 saison", {"global": FR}),
+            ("French zero is one, but \"1 saison\" would say 1", "TxP", ["1 season", "{0} seasons", 0], "0 saisons", {"global": FR}),
+            ("French zero with a {0} one form", "TxP", ["{0} title", "{0} titles", 0], "0 titre", {"global": FR}),
             ("English other", "TxP", ["1 season", "{0} seasons", 4], "4 seasons", {"global": {"appLocale": "en", "strings": {}}}),
+            ("Russian one", "TxP", ["1 season", "{0} seasons", 1], "1 сезон", {"global": RU}),
+            ("Russian 21 is one, with its number", "TxP", ["1 season", "{0} seasons", 21], "21 сезон", {"global": RU}),
+            ("Russian few", "TxP", ["1 season", "{0} seasons", 3], "3 сезона", {"global": RU}),
+            ("Russian many", "TxP", ["1 season", "{0} seasons", 5], "5 сезонов", {"global": RU}),
+            ("Russian 12 is many", "TxP", ["1 season", "{0} seasons", 12], "12 сезонов", {"global": RU}),
+            ("Russian zero is many", "TxP", ["1 season", "{0} seasons", 0], "0 сезонов", {"global": RU}),
+            ("Polish few", "TxP", ["1 season", "{0} seasons", 22], "22 sezony", {"global": PL}),
+            ("Polish 21 is many", "TxP", ["1 season", "{0} seasons", 21], "21 sezonów", {"global": PL}),
+            ("Czech few", "TxP", ["1 season", "{0} seasons", 4], "4 řady", {"global": CS}),
+            ("Czech other", "TxP", ["1 season", "{0} seasons", 5], "5 řad", {"global": CS}),
+            ("a missing form falls back to other", "TxP", ["1 season", "{0} seasons", 3], "3 sezonu", {"global": {"appLocale": "pl", "strings": {"{0} seasons": "{0} sezonu"}}}),
+        ])
+
+    def test_plural_categories(self):
+        c = "I18n_pluralCategory"
+        check_cases(self, UTILS, [(lang + " " + str(n), c, [lang, n], want) for lang, n, want in [
+            ("en", 1, "one"), ("en", 0, "other"), ("fr", 0, "one"), ("pt_BR", 1, "one"), ("pt_BR", 2, "other"),
+            ("pl", 1, "one"), ("pl", 2, "few"), ("pl", 12, "many"), ("pl", 22, "few"), ("pl", 25, "many"), ("pl", 0, "many"),
+            ("cs", 1, "one"), ("cs", 3, "few"), ("cs", 5, "other"), ("cs", 22, "other"),
+            ("hr", 1, "one"), ("hr", 21, "one"), ("hr", 11, "other"), ("hr", 23, "few"), ("hr", 13, "other"),
+            ("ru", 1, "one"), ("ru", 101, "one"), ("ru", 111, "many"), ("ru", 4, "few"), ("ru", 14, "many"),
+            ("uk", 31, "one"), ("uk", 32, "few"), ("uk", 35, "many"),
+            ("tr", 1, "one"), ("tr", 2, "other"), ("fi", 0, "other"),
+        ]])
+
+    def test_turkish_capitals(self):
+        u = "I18n_upper"
+        check_cases(self, UTILS, [
+            ("Turkish dotted i", u, ["Dizi"], "DİZİ", {"global": {"appLocale": "tr", "strings": {}}}),
+            ("Turkish dotless ı", u, ["Kapalı"], "KAPALI", {"global": {"appLocale": "tr", "strings": {}}}),
+            ("other languages keep UCase", u, ["Series"], "SERIES", {"global": {"appLocale": "en", "strings": {}}}),
         ])
 
 
@@ -71,7 +118,7 @@ class LanguageFiles(unittest.TestCase):
         res = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "i18n_build.py"), "--check"],
                              capture_output=True, text=True)
         self.assertNotIn("out of date", res.stdout, res.stdout)
-        for lang in ("es", "de", "fr", "pt_BR"):
+        for lang in ("es", "de", "fr", "pt_BR", "nl", "it", "pl", "tr", "sv", "da", "nb", "fi", "cs", "hr", "ru", "uk"):
             with open(os.path.join(ROOT, "locale", lang, "strings.json"), encoding="utf-8") as f:
                 table = json.load(f)
             lowered = {}

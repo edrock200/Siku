@@ -10,7 +10,7 @@
 sub init()
     m.list = m.top.findNode("list")
     ' One key for "Notifications" in any case: Roku table lookups ignore case (I18n in Utils.brs).
-    m.top.findNode("eyebrow").text = UCase(Tx("Notifications"))
+    m.top.findNode("eyebrow").text = I18n_upper(Tx("Notifications"))
     m.headerBg = m.top.findNode("headerBg")
     m.errorCard = m.top.findNode("errorCard")
     m.spinner = m.top.findNode("spinner")

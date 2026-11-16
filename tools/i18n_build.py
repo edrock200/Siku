@@ -29,6 +29,28 @@ LANGS = {  # Siku folder: (Android values dir, Roku folder)
     "de": ("values-de", "de"),
     "fr": ("values-fr", "fr"),
     "pt_BR": ("values-pt-rBR", "pt_BR"),
+    "nl": ("values-nl", "nl"),
+    "it": ("values-it", "it"),
+    "pl": ("values-pl", "pl"),
+    "tr": ("values-tr", "tr"),
+    "sv": ("values-sv", "sv"),
+    "da": ("values-da", "da"),
+    "nb": ("values-nb", "nb"),
+    "fi": ("values-fi", "fi"),
+    "cs": ("values-cs", "cs"),
+    "hr": ("values-hr", "hr"),
+    "ru": ("values-ru", "ru"),
+    "uk": ("values-uk", "uk"),
+}
+# Plural categories (CLDR, whole numbers) a language needs beyond English's one/other. TxP("1 x",
+# "{0} xs", n) looks these up as "{0} xs#few" etc. (I18n_pluralCategory in Utils.brs); "one" is
+# listed where it also covers 21, 31, ... and so needs a form with {0}.
+PLURAL_FORMS = {
+    "pl": ("few", "many"),
+    "cs": ("few",),
+    "hr": ("one", "few"),
+    "ru": ("one", "few", "many"),
+    "uk": ("one", "few", "many"),
 }
 
 # A string literal: "..." with BrightScript's "" escape.
@@ -45,9 +67,14 @@ def unescape_brs(s):
     return s.replace('""', '"')
 
 
+TXP_PAIR = re.compile(r'\bTxP\(\s*' + LIT + r'\s*,\s*' + LIT, re.I)
+
+
 def source_strings():
-    """Every English text Siku marks for translation: {text: [file:line, ...]}."""
+    """Every English text Siku marks for translation: {text: [file:line, ...]}, and the "other"
+    texts of TxP pairs ({other: [file:line, ...]}), which need extra plural forms in some languages."""
     found = {}
+    plurals = {}
 
     def add(text, where):
         if text.strip():
@@ -67,12 +94,14 @@ def source_strings():
                             for m in rx.finditer(code):
                                 for g in m.groups():
                                     add(unescape_brs(g), "%s:%d" % (rel, i))
+                        for m in TXP_PAIR.finditer(code):
+                            plurals.setdefault(unescape_brs(m.group(2)), []).append("%s:%d" % (rel, i))
                     elif name.endswith(".xml") and 'i18n="no"' not in line:
                         for m in XML_ATTRS.finditer(line):
                             text = html.unescape(m.group(1))
                             if not text.startswith(("pkg:", "font:", "#", "0x")) and not re.fullmatch(r"[\d\s.:,/%x-]+", text):
                                 add(text, "%s:%d" % (rel, i))
-    return found
+    return found, plurals
 
 
 PLACEHOLDER = re.compile(r"%(\d+\$)?[sdf]|\{[A-Za-z_][A-Za-z0-9_]*\}|\{\d+\}")
@@ -146,9 +175,11 @@ def roku_entries(folder):
 
 
 def pool(lang):
-    """{normalised English: translation with positional placeholders} for one language."""
+    """{normalised English: translation with positional placeholders} for one language, and
+    {normalised English "other" form: {category: translation}} for its plurals."""
     values_dir, roku_folder = LANGS[lang]
     result = {}
+    forms = {}
     pairs = [
         (roku_entries("en_US"), roku_entries(roku_folder)),
         (android_entries("values"), android_entries(values_dir)),
@@ -161,15 +192,23 @@ def pool(lang):
             if "#" in key and key.endswith(("#few", "#many", "#two", "#zero")):
                 continue
             result[norm(english)] = (english, to_positional(english, translated))
-    return result
+            if key.endswith("#other"):
+                name = key[:-len("#other")]
+                cats = {}
+                for q in ("one", "few", "many"):
+                    t = tr.get(name + "#" + q)
+                    if t:
+                        cats[q] = to_positional(english, t)
+                forms[norm(english)] = (english, cats)
+    return result, forms
 
 
 def build():
-    strings = source_strings()
+    strings, plurals = source_strings()
     os.makedirs(os.path.join(ROOT, "i18n", "siku"), exist_ok=True)
     built, missing, stats = {}, {}, {}
     for lang in LANGS:
-        p = pool(lang)
+        p, pforms = pool(lang)
         extra_path = os.path.join(ROOT, "i18n", "siku", lang + ".json")
         extra = {}
         if os.path.exists(extra_path):
@@ -187,6 +226,19 @@ def build():
                 from_catalog += 1
             else:
                 miss.append(text)
+        for other in sorted(plurals):
+            hit = pforms.get(norm(other))
+            for q in PLURAL_FORMS.get(lang, ()):
+                key = other + "#" + q
+                if key in extra and extra[key]:
+                    table[key] = extra[key]
+                    continue
+                t = hit[1].get(q) if hit else None
+                if t and (q != "one" or "{0}" in t):
+                    table[key] = to_positional(other, t) if PLACEHOLDER.search(other) else t
+                    from_catalog += 1
+                else:
+                    miss.append(key)
         # Server text by catalog key (Silo's docs/architecture/i18n.md): Home row titles
         # (title_key, named {placeholders} filled from title_args) and problem types, as "@key".
         for k, v in roku_entries(LANGS[lang][1]).items():
@@ -217,6 +269,9 @@ def main():
     ap.add_argument("--check", action="store_true")
     args = ap.parse_args()
     strings, built, missing, stats = build()
+    strings = dict(strings)
+    for t in {t for m in missing.values() for t in m if t not in strings}:
+        strings[t] = strings.get(t.rsplit("#", 1)[0], ["(plural form)"])
     stale = []
     for lang, table in built.items():
         path = os.path.join(ROOT, "locale", lang, "strings.json")
