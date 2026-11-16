@@ -254,6 +254,7 @@
   "detail.more.markUnwatched": "Mark as Unwatched",
   "detail.more.markWatched": "Mark as Watched",
   "detail.more.removeFavorite": "Remove from Favorites",
+  "detail.more.showSeriesInfo": "Show Series Info",
   "detail.more.shuffleSeason": "Shuffle {season}",
   "detail.more.shuffleSeries": "Shuffle Series",
   "detail.more.translate": "Translate Description",

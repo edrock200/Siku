@@ -261,6 +261,7 @@
   "detail.more.markUnwatched": "Marquer comme non vu",
   "detail.more.markWatched": "Marquer comme vu",
   "detail.more.removeFavorite": "Retirer des favoris",
+  "detail.more.showSeriesInfo": "Afficher les infos de la série",
   "detail.more.shuffleSeason": "Lecture aléatoire : {season}",
   "detail.more.shuffleSeries": "Lecture aléatoire de la série",
   "detail.more.translate": "Traduire la description",
