@@ -164,6 +164,8 @@ sub onScreenShown()
     end if
     ' Back on top (Back from a page this one opened): its More Like This rail picks again.
     m.chainLeaving = false
+    ' A closed player's stop that lands after this page read (PlaybackJobs.brs) reads it again.
+    if m.global.hasField("playbackStopsLanded") then m.global.observeFieldScoped("playbackStopsLanded", "onStopLanded")
     ' A season job paused while the page was covered polls again.
     if m.trPaused then
         m.trPaused = false
@@ -200,6 +202,7 @@ end sub
 ' Covered (the player, another page) or closed: theme music never plays under anything else.
 sub onScreenHidden()
     m.onTop = false
+    if m.global.hasField("playbackStopsLanded") then m.global.unobserveFieldScoped("playbackStopsLanded")
     if m.trJob <> invalid then
         m.trTimer.control = "stop"
         m.trPaused = true
@@ -319,6 +322,17 @@ sub onShuffleCaps(event as object)
 end sub
 
 ' After playback or a state change elsewhere: refetch user state silently.
+' A player's stop reached the server while this page was on top: the read made when the player
+' closed (its stopTimeout ran out, or a retry delivered the stop) may predate the final position,
+' so the item, its episodes and next-up are read again (Silo Android #954 / #955: the server's
+' resume point and watched marks once the stop lands).
+sub onStopLanded()
+    if m.onTop <> true or m.item = invalid or m.loading then return
+    if DataRev_current() = m.loadedRev then return
+    Diag_log("[siku-detail] playback stop landed after the page read; reading again")
+    refreshUserState()
+end sub
+
 sub refreshUserState()
     m.loadedRev = DataRev_current()
     Api_get(itemPath(), Artwork_query({ image_size: "large" }, "detail"), "onItemRefreshed")

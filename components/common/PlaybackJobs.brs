@@ -6,7 +6,8 @@
 ' or server hiccup at the moment the viewer left. A stop for an account, profile or server that is
 ' no longer the active one is dropped (its token is gone). Adapted from Silo-Server/silo-roku,
 ' AGPL-3.0 (source/playback/jobs.bs: stops kept as durable jobs with back-off).
-' The player learns that the first try was answered through its stopAnswered field.
+' The player learns that the first try was answered through its stopAnswered field; pages learn
+' that a stop landed through m.global.playbackStopsLanded.
 ' SPDX-License-Identifier: AGPL-3.0-or-later
 
 sub PlaybackJobs_init()
@@ -17,6 +18,16 @@ sub PlaybackJobs_init()
     m.pjTimer.repeat = true
     m.pjTimer.observeField("fire", "PlaybackJobs_onTick")
     m.top.appendChild(m.pjTimer)
+    if not m.global.hasField("playbackStopsLanded") then m.global.addFields({ playbackStopsLanded: 0 })
+end sub
+
+' A stop reached the server: the user's data changed (DataRevision.brs), and a page already on top
+' that read before it (the player's stopTimeout ran out, or a retry delivered it) reads again
+' (DetailScreen observes playbackStopsLanded; Silo Android #954).
+sub PlaybackJobs_landed(status as dynamic)
+    if not PlaybackJobs_isLanded(status) then return
+    m.global.homeDirty = true
+    if m.global.hasField("playbackStopsLanded") then m.global.playbackStopsLanded = m.global.playbackStopsLanded + 1
 end sub
 
 ' MainScene interface function. job: { sid, body, baseUrl, identity, player (the PlayerScreen
@@ -40,6 +51,12 @@ end function
 function PlaybackJobs_identity(s as dynamic) as string
     if s = invalid or Type(s) <> "roAssociativeArray" then return ""
     return Str_orEmpty(s.serverUrl) + "|" + Str_orEmpty(s.profileId)
+end function
+
+' Whether a stop's answer means the server took it (a 2xx; a 404 session is already gone).
+function PlaybackJobs_isLanded(status as dynamic) as boolean
+    st = Int(Num_or(status, 0))
+    return st >= 200 and st <= 299
 end function
 
 ' Statuses worth sending the same stop again for: no answer, a timeout, rate limiting, 5xx.
@@ -83,6 +100,7 @@ sub PlaybackJobs_onAnswer(event as object)
         if player.hasField("stopAnswered") then player.stopAnswered = job.sid
     end if
     if not PlaybackJobs_retriable(resp.status) then
+        PlaybackJobs_landed(resp.status)
         if job.tries > 1 then Diag_log("[siku-playback] stop delivered status=" + Str_orEmpty(resp.status) + " tries=" + job.tries.ToStr())
         return
     end if

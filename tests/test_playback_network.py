@@ -122,6 +122,10 @@ class StopJobs(unittest.TestCase):
             ("identity", "PlaybackJobs_identity", [{"serverUrl": "http://a:1", "profileId": "p1"}], "http://a:1|p1"),
             ("no session", "PlaybackJobs_identity", [None], ""),
             ("eight tries at most", "PlaybackJobs_maxTries", [], 8),
+            ("204 landed", "PlaybackJobs_isLanded", [204], True),
+            ("a string 200 landed", "PlaybackJobs_isLanded", ["200"], True),
+            ("404 did not land (pages need no re-read)", "PlaybackJobs_isLanded", [404], False),
+            ("no answer did not land", "PlaybackJobs_isLanded", [0], False),
         ])
 
 
