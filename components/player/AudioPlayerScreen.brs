@@ -45,6 +45,7 @@ sub init()
     m.closed = false
     m.closeWaits = 0            ' answers Back waits for (final sync, session DELETE, starts in flight)
     m.startsInFlight = 0
+    m.codecsLogged = ""      ' the audio codec list last printed (sendStart)
     m.mode = ""
     m.queue = []
     m.qIndex = 0
@@ -614,6 +615,13 @@ sub sendStart()
     pd = m.pending
     if pd = invalid or m.closing then return
     body = AudioCaps_startBody(installationId(), pd.fileId, m.attemptId, pd.localStart, pd.persistence)
+    ' The codecs this start declares (AudioCaps.brs), printed when they change: a refused WAV or
+    ' FLAC start is read against this line.
+    codecs = PlaybackCaps_join(body.client_capabilities.codecs_audio)
+    if codecs <> m.codecsLogged then
+        m.codecsLogged = codecs
+        Diag_log("[siku-audio] declared audio codecs=" + codecs)
+    end if
     m.startsInFlight = m.startsInFlight + 1
     Api_send("POST", "/api/v2/playback/start", body, "onStart", { gen: pd.gen, fileId: pd.fileId })
 end sub

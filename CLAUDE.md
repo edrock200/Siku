@@ -307,6 +307,10 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   another` (410 `playback_session_ended`: Close only), `retry at <s> s`, `retry refused: …`, `play ignored: …`. Mock
   `--switch audiobook_session=expire|expire_v1|ended|other_404|start_fail` (audiobook sessions only; log `AUDIOBOOK SESSION
   <kind> sid=`, `AUDIO START file= start_position= persistence=`).
+- WAV audiobooks (Silo Android #707, `AudioCaps_wireNames`): a passing `pcm` probe is declared as `pcm_s16le`, `pcm_s24le`
+  (the server matches ffprobe names; a bare `pcm` never matched). `[siku-audio] declared audio codecs=<list>` when the list
+  changes. Mock `--switch audiobook_wav=1` (parts are WAV; log `AUDIO WAV file= codec= declared=yes|no`, "no" refuses the
+  start). brs-cli answers no PCM, so the simulator shows the refusal; playback with sound needs a Roku.
 - Remove a failed request (Silo Android #792, `Req_isRemovableFailure` / `Req_removeOutcome` in `Requests.brs`):
   RequestsPage's * menu offers "Remove request" on a failed request with no completed target while
   `/requests/status` says `remove_failed_supported`; a StandardMessageDialog (Keep request first) confirms, then

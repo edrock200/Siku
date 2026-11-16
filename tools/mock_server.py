@@ -34,6 +34,10 @@ clears one); GET /mock/switch lists them.
                                  session at the position; never after ended). start_fail: the next audiobook
                                  POST /playback/start answers 503 once (the error screen; Play / Try again start it
                                  again). Log: AUDIOBOOK SESSION <kind> sid=, AUDIO START file= start_position=
+  audiobook_wav=1                audiobook parts are WAV (pcm_s16le, Silo Android #707): a start whose original_http
+                                 audio_decode_codecs and codecs_audio lack pcm_s16le answers adaptation_unavailable
+                                 ("No validated playback route ..."), as the server does. Log: AUDIO WAV file= codec=
+                                 declared=yes|no
   stop_fail=<n>                  the next n DELETE /playback/{id} answer 503 (Siku resends the same stop
                                  after 2, 4, 8 ... s). Log: STOP sid= stop_id= seq= pos= status=
   replan_410=1                   POST /playback/{id}/replan answers 410 playback_session_ended
@@ -1232,14 +1236,16 @@ def audiobook_detail(bi):
     for pi, chapters in enumerate(b["parts"]):
         fid = "b%d%d" % (bi + 1, pi + 1)
         dur = sum(chapters)
-        AUDIO_FILES[fid] = {"duration": dur, "container": "m4b", "content_id": d["content_id"]}
+        wav = bool(STATE["switches"].get("audiobook_wav"))
+        container, codec = ("wav", "pcm_s16le") if wav else ("m4b", "aac")
+        AUDIO_FILES[fid] = {"duration": dur, "container": container, "codec": codec, "content_id": d["content_id"]}
         chs, t = [], 0
         for ci, c in enumerate(chapters):
             chno += 1
             chs.append({"index": ci, "title": "Chapter %d: %s" % (chno, TRACK_WORDS[(chno + bi) % len(TRACK_WORDS)]),
                         "start_seconds": t, "end_seconds": t + c, "source": "embedded"})
             t += c
-        versions.append({"file_id": fid, "resolution": "", "codec_video": "", "codec_audio": "aac", "container": "m4b", "hdr": False,
+        versions.append({"file_id": fid, "resolution": "", "codec_video": "", "codec_audio": codec, "container": container, "hdr": False,
                          "file_size": dur * 16000, "duration": dur, "bitrate": 128, "added_at": "2026-01-01T00:00:00Z", "chapters": chs,
                          "presentation_kind": "audiobook_part", "presentation_group_key": "default",
                          "presentation_part_index": pi + 1, "presentation_part_total": len(b["parts"])})
@@ -1342,10 +1348,24 @@ def audio_route(handler, method, p, q, b):
             return True
         f = AUDIO_FILES[b["file_id"]]
         print("AUDIO START file=%s start_position=%s persistence=%s" % (b.get("file_id"), b.get("start_position"), b.get("progress_persistence")), flush=True)
+        codec = f.get("codec") or ("mp3" if f["container"] == "mp3" else "aac")
+        if codec.startswith("pcm_"):
+            # audiobook_wav=1 (Silo Android #707): like the server's audio-only planner, a WAV part
+            # plays as an original only when original_http lists its exact PCM name; the client has
+            # no progressive remux to convert it, so anything else has no route.
+            ctx = b.get("client_playback_context") or {}
+            orig = (ctx.get("deliveries") or {}).get("original_http") or {}
+            listed = codec in (orig.get("audio_decode_codecs") or []) and codec in ((b.get("client_capabilities") or {}).get("codecs_audio") or [])
+            print("AUDIO WAV file=%s codec=%s declared=%s" % (b.get("file_id"), codec, "yes" if listed else "no"), flush=True)
+            if not listed:
+                handler.send(201, {"protocol_version": 3, "server_features": ["playback_plan_v3"], "outcome": "adaptation_unavailable",
+                                   "terminal": {"reason": "adaptation_unavailable", "retryable": False,
+                                                "message": "No validated playback route is available for this audio source."}})
+                return True
         sid = uuid.uuid4().hex
         STATE["sessions"][sid] = b
         LOG.append("START " + json.dumps(b)[:400])
-        mime = "audio/mpeg" if f["container"] == "mp3" else "audio/mp4"
+        mime = {"mp3": "audio/mpeg", "wav": "audio/wav"}.get(f["container"], "audio/mp4")
         handler.send(201, {"protocol_version": 3, "server_features": ["playback_plan_v3", "neutral_playback_v3_contract_v1", "sequenced_progress_v1"],
                            "outcome": "playable", "session_id": sid,
                            "playback_plan": {"protocol_version": 3, "plan_id": "plan:a", "plan_attempt_key": "v3:a", "session_id": sid,
@@ -1355,7 +1375,7 @@ def audio_route(handler, method, p, q, b):
                                              "timeline": {"source_start_seconds": b.get("start_position") or 0, "player_start_seconds": b.get("start_position") or 0,
                                                           "timeline_offset_seconds": 0, "can_seek_anywhere": True},
                                              "subtitle": {"mode": "off", "inventory": []},
-                                             "source": {"media_file_id": b["file_id"], "duration_seconds": f["duration"], "audio_codec": "aac"}}})
+                                             "source": {"media_file_id": b["file_id"], "duration_seconds": f["duration"], "audio_codec": codec}}})
         return True
     if p == "/api/v2/sync/progress" and method == "POST":
         items = b.get("items") or []

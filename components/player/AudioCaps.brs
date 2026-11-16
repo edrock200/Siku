@@ -9,22 +9,38 @@ function AudioCaps_containers() as object
 end function
 
 function AudioCaps_audioCodecs() as object
-    out = []
-    for each c in PlaybackCaps_probe().codecsAudio
-        out.Push(c)
-    end for
+    passing = []
     di = CreateObject("roDeviceInfo")
     for each c in ["flac", "alac", "pcm", "opus", "vorbis"]
-        found = false
-        for each x in out
-            if x = c then found = true
+        if PlaybackCaps_canDecodeAudio(di, { "codec": c }) then passing.Push(c)
+    end for
+    return AudioCaps_codecList(PlaybackCaps_probe().codecsAudio, passing)
+end function
+
+' The video probe's audio codecs, then the wire names of each extra probe that passed.
+function AudioCaps_codecList(base as object, passing as object) as object
+    out = []
+    for each c in base
+        out.Push(c)
+    end for
+    for each c in passing
+        for each name in AudioCaps_wireNames(c)
+            if not PlaybackCaps_has(out, name) then out.Push(name)
         end for
-        if not found then
-            r = di.CanDecodeAudio({ Codec: c })
-            if r <> invalid and r.Result = true then out.Push(c)
-        end if
     end for
     return out
+end function
+
+' The codec names the server matches for a CanDecodeAudio probe name. The server names a source's
+' codec as ffprobe does and matches the list exactly, so a bare "pcm" never matched a WAV file
+' (pcm_s16le) and a WAV audiobook had no route (Silo Android #707: the audio-only planner
+' direct-plays only a listed codec, and the progressive remux is off by default). Roku lists WAV
+' (LPCM) among its audio formats and answers the "pcm" probe; 16- and 24-bit integer PCM are
+' declared, as silo-roku does (pcm_s16le played as an original on a Roku TV); 8-bit, 32-bit and
+' float PCM, which Android also lists, stay out without Roku evidence.
+function AudioCaps_wireNames(probe as string) as object
+    if probe = "pcm" then return ["pcm_s16le", "pcm_s24le"]
+    return [probe]
 end function
 
 ' persistence: "server" (music: the server keeps resume/scrobbles) or "client" (audiobook parts:
