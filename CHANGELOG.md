@@ -3,6 +3,22 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.9.0
+
+From Silo's Android TV app and Silo's own Roku app (November 16, 2026).
+
+**New**
+- **Twelve more languages:** Siku now speaks Dutch, Italian, Polish, Turkish, Swedish, Danish, Norwegian, Finnish, Czech, Croatian, Russian and Ukrainian. Pick one in Settings › General › App language, or set your Roku to it.
+
+**Better**
+- **Counts read naturally in every language,** for example "3 сезона" but "5 сезонов", and large numbers use your language's thousands separator. In French and Brazilian Portuguese an empty count now shows 0 instead of 1.
+- **During AI translation, subtitle lines that overlap stack neatly,** so a line that stays on screen no longer jumps up and down.
+
+**Fixed**
+- After you stop watching, the title's page shows the right resume point and watched marks even when your server was slow to take the stop.
+
+**Needs testing on a real Roku:** Russian and Ukrainian letters at 1080p, whether long words (Finnish, Polish, Russian, Ukrainian, Croatian) fit on buttons and in the player, and memory on low-memory models with the larger fonts.
+
 ## v0.8.0
 
 From Silo's Android TV app and Silo's own Roku app (November 15, 2026).
