@@ -246,10 +246,14 @@ sub buildGrid()
 
         nm = g.createChild("Label")
         Label_setFont(nm, "semibold", 26)
+        ' Two centered lines (Silo Android #965), so names that share a beginning ("Grandma Jo",
+        ' "Grandma Bea") stay apart instead of ending in the same "...". No fixed height: the
+        ' label grows to its second line, which the row spacing and the grid clip leave room for.
         nm.width = colW
-        nm.height = 36
+        nm.wrap = true
+        nm.maxLines = 2
+        nm.lineSpacing = 0 ' the second line sits tight under the first, clear of the buttons below
         nm.horizAlign = "center"
-        nm.maxLines = 1
         nm.translation = [0, 246]
 
         if i < n then
@@ -352,13 +356,14 @@ sub layout()
     if rows > m.maxRows then
         ' Clip to the rows that fit; scrollToFocus moves the grid. 30 px above the first row and
         ' 10 px below the last name leave room for the focused avatar's ring and lowered name.
-        m.gridClip.clippingRect = [0, -30, 1920, m.maxRows * m.rowH - 60 + 40]
+        ' Two-line names (buildGrid) reach 2 lines * 33 px below the focused name's top.
+        m.gridClip.clippingRect = [0, -30, 1920, m.maxRows * m.rowH - 60 + 40 + 34]
         rows = m.maxRows
     else
         m.gridClip.clippingRect = [0, 0, 0, 0]
     end if
     gridH = 0
-    if rows > 0 then gridH = rows * (220 + 44 + 40) + (rows - 1) * 60
+    if rows > 0 then gridH = rows * (220 + 44 + 40 + 30) + (rows - 1) * 60
     h = 194 + gridH
     if m.errorLabel.visible then
         m.errorLabel.translation = [0, h + 36]

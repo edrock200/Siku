@@ -228,6 +228,9 @@ clears one); GET /mock/switch lists them.
   profiles=1                     every household lists only its primary profile (plus profiles added with
                                  POST /api/v2/profiles), for the one-profile menu rows; profiles=<n> above
                                  the household's own pads it with guests (n <= 40; the picker scrolls past 12)
+  long_names=1                   Sam and Kids become "Grandma Josephine Whitaker" / "Grandma Beatrice Whitaker"
+                                 and profiles=<n> guests "Guest Bedroom Number <i>" (Silo Android #965:
+                                 two-line names on Who's watching)
   primary_pin=1                  the primary profile (Laura, or <Name> for other users) has a PIN (1234); Add
                                  Profile then asks it first. POST /api/v2/profiles needs X-Profile-Id = the
                                  primary profile (and X-Profile-Token ptok-1 with primary_pin), answers 409 at
@@ -4164,12 +4167,17 @@ def household(user):
             {"id": "p-%s-main" % uid, "name": user["username"].title(), "avatar_url": "", "has_pin": primary_pin, "is_primary": True},
             {"id": "p-%s-max" % uid, "name": "Max", "avatar_url": "", "has_pin": False, "is_primary": False},
         ]
+    if STATE["switches"].get("long_names") and uid == "1":
+        # long_names=1 (Silo Android #965): names that share a beginning and need two lines.
+        items[1] = dict(items[1], name="Grandma Josephine Whitaker")
+        items[2] = dict(items[2], name="Grandma Beatrice Whitaker")
     want = str(STATE["switches"].get("profiles") or "")
     if want == "1":
         items = items[:1]
     elif want.isdigit() and int(want) > len(items):
         # profiles=<n> above the household's own: pad with guests (a picker with more than two rows).
-        items = items + [{"id": "p-guest-%d" % i, "name": "Guest %d" % i, "avatar_url": "", "has_pin": False}
+        guest = "Guest Bedroom Number %d" if STATE["switches"].get("long_names") else "Guest %d"
+        items = items + [{"id": "p-guest-%d" % i, "name": guest % i, "avatar_url": "", "has_pin": False}
                          for i in range(len(items) + 1, min(int(want), 40) + 1)]
     items = items + STATE.setdefault("created_profiles", {}).get(uid, [])
     # PATCH / DELETE /api/v2/profiles/{id} (the picker's manage mode): edits and deletions per account.
