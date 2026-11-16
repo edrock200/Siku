@@ -105,10 +105,26 @@ class Cues(unittest.TestCase):
             ("before every cue", t, [cues, 1.0], ""),
             ("one cue", t, [cues, 2.5], "Anfang"),
             ("between cues", t, [cues, 5.0], ""),
-            ("overlapping lines, in order", t, [cues, 11.8], "Hallo\nWer da?"),
+            ("overlapping lines stack, earliest at the bottom", t, [cues, 11.8], "Wer da?\nHallo"),
             ("an ended cue is gone", t, [cues, 12.5], "Wer da?"),
             ("end is exclusive", t, [cues, 13.0], ""),
             ("nothing yet", t, [[], 4.0], ""),
+        ])
+
+    def test_stack_order(self):
+        o = "AiLive_stackOrder"
+        check_cases(self, FILES, [
+            ("arriving together: start order, earliest at the bottom", o, [["card", "line 1"], []], ["card", "line 1"]),
+            ("a caption still showing keeps its line", o, [["card", "line 2"], ["card", "line 1"]], ["card", "line 2"]),
+            ("a new caption takes the line a finished one left", o, [["line 2", "card"], ["line 1", "card"]], ["line 2", "card"]),
+            ("otherwise it goes on top", o, [["card", "line 1"], ["card"]], ["card", "line 1"]),
+            ("a repeated text shows once", o, [["Hi", "Hi"], []], ["Hi"]),
+            ("nothing on screen", o, [[], ["card"]], []),
+            ("no earlier order", o, [["a"], None], ["a"]),
+        ])
+        check_cases(self, FILES, [
+            ("bottom caption on the last line", "AiLive_blockText", [["card", "line 1"]], "line 1\ncard"),
+            ("one caption", "AiLive_blockText", [["only"]], "only"),
         ])
 
     def test_source_time(self):

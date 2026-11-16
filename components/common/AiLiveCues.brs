@@ -155,12 +155,13 @@ function AiLive_mergeCues(cues as object, seen as object, batch as dynamic, maxC
     return cues
 end function
 
-' The text on screen at source time t: every cue with start <= t < end, in start order, one per
-' line. Binary search for the last cue starting at or before t, then a short look back for cues
-' that started earlier and still run (overlapping dialogue).
-function AiLive_textAt(cues as object, t as float) as string
+' The texts on screen at source time t: every cue with start <= t < end, in start order. Binary
+' search for the last cue starting at or before t, then a short look back for cues that started
+' earlier and still run (overlapping dialogue).
+function AiLive_linesAt(cues as object, t as float) as object
+    lines = []
     n = cues.Count()
-    if n = 0 then return ""
+    if n = 0 then return lines
     lo = 0
     hi = n - 1
     found = -1
@@ -174,15 +175,68 @@ function AiLive_textAt(cues as object, t as float) as string
             hi = half - 1
         end if
     end while
-    if found < 0 then return ""
-    lines = []
+    if found < 0 then return lines
     first = found - 8
     if first < 0 then first = 0
     for i = first to found
         c = cues[i]
         if c.start <= t and t < c["end"] then lines.Push(c.text)
     end for
+    return lines
+end function
+
+' Captions on screen together, bottom first (Silo Android #862, SimultaneousTextCueStacker): a
+' caption already showing keeps its place in last (the previous bottom-up order); a new one takes
+' the place a finished one left, bottom first, else goes on top. Captions that arrive together go
+' earliest at the bottom, as WebVTT orders them. A repeated text shows once. current: the texts
+' on screen in start order (AiLive_linesAt). Pure.
+function AiLive_stackOrder(current as object, last as dynamic) as object
+    captions = []
+    have = {}
+    for each t in current
+        if have[t] = invalid then
+            have[t] = true
+            captions.Push(t)
+        end if
+    end for
+    if Type(last) <> "roArray" then last = []
+    wasShown = {}
+    for each t in last
+        wasShown[t] = true
+    end for
+    arriving = []
+    for each t in captions
+        if wasShown[t] = invalid then arriving.Push(t)
+    end for
+    order = []
+    k = 0
+    for each t in last
+        if have[t] <> invalid then
+            order.Push(t)
+        else if k < arriving.Count() then
+            order.Push(arriving[k])
+            k = k + 1
+        end if
+    end for
+    while k < arriving.Count()
+        order.Push(arriving[k])
+        k = k + 1
+    end while
+    return order
+end function
+
+' The label text for a bottom-up order: the bottom caption on the last line.
+function AiLive_blockText(bottomUp as object) as string
+    lines = []
+    for i = bottomUp.Count() - 1 to 0 step -1
+        lines.Push(bottomUp[i])
+    end for
     return lines.Join(Chr(10))
+end function
+
+' The text on screen at source time t with nothing shown before: captions earliest at the bottom.
+function AiLive_textAt(cues as object, t as float) as string
+    return AiLive_blockText(AiLive_stackOrder(AiLive_linesAt(cues, t), []))
 end function
 
 ' Source time for a player position: the player runs timelineOffset behind the file, and a

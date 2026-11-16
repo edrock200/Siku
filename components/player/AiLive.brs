@@ -45,6 +45,7 @@ sub AiLive_resetJob()
     a.userLeft = false
     a.savedIndex = -1
     a.shown = ""
+    a.order = []
     a.done = 0
     a.total = 0
     a.loggedAt = -1
@@ -374,6 +375,7 @@ sub AiLive_activate()
     setSubtitle(-1)
     a.selecting = false
     a.shown = ""
+    a.order = []
     a.posAt = Num_or(m.video.position, 0)
     a.clock.Mark()
     m.aiLiveText.text = ""
@@ -471,7 +473,9 @@ sub AiLive_draw()
         if since > 1.5 then since = 1.5
         p = p + since
     end if
-    text = AiLive_textAt(a.cues, AiLive_sourceTime(p, m.timelineOffset, Subs_delayMs()))
+    ' Captions on screen together stack, each keeping its line while it shows (Silo Android #862).
+    a.order = AiLive_stackOrder(AiLive_linesAt(a.cues, AiLive_sourceTime(p, m.timelineOffset, Subs_delayMs())), a.order)
+    text = AiLive_blockText(a.order)
     if text = a.shown then return
     a.shown = text
     m.aiLiveText.text = text
