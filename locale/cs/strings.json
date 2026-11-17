@@ -15,6 +15,7 @@
  "1 series": "1 seriál",
  "1 title": "1 titul",
  "1 track": "1 skladba",
+ "@android.collections_posterCard_byOwner": "od profilu {0}",
  "@error.account_disabled": "Tento účet je deaktivován.",
  "@error.account_required": "Na tomto serveru potřebujete účet.",
  "@error.already_linked": "To už je s tímto účtem propojeno.",

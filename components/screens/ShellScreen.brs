@@ -139,6 +139,16 @@ sub onLibraries(event as object)
     buildTabs()
 end sub
 
+'' The libraries whose server collections Home's rows of collections may show (CollectionRows.brs,
+' Android TV's homeCollectionLibraryIds): the ones the tabs show, once a read has said which (a
+' failed refresh keeps them); "not known" before the first read of this profile's libraries.
+sub publishCollectionLibraries(visible as object)
+    known = m.libsLoadedAt > 0
+    libs = {}
+    if known then libs = CollRows_libraryMap(visible)
+    m.global.collectionLibraries = { known: known, libs: libs }
+end sub
+
 sub onLibsRetry()
     if m.libsLoadedAt = 0 then loadLibraries()
 end sub
@@ -227,6 +237,7 @@ sub buildTabs()
             tabs.Push({ id: d.id, label: d.label, kind: "library", mode: d.mode, mediaType: d.mediaType, header: d.header, libraries: libs, hasPanel: true })
         end if
     end for
+    publishCollectionLibraries(visible)
     tabs.Push({ id: "foryou", label: Tx("For You"), kind: "foryou", hasPanel: true })
     tabs.Push({ id: "calendar", label: Tx("Calendar"), kind: "calendar", hasPanel: false })
     ' Keep the selected tabDef by id across rebuilds.
@@ -587,6 +598,8 @@ sub onAccountProfiles(event as object)
     if id <> Str_orEmpty(m.global.session.accountId) or Session_isTemporary(m.global.session) then return
     before = profileMenuRow(false)
     Accounts_setProfiles(id, Arr_or(resp.data.items).Count(), Accounts_maxProfilesOf(resp.data))
+    ' Names for the "by Name" captions of shared personal collections (CollectionRows.brs).
+    CollRows_rememberProfiles(m.global.session, resp.data.items)
     ' An open menu follows (Android re-reads the row while it is open); focus returns to the first row.
     if m.panelKind = "profile" and panelOpen() and profileMenuRow(false) <> before then
         m.panelMain.rows = profilePanelRows()

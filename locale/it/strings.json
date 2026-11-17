@@ -15,6 +15,7 @@
  "1 series": "1 serie",
  "1 title": "1 titolo",
  "1 track": "1 brano",
+ "@android.collections_posterCard_byOwner": "di {0}",
  "@error.account_disabled": "Questo account è disattivato.",
  "@error.account_required": "Ti serve un account su questo server.",
  "@error.already_linked": "È già collegato a questo account.",

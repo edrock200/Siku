@@ -10,6 +10,8 @@ Translations come from Silo's own apps (third_party/silo-translations, AGPL-3.0)
 catalog (strings_catalog.xml) and the Roku catalog (strings.json), matched by English text with
 apostrophes, ellipses and placeholders normalised. Text only Siku has is translated in
 i18n/siku/<language>.json ({"English": "translation"}), which also overrides a catalog match.
+Where an Android catalog entry's English collides with other text, the code reads it by key,
+TxKey("android.<name>", {"0": arg}, fallback), and the file holds it as "@android.<name>".
 
   python3 tools/i18n_build.py            write locale/*/strings.json and i18n/missing.json
   python3 tools/i18n_build.py --check    fail when locale/ is out of date or text is untranslated
@@ -68,6 +70,28 @@ def unescape_brs(s):
 
 
 TXP_PAIR = re.compile(r'\bTxP\(\s*' + LIT + r'\s*,\s*' + LIT, re.I)
+# Android catalog text read by its key where its English collides with other text (TxKey("android.
+# <name>", {"0": arg}, englishFallback)): "by %1$s" is both an author and a collection's maker.
+TXKEY_ANDROID = re.compile(r'\bTxKey\(\s*"android\.([A-Za-z0-9_]+)"')
+
+
+def android_keys():
+    """{catalog name: [file:line, ...]} of the Android entries Siku reads by key."""
+    found = {}
+    for base in ("components", "source"):
+        for dirpath, _, names in os.walk(os.path.join(ROOT, base)):
+            for name in names:
+                if not name.endswith(".brs"):
+                    continue
+                path = os.path.join(dirpath, name)
+                rel = os.path.relpath(path, ROOT)
+                with open(path, encoding="utf-8") as f:
+                    for i, line in enumerate(f.read().splitlines(), 1):
+                        if line.lstrip().startswith("'"):
+                            continue
+                        for m in TXKEY_ANDROID.finditer(line):
+                            found.setdefault(m.group(1), []).append("%s:%d" % (rel, i))
+    return found
 
 
 def source_strings():
@@ -207,6 +231,8 @@ def pool(lang):
 
 def build():
     strings, plurals = source_strings()
+    keyed = android_keys()
+    en_android = android_entries("values")
     os.makedirs(os.path.join(ROOT, "i18n", "siku"), exist_ok=True)
     built, missing, stats = {}, {}, {}
     for lang in LANGS:
@@ -241,6 +267,15 @@ def build():
                     from_catalog += 1
                 else:
                     miss.append(key)
+        # Android catalog text by key ("@android.<name>", placeholders as {0}, {1}, ...).
+        tr_android = android_entries(LANGS[lang][0])
+        for name in sorted(keyed):
+            en, t = en_android.get(name), tr_android.get(name)
+            if en and t:
+                table["@android." + name] = to_positional(en, t)
+                from_catalog += 1
+            else:
+                miss.append("@android." + name)
         # Server text by catalog key (Silo's docs/architecture/i18n.md): Home row titles
         # (title_key, named {placeholders} filled from title_args) and problem types, as "@key".
         for k, v in roku_entries(LANGS[lang][1]).items():
@@ -272,6 +307,8 @@ def main():
     args = ap.parse_args()
     strings, built, missing, stats = build()
     strings = dict(strings)
+    for name, where in android_keys().items():
+        strings["@android." + name] = where
     for t in {t for m in missing.values() for t in m if t not in strings}:
         strings[t] = strings.get(t.rsplit("#", 1)[0], ["(plural form)"])
     stale = []

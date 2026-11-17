@@ -27,6 +27,7 @@
 <component name="ProfileScreen" extends="BaseScreen">
   <script type="text/brightscript" uri="pkg:/components/screens/ProfileScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/ProfileLaunch.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/CollectionRows.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/DeepLink.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/SignOutFlow.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/PasswordChange.brs" />

@@ -41,10 +41,12 @@ end function
 
 sub onPageHidden()
     m.feed.overlaysWatched = false
+    watchCollectionInputs(false)
 end sub
 
 sub onPageShown()
     m.feed.overlaysWatched = true
+    watchCollectionInputs(true)
     ' Read again after playback or a watched / favorite / watchlist change made anywhere; a
     ' library's Recommended page follows too (DataRevision.brs).
     if DataRev_current() <> m.loadedRev then
@@ -225,10 +227,9 @@ sub onSections(event as object)
         sid = Str_orEmpty(s.id)
         if CollRows_isRow(s) then
             ' A row of collections (silo-server #4410): its cards come in `collections`, all of them,
-            ' never later; no section items read, no hide-watched or Movies / Series filter.
-            cards = CollRows_cards(s)
-            Diag_log(CollRows_rowLog(sid, cards))
-            m.sections.Push({ section: s, items: cards, rawItems: [] })
+            ' never later; no section items read, no hide-watched or Movies / Series filter. Each
+            ' card is read on its own (CollRows_cards); buildRows picks Home's and captions them.
+            m.sections.Push({ section: s, items: CollRows_cards(s), rawItems: [] })
         else
             items = hideWatchedItems(s, Arr_or(s.items))
             total = Content_num(s.total_count)
@@ -437,17 +438,20 @@ function squareLibrary() as boolean
     return libMode = "audiobooks" or libMode = "music"
 end function
 
-sub buildRows(fromCache = false as boolean)
+sub buildRows(fromCache = false as boolean, redraw = false as boolean)
     rows = []
+    m.collSig = collectionInputsSig()
     defaultStyle = "poster"
     if squareLibrary() then defaultStyle = "square"
     for each e in m.sections
         s = e.section
         ' At most 20 cards a row, whatever the server sent (an older server sends up to 100); a row
         ' of collections shows every card it has (CollRows_max) and no "Explore all": it has no page.
+        ' A row of collections is drawn even when the server flags it featured: it is never a hero.
         isCollections = CollRows_isRow(s)
         if isCollections then
-            if e.items.Count() > 0 then rows.Push({ id: Str_orEmpty(s.id), title: TxKey(s.title_key, s.title_args, Str_orEmpty(s.title)), style: "poster", items: e.items, exploreSectionId: "", exploreTitle: "" })
+            cards = collectionRowCards(Str_orEmpty(s.id), e.items)
+            if cards.Count() > 0 then rows.Push({ id: Str_orEmpty(s.id), title: TxKey(s.title_key, s.title_args, Str_orEmpty(s.title)), style: "poster", items: cards, exploreSectionId: "", exploreTitle: "" })
             items = []
         else
             items = SectionRows_capped(e.items)
@@ -479,7 +483,7 @@ sub buildRows(fromCache = false as boolean)
     m.rows = rows
     if fromCache then
         Diag_log(Diag_join(["[siku-home] cache drawn rows=", rows.Count()]))
-    else
+    else if not redraw then
         m.loading = false
         m.loaded = true
         m.loadedAt = Time_nowSeconds()
@@ -498,6 +502,69 @@ sub buildRows(fromCache = false as boolean)
         m.scopeIncomplete = false
         m.global.toast = Tx("Some shelves could not be fully loaded for this media type. Retry or open Browse.")
     end if
+end sub
+
+'' ---------- Rows of collections (CollectionRows.brs) ----------
+
+' The libraries this Roku shows the profile, as ShellScreen published them: { known, libs }.
+function collectionLibraries() as object
+    v = invalid
+    if m.global.hasField("collectionLibraries") then v = m.global.collectionLibraries
+    if v = invalid or Type(v) <> "roAssociativeArray" then return { known: false, libs: {} }
+    if v.libs = invalid or Type(v.libs) <> "roAssociativeArray" then v.libs = {}
+    return v
+end function
+
+function rememberedProfileNames() as dynamic
+    if m.global.hasField("profileNames") then return m.global.profileNames
+    return invalid
+end function
+
+' A row's cards as drawn: on Home only the server collections of libraries this Roku shows (none
+' until those are known; personal ones always), then each card's caption: "by Name" for a
+' collection another profile shared, else its count (none on a Movies / Series scoped page).
+function collectionRowCards(sectionId as string, cards as object) as object
+    shown = cards
+    if libraryId() = "" then shown = CollRows_shownOnHome(cards, collectionLibraries())
+    s = m.global.session
+    out = CollRows_withCaptions(shown, CollRows_profileNames(s, rememberedProfileNames()), s.profileId, mediaScope() = "")
+    Diag_log(CollRows_rowLog(sectionId, out, cards.Count() - shown.Count()))
+    return out
+end function
+
+' What the rows of collections depend on besides the answer: the shown libraries and the names.
+function collectionInputsSig() as string
+    return FormatJson({ libs: collectionLibraries(), names: rememberedProfileNames() })
+end function
+
+function hasCollectionRows() as boolean
+    if m.sections = invalid then return false
+    for each e in m.sections
+        if CollRows_isRow(e.section) then return true
+    end for
+    return false
+end function
+
+' Watched only while the page shows, so nothing on m.global holds a page let go.
+sub watchCollectionInputs(watch as boolean)
+    if not m.global.hasField("collectionLibraries") or not m.global.hasField("profileNames") then return
+    if watch then
+        m.global.observeFieldScoped("collectionLibraries", "onCollectionInputs")
+        m.global.observeFieldScoped("profileNames", "onCollectionInputs")
+        onCollectionInputs()
+    else
+        m.global.unobserveFieldScoped("collectionLibraries")
+        m.global.unobserveFieldScoped("profileNames")
+    end if
+end sub
+
+' The libraries became known (or changed) or the profile names arrived: redraw the drawn rows of
+' collections from the answer already held (the feed keeps the focused card and its hero).
+sub onCollectionInputs()
+    if not m.loaded or m.loading or not hasCollectionRows() then return
+    if collectionInputsSig() = m.collSig then return
+    Diag_log("[siku-home] rows of collections redrawn: libraries or profile names changed")
+    buildRows(false, true)
 end sub
 
 function exploreId(offered as boolean, sectionId as string) as string
@@ -616,8 +683,10 @@ sub onItemSelected()
     CardActions_openDetail(sel.card)
 end sub
 
-' A row of collections' card opens the collection's page: from Home every member the viewer sees,
-' on a library page that library's view of it, as the Collections grid opens it (CollRows_openParams).
+' A row of collections' card opens the collection's page as Android TV opens it
+' (CollRows_openParams): from Home a server collection in its own library and a personal one without
+' one; on a library page that library (and its Movies / Series scope), a personal collection on an
+' unscoped page without one.
 sub openCollection(card as object)
     p = m.top.params
     libName = ""
@@ -626,7 +695,7 @@ sub openCollection(card as object)
         libName = Str_orEmpty(p.libraryName)
         libMode = Str_orEmpty(p.mode)
     end if
-    params = CollRows_openParams(card, libraryId(), libName, libMode, mediaScope())
+    params = CollRows_openParams(card, libraryId(), libName, libMode, mediaScope(), collectionLibraries().libs)
     scope = "home"
     if libraryId() <> "" then scope = "library"
     Diag_log("[siku-home] collection opened scope=" + scope + " kind=" + params.collectionKind + " library=" + Str_orEmpty(params.libraryId) + " type=" + Str_orEmpty(params.mediaType))

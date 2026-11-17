@@ -133,40 +133,34 @@ sub onRows()
     m.top.hasRows = true
     m.rowList.visible = m.top.state = "ready"
     m.rowTitles.visible = m.rowList.visible
-    ' Marquee for the focused (or first) card without waiting for a focus event.
-    ' A collection's card without a backdrop leaves the hero as it was (empty on a first draw).
+    ' Marquee for the focused (or first) card without waiting for a focus event. A refresh that
+    ' changed the focused card (a collection's new title or poster too) redraws the hero from it.
     if m.top.state = "ready" then
         card = cardAt(target[0], target[1])
         if isExploreNode(card) then card = cardAt(target[0], target[1] - 1)
         if card = invalid then card = firstCard()
-        if card <> invalid then
-            if heroShows(card) then
-                showCard(card)
-            else
-                logHero(card, "first")
-            end if
+        if card <> invalid and heroShows(card) then
+            logHero(card, "first")
+            showCard(card)
         end if
     end if
 end sub
 
-' Whether the marquee hero shows this card node when it is focused (CollRows_heroShows): not an
-' "Explore all" card, nor a collection's card without a backdrop.
+' Whether the marquee hero shows this card node when it is focused (CollRows_heroShows): every
+' card but "Explore all". A collection's card shows its backdrop, else its poster (Android TV's
+' tvMarqueeItem).
 function heroShows(node as dynamic) as boolean
     if node = invalid or isExploreNode(node) then return false
     return CollRows_heroShows(node.raw)
 end function
 
-' One [siku-home] line per hero decision on a collection's card (how: first | focus).
+' One [siku-home] line per hero shown for a collection's card (how: first | focus): its backdrop,
+' its poster (it has no backdrop) or none (no picture: the hero goes dark).
 sub logHero(node as dynamic, how as string)
     if node = invalid or not node.hasField("raw") then return
     raw = node.raw
     if not CollRows_isCard(raw) then return
-    shown = "no reason=no_backdrop"
-    if CollRows_heroShows(raw) then shown = "yes"
-    kept = "none"
-    if m.marqueeCard <> invalid then kept = "previous"
-    if shown = "yes" then kept = "-"
-    Diag_log("[siku-home] collection hero " + how + " shown=" + shown + " kept=" + kept)
+    Diag_log("[siku-home] collection hero " + how + " art=" + CollRows_heroArt(raw))
 end sub
 
 ' ---------- "Explore all" (Silo Android #688, TvExploreAllCard) ----------
@@ -449,14 +443,9 @@ sub onRest()
     if rf = invalid or rf.Count() < 2 then return
     node = cardAt(rf[0], rf[1])
     if node = invalid then return
-    ' "Explore all" leaves the marquee on the last card previewed (TvSkylineSectionFeed), and so
-    ' does a collection's card without a backdrop (silo-roku d240f47).
-    if isExploreNode(node) then return
-    if not heroShows(node) then
-        logHero(node, "focus")
-        return
-    end if
-    if CollRows_isCard(node.raw) then logHero(node, "focus")
+    ' "Explore all" leaves the marquee on the last card previewed (TvSkylineSectionFeed).
+    if not heroShows(node) then return
+    logHero(node, "focus")
     showCard(node)
     m.top.focusedCard = { rowIndex: rf[0], itemIndex: rf[1] }
 end sub
@@ -554,11 +543,11 @@ sub showCard(node as object)
         m.titleLabel.text = title
     end if
 
-    ' A collection's card (a row of collections with a backdrop): its title and, as the meta line,
-    ' its count; no badges or synopsis.
+    ' A collection's card (a row of collections): its title and picture, nothing else (Android TV's
+    ' tvMarqueeItem has no meta, badges or synopsis).
     if CollRows_isCard(card) then
         setBadges([])
-        m.metaLabel.text = CollRows_metaLine(card)
+        m.metaLabel.text = ""
         m.synopsis.text = ""
         layoutMarquee()
         return

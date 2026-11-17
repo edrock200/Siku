@@ -15,6 +15,7 @@
  "1 series": "1 serija",
  "1 title": "1 naslov",
  "1 track": "1 zapis",
+ "@android.collections_posterCard_byOwner": "iz profila {0}",
  "@error.account_disabled": "Ovaj je račun onemogućen.",
  "@error.account_required": "Potreban vam je račun na ovom poslužitelju.",
  "@error.already_linked": "To je već povezano s ovim računom.",

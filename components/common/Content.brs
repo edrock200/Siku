@@ -79,9 +79,14 @@ sub Content_fillCard(node as object, card as object, style as string)
         img = Spoilers_posterUrl(card)
     end if
     ' A collection's card (the library Collections grid, a Home or library row of collections;
-    ' Content_collectionCard): its count under the title when it holds any, also read aloud.
+    ' Content_collectionCard): its count under the title when it holds any, also read aloud. A row
+    ' card brings its own caption line (CollRows_withCaptions: "by Name", the count, or nothing).
     if t = "collection" then
-        node.subtitle = Content_collectionCount(card.item_count)
+        if card.caption <> invalid then
+            node.subtitle = Str_orEmpty(card.caption)
+        else
+            node.subtitle = Content_collectionCount(card.item_count)
+        end if
         node.description = node.subtitle
     end if
     if t = "audiobook_group" then

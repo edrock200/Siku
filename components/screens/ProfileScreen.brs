@@ -122,6 +122,8 @@ sub onProfiles(event as object)
         if p <> invalid and Type(p) = "roAssociativeArray" then items.Push(p)
     end for
     m.profiles = items
+    ' Names for the "by Name" captions of shared personal collections (CollectionRows.brs).
+    CollRows_rememberProfiles(m.global.session, items)
     ' Change Account's card shows how many profiles each account has; the profile menu's row reads
     ' the count and the account's limit (max_profiles, Silo Android #881).
     s = m.global.session

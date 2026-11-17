@@ -15,6 +15,7 @@
  "1 series": "1 сериал",
  "1 title": "1 название",
  "1 track": "1 трек",
+ "@android.collections_posterCard_byOwner": "Автор: {0}",
  "@error.account_disabled": "Этот аккаунт отключён.",
  "@error.account_required": "Нужен аккаунт на этом сервере.",
  "@error.already_linked": "Это уже привязано к этому аккаунту.",

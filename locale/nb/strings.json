@@ -15,6 +15,7 @@
  "1 series": "1 serie",
  "1 title": "1 tittel",
  "1 track": "1 spor",
+ "@android.collections_posterCard_byOwner": "av {0}",
  "@error.account_disabled": "Denne kontoen er deaktivert.",
  "@error.account_required": "Du trenger en konto på denne serveren.",
  "@error.already_linked": "Det er allerede koblet til denne kontoen.",

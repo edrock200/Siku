@@ -43,6 +43,10 @@ sub init()
     ' server that was removed or pushed out of the list); onRevokeQueue sends each with Api_revoke,
     ' here so the request outlives the screen (or Task) that asked.
     m.global.addFields({ revokeQueue: [], revokeSeq: 0 })
+    ' Rows of collections (CollectionRows.brs): the libraries this Roku shows the profile, once
+    ' known (ShellScreen), and the account's profile names for "by Name" captions (the profile
+    ' list's last answer; ProfileScreen, ShellScreen). Memory only.
+    m.global.addFields({ collectionLibraries: { known: false, libs: {} }, profileNames: { key: "", names: {} } })
     m.global.observeField("revokeSeq", "onRevokeQueue")
     m.launch = { done: false, dialog: false }
     ' Diagnostics log and last-exit notice (DiagScene.brs).

@@ -15,6 +15,7 @@
  "1 series": "1 sarja",
  "1 title": "1 nimike",
  "1 track": "1 kappale",
+ "@android.collections_posterCard_byOwner": "Tekijä: {0}",
  "@error.account_disabled": "Tämä tili on poistettu käytöstä.",
  "@error.account_required": "Tarvitset tilin tälle palvelimelle.",
  "@error.already_linked": "Se on jo linkitetty tähän tiliin.",

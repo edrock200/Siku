@@ -3,6 +3,22 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.13.0
+
+From Silo's Android TV app (November 17, 2026).
+
+**Better**
+- **See who shared a collection:** collections another profile on your account shared show who made them ("by Sam") under the poster. Your own collections still show how many titles they hold.
+- **Every collection fills the big picture at the top of Home** while you're on it: its backdrop, or its poster when it has none.
+- **A collection opened from Home opens in its own library,** and on a mixed library's Movies or Series page your personal collections open filtered to that page's titles.
+- The "by …" line is translated into all of Siku's languages.
+
+**Fixed**
+- **Collections from ebook libraries no longer appear on Home.** A TV has no reader for them.
+- **One broken collection from the server no longer hides the others** in its row.
+
+**Needs testing on a real Roku:** rows of collections appearing when your libraries load late, collection posters at the top of Home, and long "by …" names.
+
 ## v0.12.0
 
 From Silo's own apps (November 17, 2026).

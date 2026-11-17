@@ -380,6 +380,12 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
   `onScreenHidden` and restarted in `onScreenShown`, and every answer carries the job it belongs to. Changing a
   RowList card means `setFields` on its ContentNode (no rebuild), so focus stays where it is.
 
+- Several pages may watch the same `m.global` field (Home and library Recommended pages are all HomePage):
+  watch it with `observeFieldScoped` / `unobserveFieldScoped` while the page shows, never `unobserveField`, which drops
+  every observer of that field. Translations are keyed by English, so one English text worded two ways in Silo's
+  catalogs ("by {0}": an audiobook author and a collection's maker) needs the catalog key:
+  `TxKey("android.<name>", {"0": arg}, fallback)`, written by `tools/i18n_build.py` as `@android.<name>`.
+
 ## Project conventions (short version; `docs/ARCHITECTURE.md` has the full one)
 - 1920×1080 canvas, pixel coordinates. Android dp × 2 = px; Android sp × 1.72 = px.
 - Every component is an XML file plus a sibling `.brs` referenced by `<script uri>`. No inline
@@ -777,3 +783,4 @@ v0.2.0, v0.3.0, …
 - **v0.10.0** WAV audiobooks (#707: a passing `pcm` probe is declared as `pcm_s16le`/`pcm_s24le`, because the server matches ffprobe codec names exactly), detail pages seeded from the card (#971, `Nav_detailSeed`, `backdropHold`), two-line profile names (#965). Lessons: a capability name the server doesn't match exactly is the same as not declaring it; brs-cli answers no to every extra audio probe, so the accepted WAV path is host-tested only. Device checks pending: WAV with sound, 24-bit WAV, two-line names near the buttons, backdrop hold blink.
 - **v0.11.0** TV audiobook redesign (#975): full-screen hero, progress ring images, Chapters/Finished in a focus-scrolled row, About card, thumbhash-derived cover palette, drifting player backdrop, `AudiobookFormat` title cleaning. Lessons: a Roku cannot read a Poster's pixels, so colours come from the server's thumbhash (treat < 0.02 as black or rounding tints black covers red); scan dashes by hand because Roku PCRE and brs-engine disagree on en/em dash classes; hide row controls past an edge instead of relying on clipping. Device checks pending: drift smoothness on low-end models, ring legibility.
 - **v0.12.0** Rows of collections (`collection_posters` sections carry cards in `collections`, not `items`; never re-read their items) and collection hero backdrops (`CollectionRows.brs`). Lessons: a section with empty `items` and positive `total_count` is not always a lazy row, so check the section type before reading `/sections/{id}/items`; avoid `continue for` (unused elsewhere in Siku); pitfall 15 again: dot-assigned AA keys come back lower-cased, use bracket keys where case matters. Device checks pending: real presigned backdrops, 30-card rows on low-end Rokus.
+- **v0.13.0** Collection rows aligned with Silo Android TV #979 (owner byline from `m.global.profileNames`, poster hero fallback, ebook-library collections held back via `m.global.collectionLibraries`, each card validated alone, kind-qualified focus ids). Lessons: when two catalog strings share an English text ("by {0}") but differ in other languages, key the second by its Android name (`@android.<name>`); a server and a personal collection can share an id, so focus keys need the kind. Device checks pending: late `m.global` observers redrawing the row.

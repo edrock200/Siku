@@ -15,6 +15,7 @@
  "1 series": "1 серіал",
  "1 title": "1 назва",
  "1 track": "1 трек",
+ "@android.collections_posterCard_byOwner": "Автор: {0}",
  "@error.account_disabled": "Цей обліковий запис вимкнено.",
  "@error.account_required": "Потрібен обліковий запис на цьому сервері.",
  "@error.already_linked": "Це вже прив’язано до цього облікового запису.",

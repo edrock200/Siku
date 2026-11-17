@@ -4,8 +4,8 @@ Siku's interface translations are drawn from the translation catalogs that ship 
 AGPL-3.0 projects, used under that license:
 
 - `android/`: `android-shared/src/androidMain/res/values*/strings_catalog.xml` from
-  Silo-Server/silo-android at f66681ed (catalog release 2026.11.16-a0142c1, which includes
-  2026.11.16-d08fe43's audiobook detail and player wording): English, Spanish,
+  Silo-Server/silo-android at db87f835f (catalog release 2026.11.17-fe23d4e, which adds the
+  rows of collections' "by {owner}" line): English, Spanish,
   German, French, Brazilian Portuguese, Dutch, Italian, Polish, Turkish, Swedish, Danish,
   Norwegian Bokmål, Finnish, Czech, Croatian, Russian and Ukrainian. Silo's Japanese, Korean,
   Chinese and Arabic catalogs are not vendored: Siku's fonts do not draw those scripts.

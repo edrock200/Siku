@@ -225,15 +225,21 @@ clears one); GET /mock/switch lists them.
                                  answers a member movie's box set ({} for others). Log: BOX SETS browse
                                  library= group=, BOX SET <id> library= status=, BOX SET SEARCH q= n=,
                                  BOX SET ITEM <id> library= found=
-  collection_rows=1|first        Home and library 1 get a row of collections (section_type collection_posters,
-                                 silo-server #4410/#4415): "Franchises", cards in `collections` (items []):
-                                 Space Sagas (backdrop + thumbhash, 6 items), Night Noir (no backdrop),
-                                 Coming Soon (empty: no poster, 0 items, its page lists nothing) and Laura's
-                                 Picks (a personal collection, source user, collage poster). 1 puts the row
-                                 third on Home, first puts it first (Home opens on it; library 1 always has
-                                 it first). GET /catalog?source=library_collection|user_collection reads a
-                                 collection's titles (c-empty none). Log: COLLECTION ROW scope=,
-                                 COLLECTION ITEMS source= id= library= type= n=
+  collection_rows=1|first[+featured]
+                                 Home, library 1 (and library 5 with mixed_library) get a row of collections
+                                 (section_type collection_posters, silo-server #4410/#4415, Silo Android #979):
+                                 "Franchises", cards in `collections` (items []): Space Sagas (backdrop +
+                                 thumbhash, 6 items), Night Noir (no backdrop), Coming Soon (empty: no poster,
+                                 0 items, its page lists nothing), Sam's Shelf (personal, made by p-sam: "by
+                                 Sam"), three cards a client leaves out (Broken Count: item_count "lots"; No
+                                 Library: a server collection without library_id; Unknown Source: source
+                                 smart) and, on Home only, Laura's Picks (Laura's own personal collection)
+                                 and Book Club (library 6, the ebook library "Books" that /user/libraries
+                                 then lists: a TV never shows it). 1 puts the row third on Home, first puts it
+                                 first (Home opens on it; library pages always have it first); +featured
+                                 flags the row featured. GET /catalog?source=library_collection|user_collection
+                                 reads a collection's titles (c-empty none). Log: COLLECTION ROW scope=
+                                 cards= featured=, COLLECTION ITEMS source= id= library= type= n=
   multi_user=1                   several server users (Silo Android #795, more than one account per server):
                                  password sign-in gives each username its own user id (laura 1, sam 2,
                                  others u-<name>), and tokens stay tied to their user, so /account/me and
@@ -395,9 +401,14 @@ def box_sets_on():
     return bool(STATE["switches"].get("box_sets"))
 
 
-# Rows of collections (switch collection_rows=1|first, silo-server #4410 / #4415).
+# Rows of collections (switch collection_rows=1|first[+featured], silo-server #4410 / #4415,
+# Silo Android #979).
 def collection_rows_mode():
-    return str(STATE["switches"].get("collection_rows") or "")
+    return str(STATE["switches"].get("collection_rows") or "").split("+")[0]
+
+
+def collection_rows_featured():
+    return "+featured" in str(STATE["switches"].get("collection_rows") or "")
 
 
 def collection_row(lib=""):
@@ -410,14 +421,27 @@ def collection_row(lib=""):
          "poster_is_collage": False, "item_count": 4, "library_id": lib or "1"},
         {"id": "c-empty", "source": "library", "title": "Coming Soon", "poster_url": "", "poster_is_collage": False,
          "item_count": 0, "library_id": lib or "1"},
+        # A personal collection Sam made and shared: "by Sam" for every other profile, its count for Sam.
+        {"id": "c-sam", "source": "user", "title": "Sam's Shelf", "poster_url": img("poster", "collection-sam"),
+         "poster_is_collage": True, "item_count": 3, "creator_profile_id": "p-sam"},
+        # Cards a client leaves out on their own (Silo Android #979 decodes each card alone): a wrongly
+        # typed count, a server collection without a library, an unknown source.
+        {"id": "c-broken", "source": "library", "title": "Broken Count", "poster_url": "", "item_count": "lots",
+         "library_id": lib or "1"},
+        {"id": "c-nolib", "source": "library", "title": "No Library", "poster_url": "", "item_count": 2},
+        {"id": "c-smart", "source": "smart", "title": "Unknown Source", "poster_url": "", "item_count": 2},
     ]
     if not lib:
-        # A personal collection: no library, no backdrop (never on a personal one), a collage poster.
+        # Laura's own personal collection (her count, no byline): no library, no backdrop, a collage poster.
         cards.append({"id": "c-laura", "source": "user", "title": "Laura's Picks", "poster_url": img("poster", "collection-laura"),
-                      "poster_is_collage": True, "item_count": 5, "creator_profile_id": "p-laura"})
-    print("COLLECTION ROW scope=%s cards=%d" % ("library" if lib else "home", len(cards)), flush=True)
+                      "poster_is_collage": True, "item_count": 5, "creator_profile_id": "p-owner"})
+        # A server collection of the ebook library (6, "Books"): a TV never shows it.
+        cards.append({"id": "c-books", "source": "library", "title": "Book Club", "poster_url": img("poster", "collection-books"),
+                      "poster_is_collage": False, "item_count": 7, "library_id": "6"})
+    featured = collection_rows_featured()
+    print("COLLECTION ROW scope=%s cards=%d featured=%s" % ("library" if lib else "home", len(cards), "yes" if featured else "no"), flush=True)
     LOG.append("COLLECTION ROW scope=%s" % ("library" if lib else "home"))
-    return {"id": "franchises", "section_type": "collection_posters", "title": "Franchises", "featured": False,
+    return {"id": "franchises", "section_type": "collection_posters", "title": "Franchises", "featured": featured,
             "item_limit": 20, "total_count": len(cards), "is_custom": False, "customized": False, "items": [], "collections": cards}
 
 
@@ -3027,6 +3051,9 @@ class Handler(BaseHTTPRequestHandler):
             if STATE["switches"].get("mixed_library"):
                 # A real server sends numeric ids; this one does, to exercise id normalisation.
                 libs.append({"id": 5, "name": "Everything", "type": "mixed", "sort_order": 4})
+            if collection_rows_mode():
+                # An ebook library (rows of collections): a TV hides it and its collections.
+                libs.append({"id": "6", "name": "Books", "type": "ebook", "sort_order": 5})
             if box_sets_on():
                 # Servers without box sets send no box_sets_enabled at all.
                 for lib in libs:
@@ -3058,7 +3085,10 @@ class Handler(BaseHTTPRequestHandler):
         if m:
             secs = home_sections()["sections"]
             if m.group(1) == "5":
-                return section_list(self, p, q, mixed_sections())
+                mixed = mixed_sections()
+                if collection_rows_mode():
+                    mixed = [collection_row("5")] + mixed
+                return section_list(self, p, q, mixed)
             secs = secs[1:] if m.group(1) == "1" else secs[2:3]
             if m.group(1) == "1" and collection_rows_mode():
                 secs = [collection_row("1")] + secs

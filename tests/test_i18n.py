@@ -126,6 +126,10 @@ class LanguageFiles(unittest.TestCase):
                 self.assertNotIn(k.lower(), lowered, "%s: %r and %r differ only by case (Roku keys ignore case)" % (lang, k, lowered.get(k.lower())))
                 lowered[k.lower()] = k
             for k, v in table.items():
+                if k.startswith("@android."):
+                    # Read by catalog key (TxKey): the key holds no placeholders; the text keeps {0}.
+                    self.assertIn("{0}", v, "%s: %r -> %r has no {0}" % (lang, k, v))
+                    continue
                 for i in range(5):
                     ph = "{%d}" % i
                     self.assertEqual(ph in k, ph in v, "%s: %r -> %r loses or adds %s" % (lang, k, v, ph))

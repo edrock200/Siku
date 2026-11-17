@@ -15,6 +15,7 @@
  "1 series": "1 serial",
  "1 title": "1 tytuł",
  "1 track": "1 utwór",
+ "@android.collections_posterCard_byOwner": "Od: {0}",
  "@error.account_disabled": "To konto jest wyłączone.",
  "@error.account_required": "Potrzebujesz konta na tym serwerze.",
  "@error.already_linked": "To jest już połączone z tym kontem.",
