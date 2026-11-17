@@ -3,6 +3,21 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.11.0
+
+From Silo's Android TV app (November 17, 2026).
+
+**New look for audiobooks**
+- **Audiobook pages are a full-screen cover page** that shows where you are in the book (a progress ring, the current chapter and how much is left), the series, and who wrote and reads it.
+- **New buttons:** Chapters opens the chapter list; Finished marks the book finished or not (if the server refuses, it changes back and tells you why). Start Over appears only when you have progress, and Play says Play Again near the end.
+- **An About section** shows the description beside the author, narrator, publisher, release date, length and format; press OK to read the whole description.
+- **The audiobook player takes its colours from the cover:** a softly drifting background while the book plays, and the progress bar and chapter name in the cover's colour.
+
+**Better**
+- **Book titles no longer repeat the series** the server adds ("Orbit Cycle 2 - A Wider Orbit (2 of 2)" shows as "A Wider Orbit"), while titles like "Dune Messiah" stay whole.
+
+**Needs testing on a real Roku:** the drifting background (smoothness on older models), how the new page looks on a TV, and long languages in the button row.
+
 ## v0.10.0
 
 From Silo's Android TV app (November 16, 2026).

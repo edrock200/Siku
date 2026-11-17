@@ -37,6 +37,11 @@ sub init()
     m.sleepTimer = m.top.findNode("sleepTimer")
     m.stopTimeout = m.top.findNode("stopTimeout")
     m.refreshTimeout = m.top.findNode("refreshTimeout")
+    m.glows = [m.top.findNode("glowTL"), m.top.findNode("glowTR"), m.top.findNode("glowBL"), m.top.findNode("glowBR")]
+    m.glowCenter = m.top.findNode("glowCenter")
+    m.driftAnim = m.top.findNode("driftAnim")
+    m.driftState = "stopped"    ' the ambient drift: stopped | running | paused (moves only while playing)
+    m.accent = "0xEDEDEDFF"     ' progress fill and current chapter line (CoverPalette accent)
 
     m.di = CreateObject("roDeviceInfo")
     m.barW = 884
@@ -162,6 +167,8 @@ sub onScreenHidden()
     m.closing = true
     ' The screen is going away without Back: nothing is left to close (as PlayerScreen does).
     m.closed = true
+    m.driftAnim.control = "stop"
+    m.driftState = "stopped"
     m.global.homeDirty = true
     m.sleepTimer.control = "stop"
     m.audio.control = "stop"
@@ -227,6 +234,8 @@ end sub
 
 sub setupQueue(q as object, p as object)
     m.mode = "music"
+    ' Queue entries carry no thumbhash: the neutral palette; the drifting cover still follows the track.
+    applyPalette(CoverPalette_fallback("0xEDEDEDFF"), "music")
     m.queue = []
     for each e in q
         entry = Audio_queueEntry(e)
@@ -386,9 +395,13 @@ sub setupAudiobook(it as object)
             authors.Push(Str_orEmpty(a.name))
         end for
     end if
-    m.titleLabel.text = Str_orEmpty(it.title)
+    ' Without the series name and volume the server baked in, as Apple's player shows it.
+    seriesName = ""
+    if Type(ab.series) = "roAssociativeArray" then seriesName = Str_orEmpty(ab.series.name)
+    m.titleLabel.text = AudiobookFormat_cleanTitle(Str_orEmpty(it.title), seriesName)
     m.line2.text = Str_joinDots(authors, ", ")
-    m.line3.color = "0xEDEDEDFF"
+    applyPalette(CoverPalette_fromThumbhash(it.poster_thumbhash, "0xEDEDEDFF"), "audiobook")
+    m.line3.color = Left(m.accent, 8) + "E6"
     m.listBtn.text = Tx("Chapters")
     m.listBtn.iconUri = "pkg:/images/icons/chapters.png"
     m.listBtn.visible = m.timeline.chapters.Count() > 1
@@ -878,6 +891,8 @@ sub exitPlayer()
     m.global.homeDirty = true
     m.sleepTimer.control = "stop"
     m.audio.control = "stop"
+    m.driftAnim.control = "stop"
+    m.driftState = "stopped"
     m.fileActive = false
     if m.sessionId <> "" and installationId() <> "" then m.closeWaits = m.closeWaits + 1
     stopSession(false)
@@ -933,6 +948,7 @@ sub onAudioState()
         m.statusLabel.text = ""
         m.isPaused = false
         m.playBtn.iconUri = "pkg:/images/icons/pause.png"
+        setDrift(true)
         if m.pendingSeek > 0 then
             target = m.pendingSeek
             m.pendingSeek = -1.0
@@ -943,13 +959,16 @@ sub onAudioState()
         m.isPaused = true
         m.statusLabel.text = Tx("Paused")
         m.playBtn.iconUri = "pkg:/images/icons/play.png"
+        setDrift(false)
         sendProgress()
         syncBookProgress(true)
     else if st = "finished" then
         m.fileActive = false
+        setDrift(false)
         onFinished()
     else if st = "error" then
         m.fileActive = false
+        setDrift(false)
         msg = Str_orEmpty(m.audio.errorMsg)
         if msg = "" then msg = Tx("This could not be played.")
         ' The Audio node's text can quote the signed stream URL: masked on the console.
@@ -1090,6 +1109,34 @@ sub setCover(u as string)
     url = Url_resolve(u)
     m.coverImage.uri = url
     m.backdrop.uri = url
+end sub
+
+' The cover's colours on the corner glows and the drifting middle, and its accent on the progress fill.
+sub applyPalette(pal as object, mode as string)
+    for i = 0 to 3
+        m.glows[i].blendColor = pal.corners[i]
+    end for
+    m.glowCenter.blendColor = pal.center
+    m.accent = pal.accent
+    m.fillBar.blendColor = m.accent
+    src = "none"
+    if pal.ok then src = "thumbhash"
+    Diag_log(Diag_join(["[siku-audio] cover palette mode=", mode, " source=", src, " accent=", m.accent]))
+end sub
+
+' The backdrop drifts only while audio plays and resumes from where it paused (AudioPlayerBackground).
+sub setDrift(playing as boolean)
+    if playing then
+        if m.driftState = "stopped" then
+            m.driftAnim.control = "start"
+        else if m.driftState = "paused" then
+            m.driftAnim.control = "resume"
+        end if
+        m.driftState = "running"
+    else if m.driftState = "running" then
+        m.driftAnim.control = "pause"
+        m.driftState = "paused"
+    end if
 end sub
 
 ' Stacks title (1–2 lines) and the two lines under it.

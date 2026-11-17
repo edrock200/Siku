@@ -155,6 +155,8 @@ def android_entries(values_dir):
 def android_text(el):
     t = "".join(el.itertext())
     t = t.replace("\\'", "'").replace('\\"', '"').replace("\\n", "\n").replace("\\@", "@").replace("\\?", "?")
+    # Android resource escapes \uXXXX (the catalogs write a kept space as \u0020).
+    t = re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), t)
     if len(t) >= 2 and t[0] == '"' and t[-1] == '"':
         t = t[1:-1]
     return t

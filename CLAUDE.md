@@ -418,6 +418,20 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   `[siku-detail] seasons listed= specials_first= opens=`. The player's next season never moves into a flagged Specials
   season. Mock `--switch specials=1|flagged` (Orbital: season 0 listed first, or season 99 flagged and listed last; log
   `SEASONS <id> specials=`). Show Series Info (#932/#936-#938) does not apply: Siku's hero never follows rail focus.
+- Audiobook pages and player (Silo Android #975, tvOS layouts; `AudiobookFormat.brs`, `CoverPalette.brs`, host tests
+  `tests/test_audiobook_format.py`, `tests/test_cover_palette.py`): the detail is an 860 px hero (cover, AUDIOBOOK · GENRE,
+  the title without the series locator the server bakes in, gold series line, "by … · read by …", a progress ring with the
+  chapter and time left) with Play / Resume / Play Again, Chapters (only with chapters; AudioPanel), Start Over (only while
+  resuming), Favorite and Finished (the saved played flag; POST / DELETE `/api/v2/watched/{id}`, rolled back with the reason on
+  refusal; a position near the end only makes Play read Play Again), then About (OK expands to 16 lines), Parts, More by Author.
+  `[siku-detail] audiobook hero state=not_started|listening|finished played= resume= chapters= title_cleaned= series_line=`
+  (when it changes), `audiobook finished write played=` / `… landed played= current=` / `… failed status= current=`,
+  `audiobook chapters opened count= current=`, `audiobook about expanded=`, `audiobook action row scroll= focused= row=` (the
+  row outgrew the hero; controls pushed past an edge are hidden). Player: `[siku-audio] cover palette mode=audiobook|music
+  source=thumbhash|none accent=` (corner tints and accent from `poster_thumbhash`; music queues use the neutral palette); the
+  cover backdrop drifts only while the Audio node plays (`driftAnim`, never in the simulator). Mock: books carry
+  `poster_thumbhash`, `release_date` and `audiobook.series` (Orbit Cycle, Harbor Chronicles with `series_index`); A Wider Orbit's
+  raw title is "Orbit Cycle 2 - A Wider Orbit (2 of 2)"; `played` follows `/api/v2/watched`; refuse it with `--switch watched_fail=409`.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

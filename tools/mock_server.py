@@ -1044,13 +1044,17 @@ TRACK_WORDS = ["Lanterns", "Saltwater", "Northbound", "Quiet Engines", "Paper Bo
 AUDIOBOOKS = [
     {"slug": "the-long-orbit", "title": "The Long Orbit", "year": 2023, "authors": [0], "narrators": [1], "series": "Orbit Cycle", "parts": [[1500, 1800, 2100, 1800], [1600, 2000, 1900], [2400, 1700, 2200]]},
     {"slug": "small-kingdoms", "title": "Small Kingdoms", "year": 2021, "authors": [2], "narrators": [3, 4], "parts": [[1200, 1500, 1320, 1800, 1500, 1680, 1440, 1560]]},
-    {"slug": "a-wider-orbit", "title": "A Wider Orbit", "year": 2024, "authors": [0], "narrators": [1], "series": "Orbit Cycle", "parts": [[1700, 1900, 2000], [1800, 2100]]},
+    {"slug": "a-wider-orbit", "title": "Orbit Cycle 2 - A Wider Orbit (2 of 2)", "year": 2024, "authors": [0], "narrators": [1], "series": "Orbit Cycle", "parts": [[1700, 1900, 2000], [1800, 2100]]},
     {"slug": "glass-harbor", "title": "Glass Harbor", "year": 2019, "authors": [5], "narrators": [6], "series": "Harbor Chronicles", "parts": [[2200, 2400, 1900, 2100]]},
     {"slug": "harbor-of-salt", "title": "Harbor of Salt", "year": 2020, "authors": [5], "narrators": [6], "series": "Harbor Chronicles", "parts": [[2000, 2300, 2100]]},
     {"slug": "1984-revisited", "title": "1984 Revisited", "year": 2018, "authors": [7], "narrators": [2], "parts": [[1500, 1500, 1500, 1500]]},
     {"slug": "midnight-ledger", "title": "Midnight Ledger", "year": 2022, "authors": [7], "narrators": [4], "parts": [[1800, 1600, 1700, 1900, 1500]]},
     {"slug": "the-quiet-shore", "title": "The Quiet Shore", "year": 2017, "authors": [2], "narrators": [3], "series": "Harbor Chronicles", "parts": [[1300, 1400, 1600]]},
 ]
+# Cover thumbhashes (Silo Android #975: the audio player samples its backdrop colours and accent from
+# poster_thumbhash), made from small synthetic covers; books past the list send none (neutral palette).
+BOOK_THUMBHASHES = ["0wYGPwYdcWe/RHdkmSilaYd31vFLHb8E", "SEgGHwyQapbQZ4h5iKeGaHiGCQmdkNAJ", "lRYFBwqHh4iAiIeIiHiIiIh3iAd4eH8I",
+                    "JAgSBwCHh4iAiIeIiKiIiIiGCAAAAAAA"]
 # Groups that have cover stacks (the others exercise the initials placeholder).
 GROUP_COVERS = {"Ava Thornton", "Orbit Cycle", "Harbor Chronicles"}
 AUDIO_FILES = {}
@@ -1254,15 +1258,26 @@ def audiobook_detail(bi):
                          "presentation_kind": "audiobook_part", "presentation_group_key": "default",
                          "presentation_part_index": pi + 1, "presentation_part_total": len(b["parts"])})
     pos = STATE["progress"].get(d["content_id"], 0)
+    played = d["content_id"] in STATE["watched"]
+    series = None
+    if b.get("series"):
+        # AudiobookMetadata.series (MediaSeriesGroup): the books in this series with their series_index.
+        members = [j for j in range(len(AUDIOBOOKS)) if AUDIOBOOKS[j].get("series") == b["series"]]
+        series = {"name": b["series"], "entries": [{"content_id": audiobook_card(j)["content_id"], "title": AUDIOBOOKS[j]["title"],
+                                                    "year": AUDIOBOOKS[j]["year"], "poster_url": audiobook_card(j)["poster_url"],
+                                                    "series_index": float(k + 1)} for k, j in enumerate(members)]}
+    if bi < len(BOOK_THUMBHASHES):
+        d["poster_thumbhash"] = BOOK_THUMBHASHES[bi]
     d.update({
         "overview": "A slow-burning story about distance, signal and the people who wait on the ground. " * 3,
+        "release_date": "%d-03-14" % b["year"],
         "versions": versions, "playback_variants": [],
-        "user_state": {"played": False, "is_favorite": d["content_id"] in STATE["favorites"], "in_watchlist": False},
-        "user_data": {"position_seconds": pos, "duration_seconds": total, "played": False, "is_in_progress": pos > 0,
+        "user_state": {"played": played, "is_favorite": d["content_id"] in STATE["favorites"], "in_watchlist": False},
+        "user_data": {"position_seconds": pos, "duration_seconds": total, "played": played, "is_in_progress": pos > 0,
                       "last_file_id": versions[0]["file_id"]},
         "audiobook": {"authors": [{"name": PEOPLE[i], "person_id": str(100 + i)} for i in b["authors"]],
                       "narrators": [{"name": PEOPLE[i], "person_id": str(100 + i)} for i in b["narrators"]],
-                      "total_duration_seconds": total, "publisher": "Mock House Audio", "other_narrations": [],
+                      "total_duration_seconds": total, "publisher": "Mock House Audio", "other_narrations": [], "series": series,
                       "related": {"also_by_author": [{"content_id": audiobook_card(j)["content_id"], "title": AUDIOBOOKS[j]["title"],
                                                       "poster_url": audiobook_card(j)["poster_url"], "year": AUDIOBOOKS[j]["year"]}
                                                      for j in range(len(AUDIOBOOKS)) if j != bi],

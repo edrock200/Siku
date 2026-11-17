@@ -6,9 +6,17 @@
   Data: GET /api/v2/catalog/items/{id}. Audiobooks read `audiobook` {authors, narrators,
   total_duration_seconds, related} and stitch `versions` (presentation_kind "audiobook_part") into a
   whole-book timeline (components/player/AudioTimeline.brs) for the Chapters and Parts lists.
-  Layout: square cover on the left of the hero, editorial column on the right, action row
-  (Play/Resume pill, Shuffle, Start Over, Favorite), then the body sections, which scroll into view as
-  focus moves down: Tracks | Chapters, Parts, Albums | More by Author.
+  Layout (albums, artists): square cover on the left of the hero, editorial column on the right, action
+  row (Play pill, Shuffle, Favorite), then the body sections, which scroll into view as focus moves
+  down: Tracks | Albums.
+  Audiobooks (Silo Android #975, tvOS's "Lounge" hero, TvAudiobookDetailHero): an 860 px first screen
+  with the cover beside the eyebrow (AUDIOBOOK · GENRE), the title without the series locator the
+  server bakes in (AudiobookFormat.brs), the gold series line, "by … · read by …", the listening
+  state (progress ring, chapter, time left) and the action row (Play / Resume / Play Again, Chapters
+  when there are chapters, Start Over while resuming, Favorite, Finished: the saved played flag,
+  POST / DELETE /api/v2/watched/{id}), over the cover's wash under a baked teal glow and dark
+  gradient. The row scrolls with focus when it outgrows the hero. Below: About (description beside
+  the facts; OK shows the whole description), Parts, More by Author. Chapters opens AudioPanel.
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="AudioDetailScreen" extends="BaseScreen">
@@ -16,12 +24,65 @@
   <script type="text/brightscript" uri="pkg:/components/player/AudioTimeline.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioResume.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/DataRevision.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/AudiobookFormat.brs" />
   <children>
     <Rectangle id="bg" width="1920" height="1080" color="0x040D0FFF" />
     <Poster id="backdrop" loadWidth="960" loadHeight="540" width="1920" height="1080" loadDisplayMode="scaleToZoom" opacity="0.16" />
     <Poster id="scrimLeft" uri="pkg:/images/ui/scrim_left.png" width="1300" height="1080" opacity="0.9" />
     <Poster id="scrimBottom" uri="pkg:/images/ui/scrim_bottom.png" width="1920" height="700" translation="[0, 380]" />
     <Group id="page">
+      <Group id="bookHero" visible="false">
+        <!-- tvOS TVAudiobookBackdrop: a tiny decode of the cover stretched (it reads as a blur), then the
+             teal glow and the dark gradient into the page surface, baked into one picture. -->
+        <Poster id="bookWash" width="1920" height="860" loadWidth="32" loadHeight="32" loadDisplayMode="scaleToZoom" opacity="0.35" />
+        <Poster id="bookScrim" uri="pkg:/images/ui/audiobook_hero_scrim.png" width="1920" height="860" />
+        <Group id="bookArt" translation="[100, 200]">
+          <Poster id="bookArtPlaceholder" uri="pkg:/images/ui/r16.9.png" blendColor="0x15171CFF" width="460" height="460" />
+          <Poster uri="pkg:/images/icons/audiobook.png" blendColor="0xEDEDED40" width="160" height="160" translation="[150, 150]" />
+          <MaskGroup maskUri="pkg:/images/ui/mask_square.png" maskSize="[460, 460]">
+            <Poster id="bookCover" width="460" height="460" loadWidth="460" loadHeight="460" loadDisplayMode="scaleToZoom" />
+          </MaskGroup>
+        </Group>
+        <Group id="bookColumn" translation="[644, 0]">
+          <Group id="bookEyebrow">
+            <Rectangle width="34" height="4" translation="[0, 12]" color="0xFFFFFFD9" />
+            <Label id="bookEyebrowLabel" translation="[48, 0]" width="992" maxLines="1" color="0xFFFFFFCC">
+              <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="22" />
+            </Label>
+          </Group>
+          <Label id="bookTitle" width="1040" wrap="true" maxLines="2" color="0xFFFFFFFF">
+            <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="72" />
+          </Label>
+          <Label id="bookSeries" width="1040" maxLines="1" color="0xE9D5A2CC">
+            <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="22" />
+          </Label>
+          <Label id="bookCredits" width="1040" wrap="true" maxLines="2" lineSpacing="4" color="0xFFFFFFB8">
+            <Font role="font" uri="pkg:/fonts/Inter-medium.otf" size="28" />
+          </Label>
+          <Group id="bookState">
+            <Group id="bookRing">
+              <Poster uri="pkg:/images/ui/ring/ring_36.png" width="112" height="112" blendColor="0xFFFFFF29" />
+              <Poster id="bookRingArc" width="112" height="112" />
+              <Label id="bookRingPct" width="112" height="112" horizAlign="center" vertAlign="center" color="0xFFFFFFFF">
+                <Font role="font" uri="pkg:/fonts/Inter-bold.otf" size="24" />
+              </Label>
+            </Group>
+            <Label id="bookState1" width="900" maxLines="1" color="0xFFFFFFFF">
+              <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="28" />
+            </Label>
+            <Label id="bookState2" width="900" maxLines="1" color="0xFFFFFF8C">
+              <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="24" />
+            </Label>
+          </Group>
+          <Group id="bookActions">
+            <PillButton id="bookPlayBtn" text="Play" variant="solid" iconUri="pkg:/images/icons/play.png" height="76" padX="48" fontSize="27" scaleOnFocus="1.0" />
+            <PillButton id="chaptersBtn" text="Chapters" iconUri="pkg:/images/icons/chapters.png" height="76" padX="40" fontSize="27" scaleOnFocus="1.0" visible="false" />
+            <PillButton id="bookStartOverBtn" text="Start Over" iconUri="pkg:/images/icons/start_over.png" height="76" padX="40" fontSize="27" scaleOnFocus="1.0" visible="false" />
+            <DetailCircleButton id="bookFavBtn" iconUri="pkg:/images/icons/heart.png" activeIconUri="pkg:/images/icons/heart_filled.png" label="Favorite" />
+            <DetailCircleButton id="finishedBtn" iconUri="pkg:/images/icons/check_circle_outline.png" activeIconUri="pkg:/images/icons/check_circle.png" label="Finished" />
+          </Group>
+        </Group>
+      </Group>
       <Group id="hero" visible="false">
         <Group id="art" translation="[100, 116]">
           <Poster id="artPlaceholder" uri="pkg:/images/ui/r16.9.png" blendColor="0x15171CFF" width="440" height="440" />
@@ -58,6 +119,19 @@
         </Group>
       </Group>
       <Group id="body" translation="[100, 0]">
+        <!-- tvOS About: one focus stop with the description beside the book's facts. -->
+        <Group id="aboutSection" visible="false">
+          <Label id="aboutHeader" text="About" color="0xEDEDEDFF">
+            <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
+          </Label>
+          <Group id="aboutCard" translation="[0, 60]" focusable="true">
+            <Poster id="aboutFocus" uri="pkg:/images/ui/r20.9.png" blendColor="0xFFFFFF14" translation="[-24, -20]" visible="false" />
+            <Label id="aboutText" width="1000" wrap="true" maxLines="4" lineSpacing="10" color="0xFFFFFFD1">
+              <Font role="font" uri="pkg:/fonts/Inter-regular.otf" size="26" />
+            </Label>
+            <Group id="aboutFacts" />
+          </Group>
+        </Group>
         <Group id="listSection" visible="false">
           <Label id="listHeader" text="Tracks" color="0xEDEDEDFF">
             <Font role="font" uri="pkg:/fonts/Inter-semibold.otf" size="31" />
@@ -87,6 +161,7 @@
         </Group>
       </Group>
     </Group>
+    <AudioPanel id="chapterPanel" visible="false" />
     <LoadingSpinner id="spinner" translation="[924, 504]" />
     <Group id="errorGroup" visible="false">
       <Poster uri="pkg:/images/icons/error.png" width="72" height="72" translation="[924, 400]" blendColor="0xEDEDED9E" />

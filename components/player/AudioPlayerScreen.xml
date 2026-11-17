@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Full-screen now-playing UI for music queues and audiobooks (Android TV TvAudiobookPlayerScreen):
+  an ambient backdrop of the cover's colours that drifts while audio plays, and an accent from the
+  cover for the progress bar and the current chapter line (Silo Android #975; CoverPalette.brs);
   large cover on the left; eyebrow, title, author/artist and chapter/album on the right; progress bar
   with elapsed / remaining; transport row (previous, skip back, play/pause, skip forward, next);
   utility pills (Chapters or Up Next, Sleep timer, and for audiobooks Skip interval: AudioSkip.brs).
@@ -51,11 +53,29 @@
   <script type="text/brightscript" uri="pkg:/components/player/AudioSkip.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioSessionRecovery.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/VoiceTransport.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/AudiobookFormat.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/CoverPalette.brs" />
   <children>
+    <!-- Ambient backdrop (Silo Android #975, Apple's AudioPlayerBackground): the cover's colours pinned to
+         the corners (CoverPalette.brs, from poster_thumbhash), and a tiny decode of the cover with a
+         glow of its average colour drifting slowly while audio plays (paused with it). One static
+         layer per corner and one moving group keep it cheap on low-end Rokus. -->
     <Rectangle width="1920" height="1080" color="0x000000FF" />
-    <Poster id="backdrop" loadWidth="960" loadHeight="540" width="1920" height="1080" loadDisplayMode="scaleToZoom" opacity="0.22" />
-    <Rectangle width="1920" height="1080" color="0x000000A6" />
-    <Poster uri="pkg:/images/ui/scrim_left.png" width="1100" height="1080" opacity="0.7" />
+    <Group id="ambient">
+      <Poster id="glowTL" uri="pkg:/images/ui/glow.png" width="2000" height="2000" translation="[-1000, -1000]" blendColor="0x1A1C26FF" />
+      <Poster id="glowTR" uri="pkg:/images/ui/glow.png" width="2000" height="2000" translation="[920, -1000]" blendColor="0x12141FFF" />
+      <Poster id="glowBL" uri="pkg:/images/ui/glow.png" width="2000" height="2000" translation="[-1000, 80]" blendColor="0x0F0F1AFF" />
+      <Poster id="glowBR" uri="pkg:/images/ui/glow.png" width="2000" height="2000" translation="[920, 80]" blendColor="0x171721FF" />
+      <Group id="drift">
+        <Poster id="backdrop" loadWidth="32" loadHeight="32" width="2240" height="1400" translation="[-160, -160]" loadDisplayMode="scaleToZoom" opacity="0.3" />
+        <Poster id="glowCenter" uri="pkg:/images/ui/glow.png" width="1600" height="1600" translation="[160, -260]" blendColor="0x12141CFF" opacity="0.8" />
+      </Group>
+    </Group>
+    <Poster uri="pkg:/images/ui/scrim_audio_player.png" width="1920" height="1080" />
+    <Poster uri="pkg:/images/ui/scrim_left.png" width="1100" height="1080" opacity="0.5" />
+    <Animation id="driftAnim" duration="48" repeat="true" easeFunction="linear">
+      <Vector2DFieldInterpolator id="driftInterp" key="[0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1]" keyValue="[[0, -30], [64, -12], [90, 30], [64, 72], [0, 90], [-64, 72], [-90, 30], [-64, -12], [0, -30]]" fieldToInterp="drift.translation" />
+    </Animation>
     <Audio id="audio" notificationInterval="0.5" />
     <Group id="focusSink" focusable="true" />
 

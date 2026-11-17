@@ -41,6 +41,38 @@ sub init()
     m.retryBtn = m.top.findNode("retryBtn")
     m.scrollAnim = m.top.findNode("scrollAnim")
     m.scrollInterp = m.top.findNode("scrollInterp")
+    m.scrimLeft = m.top.findNode("scrimLeft")
+    m.scrimBottom = m.top.findNode("scrimBottom")
+    ' Audiobook hero (Silo Android #975, TvAudiobookDetailHero).
+    m.bookHero = m.top.findNode("bookHero")
+    m.bookWash = m.top.findNode("bookWash")
+    m.bookArt = m.top.findNode("bookArt")
+    m.bookCover = m.top.findNode("bookCover")
+    m.bookColumn = m.top.findNode("bookColumn")
+    m.bookEyebrowLabel = m.top.findNode("bookEyebrowLabel")
+    m.bookTitle = m.top.findNode("bookTitle")
+    m.bookSeries = m.top.findNode("bookSeries")
+    m.bookCredits = m.top.findNode("bookCredits")
+    m.bookState = m.top.findNode("bookState")
+    m.bookRing = m.top.findNode("bookRing")
+    m.bookRingArc = m.top.findNode("bookRingArc")
+    m.bookRingPct = m.top.findNode("bookRingPct")
+    m.bookState1 = m.top.findNode("bookState1")
+    m.bookState2 = m.top.findNode("bookState2")
+    m.bookActions = m.top.findNode("bookActions")
+    m.bookPlayBtn = m.top.findNode("bookPlayBtn")
+    m.chaptersBtn = m.top.findNode("chaptersBtn")
+    m.bookStartOverBtn = m.top.findNode("bookStartOverBtn")
+    m.bookFavBtn = m.top.findNode("bookFavBtn")
+    m.finishedBtn = m.top.findNode("finishedBtn")
+    m.bookFavBtn.label = Tx("Favorite")
+    m.finishedBtn.label = Tx("Finished")
+    m.aboutSection = m.top.findNode("aboutSection")
+    m.aboutCard = m.top.findNode("aboutCard")
+    m.aboutFocus = m.top.findNode("aboutFocus")
+    m.aboutText = m.top.findNode("aboutText")
+    m.aboutFacts = m.top.findNode("aboutFacts")
+    m.chapterPanel = m.top.findNode("chapterPanel")
 
     m.item = invalid
     m.kind = ""
@@ -59,13 +91,34 @@ sub init()
     m.pageY = 0
     m.artistTracks = invalid
     m.artistGen = 0
+    m.heroBottom = 0
+    m.bookChapters = []
+    m.bookTotal = 0.0
+    m.bookPlayed = false        ' the saved played flag the Finished toggle shows and flips
+    m.bookScroll = 0            ' how far the action row is scrolled left (it outgrows the hero)
+    m.bookX = []
+    m.bookRowW = 0
+    m.bookActionsY = 0
+    m.finishedSeq = 0           ' the newest Finished write: only its answer may roll back
+    m.aboutExpanded = false
+    m.aboutH = 0
+    m.factsH = 0
+    m.bookStateLogged = ""
+    m.bookStateH = 70
 
     m.playBtn.observeField("buttonSelected", "onPlay")
     m.shuffleBtn.observeField("buttonSelected", "onShuffle")
     m.startOverBtn.observeField("buttonSelected", "onStartOver")
     m.favBtn.observeField("buttonSelected", "onFavorite")
     m.retryBtn.observeField("buttonSelected", "load")
-    for each b in [m.playBtn, m.shuffleBtn, m.startOverBtn, m.favBtn]
+    m.bookPlayBtn.observeField("buttonSelected", "onPlay")
+    m.chaptersBtn.observeField("buttonSelected", "openChapters")
+    m.bookStartOverBtn.observeField("buttonSelected", "onStartOver")
+    m.bookFavBtn.observeField("buttonSelected", "onFavorite")
+    m.finishedBtn.observeField("buttonSelected", "onFinishedToggle")
+    m.chapterPanel.observeField("chosen", "onChapterChosen")
+    m.chapterPanel.observeField("dismissed", "closeChapters")
+    for each b in [m.playBtn, m.shuffleBtn, m.startOverBtn, m.favBtn, m.bookPlayBtn, m.chaptersBtn, m.bookStartOverBtn, m.bookFavBtn, m.finishedBtn]
         b.observeField("width", "layoutActions")
     end for
     m.list.observeField("itemSelected", "onListSelected")
@@ -125,6 +178,7 @@ sub onItem(event as object)
     if not resp.ok or resp.data = invalid then
         if m.loaded then return
         m.hero.visible = false
+        m.bookHero.visible = false
         m.errorLabel.text = Api_errorText(resp)
         m.errorGroup.visible = true
         m.retryBtn.setFocus(true)
@@ -140,7 +194,8 @@ sub onItem(event as object)
     if firstLoad then
         m.zone = "actions"
         m.actionIndex = 0
-        m.playBtn.setFocus(true)
+        playButton().setFocus(true)
+        if m.kind = "audiobook" then applyBookScroll()
         scrollTo(0)
     else
         restoreFocus()
@@ -151,7 +206,16 @@ end sub
 
 sub render()
     it = m.item
-    m.hero.visible = true
+    ' Keep focus on the same action when the row changes (Start Over comes and goes with the state).
+    prevBtn = invalid
+    if m.zone = "actions" and heroShown() then prevBtn = zoneNode("actions")
+    isBook = m.kind = "audiobook"
+    m.hero.visible = not isBook
+    m.bookHero.visible = isBook
+    m.backdrop.visible = not isBook
+    m.scrimLeft.visible = not isBook
+    m.scrimBottom.visible = not isBook
+    m.aboutSection.visible = false
     m.errorGroup.visible = false
     poster = Url_resolve(Str_orEmpty(it.poster_url))
     m.artImage.uri = poster
@@ -179,14 +243,23 @@ sub render()
     m.shuffleBtn.visible = false
     m.playBtn.text = Tx("Play")
 
-    if m.kind = "audiobook" then
+    if isBook then
         renderAudiobook()
+        layoutBookColumn()
     else if m.kind = "artist" then
         renderArtist()
+        layoutColumn()
     else
         renderAlbum()
+        layoutColumn()
     end if
-    layoutColumn()
+    if prevBtn <> invalid then
+        m.actionIndex = 0
+        btns = actionButtons()
+        for i = 0 to btns.Count() - 1
+            if btns[i].isSameNode(prevBtn) then m.actionIndex = i
+        end for
+    end if
     layoutActions()
     layoutBody()
 end sub
@@ -290,74 +363,102 @@ sub renderArtist()
     end if
 end sub
 
+' The tvOS "Lounge" hero (Silo Android #975, TvAudiobookDetailHero): identity, listening state and the
+' action row; then About, Parts and More by Author below. Chapters live in a panel (openChapters).
 sub renderAudiobook()
     it = m.item
-    m.eyebrowLabel.text = Tx("AUDIOBOOK")
     ab = it.audiobook
-    if ab = invalid then ab = {}
-    m.subtitleLabel.text = personNames(ab.authors)
+    if Type(ab) <> "roAssociativeArray" then ab = {}
     ud = it.user_data
-    if ud = invalid then ud = {}
-    lastFile = Str_orEmpty(ud.last_file_id)
-    m.timeline = AudioTimeline_build(it.versions, ab.total_duration_seconds, lastFile)
+    if Type(ud) <> "roAssociativeArray" then ud = {}
+    cid = Str_orEmpty(it.content_id)
+    m.timeline = AudioTimeline_build(it.versions, ab.total_duration_seconds, Str_orEmpty(ud.last_file_id))
+    ' The larger of the server's total and the stitched parts, so a stale short total can't make a
+    ' position in the last parts look finished (AudiobookText.totalDurationSeconds).
     total = AudioTimeline_num(ab.total_duration_seconds)
     if m.timeline <> invalid and m.timeline.total > total then total = m.timeline.total
     if total <= 0 then total = AudioTimeline_num(ud.duration_seconds)
+    m.bookTotal = total
+    m.bookChapters = []
+    if m.timeline <> invalid then m.bookChapters = m.timeline.chapters
 
-    meta = []
-    narr = personNames(ab.narrators)
-    if narr <> "" then meta.Push(TxF("Narrated by {0}", [narr]))
-    if total > 0 then meta.Push(Time_runtime(total))
-    if it.year <> invalid then meta.Push(Str_orEmpty(it.year))
-    if not Str_isEmpty(ab.publisher) then meta.Push(ab.publisher)
-    m.metaLabel.text = Str_joinDots(meta)
-
-    ' Resume / finished, as TvAudiobookDetailHero: resume when 30 s < position < duration - 5 s.
-    ' This device's record (AudioResume.brs) wins while the server still holds what we left it at:
-    ' it keeps the start and the end of the book, which the server's thresholds drop.
-    posSec = Num_or(ud.position_seconds)
-    localPos = AudioResume_position(Settings_identity(), Str_orEmpty(it.content_id), posSec)
-    if localPos >= 0 then posSec = localPos
-    dur = AudioTimeline_num(ud.duration_seconds)
-    if dur <= 0 then dur = total
-    m.resume = -1.0
-    m.finished = ud.played = true or (dur > 0 and posSec > 0 and posSec >= dur - 5)
-    if posSec > 30 and dur > 0 and posSec < dur - 5 then m.resume = posSec
-    chapters = []
-    if m.timeline <> invalid then chapters = m.timeline.chapters
-    if m.resume > 0 then
-        ci = AudioTimeline_chapterAt(chapters, m.resume)
-        if chapters.Count() > 1 and ci >= 0 then
-            m.playBtn.text = TxF("Resume Chapter {0}", [ci + 1])
-        else
-            m.playBtn.text = TxF("Resume {0}", [Time_clock(m.resume)])
+    ' Identity: eyebrow, title without the baked-in series locator, gold series line, credits.
+    seriesName = ""
+    entries = invalid
+    if Type(ab.series) = "roAssociativeArray" then
+        seriesName = Str_orEmpty(ab.series.name).Trim()
+        entries = ab.series.entries
+    end if
+    rawTitle = Str_orEmpty(it.title)
+    m.bookTitle.text = AudiobookFormat_cleanTitle(rawTitle, seriesName)
+    genres = Arr_or(it.genres)
+    genre = ""
+    if genres.Count() > 0 then genre = Str_orEmpty(genres[0]).Trim()
+    ' A genre is server text: it capitalises without the interface language.
+    if genre <> "" then m.bookEyebrowLabel.text = TxF("AUDIOBOOK · {0}", [UCase(genre)]) else m.bookEyebrowLabel.text = Tx("AUDIOBOOK")
+    m.bookSeries.text = ""
+    if seriesName <> "" then
+        seriesText = seriesName
+        idx = AudiobookFormat_seriesIndex(cid, rawTitle, entries)
+        if idx <> invalid then
+            vol = AudiobookFormat_volume(rawTitle)
+            if vol.total <> invalid and vol.total >= idx and vol.total > 1 then
+                seriesText = TxF("{0} · Book {1} of {2}", [seriesName, idx, vol.total])
+            else
+                seriesText = TxF("{0} · Book {1}", [seriesName, idx])
+            end if
         end if
-        m.startOverBtn.visible = true
-    else if m.finished then
-        m.playBtn.text = Tx("Play Again")
+        m.bookSeries.text = I18n_upper(seriesText)
+    end if
+    author = peopleLine(ab.authors, 2)
+    narrator = peopleLine(ab.narrators, 2)
+    if author <> "" and narrator <> "" then
+        m.bookCredits.text = TxF("by {0} · read by {1}", [author, narrator])
+    else if author <> "" then
+        m.bookCredits.text = TxF("by {0}", [author])
+    else if narrator <> "" then
+        m.bookCredits.text = TxF("read by {0}", [narrator])
     else
-        m.playBtn.text = Tx("Play")
+        m.bookCredits.text = ""
     end if
-    m.playBtn.disabled = m.timeline = invalid and Arr_or(it.versions).Count() = 0
 
-    ' Chapters
-    if chapters.Count() > 0 then
-        m.listHeader.text = Tx("Chapters")
-        m.listSection.visible = true
-        m.listMsg.visible = false
-        m.list.visible = true
-        current = -1
-        if m.resume > 0 then current = AudioTimeline_chapterAt(chapters, m.resume)
-        root = CreateObject("roSGNode", "ContentNode")
-        for i = 0 to chapters.Count() - 1
-            ch = chapters[i]
-            sub2 = ""
-            if ch["end"] > ch.start then sub2 = Time_runtime(ch["end"] - ch.start)
-            AudioList_rowNode(root, { id: i.ToStr(), title: ch.title, number: (i + 1).ToStr(), subtitle: sub2, trailing: Time_clock(ch.start), isCurrent: i = current })
-        end for
-        m.list.content = root
-        if current >= 0 then m.list.jumpToItem = current
+    ' Cover and wash; spoiler protection hides an image by drawing the plain surface (a book's cover
+    ' is never an episode still, so today this always shows it).
+    cover = Url_resolve(Spoilers_imageUrl(it, "poster"))
+    m.bookCover.uri = cover
+    m.bookWash.uri = cover
+    m.bookWash.visible = cover <> ""
+
+    ' Listening state. This device's record (AudioResume.brs) wins while the server still holds what
+    ' we left it at: it keeps the start and the end of the book, which the server's thresholds drop.
+    posSec = Num_or(ud.position_seconds)
+    localPos = AudioResume_position(Settings_identity(), cid, posSec)
+    if localPos >= 0 then posSec = localPos
+    st = AudiobookFormat_state(posSec, total, bookPlayedFlag(it))
+    m.resume = st.resume
+    m.finished = st.finished
+    m.bookPlayed = st.played
+    renderBookState(posSec)
+
+    ' Actions: Play / Resume / Play Again, Chapters (only with chapters), Start Over (only with progress
+    ' to discard), Favorite, Finished (the saved flag, not the near-the-end guess).
+    if m.resume > 0 then
+        m.bookPlayBtn.text = Tx("Resume")
+    else if m.finished then
+        m.bookPlayBtn.text = Tx("Play Again")
+    else
+        m.bookPlayBtn.text = Tx("Play")
     end if
+    if m.resume <= 0 and m.finished then m.bookPlayBtn.iconUri = "pkg:/images/icons/replay.png" else m.bookPlayBtn.iconUri = "pkg:/images/icons/play.png"
+    m.bookPlayBtn.disabled = m.timeline = invalid and Arr_or(it.versions).Count() = 0
+    m.chaptersBtn.visible = m.bookChapters.Count() > 0
+    m.bookStartOverBtn.visible = m.resume > 0
+    m.bookFavBtn.active = m.isFavorite
+    if m.isFavorite then m.bookFavBtn.a11yLabel = Tx("Remove from Favorites") else m.bookFavBtn.a11yLabel = Tx("Add to Favorites")
+    m.finishedBtn.active = m.bookPlayed
+    if m.bookPlayed then m.finishedBtn.a11yLabel = Tx("Mark as Not Finished") else m.finishedBtn.a11yLabel = Tx("Mark as Finished")
+
+    fillAbout(total)
 
     ' Parts (multi-part books only)
     if m.timeline <> invalid and m.timeline.tracks.Count() > 1 then
@@ -374,7 +475,7 @@ sub renderAudiobook()
     ' More by Author
     rel = ab.related
     more = []
-    if rel <> invalid then more = Arr_or(rel.also_by_author)
+    if Type(rel) = "roAssociativeArray" then more = Arr_or(rel.also_by_author)
     if more.Count() > 0 then
         m.railHeader.text = TxF("More by {0}", [firstPersonName(ab.authors, Tx("Author"))])
         cards = []
@@ -385,6 +486,208 @@ sub renderAudiobook()
         end for
         setRail(cards, "year")
     end if
+
+    stateName = "not_started"
+    if m.resume > 0 then stateName = "listening"
+    if m.finished then stateName = "finished"
+    cleaned = "no"
+    if m.bookTitle.text <> rawTitle.Trim() then cleaned = "yes"
+    logLine = Diag_join(["[siku-detail] audiobook hero state=", stateName, " played=", m.bookPlayed, " resume=", Int(m.resume), " chapters=", m.bookChapters.Count(), " title_cleaned=", cleaned, " series_line=", m.bookSeries.text <> ""])
+    if logLine <> m.bookStateLogged then
+        m.bookStateLogged = logLine
+        Diag_log(logLine)
+    end if
+end sub
+
+' The saved played flag (user_data, else user_state). Read as a boolean only (pitfall 16).
+function bookPlayedFlag(it as object) as boolean
+    for each k in ["user_data", "user_state"]
+        v = it[k]
+        if Type(v) = "roAssociativeArray" then
+            f = v.played
+            if (Type(f) = "roBoolean" or Type(f) = "Boolean") and f then return true
+        end if
+    end for
+    return false
+end function
+
+' "A & B", or "A, B & 3 more" past `visible` names (AudiobookText.people).
+function peopleLine(people as dynamic, visible as integer) as string
+    sm = AudiobookFormat_peopleSummary(people, visible)
+    if sm = invalid then return ""
+    if sm.remaining = 0 then return AudiobookFormat_naturalJoin(sm.shown)
+    return TxF("{0} & {1} more", [Str_joinDots(sm.shown, ", "), sm.remaining])
+end function
+
+' tvOS state cluster: a ring with the chapter and time left while listening, a full ring once
+' finished, the length and chapter count before the first listen. No ring for an unknown length.
+sub renderBookState(posSec as float)
+    chapters = m.bookChapters
+    total = m.bookTotal
+    frac = -1.0
+    line1 = ""
+    line2 = ""
+    if m.resume > 0 then
+        if total > 0 then
+            frac = posSec / total
+            if frac > 1 then frac = 1.0
+            if frac < 0 then frac = 0.0
+        end if
+        ci = -1
+        if chapters.Count() > 0 then ci = AudioTimeline_chapterAt(chapters, posSec)
+        if ci >= 0 then
+            line1 = TxF("Chapter {0} · {1}", [ci + 1, chapters[ci].title])
+        else if Time_runtime(posSec) <> "" then
+            line1 = TxF("{0} listened", [Time_runtime(posSec)])
+        else
+            line1 = Tx("In progress")
+        end if
+        parts = []
+        if ci >= 0 then parts.Push(TxF("{0} into the chapter", [Time_clock(posSec - chapters[ci].start)]))
+        if frac >= 0 then
+            remain = total - posSec
+            if remain < 0 then remain = 0
+            leftText = Time_runtime(remain)
+            if leftText <> "" then parts.Push(TxF("{0} left in the book", [leftText]))
+        end if
+        line2 = Str_joinDots(parts)
+    else if m.finished then
+        frac = 1.0
+        line1 = Tx("Finished")
+        line2 = Time_runtime(total)
+    else
+        line1 = Tx("Not started")
+        parts = []
+        rt = Time_runtime(total)
+        if rt <> "" then parts.Push(rt)
+        if chapters.Count() > 0 then parts.Push(TxP("{0} chapter", "{0} chapters", chapters.Count()))
+        line2 = Str_joinDots(parts)
+    end if
+    m.bookState1.text = line1
+    m.bookState2.text = line2
+    m.bookRing.visible = frac >= 0
+    x = 0
+    if frac >= 0 then
+        x = 134
+        steps = Int(frac * 36 + 0.5)
+        if steps = 0 and frac > 0 then steps = 1
+        if steps > 0 then
+            m.bookRingArc.uri = "pkg:/images/ui/ring/ring_" + Str_padLeft(steps.ToStr(), 2) + ".png"
+            m.bookRingArc.visible = true
+        else
+            m.bookRingArc.visible = false
+        end if
+        m.bookRingPct.text = Int(frac * 100 + 0.5).ToStr() + "%"
+    end if
+    if line2 <> "" then
+        y1 = 0
+        if frac >= 0 then y1 = 20
+        m.bookState1.translation = [x, y1]
+        m.bookState2.translation = [x, y1 + 40]
+        m.bookState2.visible = true
+    else
+        y1 = 0
+        if frac >= 0 then y1 = 38
+        m.bookState1.translation = [x, y1]
+        m.bookState2.visible = false
+    end if
+    m.bookState1.width = 1040 - x
+    m.bookState2.width = 1040 - x
+    m.bookStateH = 70
+    if frac >= 0 then
+        m.bookStateH = 112
+    else if line2 = "" then
+        m.bookStateH = 36
+    end if
+end sub
+
+' tvOS About: the description beside the book's facts (AudiobookText.facts).
+sub fillAbout(total as float)
+    it = m.item
+    overview = Str_orEmpty(it.overview).Trim()
+    facts = bookFacts(total)
+    m.aboutSection.visible = overview <> "" or facts.Count() > 0
+    m.aboutText.text = overview
+    m.aboutText.visible = overview <> ""
+    m.aboutFacts.removeChildrenIndex(m.aboutFacts.getChildCount(), 0)
+    y = 0
+    for each f in facts
+        lbl = m.aboutFacts.createChild("Label")
+        lbl.font = ThemeFont("bold", 21)
+        lbl.color = "0xFFFFFF80"
+        lbl.width = 480
+        lbl.maxLines = 1
+        lbl.text = I18n_upper(f[0])
+        lbl.translation = [0, y]
+        y = y + 30
+        valueLbl = m.aboutFacts.createChild("Label")
+        valueLbl.font = ThemeFont("regular", 24)
+        valueLbl.color = "0xFFFFFFE6"
+        valueLbl.width = 480
+        valueLbl.wrap = true
+        valueLbl.maxLines = 2
+        valueLbl.text = f[1]
+        valueLbl.translation = [0, y]
+        vh = Int(Label_height(valueLbl))
+        if vh < 30 then vh = 30
+        if vh > 64 then vh = 64
+        y = y + vh + 18
+    end for
+    m.factsH = y
+    if overview = "" then m.aboutFacts.translation = [0, 0] else m.aboutFacts.translation = [1080, 0]
+    layoutAbout()
+end sub
+
+' Label, value pairs: who wrote and reads it, the publisher, when it was released, how long it runs
+' and the file format.
+function bookFacts(total as float) as object
+    it = m.item
+    ab = it.audiobook
+    if Type(ab) <> "roAssociativeArray" then ab = {}
+    out = []
+    for each role in [["authors", "Author", "Authors"], ["narrators", "Narrator", "Narrators"]]
+        names = ab[role[0]]
+        credit = peopleLine(names, 3)
+        if credit <> "" then
+            everyone = AudiobookFormat_peopleSummary(names, 1000)
+            label = Tx(role[1])
+            if everyone <> invalid and everyone.shown.Count() > 1 then label = Tx(role[2])
+            out.Push([label, credit])
+        end if
+    end for
+    pub = Str_orEmpty(ab.publisher).Trim()
+    if pub <> "" then out.Push([Tx("Publisher"), pub])
+    released = ""
+    if not Str_isEmpty(it.release_date) then released = Time_longDate(it.release_date)
+    if released = "" and Num_or(it.year) > 0 then released = Int(Num_or(it.year)).ToStr()
+    if released <> "" then out.Push([Tx("Released"), released])
+    rt = Time_runtime(total)
+    if rt <> "" then out.Push([Tx("Length"), rt])
+    fmt = []
+    versions = Arr_or(it.versions)
+    if versions.Count() > 0 and Type(versions[0]) = "roAssociativeArray" then
+        codec = Str_orEmpty(versions[0].codec_audio).Trim()
+        if codec <> "" then fmt.Push(UCase(codec))
+        cont = Str_orEmpty(versions[0].container).Trim()
+        if cont <> "" then fmt.Push(UCase(cont))
+    end if
+    if m.timeline <> invalid and m.timeline.tracks.Count() > 1 then fmt.Push(TxP("{0} part", "{0} parts", m.timeline.tracks.Count()))
+    if fmt.Count() > 0 then out.Push([Tx("Format"), Str_joinDots(fmt)])
+    return out
+end function
+
+' Collapsed: four lines of the description. Expanded (OK): up to sixteen lines; Roku cannot clip a
+' scrolling Label reliably, so a longer description stays cut at sixteen.
+sub layoutAbout()
+    if m.aboutExpanded then m.aboutText.maxLines = 16 else m.aboutText.maxLines = 4
+    th = 0
+    if m.aboutText.visible then th = Int(Label_height(m.aboutText))
+    h = th
+    if m.factsH > h then h = m.factsH
+    if h < 40 then h = 40
+    m.aboutH = h
+    m.aboutFocus.width = 1720 + 48
+    m.aboutFocus.height = h + 40
 end sub
 
 sub setRail(cards as object, subtitleKind as string)
@@ -408,18 +711,6 @@ function albumArtist(it as object) as string
         if Type(f) = "roAssociativeArray" then a = Str_orEmpty(f.name) else a = Str_orEmpty(f)
     end if
     return a
-end function
-
-function personNames(people as dynamic) as string
-    names = []
-    for each p in Arr_or(people)
-        if Type(p) = "roAssociativeArray" then
-            names.Push(Str_orEmpty(p.name))
-        else
-            names.Push(Str_orEmpty(p))
-        end if
-    end for
-    return Str_joinDots(names, ", ")
 end function
 
 function firstPersonName(people as dynamic, fallback as string) as string
@@ -475,26 +766,104 @@ sub layoutColumn()
     if m.heroBottom < 116 + 440 then m.heroBottom = 116 + 440
 end sub
 
+' Stacks the audiobook hero's identity column and centres it beside the cover (tvOS: the hero is
+' 860 of 1080 px, so the About heading peeks in below it).
+sub layoutBookColumn()
+    y = 0
+    y = y + 28 + 16
+    m.bookTitle.translation = [0, y]
+    th = Int(Label_height(m.bookTitle))
+    if th < 80 then th = 80
+    y = y + th
+    m.bookSeries.visible = m.bookSeries.text <> ""
+    if m.bookSeries.visible then
+        y = y + 14
+        m.bookSeries.translation = [0, y]
+        y = y + 28
+    end if
+    m.bookCredits.visible = m.bookCredits.text <> ""
+    if m.bookCredits.visible then
+        y = y + 18
+        m.bookCredits.translation = [0, y]
+        ch = Int(Label_height(m.bookCredits))
+        if ch < 34 then ch = 34
+        y = y + ch
+    end if
+    y = y + 50
+    m.bookState.translation = [0, y]
+    y = y + m.bookStateH + 50
+    m.bookActionsY = y
+    y = y + 76
+    top = Int((860 - y) / 2)
+    if top < 60 then top = 60
+    m.bookColumn.translation = [644, top]
+    m.bookArt.translation = [100, 200]
+    m.heroBottom = 860
+end sub
+
 function actionButtons() as object
     out = []
-    for each b in [m.playBtn, m.shuffleBtn, m.startOverBtn, m.favBtn]
+    cands = [m.playBtn, m.shuffleBtn, m.startOverBtn, m.favBtn]
+    if m.kind = "audiobook" then cands = [m.bookPlayBtn, m.chaptersBtn, m.bookStartOverBtn, m.bookFavBtn, m.finishedBtn]
+    for each b in cands
         if b.visible then out.Push(b)
     end for
     return out
 end function
 
+function playButton() as object
+    if m.kind = "audiobook" then return m.bookPlayBtn
+    return m.playBtn
+end function
+
+function heroShown() as boolean
+    return m.hero.visible or m.bookHero.visible
+end function
+
 sub layoutActions()
+    gap = 18
+    m.bookX = []
     x = 0
     for each b in actionButtons()
         b.translation = [x, 0]
-        x = x + b.width + 18
+        m.bookX.Push(x)
+        x = x + b.width + gap
+    end for
+    m.bookRowW = x - gap
+    if m.kind = "audiobook" then applyBookScroll()
+end sub
+
+' The audiobook action row may use the hero's full width; five controls (a toggle widened by its
+' focused label, a longer language) can outgrow it, so it scrolls to keep the focused control in view.
+' Roku has no clipping we trust on every device, so a control the scroll pushes past either edge is
+' hidden (opacity 0) instead of cut.
+sub applyBookScroll()
+    btns = actionButtons()
+    n = btns.Count()
+    if n = 0 or m.bookX.Count() <> n then return
+    widths = []
+    for each b in btns
+        widths.Push(b.width)
+    end for
+    r = AudiobookFormat_rowScroll(m.bookX, widths, m.actionIndex, 1920 - 100 - 644, m.bookScroll)
+    if r.scroll <> m.bookScroll then Diag_log(Diag_join(["[siku-detail] audiobook action row scroll=", r.scroll, " focused=", m.actionIndex, " row=", m.bookRowW]))
+    m.bookScroll = r.scroll
+    m.bookActions.translation = [-m.bookScroll, m.bookActionsY]
+    for j = 0 to n - 1
+        if r.shown[j] then btns[j].opacity = 1.0 else btns[j].opacity = 0.0
     end for
 end sub
 
 ' Stacks the visible body sections under the hero.
 sub layoutBody()
     y = m.heroBottom + 72
+    if m.kind = "audiobook" then y = m.heroBottom + 8
     m.sectionY = {}
+    if m.aboutSection.visible then
+        m.aboutSection.translation = [0, y]
+        m.sectionY.about = y
+        y = y + 60 + m.aboutH + 56
+    end if
     if m.listSection.visible then
         m.listSection.translation = [0, y]
         m.sectionY.list = y
@@ -524,6 +893,7 @@ end sub
 
 function zones() as object
     out = ["actions"]
+    if m.aboutSection.visible then out.Push("about")
     if m.listSection.visible and m.list.visible then out.Push("list")
     if m.partsSection.visible then out.Push("parts")
     if m.railSection.visible then out.Push("rail")
@@ -532,6 +902,7 @@ end function
 
 function zoneNode(z as string) as object
     if z = "list" then return m.list
+    if z = "about" then return m.aboutCard
     if z = "parts" then return m.parts
     if z = "rail" then return m.rail
     btns = actionButtons()
@@ -547,7 +918,9 @@ end function
 sub focusZone(z as string)
     m.zone = z
     zoneNode(z).setFocus(true)
+    m.aboutFocus.visible = z = "about"
     if z = "actions" then
+        if m.kind = "audiobook" then applyBookScroll()
         scrollTo(0)
     else
         sy = m.sectionY[z]
@@ -567,7 +940,11 @@ sub restoreFocus()
         m.retryBtn.setFocus(true)
         return
     end if
-    if not m.hero.visible then return
+    if not heroShown() then return
+    if m.chapterPanel.visible then
+        m.chapterPanel.setFocus(true)
+        return
+    end if
     focusZone(m.zone)
 end sub
 
@@ -593,8 +970,16 @@ end sub
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
     if key = "back" then return false
-    if m.errorGroup.visible or not m.hero.visible then return false
-    if key = "down" then
+    if m.errorGroup.visible or not heroShown() or m.chapterPanel.visible then return false
+    if key = "OK" and m.zone = "about" then
+        ' tvOS opens the whole description; here it opens in place (OK again closes it).
+        m.aboutExpanded = not m.aboutExpanded
+        Diag_log(Diag_join(["[siku-detail] audiobook about expanded=", m.aboutExpanded]))
+        layoutAbout()
+        layoutBody()
+        focusZone("about")
+        return true
+    else if key = "down" then
         moveZone(1)
         return true
     else if key = "up" then
@@ -605,6 +990,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         if key = "left" and m.actionIndex > 0 then m.actionIndex = m.actionIndex - 1
         if key = "right" and m.actionIndex < btns.Count() - 1 then m.actionIndex = m.actionIndex + 1
         btns[m.actionIndex].setFocus(true)
+        if m.kind = "audiobook" then applyBookScroll()
         return true
     else if key = "play" then
         onPlay()
@@ -616,7 +1002,7 @@ end function
 ' ---------- Actions ----------
 
 sub onPlay()
-    if m.item = invalid or m.playBtn.disabled then return
+    if m.item = invalid or playButton().disabled then return
     if m.kind = "audiobook" then
         params = { itemId: Str_orEmpty(m.item.content_id), itemType: "audiobook" }
         if m.resume > 0 then
@@ -650,6 +1036,8 @@ sub onFavorite()
     id = Str_orEmpty(m.item.content_id)
     m.isFavorite = not m.isFavorite
     m.favBtn.active = m.isFavorite
+    m.bookFavBtn.active = m.isFavorite
+    if m.isFavorite then m.bookFavBtn.a11yLabel = Tx("Remove from Favorites") else m.bookFavBtn.a11yLabel = Tx("Add to Favorites")
     if m.isFavorite then
         Api_fire("PUT", "/api/v2/favorites/" + Str_urlEncode(id))
         m.global.toast = Tx("Added to Favorites")
@@ -658,6 +1046,84 @@ sub onFavorite()
         m.global.toast = Tx("Removed from Favorites")
     end if
     m.global.homeDirty = true
+end sub
+
+' The Finished toggle (TvSquareToggleButton): flips the saved played flag at once and writes it; a
+' refused write rolls back with the server's reason, a landed one re-reads the page.
+sub onFinishedToggle()
+    if m.item = invalid or m.kind <> "audiobook" then return
+    played = not m.bookPlayed
+    m.finishedSeq = m.finishedSeq + 1
+    method = "DELETE"
+    if played then method = "POST"
+    Diag_log(Diag_join(["[siku-detail] audiobook finished write played=", played]))
+    Api_call({ method: method, path: "/api/v2/watched/" + Str_urlEncode(Str_orEmpty(m.item.content_id)), context: { played: played, seq: m.finishedSeq } }, "onFinishedWritten")
+    setBookPlayed(played)
+    m.global.homeDirty = true
+end sub
+
+sub setBookPlayed(played as boolean)
+    for each k in ["user_data", "user_state"]
+        if Type(m.item[k]) <> "roAssociativeArray" then m.item[k] = {}
+        m.item[k].played = played
+    end for
+    render()
+end sub
+
+sub onFinishedWritten(event as object)
+    resp = Api_result(event)
+    ctx = resp.context
+    if ctx = invalid or m.item = invalid then return
+    current = ctx.seq = m.finishedSeq
+    if not resp.ok then
+        Diag_log(Diag_join(["[siku-detail] audiobook finished write failed status=", Int(Num_or(resp.status, 0)), " current=", current]))
+        if not current then return
+        setBookPlayed(not ctx.played)
+        head = Tx("Couldn't mark as unwatched.")
+        if ctx.played = true then head = Tx("Couldn't mark as watched.")
+        if not m.global.hasField("toastSeconds") then m.global.addFields({ toastSeconds: 0.0 })
+        m.global.toastSeconds = 5.0
+        m.global.toast = head + " " + Api_reasonText(resp, Tx("Try again."))
+        return
+    end if
+    Diag_log(Diag_join(["[siku-detail] audiobook finished write landed played=", ctx.played, " current=", current]))
+    if current then reload()
+end sub
+
+' Chapters (the hero's action row, Android TV's chapter dialog): every chapter with its start, the
+' current one focused; a pick plays from that chapter.
+sub openChapters()
+    if m.item = invalid or m.bookChapters.Count() = 0 then return
+    chapters = m.bookChapters
+    cur = -1
+    if m.resume > 0 then cur = AudioTimeline_chapterAt(chapters, m.resume)
+    rows = []
+    for i = 0 to chapters.Count() - 1
+        ch = chapters[i]
+        sub2 = ""
+        if ch["end"] > ch.start then sub2 = Time_runtime(ch["end"] - ch.start)
+        rows.Push({ id: i.ToStr(), title: ch.title, number: (i + 1).ToStr(), subtitle: sub2, trailing: Time_clock(ch.start), isCurrent: i = cur })
+    end for
+    Diag_log(Diag_join(["[siku-detail] audiobook chapters opened count=", chapters.Count(), " current=", cur + 1]))
+    m.chapterPanel.title = Tx("Chapters")
+    m.chapterPanel.rows = rows
+    m.chapterPanel.visible = true
+    m.chapterPanel.setFocus(true)
+end sub
+
+sub closeChapters()
+    m.chapterPanel.visible = false
+    restoreFocus()
+end sub
+
+sub onChapterChosen()
+    i = Int(Val(m.chapterPanel.chosen))
+    m.chapterPanel.visible = false
+    if m.item = invalid or i < 0 or i >= m.bookChapters.Count() then
+        restoreFocus()
+        return
+    end if
+    openPlayer({ itemId: Str_orEmpty(m.item.content_id), itemType: "audiobook", startPosition: m.bookChapters[i].start })
 end sub
 
 sub openPlayer(params as object)

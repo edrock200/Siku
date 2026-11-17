@@ -1,6 +1,7 @@
 """Renders UI icons from Material Icons Round (Apache-2.0) to white PNGs.
 
-Usage: python3 scripts/make_icons.py <MaterialIconsRound-Regular.otf> <codepoints file>
+Usage: python3 scripts/make_icons.py <MaterialIconsRound-Regular.otf> <codepoints file> [name ...]
+(names limit the run to those icons, so adding one does not re-render the others)
 Get both from https://github.com/google/material-design-icons/tree/master/font
 Icons are white so components can tint them with blendColor.
 """
@@ -41,6 +42,8 @@ ICONS = {
     "video_library": "video_library",
     # The detail page's Edition selector (Silo Android TV's Icons.Filled.Layers, Apple TV's rectangle.stack)
     "edition": "layers",
+    # The audiobook page's Finished toggle at rest (Silo Android #975, Icons.Filled.CheckCircleOutline)
+    "check_circle_outline": "check_circle_outline",
 }
 
 
@@ -52,7 +55,10 @@ def main():
         cps[name] = int(cp, 16)
     os.makedirs(OUT, exist_ok=True)
     font = ImageFont.truetype(font_path, int(SIZE * 0.92))
+    only = set(sys.argv[3:])
     for out_name, glyph in ICONS.items():
+        if only and out_name not in only:
+            continue
         ch = chr(cps[glyph])
         img = Image.new("RGBA", (SIZE, SIZE), (255, 255, 255, 0))
         d = ImageDraw.Draw(img)
@@ -60,7 +66,7 @@ def main():
         w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
         d.text(((SIZE - w) / 2 - bbox[0], (SIZE - h) / 2 - bbox[1]), ch, font=font, fill=(255, 255, 255, 255))
         img.save(os.path.join(OUT, out_name + ".png"), optimize=True)
-    print("rendered", len(ICONS), "icons")
+    print("rendered", len(only) if only else len(ICONS), "icons")
 
 
 if __name__ == "__main__":
