@@ -134,12 +134,39 @@ sub onRows()
     m.rowList.visible = m.top.state = "ready"
     m.rowTitles.visible = m.rowList.visible
     ' Marquee for the focused (or first) card without waiting for a focus event.
+    ' A collection's card without a backdrop leaves the hero as it was (empty on a first draw).
     if m.top.state = "ready" then
         card = cardAt(target[0], target[1])
         if isExploreNode(card) then card = cardAt(target[0], target[1] - 1)
         if card = invalid then card = firstCard()
-        if card <> invalid then showCard(card)
+        if card <> invalid then
+            if heroShows(card) then
+                showCard(card)
+            else
+                logHero(card, "first")
+            end if
+        end if
     end if
+end sub
+
+' Whether the marquee hero shows this card node when it is focused (CollRows_heroShows): not an
+' "Explore all" card, nor a collection's card without a backdrop.
+function heroShows(node as dynamic) as boolean
+    if node = invalid or isExploreNode(node) then return false
+    return CollRows_heroShows(node.raw)
+end function
+
+' One [siku-home] line per hero decision on a collection's card (how: first | focus).
+sub logHero(node as dynamic, how as string)
+    if node = invalid or not node.hasField("raw") then return
+    raw = node.raw
+    if not CollRows_isCard(raw) then return
+    shown = "no reason=no_backdrop"
+    if CollRows_heroShows(raw) then shown = "yes"
+    kept = "none"
+    if m.marqueeCard <> invalid then kept = "previous"
+    if shown = "yes" then kept = "-"
+    Diag_log("[siku-home] collection hero " + how + " shown=" + shown + " kept=" + kept)
 end sub
 
 ' ---------- "Explore all" (Silo Android #688, TvExploreAllCard) ----------
@@ -368,7 +395,7 @@ sub applyState()
     end if
     if s = "ready" and m.top.hasRows then
         first = firstCard()
-        if first <> invalid and m.marqueeCard = invalid then showCard(first)
+        if first <> invalid and m.marqueeCard = invalid and heroShows(first) then showCard(first)
         ' If focus is parked on the feed itself (content was not ready yet) or still sits on the
         ' Retry / empty-state button that just hid, move it to the rows.
         if m.top.hasFocus() or m.actionBtn.hasFocus() then m.rowList.setFocus(true)
@@ -422,8 +449,14 @@ sub onRest()
     if rf = invalid or rf.Count() < 2 then return
     node = cardAt(rf[0], rf[1])
     if node = invalid then return
-    ' "Explore all" leaves the marquee on the last card previewed (TvSkylineSectionFeed).
+    ' "Explore all" leaves the marquee on the last card previewed (TvSkylineSectionFeed), and so
+    ' does a collection's card without a backdrop (silo-roku d240f47).
     if isExploreNode(node) then return
+    if not heroShows(node) then
+        logHero(node, "focus")
+        return
+    end if
+    if CollRows_isCard(node.raw) then logHero(node, "focus")
     showCard(node)
     m.top.focusedCard = { rowIndex: rf[0], itemIndex: rf[1] }
 end sub
@@ -453,7 +486,8 @@ sub onRowItemSelected()
         return
     end if
     payload = { rowIndex: sel[0], itemIndex: sel[1], rowId: row.rowId, card: node.raw }
-    if LongPress_enabled() then
+    ' A collection's card has no card menu to hold OK for: it opens at once.
+    if LongPress_enabled() and not CollRows_isCard(node.raw) then
         m.pendingSelect = payload
         m.pressTimer.control = "stop"
         m.pressTimer.control = "start"
@@ -518,6 +552,16 @@ sub showCard(node as object)
         m.logo.uri = ""
         m.titleLabel.visible = true
         m.titleLabel.text = title
+    end if
+
+    ' A collection's card (a row of collections with a backdrop): its title and, as the meta line,
+    ' its count; no badges or synopsis.
+    if CollRows_isCard(card) then
+        setBadges([])
+        m.metaLabel.text = CollRows_metaLine(card)
+        m.synopsis.text = ""
+        layoutMarquee()
+        return
     end if
 
     ' Badges: spec badges from overlay_summary + content rating.
@@ -852,6 +896,11 @@ function onKeyEvent(key as string, press as boolean) as boolean
         if rf <> invalid and rf.Count() >= 2 then
             node = cardAt(rf[0], rf[1])
             if isExploreNode(node) then return true
+            ' No card menu on a collection's card (silo-roku d240f47).
+            if node <> invalid and CollRows_isCard(node.raw) then
+                Diag_log("[siku-home] collection card: no card menu")
+                return true
+            end if
             if node <> invalid then
                 row = m.rowList.content.getChild(rf[0])
                 m.top.itemOptions = { rowIndex: rf[0], itemIndex: rf[1], rowId: row.rowId, card: node.raw }

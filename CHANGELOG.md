@@ -3,6 +3,19 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.12.0
+
+From Silo's own apps (November 17, 2026).
+
+**New**
+- **Rows of collections on Home and in your libraries.** When your server adds a row of collections, it now shows up: one poster per collection with its title and how many titles it holds. Pick one to see what's in it. From Home you see everything in the collection; in a library, just that library's titles.
+- **Collections with a backdrop fill the top of the screen** while you're on them, with the collection's name and how many titles it holds.
+
+**Better**
+- **An empty collection now says so** ("This collection is empty") and offers a Back button.
+
+**Needs testing on a real Roku:** the collection backdrops at the top of Home, long rows of collections on older models, and personal collections from a real server.
+
 ## v0.11.0
 
 From Silo's Android TV app (November 17, 2026).

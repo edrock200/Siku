@@ -8,7 +8,8 @@
                 | "favorites" | "watchlist" | "history" | "person" | "section"
     libraryId, libraryName, mode   the library (mode: movies | series | mixed | music | audiobooks)
     mediaType   "movie" | "series" forced type (Movies / Series tab on a mixed library)
-    collectionId, collectionTitle  (section "collection")
+    collectionId, collectionTitle, collectionKind ("library" | "user")  (section "collection": a
+                collection opened from a Home or library row of collections, CollectionRows.brs)
     personId, personName           (section "person")
     sectionId, scope               (section "section")
     title       page title override
@@ -27,6 +28,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/DataRevision.brs" />
   <script type="text/brightscript" uri="pkg:/components/widgets/HomeCardActions.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Shuffle.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/CollectionRows.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/LibraryFilters.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/CatalogSort.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/GridWindow.brs" />

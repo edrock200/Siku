@@ -393,6 +393,21 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   status=`; cached per server and profile on `m.global.ratingSources`), and a restored sort stays listed. The panel shows 9
   rows and scrolls. Mock `--switch rating_sources=<a,b>|rt|off|fail` (log `RATINGS CAPS`, `CATALOG SORT <sort>`); DEBUG
   deep link `debugLibraryMode=<movies|series|mixed|audiobooks>` with `debugScreen=LibraryScreen,debugLibrary=<id>`.
+- Rows of collections (silo-server #4410 / #4415, adapted from silo-roku 8183af8 / d240f47; `CollectionRows.brs`, host tests
+  `tests/test_collection_rows.py`): a Home or library section of `section_type` `collection_posters` carries its cards in
+  `collections` (`items` is `[]`); HomePage builds them with the Collections grid's card (`Content_collectionCard`: title, count,
+  poster or collage, the collections mark when it has none), never reads the section's items, skips hide-watched and the mixed
+  library filter, shows every card (at most 40, no 20-card cut) and adds no Explore all. OK opens LibraryScreen section
+  `collection` (`CollRows_openParams`): from Home no `library_id`/type (every member), on a library page that library and its
+  Movies / Series view; a personal one (`source: user`) reads `source=user_collection`. A card with `backdrop_url` (server
+  collections only) takes the hero (title, its count as the meta line, no badges or synopsis); one without leaves the hero as it
+  was (empty on a first draw). No card menu (* or a long OK). The Home cache keeps the row without cards (drawn once the server
+  answers). An empty collection's page says "This collection is empty" with Back (from a row; closes the page) or Back to
+  collections (the grid's drill). `[siku-home] collection row=<id> cards= backdrops= empty= explore_all=no`, `collection hero
+  first|focus shown=yes|no reason=no_backdrop kept=previous|none|-`, `collection card: no card menu`, `collection opened
+  scope=home|library kind=library|user library= type=`; `[siku-library] empty collection back=page|collections`. Mock:
+  `--switch collection_rows=1|first` (third on Home or first; library 1 first: Space Sagas with a backdrop, Night Noir, Coming Soon
+  empty, Laura's Picks personal on Home; log `COLLECTION ROW scope=`, `COLLECTION ITEMS source= id= library= type= n=`).
 - Grouped counts (Silo Android #916, silo-roku ed824d3): `TxP(one, other, n, true)` puts the language's thousands separator
   in the count (`I18n_groupedCount`: "1,284", "1.284" de/pt_BR, narrow no-break space fr, Spanish from five digits, es_MX /
   fr_CA follow the device). Used for library and collection grid counts, collection cards and person title counts; years,

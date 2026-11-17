@@ -223,24 +223,32 @@ sub onSections(event as object)
     scope = mediaScope()
     for each s in sections
         sid = Str_orEmpty(s.id)
-        items = hideWatchedItems(s, Arr_or(s.items))
-        total = Content_num(s.total_count)
-        entry = { section: s, items: items, rawItems: Arr_or(s.items) }
-        m.sections.Push(entry)
-        if scope <> "" then
-            if scopeSection(entry, m.sections.Count() - 1, scope) then m.pendingSections = m.pendingSections + 1
-        else if entry.rawItems.Count() = 0 and total > 0 then
-            ' Only a section the server sent without its cards is read on its own: a row that
-            ' hide-watched emptied would come back just as watched (the server filters the same way).
-            m.pendingSections = m.pendingSections + 1
-            idx = m.sections.Count() - 1
-            lib = libraryId()
-            if lib <> "" then
-                path = "/api/v2/library/" + Str_urlEncode(lib) + "/sections/" + Str_urlEncode(sid) + "/items"
-            else
-                path = "/api/v2/home/sections/" + Str_urlEncode(sid) + "/items"
+        if CollRows_isRow(s) then
+            ' A row of collections (silo-server #4410): its cards come in `collections`, all of them,
+            ' never later; no section items read, no hide-watched or Movies / Series filter.
+            cards = CollRows_cards(s)
+            Diag_log(CollRows_rowLog(sid, cards))
+            m.sections.Push({ section: s, items: cards, rawItems: [] })
+        else
+            items = hideWatchedItems(s, Arr_or(s.items))
+            total = Content_num(s.total_count)
+            entry = { section: s, items: items, rawItems: Arr_or(s.items) }
+            m.sections.Push(entry)
+            if scope <> "" then
+                if scopeSection(entry, m.sections.Count() - 1, scope) then m.pendingSections = m.pendingSections + 1
+            else if entry.rawItems.Count() = 0 and total > 0 then
+                ' Only a section the server sent without its cards is read on its own: a row that
+                ' hide-watched emptied would come back just as watched (the server filters the same way).
+                m.pendingSections = m.pendingSections + 1
+                idx = m.sections.Count() - 1
+                lib = libraryId()
+                if lib <> "" then
+                    path = "/api/v2/library/" + Str_urlEncode(lib) + "/sections/" + Str_urlEncode(sid) + "/items"
+                else
+                    path = "/api/v2/home/sections/" + Str_urlEncode(sid) + "/items"
+                end if
+                Api_get(path, artworkQuery(), "onSectionItems", { index: idx, seq: m.loadSeq })
             end if
-            Api_get(path, artworkQuery(), "onSectionItems", { index: idx, seq: m.loadSeq })
         end if
     end for
     pumpRefills()
@@ -435,8 +443,15 @@ sub buildRows(fromCache = false as boolean)
     if squareLibrary() then defaultStyle = "square"
     for each e in m.sections
         s = e.section
-        ' At most 20 cards a row, whatever the server sent (an older server sends up to 100).
-        items = SectionRows_capped(e.items)
+        ' At most 20 cards a row, whatever the server sent (an older server sends up to 100); a row
+        ' of collections shows every card it has (CollRows_max) and no "Explore all": it has no page.
+        isCollections = CollRows_isRow(s)
+        if isCollections then
+            if e.items.Count() > 0 then rows.Push({ id: Str_orEmpty(s.id), title: TxKey(s.title_key, s.title_args, Str_orEmpty(s.title)), style: "poster", items: e.items, exploreSectionId: "", exploreTitle: "" })
+            items = []
+        else
+            items = SectionRows_capped(e.items)
+        end if
         if items.Count() > 0 then
             st = LCase(Str_orEmpty(s.section_type))
             sid = Str_orEmpty(s.id)
@@ -594,12 +609,35 @@ end sub
 sub onItemSelected()
     sel = m.feed.itemSelected
     if sel = invalid or sel.card = invalid then return
+    if CollRows_isCard(sel.card) then
+        openCollection(sel.card)
+        return
+    end if
     CardActions_openDetail(sel.card)
+end sub
+
+' A row of collections' card opens the collection's page: from Home every member the viewer sees,
+' on a library page that library's view of it, as the Collections grid opens it (CollRows_openParams).
+sub openCollection(card as object)
+    p = m.top.params
+    libName = ""
+    libMode = ""
+    if p <> invalid then
+        libName = Str_orEmpty(p.libraryName)
+        libMode = Str_orEmpty(p.mode)
+    end if
+    params = CollRows_openParams(card, libraryId(), libName, libMode, mediaScope())
+    scope = "home"
+    if libraryId() <> "" then scope = "library"
+    Diag_log("[siku-home] collection opened scope=" + scope + " kind=" + params.collectionKind + " library=" + Str_orEmpty(params.libraryId) + " type=" + Str_orEmpty(params.mediaType))
+    Nav_push("LibraryScreen", params)
 end sub
 
 sub onItemOptions()
     opt = m.feed.itemOptions
     if opt = invalid or opt.card = invalid then return
+    ' No card menu on a collection's card (the feed keeps * from sending one; a long OK still could).
+    if CollRows_isCard(opt.card) then return
     m.optionsTarget = opt
     m.menu.title = Str_orEmpty(opt.card.title)
     m.menu.actions = CardActions_build(opt.card, Str_orEmpty(opt.rowId))

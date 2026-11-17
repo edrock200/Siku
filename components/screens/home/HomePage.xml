@@ -3,7 +3,9 @@
   Home (and a library's "Recommended" landing): the Skyline feed fed by /api/v2/home/sections
   or /api/v2/library/{id}/sections. params: { libraryId?, libraryName?, mode?, mediaType? }
   Every non-featured row shows at most 20 cards and ends with an "Explore all" card that opens the
-  row's full page (LibraryScreen, section "section"; SectionRows.brs).
+  row's full page (LibraryScreen, section "section"; SectionRows.brs). A row of collections
+  (section_type collection_posters) shows every collection card without one; a card opens the
+  collection's page (LibraryScreen, section "collection"; CollectionRows.brs).
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="HomePage" extends="ShellPage">
@@ -12,6 +14,7 @@
   <script type="text/brightscript" uri="pkg:/components/widgets/HomeCardActions.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/HomeCache.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/SectionRows.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/CollectionRows.brs" />
   <children>
     <HomeSkylineFeed id="feed" />
     <ShellActionMenu id="menu" />

@@ -3,6 +3,8 @@
 sub init()
     m.page = m.top.findNode("page")
     m.page.observeField("navigateTo", "onPageNavigate")
+    ' An empty collection's Back button (LibraryPage onStatusButton) closes this screen.
+    m.page.observeField("close", "onPageClose")
     m.top.observeField("params", "onParams")
 end sub
 
@@ -15,6 +17,10 @@ end sub
 sub onPageNavigate()
     req = m.page.navigateTo
     if req <> invalid then m.top.navigateTo = req
+end sub
+
+sub onPageClose()
+    if m.page.close then m.top.close = true
 end sub
 
 sub onScreenShown()

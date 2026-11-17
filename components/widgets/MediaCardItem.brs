@@ -133,6 +133,7 @@ function markIcon(itemType as string) as string
     t = LCase(itemType)
     if t = "series" or t = "season" or t = "episode" then return "tv"
     if t = "audiobook" or t = "audiobook_part" or t = "podcast" or t = "podcast_episode" or t = "book" then return "audiobook"
+    if t = "collection" then return "collections"
     return "movie"
 end function
 

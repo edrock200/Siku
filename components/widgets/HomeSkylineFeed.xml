@@ -13,7 +13,8 @@
     itemSelected  {rowIndex, itemIndex, rowId, card}   OK on a card
     itemOptions   {rowIndex, itemIndex, rowId, card}   options (*) key or a long OK press on a card
     actionSelected  the Retry / Refresh button
-    focusedCard   {rowIndex, itemIndex} after the focus rested (150 ms; not for "Explore all")
+    focusedCard   {rowIndex, itemIndex} after the focus rested (150 ms; not for "Explore all" or a
+                  collection's card without a backdrop, which leave the hero as it was)
     exploreSelected  {rowIndex, rowId, sectionId, title}   OK on a row's "Explore all" card
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
@@ -49,6 +50,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/Accounts.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Spoilers.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/RowFocus.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/CollectionRows.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/CardOverlayKeys.brs" />
   <children>
     <!-- Ambient backdrop: top-right 64% x 70%, faded by mask_backdrop (two layers crossfade). -->

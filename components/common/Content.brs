@@ -78,6 +78,12 @@ sub Content_fillCard(node as object, card as object, style as string)
     else
         img = Spoilers_posterUrl(card)
     end if
+    ' A collection's card (the library Collections grid, a Home or library row of collections;
+    ' Content_collectionCard): its count under the title when it holds any, also read aloud.
+    if t = "collection" then
+        node.subtitle = Content_collectionCount(card.item_count)
+        node.description = node.subtitle
+    end if
     if t = "audiobook_group" then
         node.initials = Content_initials(title)
         if card.group <> invalid then
@@ -346,6 +352,23 @@ sub Content_appendCards(root as object, cards as object, style = "poster" as str
         root.appendChild(node)
     end for
 end sub
+
+' ---------- Collections ----------
+
+' The card of a collection: a library Collections grid entry or a row of collections'
+' SectionCollectionCard (CollectionRows.brs adds the row's own fields). Its poster is the server's
+' choice (an assigned poster, else the viewer's collage; "" draws the placeholder).
+function Content_collectionCard(c as object) as object
+    cid = Str_orEmpty(c.id)
+    return { content_id: "collection:" + cid, collection_id: cid, "type": "collection", title: Str_orEmpty(c.title), poster_url: Str_orEmpty(c.poster_url), item_count: c.item_count }
+end function
+
+' "12 items" under a collection's title (grouped digits, Silo Android #916), "" when it holds none.
+function Content_collectionCount(itemCount as dynamic) as string
+    n = Int(Content_num(itemCount))
+    if n <= 0 then return ""
+    return TxP("1 item", "{0} items", n, true)
+end function
 
 ' "FH" for "Frank Herbert": up to two initials for an image-less group or person card.
 function Content_initials(name as string) as string

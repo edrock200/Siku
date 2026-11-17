@@ -23,6 +23,7 @@ sub init()
     m.menu = m.top.findNode("menu")
     m.pressTimer = m.top.findNode("pressTimer")
     m.pendingSelect = invalid
+    m.retryAction = "retry"  ' the status button: "retry" (Retry) or "back" (an empty collection)
     LongPress_init()
 
     m.grid.observeField("itemFocused", "onGridFocused")
@@ -36,7 +37,7 @@ sub init()
     m.filterPill.observeField("buttonSelected", "openFilterPanel")
     m.clearPill.observeField("buttonSelected", "clearFilters")
     m.shufflePill.observeField("buttonSelected", "shuffle")
-    m.retryBtn.observeField("buttonSelected", "reload")
+    m.retryBtn.observeField("buttonSelected", "onStatusButton")
     m.errClearBtn = m.top.findNode("errClearBtn")
     m.errClearBtn.observeField("buttonSelected", "clearFilters")
     m.sortPanel.observeField("rowSelected", "onSortChosen")
@@ -467,7 +468,9 @@ sub requestPage(cursor as string)
     else if m.mode = "favorites" or m.mode = "watchlist" then
         q.source = m.mode
     else if m.mode = "collection" then
-        q.source = "library_collection"
+        ' A collection page opened from a row of collections (CollectionRows.brs): a personal
+        ' collection reads user_collection; from Home no library_id, so every member shows.
+        q.source = CollRows_catalogSource(prm("collectionKind"))
         q.collection_id = Str_orEmpty(prm("collectionId"))
         if not Str_isEmpty(prm("libraryId")) then q.library_id = prm("libraryId")
     else if m.mode = "person" then
@@ -992,7 +995,7 @@ sub onCollections(event as object)
             cid = Str_orEmpty(c.id)
             if cid <> "" and not seen.DoesExist(cid) then
                 seen[cid] = true
-                cards.Push({ content_id: "collection:" + cid, collection_id: cid, "type": "collection", title: Str_orEmpty(c.title), poster_url: c.poster_url, item_count: c.item_count })
+                cards.Push(Content_collectionCard(c))
             end if
         end for
     end for
@@ -1008,11 +1011,6 @@ sub onCollections(event as object)
         node = Content_cardNode(c, m.cardStyle)
         node.cardInsetX = m.insetX
         node.cardInsetY = m.insetY
-        if c.item_count <> invalid then
-            n = Int(Content_num(c.item_count))
-            node.subtitle = TxP("1 item", "{0} items", n, true)
-            node.description = node.subtitle ' read by the screen reader
-        end if
         root.appendChild(node)
     end for
     m.grid.content = root
@@ -1028,6 +1026,8 @@ sub showError(msg as string)
     m.status.visible = true
     m.statusTitle.text = Tx("Something went wrong")
     m.statusBody.text = msg
+    m.retryAction = "retry"
+    m.retryBtn.text = Tx("Retry")
     m.retryBtn.visible = true
     ' Retry resends the same query, so a saved filter the server rejects would keep Browse failing
     ' after every restart: offer to clear the filters here too (keeps the sort).
@@ -1063,6 +1063,16 @@ sub showEmpty()
     else if isGroupsMode() and m.drill = invalid then
         if m.mode = "authors" then title = Tx("No audiobook authors found.") else title = Tx("No audiobook series found.")
         body = ""
+    else if collectionPage() and not filtersActive() then
+        ' An empty collection: Back returns to the Collections grid ("Back to collections") or, on
+        ' a page opened from a row of collections, to Home or Recommended ("Back").
+        title = Tx("This collection is empty")
+        body = Tx("This collection does not have any items yet.")
+        m.retryAction = "back"
+        if m.drill <> invalid then m.retryBtn.text = Tx("Back to collections") else m.retryBtn.text = Tx("Back")
+        m.retryBtn.visible = true
+        m.retryBtn.translation = [(1920 - m.retryBtn.width) / 2, 600]
+        Diag_log("[siku-library] empty collection back=" + backTarget())
     else if m.mode = "section" then
         title = Tx("This row has no titles right now.")
         body = ""
@@ -1081,8 +1091,13 @@ sub showEmpty()
     end if
     m.statusTitle.text = title
     m.statusBody.text = body
-    if m.top.hasFocus() or m.grid.hasFocus() then
-        if visiblePills().Count() > 0 then
+    ' An empty collection's Back takes focus from the controls too (they had it while it loaded).
+    takeFocus = m.top.hasFocus() or m.grid.hasFocus()
+    if m.retryBtn.visible and m.controls.isInFocusChain() then takeFocus = true
+    if takeFocus then
+        if m.retryBtn.visible then
+            m.retryBtn.setFocus(true)
+        else if visiblePills().Count() > 0 then
             pills = visiblePills()
             pills[0].setFocus(true)
         else if m.chips.visible and m.chipNodes.Count() > 0 then
@@ -1091,6 +1106,32 @@ sub showEmpty()
             m.top.setFocus(true)
         end if
     end if
+end sub
+
+' A collection's page: the Collections grid's drill or a page opened from a row of collections.
+function collectionPage() as boolean
+    if m.drill <> invalid then return m.drill.kind = "collection"
+    return m.mode = "collection"
+end function
+
+' Where the empty collection's Back button goes: "collections" (the grid) or "page" (closes it).
+function backTarget() as string
+    if m.drill <> invalid then return "collections"
+    return "page"
+end function
+
+' The status button: Retry, or Back on an empty collection.
+sub onStatusButton()
+    if m.retryAction = "back" then
+        m.retryAction = "retry"
+        if m.drill <> invalid then
+            leaveDrill()
+        else
+            m.top.close = true
+        end if
+        return
+    end if
+    reload()
 end sub
 
 ' A row's page whose section answered 404: say so, with nothing to retry (TvSectionBrowseScreen).
@@ -1663,7 +1704,7 @@ function shuffleScope() as dynamic
         if m.drill.kind = "collection" then return { kind: "library_collection", id: Str_orEmpty(m.drill.collectionId) }
         return invalid
     end if
-    if m.mode = "collection" then return { kind: "library_collection", id: Str_orEmpty(prm("collectionId")) }
+    if m.mode = "collection" then return { kind: CollRows_catalogSource(prm("collectionKind")), id: Str_orEmpty(prm("collectionId")) }
     if m.mode = "browse" and Shuffle_libraryMode(prm("mode")) then return { kind: "library", id: Str_orEmpty(prm("libraryId")) }
     return invalid
 end function

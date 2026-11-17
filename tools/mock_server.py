@@ -225,6 +225,15 @@ clears one); GET /mock/switch lists them.
                                  answers a member movie's box set ({} for others). Log: BOX SETS browse
                                  library= group=, BOX SET <id> library= status=, BOX SET SEARCH q= n=,
                                  BOX SET ITEM <id> library= found=
+  collection_rows=1|first        Home and library 1 get a row of collections (section_type collection_posters,
+                                 silo-server #4410/#4415): "Franchises", cards in `collections` (items []):
+                                 Space Sagas (backdrop + thumbhash, 6 items), Night Noir (no backdrop),
+                                 Coming Soon (empty: no poster, 0 items, its page lists nothing) and Laura's
+                                 Picks (a personal collection, source user, collage poster). 1 puts the row
+                                 third on Home, first puts it first (Home opens on it; library 1 always has
+                                 it first). GET /catalog?source=library_collection|user_collection reads a
+                                 collection's titles (c-empty none). Log: COLLECTION ROW scope=,
+                                 COLLECTION ITEMS source= id= library= type= n=
   multi_user=1                   several server users (Silo Android #795, more than one account per server):
                                  password sign-in gives each username its own user id (laura 1, sam 2,
                                  others u-<name>), and tokens stay tied to their user, so /account/me and
@@ -384,6 +393,32 @@ BOX_SETS = [
 
 def box_sets_on():
     return bool(STATE["switches"].get("box_sets"))
+
+
+# Rows of collections (switch collection_rows=1|first, silo-server #4410 / #4415).
+def collection_rows_mode():
+    return str(STATE["switches"].get("collection_rows") or "")
+
+
+def collection_row(lib=""):
+    """A collection_posters section as the server answers it: cards in `collections`, items []."""
+    cards = [
+        {"id": "c-space", "source": "library", "title": "Space Sagas", "poster_url": img("poster", "collection-space"),
+         "poster_thumbhash": "mock", "poster_is_collage": False, "backdrop_url": img("backdrop", "collection-space"),
+         "backdrop_thumbhash": "3OcRJYB4d3h/iIeHeEh3eIhw+j2w", "item_count": 6, "library_id": lib or "1"},
+        {"id": "c-noir", "source": "library", "title": "Night Noir", "poster_url": img("poster", "collection-noir"),
+         "poster_is_collage": False, "item_count": 4, "library_id": lib or "1"},
+        {"id": "c-empty", "source": "library", "title": "Coming Soon", "poster_url": "", "poster_is_collage": False,
+         "item_count": 0, "library_id": lib or "1"},
+    ]
+    if not lib:
+        # A personal collection: no library, no backdrop (never on a personal one), a collage poster.
+        cards.append({"id": "c-laura", "source": "user", "title": "Laura's Picks", "poster_url": img("poster", "collection-laura"),
+                      "poster_is_collage": True, "item_count": 5, "creator_profile_id": "p-laura"})
+    print("COLLECTION ROW scope=%s cards=%d" % ("library" if lib else "home", len(cards)), flush=True)
+    LOG.append("COLLECTION ROW scope=%s" % ("library" if lib else "home"))
+    return {"id": "franchises", "section_type": "collection_posters", "title": "Franchises", "featured": False,
+            "item_limit": 20, "total_count": len(cards), "is_custom": False, "customized": False, "items": [], "collections": cards}
 
 
 def box_set_movies(bs):
@@ -3000,7 +3035,13 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/v2/home/sections":
             if OPTS["home_delay"] > 0:
                 time.sleep(OPTS["home_delay"])  # --home-delay: a slow server, to watch the Home cache draw first
-            return section_list(self, p, q, home_sections()["sections"])
+            secs = home_sections()["sections"]
+            mode = collection_rows_mode()
+            if mode == "first":
+                secs = [collection_row()] + secs
+            elif mode:
+                secs = secs[:2] + [collection_row()] + secs[2:]
+            return section_list(self, p, q, secs)
         if p == "/api/v2/home/capabilities":
             mode = item_limit_mode()
             print("HOME CAPS item_limit=%s" % mode, flush=True)
@@ -3018,7 +3059,10 @@ class Handler(BaseHTTPRequestHandler):
             secs = home_sections()["sections"]
             if m.group(1) == "5":
                 return section_list(self, p, q, mixed_sections())
-            return section_list(self, p, q, secs[1:] if m.group(1) == "1" else secs[2:3])
+            secs = secs[1:] if m.group(1) == "1" else secs[2:3]
+            if m.group(1) == "1" and collection_rows_mode():
+                secs = [collection_row("1")] + secs
+            return section_list(self, p, q, secs)
         m = re.match(r"^/api/v2/library/([^/]+)/collections$", p)
         if m:
             cols = [{"id": "c%d" % i, "title": t, "poster_url": img("poster", "collection-" + t), "item_count": 4} for i, t in enumerate(["Award Winners", "Night Owls", "Comfort Picks"])]
@@ -3094,8 +3138,15 @@ class Handler(BaseHTTPRequestHandler):
                 items = [i for i in all_movies() + all_series() if i["content_id"] in STATE["favorites"]]
             elif src == "watchlist":
                 items = [i for i in all_movies() + all_series() if i["content_id"] in STATE["watchlist"]]
-            elif src in ("person", "library_collection", "section"):
+            elif src in ("person", "library_collection", "user_collection", "section"):
                 items = items[h(str({k: v for k, v in q.items() if k != "cursor"})) % 6:][:10]
+                if src in ("library_collection", "user_collection"):
+                    cid = q.get("collection_id", [""])[0]
+                    if cid == "c-empty":
+                        items = []
+                    if not q.get("cursor", [""])[0]:
+                        print("COLLECTION ITEMS source=%s id=%s library=%s type=%s n=%d" % (src, cid, lib or "-", typ or "-", len(items)), flush=True)
+                        LOG.append("COLLECTION ITEMS source=%s id=%s library=%s" % (src, cid, lib or "-"))
                 # --switch person_works=<n>: a person with n titles, for the filmography's paging.
                 works = int(STATE["switches"].get("person_works") or 0)
                 if src == "person" and works > len(items) and items:
