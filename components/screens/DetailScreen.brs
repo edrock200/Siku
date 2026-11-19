@@ -853,7 +853,12 @@ sub logEdition(st as object)
     if key = m.editionLogKey then return
     m.editionLogKey = key
     if st.source = "picked" then return ' onSelectorChosen logs the pick
-    line = "[siku-detail] edition source=" + st.source + " editions=" + st.editions.Count().ToStr() + " versions=" + editionFiles(st).Count().ToStr()
+    line = "[siku-detail] edition source=" + st.source
+    if st.source = "best" then
+        ' The name class decides first (Silo Android #996); "compared" is how many cuts of it competed on quality.
+        line = line + " class=" + Edition_className(Edition_preference(st.editions[st.edition])) + " compared=" + Edition_classCount(st.editions, st.edition).ToStr()
+    end if
+    line = line + " editions=" + st.editions.Count().ToStr() + " versions=" + editionFiles(st).Count().ToStr()
     line = line + " quality=" + Settings_quality() + " shown=" + Tracks_versionCompact(st.version)
     if st.laterPart then line = line + " (resuming a later part)"
     Diag_log(line)

@@ -14,7 +14,11 @@
 ' "Errors seen on all bitrates ... last_err:961", resets and timeouts) reconnects the same route
 ' with a no-op track_change replan, at once and then after 1, 2, 4, 8 and 15 s, for up to 2 minutes
 ' from the first error; only then does the failure_recovery ladder above take over (which excludes
-' the route on the server). Adapted from Silo-Server/silo-roku, AGPL-3.0
+' the route on the server). A plan that plays again does not end the outage at once: it is held
+' until 20 s of playback have passed (Silo Android #993, MediaLoadRetryPolicy's RECOVERY_INTERVAL_MS),
+' and a drop before that continues it (same start, same tries), so a connection that keeps
+' cutting out after a few seconds of playback still reaches the ladder; after 20 s of playback a
+' later drop gets its own fresh 2 minutes. Adapted from Silo-Server/silo-roku, AGPL-3.0
 ' (source/playback/video.bs TRANSPORT_PATTERN, source/playback/recovery.bs decide/reconnectDelayMs),
 ' device-proven there in hardware runs 14 and 15 (docs/hardware-evidence.md).
 ' Debug deep links (simulator: the Video node never plays): debugVideoError=<code> fakes that
@@ -54,7 +58,9 @@ end sub
 '   outageAt: seconds (recClock) the current connection outage began, -1 when none; tries:
 '   reconnects sent in it; waiting: a reconnect is scheduled; outagePaused: the viewer had paused
 '   when it began; outageSpent: an outage of this attempt used up its 2 minutes without a plan
-'   playing, so the next dropped connection goes to the ladder at once.
+'   playing, so the next dropped connection goes to the ladder at once; heldAt / heldTries: an
+'   outage whose plan played again, kept until `progress` reaches Recovery_renewSeconds() of
+'   playback (heldAt -1 when none).
 sub Recovery_reset()
     m.rec = {
         keys: []
@@ -78,6 +84,9 @@ sub Recovery_reset()
         outageSpent: false
         attemptPlayed: false
         authTried: false
+        heldAt: -1.0
+        heldTries: 0
+        progress: 0.0
     }
     if m.recDebugTimer <> invalid then m.recDebugTimer.control = "stop"
     if m.reconnectTimer <> invalid then m.reconnectTimer.control = "stop"
@@ -257,16 +266,17 @@ function Recovery_reconnect(code as dynamic) as boolean
     if m.closing or m.rec = invalid or m.plan = invalid or m.sessionId = "" or installationId() = "" then return false
     now = Recovery_now()
     delivery = Str_orEmpty(m.plan.delivery)
-    if m.rec.outageAt < 0 then
-        m.rec.outageAt = now
-        m.rec.tries = 0
-        m.rec.outagePaused = m.isPaused
+    opened = Recovery_openOutage(m.rec, now, m.isPaused)
+    if opened = "new" then
         Diag_log("[siku-playback] connection lost code=" + Str_orEmpty(code) + " delivery=" + delivery + "; reconnecting for up to " + Recovery_reconnectBudget().ToStr() + " s")
+    else if opened = "continued" then
+        Diag_log("[siku-playback] connection lost again after " + Int(m.rec.progress).ToStr() + " s of playback (under " + Recovery_renewSeconds().ToStr() + " s); continuing the outage from " + Int(now - m.rec.outageAt).ToStr() + " s ago tries=" + m.rec.tries.ToStr() + " code=" + Str_orEmpty(code))
     end if
     elapsed = now - m.rec.outageAt
-    if elapsed >= Recovery_reconnectBudget() then
+    if Recovery_outageExpired(m.rec, now) then
         Diag_log("[siku-playback] reconnect gave up after " + Int(elapsed).ToStr() + " s tries=" + m.rec.tries.ToStr() + "; asking for another route")
         m.rec.outageAt = -1.0
+        m.rec.heldAt = -1.0
         m.rec.waiting = false
         m.rec.outageSpent = true
         return false
@@ -317,12 +327,75 @@ sub Recovery_notePlaying()
     ' A later refusal of the token (it ran out again hours on) may refresh it once more.
     m.rec.authTried = false
     if m.rec.outageAt >= 0 then
-        Diag_log("[siku-playback] reconnected after " + Int(Recovery_now() - m.rec.outageAt).ToStr() + " s tries=" + m.rec.tries.ToStr())
-        m.rec.outageAt = -1.0
-        m.rec.tries = 0
+        Diag_log("[siku-playback] reconnected after " + Int(Recovery_now() - m.rec.outageAt).ToStr() + " s tries=" + m.rec.tries.ToStr() + "; the reconnect window renews after " + Recovery_renewSeconds().ToStr() + " s of playback")
+        Recovery_holdOutage(m.rec)
         m.bufferLabel.text = Tx("Buffering")
     end if
 end sub
+
+' ---------- Reconnect window renewal (Silo Android #993; pure on rec, host-tested) ----------
+
+' Seconds of playback after a reconnect that end the outage, so a later drop gets a fresh window
+' (MediaLoadRetryPolicy's RECOVERY_INTERVAL_MS, 20 s of sustained reads).
+function Recovery_renewSeconds() as integer
+    return 20
+end function
+
+' Playback between two watchdog readings that counts toward renewal: forward movement of at most
+' 3 s (a 1 s tick at normal speed, with slack); a seek, a jump back or no movement count nothing.
+function Recovery_progressGain(lastPos as dynamic, at as dynamic) as float
+    a = Num_or(lastPos, -1)
+    b = Num_or(at, -1)
+    if a < 0 or b < 0 then return 0.0
+    d = b - a
+    if d <= 0 or d > 3 then return 0.0
+    return d
+end function
+
+' A dropped connection: "open" (an outage is already being reconnected), "continued" (the held
+' outage of a plan that played under Recovery_renewSeconds() resumes, start and tries kept) or
+' "new" (a fresh window starting now).
+function Recovery_openOutage(rec as object, now as float, paused as boolean) as string
+    if rec.outageAt >= 0 then return "open"
+    if rec.heldAt >= 0 then
+        rec.outageAt = rec.heldAt
+        rec.tries = rec.heldTries
+        rec.heldAt = -1.0
+        rec.heldTries = 0
+        rec.outagePaused = paused
+        return "continued"
+    end if
+    rec.outageAt = now
+    rec.tries = 0
+    rec.progress = 0.0
+    rec.outagePaused = paused
+    return "new"
+end function
+
+' Whether the open outage has used up its Recovery_reconnectBudget() seconds.
+function Recovery_outageExpired(rec as object, now as float) as boolean
+    return rec.outageAt >= 0 and now - rec.outageAt >= Recovery_reconnectBudget()
+end function
+
+' The plan played again after an outage: it is held, not ended, until it has played long enough.
+sub Recovery_holdOutage(rec as object)
+    rec.heldAt = rec.outageAt
+    rec.heldTries = rec.tries
+    rec.progress = 0.0
+    rec.outageAt = -1.0
+    rec.tries = 0
+end sub
+
+' Adds gain seconds of playback to a held outage; true when that renews the window (the outage ends).
+function Recovery_addProgress(rec as object, gain as float) as boolean
+    if rec.heldAt < 0 or gain <= 0 then return false
+    rec.progress = rec.progress + gain
+    if rec.progress < Recovery_renewSeconds() then return false
+    rec.heldAt = -1.0
+    rec.heldTries = 0
+    rec.progress = 0.0
+    return true
+end function
 
 ' An early end: the Video node said "finished" well short of the file's own duration (the plan's
 ' source.duration_seconds; a catalog runtime can differ from the file by more): more than 8 s and
@@ -398,6 +471,8 @@ sub Recovery_fail(classification as string, rokuCode as dynamic)
     end if
     m.rec.native = m.rec.native + 1
     m.rec.nativePending = true
+    ' Another route: a drop on it starts a fresh reconnect window.
+    m.rec.heldAt = -1.0
     if ladderStep.quality <> "" then
         m.prevQualityPref = m.qualityPref
         m.qualityPref = ladderStep.quality
@@ -546,6 +621,9 @@ sub Recovery_onTick()
     end if
     vidPos = Num_or(m.video.position, 0)
     if m.rec.lastPos < 0 or Abs(vidPos - m.rec.lastPos) > 0.25 then
+        if st = "playing" and m.rec.heldAt >= 0 and Recovery_addProgress(m.rec, Recovery_progressGain(m.rec.lastPos, vidPos)) then
+            Diag_log("[siku-playback] reconnect window renewed after " + Recovery_renewSeconds().ToStr() + " s of playback; a later drop starts a fresh " + Recovery_reconnectBudget().ToStr() + " s")
+        end if
         m.rec.lastPos = vidPos
         m.rec.still = 0
         return

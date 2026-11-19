@@ -35,3 +35,9 @@ function EditionT_firstPart(versions as object, fileId as string) as string
     end for
     return ""
 end function
+
+' [class name, editions in that class] of the edition a detail with no history opens on.
+function EditionT_class(detail as object) as object
+    r = Edition_resolve(detail, "", invalid, "auto")
+    return [Edition_className(Edition_preference(r.editions[r.edition])), Edition_classCount(r.editions, r.edition)]
+end function

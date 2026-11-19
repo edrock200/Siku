@@ -191,3 +191,58 @@ class EarlyEnd(unittest.TestCase):
             ("another point resumes again", a, [2500, 1500], "resume"),
             ("the same point again is the end", a, [1504, 1500], "end"),
         ])
+
+
+RIO = REC + ["tests/recovery_io.brs"]
+
+
+def ticks(start, seconds, step=1):
+    """Watchdog readings of steady playback from start for seconds."""
+    return [["tick", start + i * step, start + (i + 1) * step] for i in range(seconds)]
+
+
+class RetryWindow(unittest.TestCase):
+    """Reconnect windows renew after sustained playback (Silo Android #993, a port of
+    DirectPlayRetryWindowTest): a plan that plays again holds the outage until 20 s of playback;
+    a drop before that continues it (start and tries kept, so it still runs out after 2 minutes),
+    a drop after it opens a fresh window."""
+
+    def test_progress_gain(self):
+        g = "Recovery_progressGain"
+        check_cases(self, REC, [
+            ("a second of playback", g, [100, 101], 1.0),
+            ("no movement", g, [100, 100], 0.0),
+            ("a jump back", g, [100, 90], 0.0),
+            ("a seek forward", g, [100, 400], 0.0),
+            ("no earlier reading", g, [-1, 5], 0.0),
+            ("strings are read", g, ["100", "102"], 2.0),
+        ])
+
+    def test_later_outage_gets_a_fresh_window_after_sustained_playback(self):
+        steps = [["drop", 0], ["play", 5]] + ticks(1000, 20) + [["drop", 660], ["drop", 690], ["drop", 779], ["drop", 780]]
+        want = ["new:1", "held"] + [""] * 19 + ["renewed", "new:1", "open:2", "open:3", "gave_up"]
+        check_cases(self, RIO, [("renewed after 20 s", "RecoveryT_run", [steps], want)])
+
+    def test_a_drop_under_20_s_continues_the_outage(self):
+        steps = [["drop", 0], ["drop", 1], ["play", 4]] + ticks(1000, 19) + [["drop", 40]]
+        want = ["new:1", "open:2", "held"] + [""] * 19 + ["continued:3"]
+        check_cases(self, RIO, [("19 s is not enough", "RecoveryT_run", [steps], want)])
+
+    def test_frequent_cuts_exhaust_the_window_even_when_they_play(self):
+        steps, want = [], []
+        for i in range(8):
+            steps += [["drop", i * 15], ["play", i * 15 + 2]] + ticks(i * 100, 5)
+            want += ["new:1" if i == 0 else "continued:%d" % (i + 1), "held"] + [""] * 5
+        steps.append(["drop", 120])
+        want.append("gave_up")
+        check_cases(self, RIO, [("cuts every 15 s run out after 2 minutes", "RecoveryT_run", [steps], want)])
+
+    def test_seeks_and_stalls_do_not_count(self):
+        steps = [["drop", 0], ["play", 3], ["tick", 100, 600], ["tick", 600, 300], ["tick", 300, 300]] + ticks(300, 19) + [["drop", 60]]
+        want = ["new:1", "held", "", "", ""] + [""] * 19 + ["continued:2"]
+        check_cases(self, RIO, [("only steady playback renews", "RecoveryT_run", [steps], want)])
+
+    def test_playing_without_an_outage_holds_nothing(self):
+        steps = [["play", 0]] + ticks(0, 25) + [["drop", 30]]
+        want = [""] + [""] * 25 + ["new:1"]
+        check_cases(self, RIO, [("no outage, no hold", "RecoveryT_run", [steps], want)])

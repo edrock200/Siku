@@ -8,8 +8,10 @@
 ' file for the quality preference and never changes the edition:
 ' - an explicit Version pick (pinned file id) wins;
 ' - the edition is the viewer's pick, else the one last played (user_data.last_edition_key, where
-'   a present "" names the unnamed edition, then the edition of last_file_id), else the edition
-'   whose Auto file compares best across the cuts (Edition_opening);
+'   a present "" names the unnamed edition, then the edition of last_file_id), else, by name first,
+'   the unnamed / standard / default cut, then a theatrical one, then any other, and among the cuts
+'   of that class the one whose Auto file compares best (Edition_opening; Silo Android #996,
+'   silo-roku 3e7ee3a, silo-server #4511);
 ' - Auto is the best file at or below the preference, else the closest above it, else a file of
 '   unknown resolution, ranked in the server's version order (resolution, HDR, file size);
 ' - while the title has a resume point, a later part of a multi-part copy the viewer stopped in is
@@ -298,7 +300,10 @@ function Edition_autoFile(edition as object, quality as dynamic) as dynamic
     return Edition_autoAmong(Edition_firstParts(edition.files), Edition_cap(quality))
 end function
 
-' 0 for the unnamed or standard edition, 1 for a theatrical one, 2 for any other cut.
+' 0 for the unnamed or standard edition, 1 for a theatrical one, 2 for any other cut. Matches
+' DetailVersionSelector.kt's `preference` exactly: the trimmed, lower-cased key and raw name; empty
+' names (the unnamed edition) are 0; "standard" / "default", or starting "standard " / ending
+' " standard", are 0; containing "theatrical" is 1.
 function Edition_preference(edition as object) as integer
     names = []
     for each n in [edition.id, edition.raw]
@@ -315,28 +320,56 @@ function Edition_preference(edition as object) as integer
     return 2
 end function
 
-' The edition a page opens on with no history: each edition's Auto file compared across the cuts
-' by fit (within the cap or no cap, then above it, then unknown resolution), resolution (higher
-' within the cap, lower above it), HDR, then the edition's preference and server order. File size
-' is not compared across cuts.
+' The name class Edition_preference gives, for the console line: "standard" (unnamed, standard or
+' default), "theatrical" or "other".
+function Edition_className(pref as integer) as string
+    if pref = 0 then return "standard"
+    if pref = 1 then return "theatrical"
+    return "other"
+end function
+
+' How many editions share the given edition's name class (the cuts Edition_opening compared).
+function Edition_classCount(editions as object, at as integer) as integer
+    if at < 0 or at >= editions.Count() then return 0
+    pref = Edition_preference(editions[at])
+    n = 0
+    for i = 0 to editions.Count() - 1
+        if Edition_preference(editions[i]) = pref then n = n + 1
+    end for
+    return n
+end function
+
+' The edition a page opens on with no history, chosen by name first (Silo Android #996,
+' silo-roku 3e7ee3a, silo-server #4511): only the cuts in the best Edition_preference class
+' present compete, so a standard cut is never passed over for a longer one in better quality.
+' Among those, each cut's Auto file is compared by fit (within the cap or no cap, then above it,
+' then unknown resolution), resolution (higher within the cap, lower above it), HDR, then server
+' order. File size is not compared across cuts.
 function Edition_opening(editions as object, quality as dynamic) as integer
     cap = Edition_cap(quality)
+    bestClass = 3
+    for i = 0 to editions.Count() - 1
+        p = Edition_preference(editions[i])
+        if p < bestClass then bestClass = p
+    end for
     best = invalid
     for i = 0 to editions.Count() - 1
-        auto = Edition_autoFile(editions[i], quality)
-        if auto <> invalid then
-            r = Edition_rank(auto.resolution)
-            fit = 0
-            if r = 0 then
-                fit = 2
-            else if cap > 0 and r > cap then
-                fit = 1
-            end if
-            c = { at: i, fit: fit, rank: r, hdr: Edition_hdr(auto), pref: Edition_preference(editions[i]) }
-            if best = invalid then
-                best = c
-            else if Edition_opensBefore(c, best) then
-                best = c
+        if Edition_preference(editions[i]) = bestClass then
+            auto = Edition_autoFile(editions[i], quality)
+            if auto <> invalid then
+                r = Edition_rank(auto.resolution)
+                fit = 0
+                if r = 0 then
+                    fit = 2
+                else if cap > 0 and r > cap then
+                    fit = 1
+                end if
+                c = { at: i, fit: fit, rank: r, hdr: Edition_hdr(auto) }
+                if best = invalid then
+                    best = c
+                else if Edition_opensBefore(c, best) then
+                    best = c
+                end if
             end if
         end if
     end for
@@ -351,7 +384,6 @@ function Edition_opensBefore(a as object, b as object) as boolean
         return a.rank > b.rank
     end if
     if a.hdr <> b.hdr then return a.hdr
-    if a.pref <> b.pref then return a.pref < b.pref
     return a.at < b.at
 end function
 

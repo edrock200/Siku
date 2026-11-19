@@ -381,11 +381,15 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
 - v0.3.0 (two reviews + profile management): `[siku-playback] replan queued|dequeued|answer dropped …` (`PlayerReplanFence.brs`; mock `--switch replan_delay=<s>`, `start_delay=<s>`), `unused session stopped reason=`, `ai live reconnect …` (mock `ai_live=drop`), `try again at N s file=`, `media refused status=N …` (`debugVideoError=auth[:N]`, mock `server_resume=<s>`), HUD panes scroll (mock `chapters=<n>`); `[siku-auth] logout outcome=` (`Api_revoke`, mock `stale_logout=1`), `refresh answer kept for …`; `[siku-accounts] forgot N account(s) on servers no longer saved`; `[siku-audio] stream error N; starting again once`, `part finished early`; `[siku-search] titles page …`, `people search media_scope supported=` (mock `search_hidden=1`, `people_scope=0|fail`); `[siku-profiles] manage mode …`, `edit: save|delete outcome=` (ProfileManage.brs, EditProfileScreen; `debugManage=1`, `debugProfileName=`; mock `policy_revision=1`, `profile_write=fail`, `profiles=<n>`); `[siku-diag] registry write failed key=`.
 - Editions (Silo Android #899, silo-roku 7bb02a9; `Edition.brs`, host tests `tests/test_edition.py`): Edition picks the cut,
   Version Auto the best first-part file of that cut for `playback.preferred_quality`; the page opens on `last_edition_key`,
-  then the edition of `last_file_id`, else the cut whose Auto file compares best; Play sends the shown file unless it is the
-  last-played Auto file. `[siku-detail] edition source=last_edition|last_file|best|pinned editions= versions= quality= shown=`
-  (once per decision), `edition picked versions= shown= (Version on Auto)`, `play file=sent|player reason=pinned|tracks|auto|last_played
-  shown=`, `shown file changed; audio and subtitle picks back to Auto`. Mock: `--switch editions=1|lastfile|none` (Iron Orchard,
-  `movie:iron-orchard`: Theatrical 70/71, Director's Cut 72/73; log `EDITIONS detail`).
+  then the edition of `last_file_id`, else by name first (Silo Android #996, silo-roku 3e7ee3a, silo-server #4511;
+  `Edition_preference`, Android's exact match: trimmed, lower-cased key and raw name; unnamed, `standard`, `default`, `standard …`
+  or `… standard`, then anything containing `theatrical`, then any other cut) and only the cuts of the best class present compare
+  their Auto files (fit, resolution, HDR, then server order); Play sends the shown file unless it is the
+  last-played Auto file. `[siku-detail] edition source=last_edition|last_file|best|pinned [class=standard|theatrical|other compared=<n>]
+  editions= versions= quality= shown=` (once per decision; `class`/`compared` only with `best`), `edition picked versions= shown= (Version on Auto)`, `play file=sent|player reason=pinned|tracks|auto|last_played
+  shown=`, `shown file changed; audio and subtitle picks back to Auto`. Mock: `--switch editions=1|lastfile|none|standard` (Iron Orchard,
+  `movie:iron-orchard`: Theatrical 70/71, Director's Cut 72/73; `standard`: Extended Cut 74 2160p HDR / 75 listed first, Standard 76
+  1080p, opens on Standard; log `EDITIONS detail`).
 - Library sorts (Silo Android #843, silo-roku d4303e5; `CatalogSort.brs`, host tests `tests/test_catalog_sort.py`): the web
   client's list, names, order and default directions; a library lists the fields for its media (series add Latest Episode
   Added / Air Date), Favorites, Watchlist and collections leave out Progress / Date Viewed / Plays, the RT sorts only while
@@ -436,6 +440,17 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   (then `connection lost code=early_end`, `reconnect 1 …`). A second early end within 10 s of that point
   (`Recovery_earlyEndAction`) is the end, but not finished: `ended early again at …; treating it as the end (not finished,
   no auto-play)`; Up Next opens without a countdown and the series page does not move on. Simulator cannot play: device only.
+- Reconnect window renewal (Silo Android #993, `MediaLoadRetryPolicy`; `Recovery_openOutage` / `Recovery_holdOutage` /
+  `Recovery_addProgress` / `Recovery_progressGain` in `PlaybackRecovery.brs`, host tests `RetryWindow` in
+  `tests/test_playback_network.py`): a plan that plays again after a dropped connection holds the outage (its start and tries)
+  instead of ending it; 20 s of steady playback (`Recovery_renewSeconds`, Android's `RECOVERY_INTERVAL_MS`; forward steps of at
+  most 3 s per watchdog tick, so seeks and stalls count nothing) renew it, and a later drop gets a fresh 120 s. A drop before
+  that continues the outage, so a connection that cuts out every few seconds still reaches the ladder after 2 minutes (until
+  v0.13.0 any "playing" renewed it). A ladder step drops the held outage (another route). Console: `reconnected after <n> s
+  tries=<k>; the reconnect window renews after 20 s of playback`, `reconnect window renewed after 20 s of playback; a later
+  drop starts a fresh 120 s`, `connection lost again after <n> s of playback (under 20 s); continuing the outage from <s> s ago
+  tries=<k> code=`. Android's byte counts (512 KiB) have no Roku equivalent; position progress stands in. Simulator cannot
+  play: device only.
 - Scrubber marker bands (Silo Android #933/#934, adapted from silo-roku 42249ca; `Markers_bands` in `MarkerTimeline.brs`,
   host tests `tests/test_marker_timeline.py`): one band per intro / recap / credits / preview range, over the played fill and
   under the puck, in TheIntroDB's palette (intro #51A2FF, recap #FF8904, credits #C27AFF, preview #00D3F2) at 34% / 45%

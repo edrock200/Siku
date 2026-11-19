@@ -115,11 +115,14 @@ clears one); GET /mock/switch lists them.
                                  CAPS <sources>; every catalog read with a sort logs CATALOG SORT <sort>
   no_runtime=1                   detail pages carry runtime 0 (a server without a stored running time);
                                  the files keep their measured duration
-  editions=1|lastfile|none        Iron Orchard has two editions (Silo Android #899): Theatrical Cut (files 70
+  editions=1|lastfile|none|standard
+                                 Iron Orchard has two editions (Silo Android #899): Theatrical Cut (files 70
                                  2160p HDR, 71 1080p) and Director's Cut (72 2160p HDR, 73 1080p), with
                                  playback_variants. 1: last played file 73 with last_edition_key directors_cut;
-                                 lastfile: only last_file_id 73; none: no history (the page opens on the cut whose
-                                 Auto file compares best: Theatrical). Log: EDITIONS detail <mode>
+                                 lastfile: only last_file_id 73; none: no history (the page opens by name class:
+                                 Theatrical before the Director's Cut). standard (Silo Android #996): no history,
+                                 Extended Cut (files 74 2160p HDR, 75 1080p) listed first and a Standard edition
+                                 (76 1080p SDR only); the page opens on Standard. Log: EDITIONS detail <mode>
   parent_artwork=1               episode cards, episode lists and episode detail carry series_poster_url,
                                  series_backdrop_url and season_poster_url (+ *_thumbhash), as servers with
                                  episode_parent_artwork send them (Silo #711)
@@ -839,11 +842,15 @@ def mock_editions(d, mode):
     base = d["versions"][-1]
     dur = d.get("duration_seconds", 3000)
     cuts = [("theatrical", "Theatrical Cut", ["70", "71"], dur), ("directors_cut", "Director's Cut", ["72", "73"], dur + 1260)]
+    if mode == "standard":
+        # A better-quality Extended Cut listed first loses to the Standard edition by name (Silo Android #996).
+        cuts = [("extended", "Extended Cut", ["74", "75"], dur + 900), ("standard", "Standard", ["76"], dur)]
     files = []
     variants = []
     for key, raw, fids, length in cuts:
         group = []
-        for fid, res in zip(fids, ["2160p", "1080p"]):
+        resolutions = ["2160p", "1080p"] if len(fids) > 1 else ["1080p"]
+        for fid, res in zip(fids, resolutions):
             v = dict(base)
             v.update({"file_id": fid, "resolution": res, "hdr": res == "2160p", "codec_video": "hevc" if res == "2160p" else "h264",
                       "codec_audio": "eac3" if res == "2160p" else "aac", "container": "mkv", "duration": length,

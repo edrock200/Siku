@@ -3,6 +3,16 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.14.0
+
+From Silo's apps and server (November 19, 2026).
+
+**Better**
+- **Movies with several editions open on the regular film** when you haven't watched any of them. Siku picks a cut by name first: the standard (or unnamed) edition, then a theatrical one, then any other. Picture quality only decides between cuts of the same kind, so a 4K Extended Cut no longer opens ahead of the regular 1080p film. The edition you last watched still opens first.
+- **Better recovery when the connection keeps dropping:** if playback stops again within 20 seconds of coming back, Siku treats it as the same outage, and if the connection keeps failing it asks the server for another way to play the title after two minutes instead of retrying forever. After 20 seconds of smooth playback, a later dropout gets a full two minutes of reconnecting again.
+
+**Needs testing on a real Roku:** short network cuts during playback (one, two close together, and a connection that keeps failing).
+
 ## v0.13.0
 
 From Silo's Android TV app (November 17, 2026).

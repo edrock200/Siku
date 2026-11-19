@@ -2,8 +2,9 @@
 """Editions and Version Auto within one (Silo Android #899, a port of DetailVersionSelectorTest and
 PlaybackEditionsTest; silo-roku 7bb02a9 follows the same rule): Edition picks the cut, Auto picks
 the best first-part file of that cut for the quality preference, the page opens on the last-played
-edition (last_edition_key, then last_file_id), else the edition whose Auto file compares best
-across cuts, and Play sends the shown file unless it is the last-played Auto file."""
+edition (last_edition_key, then last_file_id), else by name first (unnamed / standard / default, then
+theatrical, then any other cut; Silo Android #996, silo-roku 3e7ee3a) and among that class the edition
+whose Auto file compares best, and Play sends the shown file unless it is the last-played Auto file."""
 import unittest
 
 from brs import check_cases
@@ -53,7 +54,7 @@ class Selection(unittest.TestCase):
     def test_editions_and_history(self):
         unnamed = fv(5, "720p")
         check_cases(self, FILES, [
-            pick("nothing played opens on the edition holding the best file", 1),
+            pick("nothing played opens on the preferred cut with its best file", 1),
             pick("a picked edition keeps Auto inside it, even when another cut is better", 3, edition="extended"),
             pick("the last-played edition opens with its best file", 3, last_file=3),
             pick("history picks the cut, the preference picks the file", 1, last_file=2),
@@ -97,13 +98,33 @@ class Selection(unittest.TestCase):
 
     def test_opening_edition(self):
         check_cases(self, FILES, [
-            pick("a cut within the cap beats one only above it", 2, quality="1080p", files=[cut(1, "imax", "2160p"), cut(2, "extended", "720p")]),
-            pick("above the cap, the closer cut wins", 2, quality="480p", files=[cut(1, "imax", "2160p"), cut(2, "extended", "720p")]),
-            pick("same resolution: HDR first", 2, files=[cut(1, "theatrical", "1080p"), cut(2, "directors_cut", "1080p", hdr=True)]),
-            pick("then theatrical over another cut, never file size", 2, files=[cut(1, "directors_cut", "1080p", size=9000), cut(2, "theatrical", "1080p")]),
+            # Name first (unnamed or standard, then theatrical, then any other cut), even over better quality.
+            pick("a standard cut beats a 2160p HDR extended cut", 1, files=[cut(1, "standard", "1080p"), cut(2, "extended", "2160p", hdr=True)]),
             pick("the unnamed edition before theatrical", 2, files=[cut(1, "theatrical", "1080p"), fv(2, "1080p")]),
             pick("a standard edition before theatrical", 2, files=[cut(1, "theatrical", "1080p"), cut(2, "standard edition", "1080p")]),
+            pick("theatrical before another cut, never file size", 2, files=[cut(1, "directors_cut", "1080p", size=9000), cut(2, "theatrical", "1080p")]),
+            pick("theatrical 1080p before a 2160p HDR director's cut", 2, files=[cut(1, "directors_cut", "2160p", hdr=True), cut(2, "theatrical", "1080p")]),
+            pick("the unnamed 720p before a 2160p theatrical", 2, files=[cut(1, "theatrical", "2160p"), fv(2, "720p")]),
+            pick("default is the standard class", 2, files=[cut(1, "extended", "2160p"), cut(2, "default", "720p")]),
+            pick("names are trimmed and case-blind", 2, files=[cut(1, "imax", "2160p"), fv(2, "720p", "x", "  STANDARD  ")]),
+            pick("a raw name ending in ' standard' counts", 2, files=[cut(1, "extended", "2160p"), fv(2, "720p", "ed2", "Blu-ray Standard")]),
+            pick("'standardized' is not standard", 1, files=[cut(1, "theatrical", "720p"), cut(2, "standardized", "2160p")]),
+            pick("theatrical anywhere in a name counts", 2, files=[cut(1, "extended", "2160p"), fv(2, "720p", "rt", "Original Theatrical Release")]),
+            pick("history still wins over the name class", 2, last_file=2, files=[cut(1, "standard", "1080p"), cut(2, "extended", "2160p", hdr=True)]),
+            # Among equally named cuts: fit, resolution, HDR, then server order.
+            pick("a cut within the cap beats one only above it", 2, quality="1080p", files=[cut(1, "imax", "2160p"), cut(2, "extended", "720p")]),
+            pick("above the cap, the closer cut wins", 2, quality="480p", files=[cut(1, "imax", "2160p"), cut(2, "extended", "720p")]),
+            pick("same resolution: HDR, never file size", 2, files=[cut(1, "extended", "1080p", size=9000), cut(2, "directors_cut", "1080p", hdr=True)]),
             pick("a full tie keeps server order", 1, files=[cut(1, "extended", "1080p"), cut(2, "directors_cut", "1080p", size=9000)]),
+            pick("two standard-class cuts compare on quality", 2, files=[fv(1, "1080p"), cut(2, "standard", "2160p")]),
+        ])
+
+    def test_opening_class(self):
+        check_cases(self, FILES, [
+            ("standard class", "EditionT_class", [detail(files=[cut(1, "standard", "1080p"), cut(2, "extended", "2160p")])], ["standard", 1]),
+            ("theatrical class, two cuts", "EditionT_class",
+             [detail(files=[cut(1, "theatrical", "1080p"), cut(2, "theatrical_imax", "2160p"), cut(3, "extended", "2160p")])], ["theatrical", 2]),
+            ("other class", "EditionT_class", [detail(files=[cut(1, "extended", "1080p"), cut(2, "directors_cut", "2160p")])], ["other", 2]),
         ])
 
     def test_parts(self):
