@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Home's events socket (silo.events.v2, channel user_state) over Roku OS 16's roWebSocket, open only
+  while Home shows (components/screens/home/HomeLive.brs; Silo's Roku app c1841ae HomeEventsTask).
+  request: { url: "wss://…/api/v2/events/ws?channels=user_state", protocols: "silo.events.v2,
+             silo.ticket.<t>" (the ticket: never logged), profileId, lifetime (seconds) }
+  shutdown (in): set true to close the socket and end the task.
+  signal (out): { seq, kind, reason, change, changes, others }
+    kind "subscribed" (user_state confirmed), "changed" (this profile's watch state changed elsewhere;
+    changes counts every change event so far and others those that were not progress-only, so a burst
+    coalesced into one field set loses nothing), "access_changed", or "closed" with reason:
+    unsupported | url | protocol | timeout | error | quiet | no_subscribe | rejected | closed_by_server |
+    access_changed | max_age | owner | shutdown.
+  Nothing here prints a URL, ticket or frame. SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<component name="HomeEventsTask" extends="Task">
+  <interface>
+    <field id="request" type="assocarray" />
+    <field id="shutdown" type="boolean" alwaysNotify="true" />
+    <field id="signal" type="assocarray" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/tasks/HomeEventsTask.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/HomeWatch.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
+</component>

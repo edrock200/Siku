@@ -342,6 +342,27 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   `m.global.playbackStopsLanded`; a DetailScreen on top that read before it (the player's 2.5 s `stopTimeout` ran out, or
   a retry delivered it) reads again: `[siku-detail] playback stop landed after the page read; reading again`. Mock:
   `--switch stop_fail=1` (the first DELETE answers 503, the retry 2 s later lands).
+- Home watch state (Silo Android #1009, Silo's Roku app c1841ae / #102; `HomeWatch.brs` pure helpers, host tests
+  `tests/test_home_watch.py`; `HomeLive.brs`, `HomeEventsTask`): HomePage (Home and library Recommended pages) reads again
+  quietly every time it is shown again (back from a detail page, the player, another tab) and when a playback stop lands while
+  it shows: `[siku-home] watch state refresh reason=return|stop_landed|changed|reconnect|poll|access_changed|queued page=home|library-home`,
+  `watch state refresh queued reason= (a read is running)` (runs after it). A refresh that fails for a transient reason (no
+  answer, 408, 429, 5xx) keeps the drawn rows and retries after 1, 2, 4 s while the page shows: `refresh incomplete: a row's
+  read failed status=N; keeping the drawn rows`, `refresh retry <n>/3 in <d> s (list|row status=N)`, `refresh retries used up
+  (…); keeping the drawn rows` (then the "Couldn't refresh Home" toast for a failed list). Home only, after its first server
+  answer, own session only (no borrowed profile): POST `/api/v2/events/ws-ticket` (`silo.events.v2`, `expires_in` ≤ 30,
+  `max_connection_seconds` ≤ 300), then `/api/v2/events/ws?channels=user_state` offering `silo.events.v2, silo.ticket.<t>`;
+  a `user_state.changed` for this profile re-reads Home after 2 s (a progress-only burst at most every 30 s), nothing is patched
+  from the frame (it names the change, not the value). `watch events connecting lifetime=<s> s`, `watch events subscribed
+  channel=user_state catch_up=yes|no` (yes after a drop: one re-read), `watch state changed elsewhere change=<c> events=<n>;
+  reading Home in <d> s`, `watch events closed reason=<r>; reconnecting now|in <d> s` (back-off 1-30 s; `max_age` and
+  `access_changed` reconnect at once), `watch events ticket failed status=N; trying again in <d> s`, `watch events unavailable:
+  <reason|ticket status=N>; reading Home every 120 s while it shows` (no roWebSocket before Roku OS 16, 403/404/405, rejected
+  channel), `watch events stopped: Home is hidden`. Never the ticket or URL. Mock: `--switch home_events=on|off|404|fail|reject|nosub`,
+  `events_lifetime=<s>`, `lazy_rows=1` (Hidden Gems read on its own), `section_items_fail=<n>`, `home_sections_fail=<n>`;
+  `curl -X POST -d '{"content_id":"movie:paper-moons"}' localhost:<port>/mock/watch-elsewhere` (another device marks it
+  watched: it leaves Continue Watching; `"watched": false`, `"change"`, `"profile_id"`, `"to_all": true`), `POST
+  /mock/events/drop`; log `EVENTS ticket|socket open|subscribed|sent|dropped|closed`, `SECTION ITEMS <id> status=`.
 - Detail pages from a card (Silo Android #971, `Nav_detailSeed` in `Nav.brs`): a movie or series card picked on Home, For
   You, Library, Search, a person page or More Like This passes `params.seed`; DetailScreen draws its title, facts, overview and
   artwork at once (Play reads "Loading…", disabled; other actions hidden; `m.item` stays invalid until the detail lands) and

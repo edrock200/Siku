@@ -7,6 +7,11 @@
   (section_type collection_posters) shows every collection card without one, captioned "by Name" or
   with its count (Home: server collections only of libraries this Roku shows); a card opens the
   collection's page (LibraryScreen, section "collection"; CollectionRows.brs).
+  Watch state (Silo Android #1009, Silo's Roku app #102): the page reads its rows again quietly each
+  time it is shown again and when a playback stop lands while it shows; a refresh that fails for a
+  transient reason keeps the drawn rows and is retried after 1, 2 and 4 s. Home (not a library page)
+  also listens to the server's events socket (HomeLive.brs, HomeEventsTask) and reads again when this
+  profile's watch state changes on another device.
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="HomePage" extends="ShellPage">
@@ -16,6 +21,8 @@
   <script type="text/brightscript" uri="pkg:/components/common/HomeCache.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/SectionRows.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/CollectionRows.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/HomeWatch.brs" />
+  <script type="text/brightscript" uri="pkg:/components/screens/home/HomeLive.brs" />
   <children>
     <HomeSkylineFeed id="feed" />
     <ShellActionMenu id="menu" />

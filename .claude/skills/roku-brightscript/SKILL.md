@@ -386,6 +386,15 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
   catalogs ("by {0}": an audiobook author and a collection's maker) needs the catalog key:
   `TxKey("android.<name>", {"0": arg}, fallback)`, written by `tools/i18n_build.py` as `@android.<name>`.
 
+- A second roWebSocket (Home's events socket, `HomeEventsTask`, beside AiLiveTask's control socket) follows the same
+  recipe: one Task per connection, ticket minted on the render thread through ApiTask (so a 401 refreshes the token),
+  `SetProtocols("silo.events.v2, silo.ticket.<t>")`, open only while the page shows, released (`shutdown`) on hide.
+  Server events that name a change but not its value (`user_state.changed`) mean "read again", never a local patch;
+  gather them (2 s debounce, progress-only at most every 30 s) so another device's playback does not re-read Home
+  every 10 s. A Task that holds a socket also checks `m.global.session` every few seconds and closes on a profile
+  change, in case the page never got its hide. Tasks report bursts as cumulative counters (`changes`, `others`)
+  because brs-engine coalesces rapid field sets.
+
 ## Project conventions (short version; `docs/ARCHITECTURE.md` has the full one)
 - 1920×1080 canvas, pixel coordinates. Android dp × 2 = px; Android sp × 1.72 = px.
 - Every component is an XML file plus a sibling `.brs` referenced by `<script uri>`. No inline
@@ -786,3 +795,4 @@ v0.2.0, v0.3.0, …
 - **v0.13.0** Collection rows aligned with Silo Android TV #979 (owner byline from `m.global.profileNames`, poster hero fallback, ebook-library collections held back via `m.global.collectionLibraries`, each card validated alone, kind-qualified focus ids). Lessons: when two catalog strings share an English text ("by {0}") but differ in other languages, key the second by its Android name (`@android.<name>`); a server and a personal collection can share an id, so focus keys need the kind. Device checks pending: late `m.global` observers redrawing the row.
 - **v0.14.0** Edition name class before quality (#996) and reconnect-window renewal after 20 s of steady playback (#993). Lessons: nothing new about devices; a reconnect budget renewed on any "playing" never runs out on a flapping connection, so renew only after sustained forward progress (≤ 3 s per 1 s tick); `pos` is a reserved-looking parameter name lint rejects (pitfall 4).
 - **v0.15.0** Subtitle search gated on the server's provider status (#608); #970 (TV top bar hover-menu timing) did not apply: Siku's menus open only on Down/OK. Lessons: nothing new about devices; give a probe both a request timeout and a Timer node so the simulator honours the budget too.
+- **v0.16.0** Home watch-state refresh (#1009, silo-roku #102): re-read on every return, 1/2/4 s retries for transient failures, `HomeEventsTask` on `/api/v2/events/ws` (ticket subprotocol, `user_state` channel) with a 120 s fallback. Lessons: Silo's `user_state.changed` events carry no values, so re-read rather than patch; throttle progress-only events (30 s) so another device playing doesn't reload Home every 10 s; stop the socket whenever Home is covered. Device checks pending: wss on Roku OS 16, 4001 access-changed close.

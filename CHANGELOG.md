@@ -3,6 +3,17 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.16.0
+
+From Silo's Android TV and Roku apps (November 20, 2026).
+
+**Home keeps up with what you watch**
+- **Home refreshes whenever you come back to it,** so what you watched or marked on another device shows up right away.
+- **Home updates by itself while you're on it** when your server supports it: finish or mark something on your phone or another TV and Home follows within a couple of seconds. Older Rokus and servers check every two minutes instead.
+- **A brief network or server hiccup no longer interrupts Home:** it keeps what it was showing and quietly tries again.
+
+**Needs testing on a real Roku:** live updates from another device, Home after the Roku wakes from sleep, and returning to Home on older models.
+
 ## v0.15.0
 
 From Silo's Android TV app (November 20, 2026).

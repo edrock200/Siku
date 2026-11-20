@@ -30,6 +30,21 @@ sub init()
     m.cacheWritePending = invalid
     m.serverAnswered = false
     m.serverSections = []
+    ' Watch state (Silo Android #1009): a read on every return, a queued read while one runs, and
+    ' retries of a refresh that failed for a transient reason (HomeWatch_retryDelay).
+    m.shownBefore = false
+    m.refreshPending = false
+    m.refreshRetries = 0
+    m.retrying = false
+    m.loadTransient = false
+    m.loadFailStatus = 0
+    m.loadRefresh = false
+    m.prevSections = invalid
+    m.prevServerSections = invalid
+    m.retryTimer = CreateObject("roSGNode", "Timer")
+    m.retryTimer.repeat = false
+    m.retryTimer.observeField("fire", "onRefreshRetry")
+    HomeLive_init()
     m.top.focusable = true
 end sub
 
@@ -42,11 +57,19 @@ end function
 sub onPageHidden()
     m.feed.overlaysWatched = false
     watchCollectionInputs(false)
+    if m.global.hasField("playbackStopsLanded") then m.global.unobserveFieldScoped("playbackStopsLanded")
+    ' Nothing reads while the page is covered; the read on return covers what changed meanwhile.
+    m.retryTimer.control = "stop"
+    m.refreshPending = false
+    HomeLive_hide()
 end sub
 
 sub onPageShown()
     m.feed.overlaysWatched = true
     watchCollectionInputs(true)
+    if m.global.hasField("playbackStopsLanded") then m.global.observeFieldScoped("playbackStopsLanded", "onStopLanded")
+    returning = m.shownBefore
+    m.shownBefore = true
     ' Read again after playback or a watched / favorite / watchlist change made anywhere; a
     ' library's Recommended page follows too (DataRevision.brs).
     if DataRev_current() <> m.loadedRev then
@@ -57,7 +80,71 @@ sub onPageShown()
         ' Signed artwork in an old answer may have expired (Freshness.brs): read again quietly.
         Fresh_log(pageName(), "stale", m.loadedAt)
         load()
+    else if returning then
+        ' Shown again (back from a detail page, the player, another tab): read quietly, since watch
+        ' state may have changed on another device or in another app meanwhile (Silo Android #1009;
+        ' Silo's Roku app re-reads on every return). The feed keeps the focused card.
+        requestRefresh("return")
     end if
+    HomeLive_show()
+end sub
+
+' A playback stop the server took after this page read (the player's stop timeout ran out, or a
+' retry delivered it; Silo Android #954): the progress rows may be out of date.
+sub onStopLanded()
+    if not m.top.active then return
+    requestRefresh("stop_landed")
+end sub
+
+' A quiet re-read for reason (return, stop_landed, changed, reconnect, poll, access_changed): at once,
+' or after the read that is running when one is (Android's pending realtime refresh).
+sub requestRefresh(reason as string)
+    if not m.top.active then return
+    if m.loading then
+        if not m.refreshPending then Diag_log("[siku-home] watch state refresh queued reason=" + reason + " (a read is running)")
+        m.refreshPending = true
+        return
+    end if
+    m.retryTimer.control = "stop"
+    Diag_log("[siku-home] watch state refresh reason=" + reason + " page=" + pageName())
+    load()
+end sub
+
+sub onRefreshRetry()
+    if not m.top.active then return
+    if m.loading then
+        m.refreshPending = true
+        return
+    end if
+    m.retrying = true
+    load()
+end sub
+
+' A refresh failed for a transient reason (HomeWatch_isTransient): try again after 1, 2 and 4 s
+' while the page shows. Returns false once the retries are used up.
+function scheduleRefreshRetry(what as string, status as integer) as boolean
+    delay = HomeWatch_retryDelay(m.refreshRetries)
+    if delay < 0 or not m.top.active then
+        if delay < 0 then Diag_log("[siku-home] refresh retries used up (" + what + " status=" + status.ToStr() + "); keeping the drawn rows")
+        m.refreshRetries = 0
+        return false
+    end if
+    m.refreshRetries = m.refreshRetries + 1
+    Diag_log("[siku-home] refresh retry " + m.refreshRetries.ToStr() + "/3 in " + delay.ToStr() + " s (" + what + " status=" + status.ToStr() + ")")
+    m.retryTimer.duration = delay
+    m.retryTimer.control = "start"
+    return true
+end function
+
+' A read ended (drawn, kept or failed): open the events socket once Home has a server answer, and
+' run a refresh that waited for this read unless a retry is already due.
+sub loadSettled(retryScheduled as boolean)
+    HomeLive_open()
+    if not m.refreshPending then return
+    m.refreshPending = false
+    if retryScheduled or not m.top.active then return
+    Diag_log("[siku-home] watch state refresh reason=queued page=" + pageName())
+    load()
 end sub
 
 function pageName() as string
@@ -88,6 +175,11 @@ end sub
 sub load()
     m.loading = true
     m.loadSeq = m.loadSeq + 1
+    if not m.retrying then m.refreshRetries = 0
+    m.retrying = false
+    m.loadTransient = false
+    m.loadFailStatus = 0
+    HomeLive_noteLoad()
     m.loadedRev = DataRev_current()
     ' A refresh keeps the rows already drawn (from the cache or the last answer) instead of a
     ' spinner; buildRows swaps them in place and the feed keeps the focused card.
@@ -198,17 +290,28 @@ sub onSections(event as object)
     end if
     if not resp.ok then
         m.loading = false
+        retried = false
         if m.rows.Count() > 0 then
             ' Keep what is drawn (the cached Home or the last answer); the next visit tries again.
             Diag_log(Diag_join(["[siku-home] refresh failed status=", resp.status, ", keeping the drawn rows"]))
             m.loaded = false
-            if m.top.active then m.global.toast = TxF("Couldn't refresh Home. {0}", [Api_errorText(resp)])
+            ' No answer, 408, 429 or 5xx: try again quietly first (Silo Android #1009).
+            if HomeWatch_isTransient(resp.status) then retried = scheduleRefreshRetry("list", Int(Num_or(resp.status, 0)))
+            if not retried and m.top.active then m.global.toast = TxF("Couldn't refresh Home. {0}", [Api_errorText(resp)])
         else
             m.feed.errorText = Api_errorText(resp)
             m.feed.state = "error"
         end if
         Launch_ready("home")
+        loadSettled(retried)
         return
+    end if
+    ' A refresh of rows drawn from an earlier server answer keeps that answer until this one is
+    ' complete: a row whose own read fails for a transient reason must not drop out of view.
+    m.loadRefresh = m.serverAnswered and m.rows.Count() > 0
+    if m.loadRefresh then
+        m.prevSections = m.sections
+        m.prevServerSections = m.serverSections
     end if
     m.serverAnswered = true
     sections = []
@@ -253,7 +356,22 @@ sub onSections(event as object)
         end if
     end for
     pumpRefills()
-    if m.pendingSections = 0 then buildRows()
+    if m.pendingSections = 0 then sectionsSettled()
+end sub
+
+' Every section's cards are in. A refresh in which a row's own read failed for a transient reason
+' keeps the rows drawn (and the answer they came from) and tries again (Silo Android #1009: a partial
+' refresh must not clobber a good Home); a row that is gone (404) drops out as before.
+sub sectionsSettled()
+    if m.loadTransient and m.loadRefresh and m.prevSections <> invalid then
+        m.sections = m.prevSections
+        m.serverSections = m.prevServerSections
+        m.loading = false
+        Diag_log("[siku-home] refresh incomplete: a row's read failed status=" + m.loadFailStatus.ToStr() + "; keeping the drawn rows")
+        loadSettled(scheduleRefreshRetry("row", m.loadFailStatus))
+        return
+    end if
+    buildRows()
 end sub
 
 ' ---------- Mixed-library scope (Android TV TvLibraryMediaScope, upstream #441) ----------
@@ -388,7 +506,7 @@ sub finishRefill(idx as integer, incomplete as boolean)
     m.refillActive = m.refillActive - 1
     m.pendingSections = m.pendingSections - 1
     pumpRefills()
-    if m.pendingSections <= 0 then buildRows()
+    if m.pendingSections <= 0 then sectionsSettled()
 end sub
 
 sub onSectionItems(event as object)
@@ -403,9 +521,12 @@ sub onSectionItems(event as object)
             m.sections[idx].total = resp.data.total_count
             m.sections[idx].items = hideWatchedItems(m.sections[idx].section, m.sections[idx].rawItems)
         end if
+    else if not resp.ok and HomeWatch_isTransient(resp.status) then
+        m.loadTransient = true
+        m.loadFailStatus = Int(Num_or(resp.status, 0))
     end if
     m.pendingSections = m.pendingSections - 1
-    if m.pendingSections <= 0 then buildRows()
+    if m.pendingSections <= 0 then sectionsSettled()
 end sub
 
 ' home.hide_watched_items (a profile setting other Silo clients set): drop played items from the
@@ -487,6 +608,9 @@ sub buildRows(fromCache = false as boolean, redraw = false as boolean)
         m.loading = false
         m.loaded = true
         m.loadedAt = Time_nowSeconds()
+        m.refreshRetries = 0
+        m.prevSections = invalid
+        m.prevServerSections = invalid
         if libraryId() = "" then writeHomeCache()
     end if
     m.feed.rows = rows
@@ -502,6 +626,7 @@ sub buildRows(fromCache = false as boolean, redraw = false as boolean)
         m.scopeIncomplete = false
         m.global.toast = Tx("Some shelves could not be fully loaded for this media type. Retry or open Browse.")
     end if
+    if not fromCache and not redraw then loadSettled(false)
 end sub
 
 '' ---------- Rows of collections (CollectionRows.brs) ----------

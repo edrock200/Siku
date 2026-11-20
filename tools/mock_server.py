@@ -138,6 +138,24 @@ clears one); GET /mock/switch lists them.
                                  problem detail, or (bare) a 500 with no body; Siku rolls the card back
   cw_advance=1                   Continue Watching has moved Orbital on: its S1E3 card becomes S1E4 (next_up) and
                                  leads the row (Silo Android #803: a focused card keeps focus on that show)
+  home_events=on|off|404|fail|reject|nosub
+                                 Home's events socket (silo-server docs/realtime-api.md; default on): POST
+                                 /api/v2/events/ws-ticket mints a ticket (protocol silo.events.v2) and GET
+                                 /api/v2/events/ws?channels=user_state upgrades with it (hello, subscribed, a ping
+                                 every 20 s, closed at max_connection_seconds). off / 404 = an older server (ticket
+                                 404), fail = the ticket answers 503, reject = subscribed lists user_state as
+                                 rejected, nosub = the subscription is never confirmed. Test control: POST
+                                 /mock/watch-elsewhere {"content_id", "watched": true|false (default true), "change"
+                                 (default "watched"), "profile_id" (default every socket's own), "to_all": true
+                                 (send another profile's event to every socket)} marks the title as another device
+                                 would and sends user_state.changed; POST /mock/events/drop closes every socket
+                                 without a close frame (a dropped connection). Log: EVENTS ticket|socket open|
+                                 subscribed|sent|dropped|closed
+  events_lifetime=<s>            the events ticket's max_connection_seconds (default 300; the socket closes then)
+  lazy_rows=1                    Home's Hidden Gems row comes without its cards (items [], total_count 10) and
+                                 GET /api/v2/home/sections/{id}/items sends them. Log: SECTION ITEMS <id> status=
+  section_items_fail=<n>         the next n row reads (GET /api/v2/home/sections/{id}/items) answer 503
+  home_sections_fail=<n>         the next n GET /api/v2/home/sections answer 503 (Home retries a refresh 1, 2, 4 s on)
   art_expire=<seconds>           artwork URLs carry ?exp=<now+seconds> and answer 404 once expired
                                  (signed artwork); the log prints ART EXPIRED <kind>/<name>
   discover_layout=1              GET /requests/discover sends an admin layout (row_order: mixed rows, a
@@ -895,7 +913,7 @@ def home_dismissed(item):
     return item.get("type") in ("episode", "series") and show in STATE["dismissed_series"]
 
 
-def home_sections():
+def home_sections(lazy=True):
     ms = all_movies()
     ss = all_series()
     cw = []
@@ -908,6 +926,9 @@ def home_sections():
     m1 = dict(ms[8]); m1.update(position_seconds=3000, item_source="in_progress", progress_updated_at="2026-10-19T18:00:00Z"); cw.append(m1)
     e3 = episode(3, 1, 2); e3.update(item_source="next_up"); cw.append(e3)
     cw = [c for c in cw if not home_dismissed(c)]
+    # A title marked watched leaves Continue Watching, as on the real server (and on another device:
+    # POST /mock/watch-elsewhere).
+    cw = [c for c in cw if not (c["item_source"] == "in_progress" and c["content_id"] in STATE["watched"])]
     nu = [c for c in cw if c["item_source"] == "next_up"]
     return {"sections": [
         {"id": "continue_watching", "section_type": "continue_watching", "title": "Continue Watching", "featured": False, "total_count": len(cw), "items": cw},
@@ -915,7 +936,9 @@ def home_sections():
         # All 24 movies: more than a row's 20 cards, so the cap and "Explore all" can be seen.
         {"id": "recent_movies", "section_type": "recently_added", "title": "Recently Added in Movies", "featured": False, "total_count": len(ms), "items": ms},
         {"id": "recent_series", "section_type": "recently_added", "title": "Recently Added in Shows", "featured": False, "total_count": len(ss), "items": ss},
-        {"id": "hidden_gems", "section_type": "hidden_gems", "title": "Hidden Gems", "featured": False, "total_count": 10, "items": ms[12:22]},
+        # lazy_rows: sent without its cards, read on its own (GET /api/v2/home/sections/{id}/items).
+        {"id": "hidden_gems", "section_type": "hidden_gems", "title": "Hidden Gems", "featured": False, "total_count": 10,
+         "items": [] if lazy and STATE["switches"].get("lazy_rows") else ms[12:22]},
         {"id": "trending", "section_type": "trending_on_server", "title": "Trending on Server", "featured": False, "total_count": 8, "items": ms[6:14]},
     ]}
 
@@ -2470,6 +2493,172 @@ def ai_live_route(handler, method, p, q, b):
     return False
 
 
+# ---------- Home's events socket (silo.events.v2, channel user_state) ----------
+
+EVENTS = {"tickets": {}, "sockets": []}   # ticket -> {profile}; open LiveSockets (with .profile)
+EVENTS_PROTOCOL = "silo.events.v2"
+EVENTS_CHANNELS = ("user_state", "user_settings", "notifications", "catalog")
+
+
+def events_mode():
+    return str(STATE["switches"].get("home_events") or "on")
+
+
+def take_failure(switch):
+    """True (and one fewer left) while the switch counts failures still to answer."""
+    with LOCK:
+        left = int(STATE["switches"].get(switch) or 0)
+        if left <= 0:
+            return False
+        if left == 1:
+            STATE["switches"].pop(switch, None)
+        else:
+            STATE["switches"][switch] = left - 1
+        return True
+
+
+def events_route(handler, method, p, q, b):
+    if p != "/api/v2/events/ws-ticket" or method != "POST":
+        return False
+    mode = events_mode()
+    if mode in ("off", "404"):
+        print("EVENTS ticket status=404 (home_events=%s)" % mode, flush=True)
+        handler.problem(404, "not_found", "Not found")
+        return True
+    if mode == "fail":
+        print("EVENTS ticket status=503 (home_events=fail)", flush=True)
+        handler.problem(503, "service_unavailable", "Event service unavailable")
+        return True
+    ticket = uuid.uuid4().hex
+    profile = handler.headers.get("X-Profile-Id") or ""
+    life = int(STATE["switches"].get("events_lifetime") or 300)
+    EVENTS["tickets"][ticket] = {"profile": profile, "life": life}
+    print("EVENTS ticket profile=%s lifetime=%d" % (profile or "-", life), flush=True)
+    LOG.append("EVENTS ticket profile=%s" % (profile or "-"))
+    handler.send(200, {"ticket": ticket, "expires_in": 30, "max_connection_seconds": life, "protocol": EVENTS_PROTOCOL})
+    return True
+
+
+def events_upgrade(handler, q):
+    offered = [x.strip() for x in (handler.headers.get("Sec-WebSocket-Protocol") or "").split(",")]
+    ticket = next((x[len("silo.ticket."):] for x in offered if x.startswith("silo.ticket.")), "")
+    info = EVENTS["tickets"].pop(ticket, None)
+    if events_mode() in ("off", "404"):
+        return handler.problem(404, "not_found", "Not found")
+    if handler.headers.get("Upgrade", "").lower() != "websocket" or EVENTS_PROTOCOL not in offered:
+        print("EVENTS socket refused (protocol)", flush=True)
+        return handler.problem(400, "validation_failed", "Offer silo.events.v2 and a ticket")
+    if info is None:
+        print("EVENTS socket refused (ticket)", flush=True)
+        return handler.problem(401, "unauthorized", "Unknown or spent ticket")
+    wanted = [c for c in ((q.get("channels") or [""])[0]).split(",") if c]
+    key = handler.headers.get("Sec-WebSocket-Key", "")
+    accept = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
+    handler.send_response(101)
+    handler.send_header("Upgrade", "websocket")
+    handler.send_header("Connection", "Upgrade")
+    handler.send_header("Sec-WebSocket-Accept", accept)
+    handler.send_header("Sec-WebSocket-Protocol", EVENTS_PROTOCOL)
+    handler.end_headers()
+    handler.wfile.flush()
+    ws = LiveSocket(handler, "")
+    ws.profile = info["profile"]
+    EVENTS["sockets"].append(ws)
+    handler.close_connection = True
+    print("EVENTS socket open profile=%s channels=%s" % (ws.profile or "-", ",".join(wanted) or "-"), flush=True)
+    LOG.append("EVENTS socket open profile=%s" % (ws.profile or "-"))
+    ws.send_text(json.dumps({"type": "hello", "schema_version": 1, "available_channels": list(EVENTS_CHANNELS)}))
+    mode = events_mode()
+    if mode == "reject":
+        ws.send_text(json.dumps({"type": "subscribed", "channels": [], "rejected": [{"channel": c, "code": "not_allowed", "message": "Not allowed"} for c in wanted]}))
+        print("EVENTS subscribed rejected=%s" % ",".join(wanted), flush=True)
+    elif mode != "nosub":
+        ws.send_text(json.dumps({"type": "subscribed", "channels": [c for c in wanted if c in EVENTS_CHANNELS], "rejected": []}))
+        print("EVENTS subscribed channels=%s" % ",".join(wanted), flush=True)
+    opened = time.time()
+
+    def pinger():
+        # The server pings every 20 s and closes the connection at max_connection_seconds.
+        while ws.alive:
+            time.sleep(1)
+            if not ws.alive:
+                return
+            age = time.time() - opened
+            if age >= info["life"]:
+                ws.send_frame(8, (1000).to_bytes(2, "big"))
+                ws.alive = False
+                try:
+                    handler.connection.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                print("EVENTS socket closed by the server (max_connection_seconds=%d)" % info["life"], flush=True)
+                return
+            if int(age) % 20 == 0:
+                ws.send_frame(9)
+
+    threading.Thread(target=pinger, daemon=True).start()
+    try:
+        while ws.alive:
+            opcode, data = ws.read_frame()
+            if opcode is None or opcode == 8:
+                break
+            if opcode == 9:
+                ws.send_frame(10, data)
+            elif opcode == 1:
+                try:
+                    msg = json.loads(data.decode())
+                except ValueError:
+                    msg = {}
+                print("EVENTS socket %s" % (msg.get("type") or "text"), flush=True)
+    except OSError:
+        pass
+    ws.alive = False
+    if ws in EVENTS["sockets"]:
+        EVENTS["sockets"].remove(ws)
+    print("EVENTS socket closed profile=%s" % (ws.profile or "-"), flush=True)
+    LOG.append("EVENTS socket closed")
+
+
+def watch_elsewhere(b):
+    """Another device marks a title (watched by default) and the server tells this profile's sockets."""
+    cid = str(b.get("content_id") or "")
+    change = str(b.get("change") or "watched")
+    if cid and change == "watched":
+        if b.get("watched", True):
+            STATE["watched"].add(cid)
+        else:
+            STATE["watched"].discard(cid)
+    item = find(cid) or {}
+    series = item.get("series_id") or ""
+    pid = b.get("profile_id")
+    sent = 0
+    for ws in list(EVENTS["sockets"]):
+        if pid and ws.profile != pid and not b.get("to_all"):
+            continue
+        data = {"profile_id": pid or ws.profile, "content_id": cid, "series_id": series, "change": change}
+        if ws.send_text(json.dumps({"type": "event", "channel": "user_state", "event": "user_state.changed",
+                                    "event_id": uuid.uuid4().hex, "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                    "data": data})):
+            sent += 1
+    line = "EVENTS sent user_state.changed change=%s content=%s profile=%s sockets=%d" % (change, cid or "-", pid or "own", sent)
+    print(line, flush=True)
+    LOG.append(line)
+    return {"sent": sent, "watched": cid in STATE["watched"]}
+
+
+def events_drop():
+    n = 0
+    for ws in list(EVENTS["sockets"]):
+        ws.alive = False
+        try:
+            ws.h.connection.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        n += 1
+    print("EVENTS dropped sockets=%d" % n, flush=True)
+    return n
+
+
 def subtitle_route(handler, method, p, q, b):
     if not p.startswith("/api/v2/subtitles"):
         return False
@@ -2788,6 +2977,14 @@ class Handler(BaseHTTPRequestHandler):
             if ai_live_mode() == "off":
                 return self.problem(404, "not_found", "Not found")
             return ai_live_upgrade(self, m.group(1))
+        # Home's events socket authenticates with its ticket (a subprotocol), not a bearer.
+        if p == "/api/v2/events/ws" and method == "GET":
+            return events_upgrade(self, q)
+        # Test control: another device changes this profile's watch state; drop every events socket.
+        if p == "/mock/watch-elsewhere" and method == "POST":
+            return self.send(200, watch_elsewhere(b or {}))
+        if p == "/mock/events/drop" and method == "POST":
+            return self.send(200, {"dropped": events_drop()})
         # Test control (not part of the API): empty or reseed the notifications inbox.
         if p == "/mock/notifications/clear" and method == "POST":
             STATE["notifs"] = []
@@ -3040,6 +3237,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if ai_live_route(self, method, p, q, b):
             return
+        if events_route(self, method, p, q, b):
+            return
         if subtitle_route(self, method, p, q, b):
             return
         if notifications_route(self, method, p, q, b):
@@ -3090,6 +3289,10 @@ class Handler(BaseHTTPRequestHandler):
                     lib["box_sets_enabled"] = str(lib["id"]) == "1"
             return self.send(200, {"items": libs})
         if p == "/api/v2/home/sections":
+            if take_failure("home_sections_fail"):
+                print("SECTIONS %s status=503 (home_sections_fail)" % p, flush=True)
+                LOG.append("SECTIONS %s status=503" % p)
+                return self.problem(503, "service_unavailable", "Mock home_sections_fail")
             if OPTS["home_delay"] > 0:
                 time.sleep(OPTS["home_delay"])  # --home-delay: a slow server, to watch the Home cache draw first
             secs = home_sections()["sections"]
@@ -3099,6 +3302,18 @@ class Handler(BaseHTTPRequestHandler):
             elif mode:
                 secs = secs[:2] + [collection_row()] + secs[2:]
             return section_list(self, p, q, secs)
+        m = re.match(r"^/api/v2/home/sections/([^/]+)/items$", p)
+        if m:
+            if take_failure("section_items_fail"):
+                print("SECTION ITEMS %s status=503 (section_items_fail)" % m.group(1), flush=True)
+                LOG.append("SECTION ITEMS %s status=503" % m.group(1))
+                return self.problem(503, "service_unavailable", "Mock section_items_fail")
+            sec = next((x for x in home_sections(lazy=False)["sections"] if x["id"] == m.group(1)), None)
+            print("SECTION ITEMS %s status=%d" % (m.group(1), 200 if sec else 404), flush=True)
+            LOG.append("SECTION ITEMS %s status=%d" % (m.group(1), 200 if sec else 404))
+            if sec is None:
+                return self.problem(404, "not_found", "Unknown section")
+            return self.send(200, {"items": sec["items"], "total_count": sec["total_count"]})
         if p == "/api/v2/home/capabilities":
             mode = item_limit_mode()
             print("HOME CAPS item_limit=%s" % mode, flush=True)
