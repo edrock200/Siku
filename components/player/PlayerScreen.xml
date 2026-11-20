@@ -251,6 +251,8 @@
     <Timer id="captionTimer" duration="4" />
     <Timer id="subsSyncTimer" duration="3" repeat="true" />
     <Timer id="subsAiTimer" duration="2" repeat="true" />
+    <!-- Budget of a subtitle provider-status probe (Silo Android #608): unanswered after 5 s counts as failed. -->
+    <Timer id="subsProviderTimer" duration="5" />
     <!-- AiLive.brs: redraws the live AI lines; bounds the wait for the control socket before the job is sent. -->
     <Timer id="aiLiveTimer" duration="0.25" repeat="true" />
     <Timer id="aiLiveConnectTimer" duration="6" />

@@ -451,6 +451,17 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   drop starts a fresh 120 s`, `connection lost again after <n> s of playback (under 20 s); continuing the outage from <s> s ago
   tries=<k> code=`. Android's byte counts (512 KiB) have no Roku equivalent; position progress stands in. Simulator cannot
   play: device only.
+- Subtitle search gate (Silo Android #608, `Subs_probeProviders` / `Subs_providerSearchAfter` in `SubtitleSuite.brs`, host tests
+  `tests/test_subtitle_providers.py`): each time the player panel's Subtitles tab shows, GET `/api/v2/subtitles/providers/status`
+  (5 s: `timeout` and the `subsProviderTimer` budget); "Search subtitles" is listed only after an answer with `allowed` and
+  `enabled` true and `state` `available` (hidden until the first answer, like Android TV). A failed, undecodable or timed-out probe
+  keeps the last answer, else offers search; only the newest probe applies. `[siku-playback] subtitle providers search=yes|no
+  source=answer state= allowed= enabled= providers=N|failed status=N|timeout [(kept the last answer)|(no earlier answer: offered)]`,
+  `subtitle providers answer dropped: probe N, newest M [(after its 5 s budget)]`. Mock `--switch
+  subtitle_providers=some|none|denied|fail|404|slow` (slow = "none" after 8 s; log `SUBTITLE PROVIDERS mode=`).
+- Top bar menus (Silo Android #970): Siku opens a menu only on Down or OK (no dwell preview, so Android's 120 ms / at-once
+  delays have nothing to tune), and Down on a tab whose menu Back just closed opens it again: `[siku-home] top bar menu opened
+  kind=libs|sections|foryou|profile tab=<n> after_back=yes|no`.
 - Scrubber marker bands (Silo Android #933/#934, adapted from silo-roku 42249ca; `Markers_bands` in `MarkerTimeline.brs`,
   host tests `tests/test_marker_timeline.py`): one band per intro / recap / credits / preview range, over the played fill and
   under the puck, in TheIntroDB's palette (intro #51A2FF, recap #FF8904, credits #C27AFF, preview #00D3F2) at 34% / 45%

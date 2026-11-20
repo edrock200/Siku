@@ -1542,6 +1542,7 @@ sub exitPlayer()
     m.hideTimer.control = "stop"
     m.subsSyncTimer.control = "stop"
     m.subsAiTimer.control = "stop"
+    m.subsProviderTimer.control = "stop"
     AiLive_close("player_closed")
     m.subsCheckTimer.control = "stop"
     m.subsLoadTimer.control = "stop"
@@ -1582,6 +1583,7 @@ sub onScreenHidden()
     m.hideTimer.control = "stop"
     m.subsSyncTimer.control = "stop"
     m.subsAiTimer.control = "stop"
+    m.subsProviderTimer.control = "stop"
     AiLive_close("player_closed")
     HoldSeek_stop()
     Trickplay_reset()

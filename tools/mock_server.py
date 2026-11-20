@@ -45,6 +45,11 @@ clears one); GET /mock/switch lists them.
   stop_fail=<n>                  the next n DELETE /playback/{id} answer 503 (Siku resends the same stop
                                  after 2, 4, 8 ... s). Log: STOP sid= stop_id= seq= pos= status=
   replan_410=1                   POST /playback/{id}/replan answers 410 playback_session_ended
+  subtitle_providers=<mode>      GET /api/v2/subtitles/providers/status (Silo Android #608; default some): some = a
+                                 provider can search, none = no provider enabled (search hidden), denied = the
+                                 profile is not allowed, fail = 500, 404 = an older server without the check,
+                                 slow = "none" after 8 s (past Siku's 5 s budget: search offered, the late answer
+                                 dropped). Log: SUBTITLE PROVIDERS mode=
   start_delay=<s>                POST /playback/start (video) answers after s seconds
   replan_delay=<s>               POST /playback/{id}/replan answers after s seconds; a second replan for the same
                                  session while one is held answers 409 stale_playback_plan (log REPLAN OVERLAP)
@@ -2476,8 +2481,26 @@ def subtitle_route(handler, method, p, q, b):
         handler.send(200, {"limited": True, "limit": 5, "used": 2, "remaining": 3, "period": "day"})
         return True
     if p == "/api/v2/subtitles/providers/status":
-        handler.send(200, {"revision": "mock-prov-1", "state": "available", "allowed": True, "schema_version": 1, "enabled": True,
-                           "providers": ["opensubtitles", "subdl"]})
+        # subtitle_providers=some|none|denied|fail|404|slow (Silo Android #608: search only when a provider can search).
+        mode = str(STATE["switches"].get("subtitle_providers") or "some")
+        print("SUBTITLE PROVIDERS mode=%s" % mode, flush=True)
+        if mode == "fail":
+            handler.problem(500, "internal_error", "Mock subtitle_providers=fail")
+            return True
+        if mode == "404":
+            handler.problem(404, "not_found", "Not found")
+            return True
+        if mode == "slow":
+            time.sleep(8)
+        if mode in ("none", "slow"):
+            handler.send(200, {"revision": "mock-prov-1", "state": "unavailable", "allowed": True, "schema_version": 1,
+                               "enabled": False, "providers": []})
+        elif mode == "denied":
+            handler.send(200, {"revision": "mock-prov-1", "state": "forbidden", "allowed": False, "schema_version": 1,
+                               "enabled": True, "providers": ["opensubtitles"]})
+        else:
+            handler.send(200, {"revision": "mock-prov-1", "state": "available", "allowed": True, "schema_version": 1,
+                               "enabled": True, "providers": ["opensubtitles", "subdl"]})
         return True
     if p == "/api/v2/subtitles/sync/status":
         handler.send(200, {"revision": "mock-sync-1", "state": "available", "allowed": True, "auto_sync": True, "external": True})

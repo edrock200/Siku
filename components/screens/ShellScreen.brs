@@ -23,6 +23,7 @@ sub init()
     m.tabs = []
     m.focusArea = "bar"      ' bar | content | panel
     m.panelKind = ""         ' libs | sections | foryou | profile
+    m.backClosedTab = -1     ' the tab whose menu Back closed last (diagnostics: Down opens it again)
     m.panelTab = -1
     m.panelLibs = []
     m.currentLibraryId = ""
@@ -382,6 +383,7 @@ sub onTabCommitted()
 end sub
 
 sub onEnterContent()
+    m.backClosedTab = -1
     focusContent()
 end sub
 
@@ -419,13 +421,21 @@ function libIcon(lib as object) as string
     return "video"
 end function
 
+' Menus open only on Down or OK (ShellTopBar), never on a focus dwell, so Down on a tab whose menu
+' Back just closed opens it again (Silo Android #970 made Android TV do the same).
 sub onPanelRequested()
     idx = m.bar.panelRequested
+    target = idx
+    if idx = 1000 then target = m.tabs.Count()
+    afterBack = "no"
+    if m.backClosedTab >= 0 and m.backClosedTab = target then afterBack = "yes"
+    m.backClosedTab = -1
     if idx = 1000 then
         openProfilePanel()
     else
         openTabPanel(idx)
     end if
+    if panelOpen() then Diag_log("[siku-home] top bar menu opened kind=" + m.panelKind + " tab=" + target.ToStr() + " after_back=" + afterBack)
 end sub
 
 sub openTabPanel(ti as integer)
@@ -796,6 +806,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
     if panelOpen() then
         if key = "back" then
             closePanel()
+            m.backClosedTab = m.panelTab
             focusBar(m.panelTab)
             return true
         end if

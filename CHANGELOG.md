@@ -3,6 +3,15 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.15.0
+
+From Silo's Android TV app (November 20, 2026).
+
+**Better**
+- **Subtitle search shows only when it can work.** The player's Subtitles panel offers "Search subtitles" only when your server has a subtitle provider set up for your profile, so you no longer get a search that can only come back empty. If the server doesn't answer, or is an older one, the option stays available as before.
+
+**Needs testing on a real Roku:** the Search subtitles row appearing or staying hidden with your server, and a slow network.
+
 ## v0.14.0
 
 From Silo's apps and server (November 19, 2026).

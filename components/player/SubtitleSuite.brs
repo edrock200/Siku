@@ -8,6 +8,7 @@
 '
 ' Endpoints (docs/api-spec.md §8, silo-server contracts/api/v2/openapi.json):
 '   GET  /api/v2/subtitles/ai/status                 gate for "Translate with AI" (enabled | transcribe_enabled)
+'   GET  /api/v2/subtitles/providers/status          gate for "Search subtitles" (Silo Android #608), read per pane open
 '   GET  /api/v2/subtitles/ai/quota                  transcription budget, read when the dialog opens
 '   POST /api/v2/subtitles/ai/translate              202 {job}; then GET /api/v2/subtitles/ai/jobs/{id} until terminal
 '   POST /api/v2/subtitles/ai/jobs/{id}/cancel       204
@@ -26,14 +27,21 @@ sub Subs_init()
     m.subsDialog = m.top.findNode("subsDialog")
     m.subsSyncTimer = m.top.findNode("subsSyncTimer")
     m.subsAiTimer = m.top.findNode("subsAiTimer")
+    m.subsProviderTimer = m.top.findNode("subsProviderTimer")
     m.subsDialog.observeField("chosen", "Subs_onDialogChosen")
     m.subsDialog.observeField("cycled", "Subs_onDialogCycled")
     m.subsDialog.observeField("dismissed", "Subs_onDialogDismissed")
     m.subsSyncTimer.observeField("fire", "Subs_onSyncPoll")
     m.subsAiTimer.observeField("fire", "Subs_onAiPoll")
+    m.subsProviderTimer.observeField("fire", "Subs_onProviderTimeout")
     m.subs = {
         aiStatusRequested: false
         aiStatus: { enabled: false, transcribeEnabled: false }
+        ' Provider search (Silo Android #608): "yes" / "no" from the last answer, "" before any.
+        ' Kept across attempts on this screen (same server), like the AI status.
+        providerSearch: ""
+        providerSeq: 0       ' the newest probe sent
+        providerPending: 0   ' that probe while it is unanswered and inside its 5 s budget, else 0
     }
     Subs_resetPlayback()
 end sub
@@ -506,6 +514,7 @@ end function
 ' meanwhile shows, and asks once whether the server offers AI subtitles (any failure hides the row).
 sub Subs_onPaneShown()
     Subs_syncReload()
+    Subs_probeProviders()
     if m.subs.aiStatusRequested then return
     m.subs.aiStatusRequested = true
     Api_get("/api/v2/subtitles/ai/status", invalid, "Subs_onAiStatus")
@@ -543,7 +552,7 @@ sub Subs_appendHudRows(rows as object)
         detail = Subs_timingDetail(timing)
         if detail.text <> "" then rows.Push({ id: "subtimingdetail", label: detail.text, value: "", actionable: false, muted: true, color: detail.color })
     end if
-    if m.fileId <> "" then rows.Push({ id: "subsearch", label: Tx("Search subtitles"), value: "", actionable: true })
+    if m.fileId <> "" and m.subs.providerSearch = "yes" then rows.Push({ id: "subsearch", label: Tx("Search subtitles"), value: "", actionable: true })
     if Subs_aiAvailable() then rows.Push({ id: "subai", label: Tx("Translate with AI"), value: "", actionable: true })
 end sub
 
@@ -1213,6 +1222,124 @@ sub Subs_onSyncRead(event as object)
     Subs_startPolling()
     Subs_refreshHud()
 end sub
+
+' ---------- Provider status (Silo Android #608) ----------
+' Each time the Subtitles pane shows, GET /api/v2/subtitles/providers/status decides whether
+' "Search subtitles" is offered. Like Android TV the row stays hidden until the first answer; a
+' failed probe, or one still unanswered after 5 s, keeps the last answer or, with none yet, offers
+' search (servers without the endpoint keep a working feature). Only the newest probe applies.
+
+' Whether a status answer lets this viewer search: the profile is allowed, a provider is enabled
+' and the capability is "available" (SubtitleProviderStatus.searchAvailable). Returns "yes" / "no",
+' or "" when the answer is not a status object Android would decode (it then counts as failed).
+function Subs_providerVerdict(data as dynamic) as string
+    if Type(data) <> "roAssociativeArray" then return ""
+    ' Types are tested with Type() only: comparing a boolean with invalid throws on a Roku (pitfall 16).
+    stType = Type(data.state)
+    if not Subs_isMissing(data.state) and stType <> "String" and stType <> "roString" then return ""
+    if not Subs_isOptionalBool(data.allowed) or not Subs_isOptionalBool(data.enabled) then return ""
+    if not Subs_isMissing(data.providers) and Type(data.providers) <> "roArray" then return ""
+    if Subs_isMissing(data.state) or Subs_isMissing(data.allowed) or Subs_isMissing(data.enabled) then return "no"
+    if data.state = "available" and data.allowed and data.enabled then return "yes"
+    return "no"
+end function
+
+' A JSON field that is absent or null.
+function Subs_isMissing(v as dynamic) as boolean
+    t = Type(v)
+    return t = "Invalid" or t = "roInvalid" or t = "<uninitialized>"
+end function
+
+' Missing or a JSON boolean (Kotlin's decoder refuses anything else).
+function Subs_isOptionalBool(v as dynamic) as boolean
+    t = Type(v)
+    return Subs_isMissing(v) or t = "Boolean" or t = "roBoolean"
+end function
+
+' The next "Search subtitles" state after a probe (subtitleSearchAvailabilityAfter): a decodable
+' answer decides; a failed or timed-out probe (answered = false, or an answer that does not
+' decode) keeps the previous "yes" / "no" and otherwise offers search.
+function Subs_providerSearchAfter(answered as boolean, data as dynamic, previous as string) as string
+    if answered then
+        verdict = Subs_providerVerdict(data)
+        if verdict <> "" then return verdict
+    end if
+    if previous = "yes" or previous = "no" then return previous
+    return "yes"
+end function
+
+sub Subs_probeProviders()
+    m.subs.providerSeq = m.subs.providerSeq + 1
+    seq = m.subs.providerSeq
+    m.subs.providerPending = seq
+    m.subsProviderTimer.control = "stop"
+    m.subsProviderTimer.control = "start"
+    Api_call({ method: "GET", path: "/api/v2/subtitles/providers/status", timeout: 5, context: { seq: seq } }, "Subs_onProviderStatus")
+end sub
+
+sub Subs_onProviderStatus(event as object)
+    resp = Api_result(event)
+    seq = 0
+    if Type(resp.context) = "roAssociativeArray" then seq = Int(Num_or(resp.context.seq, 0))
+    if seq = 0 or seq <> m.subs.providerPending then
+        Diag_log("[siku-playback] subtitle providers answer dropped: probe " + seq.ToStr() + ", newest " + m.subs.providerSeq.ToStr() + Subs_providerLate(seq))
+        return
+    end if
+    m.subsProviderTimer.control = "stop"
+    m.subs.providerPending = 0
+    answered = false
+    data = invalid
+    if resp.ok then
+        answered = true
+        data = resp.data
+    end if
+    Subs_applyProviders(answered, data, Int(Num_or(resp.status, 0)))
+end sub
+
+function Subs_providerLate(seq as integer) as string
+    if seq = m.subs.providerSeq then return " (after its 5 s budget)"
+    return ""
+end function
+
+sub Subs_onProviderTimeout()
+    if m.subs.providerPending = 0 then return
+    m.subs.providerPending = 0
+    Subs_applyProviders(false, invalid, -1)
+end sub
+
+' status: the HTTP status (0 = no answer), or -1 for the 5 s budget.
+sub Subs_applyProviders(answered as boolean, data as dynamic, status as integer)
+    prev = m.subs.providerSearch
+    nextState = Subs_providerSearchAfter(answered, data, prev)
+    verdict = ""
+    if answered then verdict = Subs_providerVerdict(data)
+    source = "answer"
+    detail = ""
+    if verdict <> "" then
+        detail = " state=" + Str_orEmpty(data.state) + " allowed=" + Subs_boolText(data.allowed) + " enabled=" + Subs_boolText(data.enabled) + " providers=" + Arr_or(data.providers).Count().ToStr()
+    else if status < 0 then
+        source = "timeout"
+    else
+        source = "failed status=" + status.ToStr()
+    end if
+    keptText = ""
+    if verdict = "" then
+        if prev = "" then
+            keptText = " (no earlier answer: offered)"
+        else
+            keptText = " (kept the last answer)"
+        end if
+    end if
+    Diag_log("[siku-playback] subtitle providers search=" + nextState + " source=" + source + detail + keptText)
+    m.subs.providerSearch = nextState
+    if nextState <> prev then Subs_refreshHud()
+end sub
+
+function Subs_boolText(v as dynamic) as string
+    if not Subs_isOptionalBool(v) or Subs_isMissing(v) then return "-"
+    if v then return "true"
+    return "false"
+end function
 
 ' ---------- Search subtitles (TvSubtitleSearchDialog) ----------
 

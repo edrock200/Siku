@@ -224,9 +224,10 @@ Code: `UI/shell/TvTopMenuBar.kt`, `TvMainShell.kt`, `TvMediaDestinations.kt`, `T
 
 **Dwell (resting focus on a tab):**
 
-- On a library-type tab or For You for **180 ms** (80 ms if a panel is already open), a dropdown "cascade" panel opens as a preview under the tab.
+- On a library-type tab or For You for **120 ms**, a dropdown "cascade" panel opens as a preview under the tab; a showing panel swaps **at once** when focus reaches a neighbouring menu tab (Silo Android #970, after tvOS; was 180 ms / 80 ms).
 - Moving to a tab without a panel closes it.
 - Dwelling on the avatar opens the profile dropdown.
+- **Siku:** no dwell preview. A panel opens only on Down or OK and takes focus at once, so there are no preview delays, and no "entered" state that a late bar report could undo.
 
 **Select (OK, acts on key-up):**
 
@@ -236,7 +237,7 @@ Code: `UI/shell/TvTopMenuBar.kt`, `TvMainShell.kt`, `TvMediaDestinations.kt`, `T
 
 **Down:**
 
-- On a library or For You tab: enters the cascade panel.
+- On a library or For You tab: enters the cascade panel, also right after Back closed it (Silo Android #970; Android TV used to drop into the page then).
 - On the avatar: enters the profile menu.
 - On Home, Calendar, Requests or Search: moves into content.
 
