@@ -38,6 +38,11 @@ class Grouped(unittest.TestCase):
             g("Finnish groups with a no-break space", 12840, "fi", "12" + NBSP + "840"),
             g("Polish leaves four digits alone", 1284, "pl", "1284"),
             g("Polish groups from five digits", 12840, "pl", "12" + NBSP + "840"),
+            g("Romanian groups with a dot (catalog 2026.11.20)", 1284, "ro", "1.284"),
+            g("Hungarian groups with a no-break space", 1284, "hu", "1" + NBSP + "284"),
+            g("Bulgarian leaves four digits alone", 1284, "bg", "1284"),
+            g("European Portuguese groups from five digits", 12840, "pt_PT", "12" + NBSP + "840"),
+            g("Malay groups with a comma", 1284, "ms", "1,284"),
             g("zero", 0, "de", "0"),
             g("negative", -1284, "en", "-1,284"),
         ])

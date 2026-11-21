@@ -486,11 +486,13 @@ end function
 ' profile's ui.app_language, else the Roku's language. Each component copies the table once:
 ' a language change rebuilds the screens.
 
-' The shipped languages, in the App language picker's order (silo-roku 67f082b's list). Korean and
-' Traditional Chinese (in Silo's Android catalogs) stay out like in silo-roku: Siku's Inter fonts
-' have no Hangul or CJK glyphs, and Roku has no fallback font for a channel's own fonts.
+' The shipped languages, in the App language picker's order (silo-roku 67f082b's list, then the
+' Latin and Cyrillic languages Silo's Android TV app added in catalog 2026.11.20-9403fbd, silo-android
+' 63c898084, in its order). Japanese, Korean, Chinese, Arabic, Greek, Hebrew, Hindi and Thai (in
+' Silo's Android catalogs) stay out: Siku's Inter fonts have no glyphs for those scripts, and Roku
+' has no fallback font for a channel's own fonts.
 function I18n_folders() as object
-    return ["en", "es", "de", "fr", "pt_BR", "nl", "it", "pl", "tr", "sv", "da", "nb", "fi", "cs", "hr", "ru", "uk"]
+    return ["en", "es", "de", "fr", "pt_BR", "nl", "it", "pl", "tr", "sv", "da", "nb", "fi", "cs", "hr", "ru", "uk", "hu", "ro", "sk", "sl", "bg", "ca", "lt", "lv", "et", "vi", "pt_PT", "id", "ms"]
 end function
 
 ' The applied language folder.
@@ -602,16 +604,18 @@ end function
 ' "12.840"). A device set to Mexican Spanish or Canadian French gets its region's style ("1,284",
 ' "1 284" with a no-break space). The languages silo-roku 1cc1149 / 67f082b added follow CLDR:
 ' a period in Dutch, Italian, Turkish, Croatian and Danish; a no-break space in Russian, Ukrainian,
-' Czech, Swedish, Norwegian and Finnish, and in Polish from five digits. Years, codes and episode
-' numbers stay ungrouped. Pure.
+' Czech, Swedish, Norwegian and Finnish, and in Polish from five digits. Catalog 2026.11.20's languages:
+' a period in Romanian, Slovenian, Catalan, Vietnamese and Indonesian; a no-break space in Hungarian,
+' Slovak, Lithuanian and Latvian, and in Bulgarian, Estonian and European Portuguese from five digits;
+' a comma in Malay. Years, codes and episode numbers stay ungrouped. Pure.
 function I18n_groupedCount(n as integer, folder as string, deviceLocale as string) as string
     sep = ","
     minDigits = 4
-    if Instr(1, "|de|pt_BR|nl|it|tr|hr|da|", "|" + folder + "|") > 0 then
+    if Instr(1, "|de|pt_BR|nl|it|tr|hr|da|ro|sl|ca|vi|id|", "|" + folder + "|") > 0 then
         sep = "."
-    else if Instr(1, "|ru|uk|cs|sv|nb|fi|", "|" + folder + "|") > 0 then
+    else if Instr(1, "|ru|uk|cs|sv|nb|fi|hu|sk|lt|lv|", "|" + folder + "|") > 0 then
         sep = Chr(&hA0)
-    else if folder = "pl" then
+    else if Instr(1, "|pl|bg|et|pt_PT|", "|" + folder + "|") > 0 then
         sep = Chr(&hA0)
         minDigits = 5
     else if folder = "es" then
@@ -652,9 +656,10 @@ function I18n_isOne(folder as string, n as integer) as boolean
     return I18n_pluralCategory(folder, n) = "one"
 end function
 
-' The CLDR plural category ("one", "few", "many" or "other") of a whole number in a language folder
-' (CLDR 49, as silo-roku's generated pluralRules.bs; Spanish, French, Italian and Portuguese
-' "many" for millions is left out: Siku's texts have no such form). Pure.
+' The CLDR plural category ("zero", "one", "two", "few", "many" or "other") of a whole number in a language folder
+' (CLDR 49, as silo-roku's generated pluralRules.bs; Spanish, French, Italian, Catalan and Portuguese
+' "many" for millions is left out: Siku's texts have no such form). Indonesian, Malay and Vietnamese
+' have no singular: every count, 1 too, is "other". Pure.
 function I18n_pluralCategory(folder as string, count as integer) as string
     n = count
     if n < 0 then n = 0 - n
@@ -663,11 +668,31 @@ function I18n_pluralCategory(folder as string, count as integer) as string
     if folder = "fr" or folder = "pt_BR" then
         if n <= 1 then return "one"
         return "other"
+    else if folder = "id" or folder = "ms" or folder = "vi" then
+        return "other"
+    else if folder = "ro" then
+        if n = 1 then return "one"
+        if n = 0 or (m100 >= 1 and m100 <= 19) then return "few"
+        return "other"
+    else if folder = "sl" then
+        if m100 = 1 then return "one"
+        if m100 = 2 then return "two"
+        if m100 = 3 or m100 = 4 then return "few"
+        return "other"
+    else if folder = "lt" then
+        if m100 >= 11 and m100 <= 19 then return "other"
+        if m10 = 1 then return "one"
+        if m10 >= 2 then return "few"
+        return "other"
+    else if folder = "lv" then
+        if m10 = 0 or (m100 >= 11 and m100 <= 19) then return "zero"
+        if m10 = 1 then return "one"
+        return "other"
     else if folder = "pl" then
         if n = 1 then return "one"
         if m10 >= 2 and m10 <= 4 and (m100 < 12 or m100 > 14) then return "few"
         return "many"
-    else if folder = "cs" then
+    else if folder = "cs" or folder = "sk" then
         if n = 1 then return "one"
         if n >= 2 and n <= 4 then return "few"
         return "other"
@@ -694,7 +719,9 @@ end function
 
 ' The folder for a ui.app_language value (a BCP 47 tag; "" or invalid = the device's language)
 ' and the Roku's locale (GetCurrentLocale, e.g. "de_DE"). A regional tag matches its language
-' (es-MX → es, pt-PT → pt_BR, Norwegian no → nb); an unshipped language falls back to English.
+' (es-MX → es, Norwegian no → nb); Portuguese is pt_PT for Portugal and pt_BR otherwise; the legacy
+' codes in (Indonesian) and iw (Hebrew, not shipped) read as id and he; an unshipped language falls
+' back to English.
 function I18n_resolve(override as dynamic, deviceLocale as string) as string
     tag = ""
     if override <> invalid and (Type(override) = "roString" or Type(override) = "String") then tag = override
@@ -715,7 +742,13 @@ function I18n_match(tag as string) as string
         r = parts[parts.Count() - 1]
         if r = "xa" or r = "xb" then return ""
     end if
-    if lang = "pt" then return "pt_BR"
+    if lang = "pt" then
+        if parts.Count() > 1 and parts[1] = "pt" then return "pt_PT"
+        return "pt_BR"
+    end if
+    ' Legacy ISO codes Android and Java still report (silo-android 63c898084).
+    if lang = "in" then lang = "id"
+    if lang = "iw" then lang = "he"
     ' Norwegian: "no" is Bokmål's folder; Nynorsk ("nn") has none.
     if lang = "no" then lang = "nb"
     for each f in I18n_folders()
@@ -727,12 +760,13 @@ end function
 ' The ui.app_language tag Silo's apps write for a folder.
 function I18n_tagOf(folder as string) as string
     if folder = "pt_BR" then return "pt-BR"
+    if folder = "pt_PT" then return "pt-PT"
     return folder
 end function
 
 ' The language's own name, for the App language picker.
 function I18n_nativeName(folder as string) as string
-    names = { en: "English", es: "Español", de: "Deutsch", fr: "Français", pt_BR: "Português (Brasil)", nl: "Nederlands", it: "Italiano", pl: "Polski", tr: "Türkçe", sv: "Svenska", da: "Dansk", nb: "Norsk bokmål", fi: "Suomi", cs: "Čeština", hr: "Hrvatski", ru: "Русский", uk: "Українська" }
+    names = { en: "English", es: "Español", de: "Deutsch", fr: "Français", pt_BR: "Português (Brasil)", nl: "Nederlands", it: "Italiano", pl: "Polski", tr: "Türkçe", sv: "Svenska", da: "Dansk", nb: "Norsk bokmål", fi: "Suomi", cs: "Čeština", hr: "Hrvatski", ru: "Русский", uk: "Українська", hu: "Magyar", ro: "Română", sk: "Slovenčina", sl: "Slovenščina", bg: "Български", ca: "Català", lt: "Lietuvių", lv: "Latviešu", et: "Eesti", vi: "Tiếng Việt", pt_PT: "Português (Portugal)", id: "Bahasa Indonesia", ms: "Bahasa Melayu" }
     v = names[folder]
     if v = invalid then return folder
     return v

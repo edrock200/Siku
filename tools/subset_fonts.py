@@ -4,10 +4,11 @@
 Siku draws every label with its own Inter fonts, and a Roku has no fallback font for a channel's
 fonts: a character missing from them shows as a box. The fonts are subset from the Inter 4.1
 release (SIL Open Font License 1.1, fonts/OFL.txt is the release's LICENSE.txt) to Latin,
-Latin Extended, Cyrillic (for Russian and Ukrainian) and the punctuation, arrows and symbols the
-interface uses, keeping the layout features Siku relies on (kerning, contextual alternates,
-tabular figures). The same release, subset the same way for these scripts, is what
-Silo-Server/silo-roku ships (fonts/SOURCE there).
+Latin Extended, Latin Extended Additional U+1EA0-1EF9 (Vietnamese's stacked accents), Cyrillic (for
+Russian, Ukrainian and Bulgarian) and the punctuation, arrows and symbols the interface uses, keeping
+the layout features Siku relies on (kerning, contextual alternates, tabular figures). The same
+release, subset the same way for these scripts (without the Vietnamese range, silo-roku has no
+Vietnamese), is what Silo-Server/silo-roku ships (fonts/SOURCE there).
 
   python3 tools/subset_fonts.py /path/to/Inter-4.1.zip      write fonts/*.otf
   python3 tools/subset_fonts.py /path/to/Inter-4.1.zip --check   fail when fonts/ differ
@@ -27,7 +28,7 @@ ZIP_SHA256 = "9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e"
 WEIGHTS = {"Regular": "regular", "Medium": "medium", "SemiBold": "semibold", "Bold": "bold", "Black": "black"}
 UNICODES = ("U+0020-007E,U+00A0-00AC,U+00AE-0148,U+014A-01C3,U+01C5-024F,U+02B0-02FF,U+0400-052F,"
             "U+2000-200B,U+2010-2027,U+202F-2055,U+2057,U+205F,U+20AC,U+2122,U+2190-2193,U+2212,"
-            "U+25B6,U+2713")
+            "U+25B6,U+2713,U+1EA0-1EF9")
 FEATURES = ["calt", "ccmp", "kern", "locl", "tnum"]
 
 

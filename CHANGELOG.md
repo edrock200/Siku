@@ -3,6 +3,20 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.17.0
+
+From Silo's apps (November 21, 2026).
+
+**New**
+- **13 more languages:** Hungarian, Romanian, Slovak, Slovenian, Bulgarian, Catalan, Lithuanian, Latvian, Estonian, Vietnamese, European Portuguese, Indonesian and Malay. Pick one in Settings › App language, or let Siku follow your Roku's language. Home row titles and server messages are translated too.
+- **European Portuguese is its own language:** a profile set to Português (Portugal) now gets it rather than Brazilian Portuguese.
+
+**Better**
+- **Phone sign-in shows just the code:** when you sign this TV in from your phone, the confirmation card no longer shows the old "Older phones show … instead" line, matching Silo's other apps.
+- **Smoother fades on dark pictures:** the artwork behind titles on Home and detail pages fades out with fewer visible bands.
+
+**Needs testing on a real Roku:** Vietnamese accents in tight labels, long words in the new languages on buttons, and the fade on dark art on an OLED TV.
+
 ## v0.16.0
 
 From Silo's Android TV and Roku apps (November 20, 2026).

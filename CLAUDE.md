@@ -377,12 +377,17 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   text; `i18n/missing.json` lists gaps). Server text: `TxKey("@home.section.*"|"error.*")`. MainScene prints
   `[siku-i18n]` lines when it loads a language. Language: profile `ui.app_language` (mock: `--settings-revision 28`), else the
   device locale; DEBUG builds take `debugLang=<tag>` (e.g. `de`). After adding user-visible text, rerun the build tool.
-  Seventeen languages since silo-roku 1cc1149 / 67f082b (`I18n_folders`: en es de fr pt_BR nl it pl tr sv da nb fi cs hr ru uk;
-  "no" → nb). When Silo's apps add catalog languages, Siku follows (the user's rule): copy the catalogs into
-  `third_party/silo-translations`, add the folder to `LANGS` and `I18n_folders`/`I18n_nativeName`, and translate
-  `i18n/siku/<lang>.json`. Only scripts the fonts draw: `tools/subset_fonts.py` (Inter 4.1, Latin + Cyrillic); Korean,
-  Chinese, Japanese and Arabic stay out. Plurals: `TxP` reads CLDR few/many (and a `{0}` "one" for hr/ru/uk, which covers
-  21, 31, …) as `"<English other>#few"` etc. (`PLURAL_FORMS` in the build tool, `I18n_pluralCategory`), so every count needs
+  Thirty languages: silo-roku 1cc1149 / 67f082b's seventeen (en es de fr pt_BR nl it pl tr sv da nb fi cs hr ru uk) plus
+  the Latin/Cyrillic ones Silo Android added in catalog 2026.11.20-9403fbd (silo-android 63c898084: hu ro sk sl bg ca lt lv
+  et vi pt_PT id ms; Android catalog only, silo-roku has none of them, `LANGS` maps them with a `None` Roku folder).
+  `I18n_match`: "no" → nb, pt-PT → pt_PT (other Portuguese → pt_BR), legacy "in" → id and "iw" → he. When Silo's apps add
+  catalog languages, Siku follows (the user's rule): copy the catalogs into `third_party/silo-translations`, add the folder
+  to `LANGS` and `I18n_folders`/`I18n_nativeName` (and `I18n_tagOf`, `I18n_groupedCount`, `I18n_pluralCategory` when the
+  language needs it), and translate `i18n/siku/<lang>.json`. Only scripts the fonts draw: `tools/subset_fonts.py` (Inter
+  4.1, Latin + Latin Extended Additional for Vietnamese + Cyrillic; `tests/test_i18n.py` `Glyphs` fails on a character the
+  fonts lack); Japanese, Korean, Chinese, Arabic, Greek, Hebrew, Hindi and Thai stay out. Plurals: `TxP` reads CLDR
+  zero/two/few/many (and a `{0}` "one" for hr/ru/uk/sl/lt/lv, which covers 21, 31 or 101, …) as `"<English other>#few"` etc.
+  (`PLURAL_FORMS` in the build tool, `I18n_pluralCategory`; id/ms/vi are "other" for every count, 1 too), so every count needs
   a literal `TxP("1 x", "{0} xs", n)` pair; Turkish capitals go through `I18n_upper` (server text keeps `UCase`).
 - Change Account at launch and the profile menu's profile row (Silo Android #880/#881/#883; adapted from silo-roku
   4a22785 / 431c1f1): a launch that asks (Every Time, a lapsed timer) with two or more saved accounts shows Change

@@ -268,13 +268,12 @@ sub Pair_view(name as string, extra = {} as object)
         buttons.Push({ id: "cancel", text: Tx("Cancel") })
         v = { title: TxF("Can’t reach {0}", [server]), detail: detail, server: Tx("No answer"), cardNote: Tx("This TV couldn’t reach the address your phone sent."), buttons: buttons }
     else if name = "confirm" then
-        cardNote = ""
-        words = UCase(Str_orEmpty(extra.matchCode).Trim())
-        if words <> "" then cardNote = TxF("Older phones show {0} instead.", [words])
+        ' No "Older phones show <match words> instead." note any more (Silo Android #1014, silo-roku
+        ' #103): every phone app shows the user code now.
         detail = Tx("Check that your phone or tablet shows this code, then approve.")
         account = Pair_accountLabel(push)
         if account <> "" then detail = TxF("Signing in {0} on {1}.", [account, server]) + " " + detail
-        v = { eyebrow: Tx("Waiting for your phone"), title: Tx("Confirm on your phone"), detail: detail, code: Pair_codeText(extra.userCode), server: server, cardNote: cardNote, busy: true, buttons: [{ id: "cancel", text: Tx("Cancel") }] }
+        v = { eyebrow: Tx("Waiting for your phone"), title: Tx("Confirm on your phone"), detail: detail, code: Pair_codeText(extra.userCode), server: server, busy: true, buttons: [{ id: "cancel", text: Tx("Cancel") }] }
     else if name = "signedIn" then
         detail = Tx("Finishing up on your phone or tablet…")
         if m.pair.lastUser <> "" then detail = TxF("{0} is signed in on {1}. Finishing up…", [m.pair.lastUser, server])
@@ -599,7 +598,7 @@ sub Pair_onStart(event as object)
     if expiresIn < 1 then expiresIn = 900
     a.deadline = Time_nowSeconds() + expiresIn
     Pair_send({ "v": 1, "type": "deviceStarted", "serverURL": Str_orEmpty(m.pair.push.serverURL), "userCode": Str_orEmpty(d.user_code), "matchCode": Str_orEmpty(d.match_code) })
-    Pair_view("confirm", { userCode: d.user_code, matchCode: d.match_code })
+    Pair_view("confirm", { userCode: d.user_code })
     Pair_schedule("poll", interval)
 end sub
 
@@ -703,7 +702,7 @@ sub Pair_loginCode()
     end if
     a.userCode = Str_orEmpty(code.user_code)
     Pair_send({ "v": 1, "type": "deviceStarted", "serverURL": Str_orEmpty(m.pair.push.serverURL), "userCode": a.userCode, "matchCode": Str_orEmpty(code.match_code) })
-    Pair_view("confirm", { userCode: a.userCode, matchCode: code.match_code })
+    Pair_view("confirm", { userCode: a.userCode })
     print "[siku-pair] sent the sign-in screen's code"
 end sub
 

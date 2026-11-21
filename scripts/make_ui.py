@@ -8,6 +8,7 @@ Names: images/ui/r{radius}.9.png (fill), images/ui/r{radius}_ring{w}.9.png (outl
 Run: python3 scripts/make_ui.py
 """
 import os
+import random
 from PIL import Image, ImageDraw, ImageFilter
 
 OUT = os.path.join(os.path.dirname(__file__), "..", "images", "ui")
@@ -94,6 +95,35 @@ def hgradient(w, h, stops, name):
         for y in range(h):
             px[x, y] = (0, 0, 0, int(a))
     img.save(os.path.join(OUT, name))
+
+
+def dithered_alpha(v, rnd):
+    """v (0..1) as an 8-bit alpha with light triangular dither (+-1 level at most) inside the ramp;
+    fully clear and fully opaque pixels stay exact."""
+    if v <= 0:
+        return 0
+    if v >= 1:
+        return 255
+    return max(0, min(255, int(round(v * 255 + rnd.random() - rnd.random()))))
+
+
+def backdrop_mask():
+    """The hero backdrop's fade (white alpha, MaskGroup): visible top right, fading to the left and
+    the bottom (images/ui/mask_backdrop.png, stretched to 1229 x 756 on Home, detail, box set and
+    request pages). The corner fade is the product of two ramps, so plain 8-bit rounding left
+    contour lines along it on dark art (the banding Silo Android #1015 fixed on Android TV's hero);
+    a light, seeded dither breaks them up and keeps the file the same on every run."""
+    rnd = random.Random(1015)
+    img = Image.new("RGBA", (256, 256))
+    px = img.load()
+    for y in range(256):
+        ty = y / 255
+        va = 1.0 if ty <= 0.58 else max(0.0, 1 - (ty - 0.58) / 0.42)
+        for x in range(256):
+            tx = x / 255
+            ha = min(1.0, tx / 0.68)
+            px[x, y] = (255, 255, 255, dithered_alpha(ha * va, rnd))
+    img.save(os.path.join(OUT, "mask_backdrop.png"))
 
 
 def card_shadow():
@@ -190,17 +220,7 @@ def main():
     vgradient(4, 256, [(0, 0), (0.5, 102), (0.8, 191), (1, 242)], "scrim_bottom.png")
     vgradient(4, 256, [(0, 242), (1, 0)], "scrim_top.png")
     hgradient(256, 4, [(0, 255), (0.3, 230), (0.55, 140), (0.75, 30), (1, 0)], "scrim_left.png")
-    # Backdrop masks (white alpha) for the Skyline ambient backdrop.
-    img = Image.new("RGBA", (256, 256))
-    px = img.load()
-    for y in range(256):
-        ty = y / 255
-        va = 1.0 if ty <= 0.58 else max(0.0, 1 - (ty - 0.58) / 0.42)
-        for x in range(256):
-            tx = x / 255
-            ha = min(1.0, tx / 0.68)
-            px[x, y] = (255, 255, 255, int(255 * ha * va))
-    img.save(os.path.join(OUT, "mask_backdrop.png"))
+    backdrop_mask()
     card_shadow()
     progress_bar()
 

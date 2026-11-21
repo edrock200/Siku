@@ -43,16 +43,37 @@ LANGS = {  # Siku folder: (Android values dir, Roku folder)
     "hr": ("values-hr", "hr"),
     "ru": ("values-ru", "ru"),
     "uk": ("values-uk", "uk"),
+    # Catalog languages Silo's Android apps added in 2026.11.20-9403fbd (silo-android 63c898084) that
+    # silo-roku does not ship: Android catalog only. Indonesian's Android folder is the legacy "in".
+    "hu": ("values-hu", None),
+    "ro": ("values-ro", None),
+    "sk": ("values-sk", None),
+    "sl": ("values-sl", None),
+    "bg": ("values-bg", None),
+    "ca": ("values-ca", None),
+    "lt": ("values-lt", None),
+    "lv": ("values-lv", None),
+    "et": ("values-et", None),
+    "vi": ("values-vi", None),
+    "pt_PT": ("values-pt-rPT", None),
+    "id": ("values-in", None),
+    "ms": ("values-ms", None),
 }
 # Plural categories (CLDR, whole numbers) a language needs beyond English's one/other. TxP("1 x",
 # "{0} xs", n) looks these up as "{0} xs#few" etc. (I18n_pluralCategory in Utils.brs); "one" is
-# listed where it also covers 21, 31, ... and so needs a form with {0}.
+# listed where it also covers 21, 31, ... and so needs a form with {0} (so do Latvian "zero", which
+# covers 10, 20, ..., and Slovenian "two", which covers 102, ...).
 PLURAL_FORMS = {
     "pl": ("few", "many"),
     "cs": ("few",),
     "hr": ("one", "few"),
     "ru": ("one", "few", "many"),
     "uk": ("one", "few", "many"),
+    "ro": ("few",),
+    "sk": ("few",),
+    "sl": ("one", "two", "few"),
+    "lt": ("one", "few"),
+    "lv": ("zero", "one"),
 }
 
 # A string literal: "..." with BrightScript's "" escape.
@@ -187,6 +208,8 @@ def android_text(el):
 
 
 def roku_entries(folder):
+    if folder is None:
+        return {}
     with open(os.path.join(TP, "roku", folder, "strings.json"), encoding="utf-8") as f:
         data = json.load(f)
     out = {}
@@ -221,12 +244,38 @@ def pool(lang):
             if key.endswith("#other"):
                 name = key[:-len("#other")]
                 cats = {}
-                for q in ("one", "few", "many"):
+                for q in ("zero", "one", "two", "few", "many"):
                     t = tr.get(name + "#" + q)
                     if t:
                         cats[q] = to_positional(english, t)
                 forms[norm(english)] = (english, cats)
     return result, forms
+
+
+NAMED = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def server_keys(lang):
+    """{catalog key: translation} of the server text Siku reads by key (home.section.*, error.*), with
+    the Roku catalog's named {placeholders}. A language silo-roku does not ship takes them from the
+    Android catalog, whose names are the keys with "_" for "." and whose %1$s, %2$s, ... are the Roku
+    English's placeholders in order."""
+    keep = lambda k: k.startswith(("home.section.", "error.")) and "#" not in k
+    roku_folder = LANGS[lang][1]
+    if roku_folder is not None:
+        return {k: v for k, v in roku_entries(roku_folder).items() if keep(k) and v}
+    out = {}
+    tr = android_entries(LANGS[lang][0])
+    for k, en in roku_entries("en_US").items():
+        t = tr.get(k.replace(".", "_")) if keep(k) else None
+        if not t:
+            continue
+        names = NAMED.findall(en)
+        t = re.sub(r"%(\d+)\$[sd]", lambda m: "{%s}" % names[int(m.group(1)) - 1] if int(m.group(1)) <= len(names) else m.group(0), t)
+        if "%" in t and re.search(r"%(\d+\$)?[sd]", t):
+            continue
+        out[k] = t
+    return out
 
 
 def build():
@@ -262,7 +311,7 @@ def build():
                     table[key] = extra[key]
                     continue
                 t = hit[1].get(q) if hit else None
-                if t and (q != "one" or "{0}" in t):
+                if t and (q not in ("zero", "one", "two") or "{0}" in t):
                     table[key] = to_positional(other, t) if PLACEHOLDER.search(other) else t
                     from_catalog += 1
                 else:
@@ -278,9 +327,8 @@ def build():
                 miss.append("@android." + name)
         # Server text by catalog key (Silo's docs/architecture/i18n.md): Home row titles
         # (title_key, named {placeholders} filled from title_args) and problem types, as "@key".
-        for k, v in roku_entries(LANGS[lang][1]).items():
-            if k.startswith(("home.section.", "error.")) and "#" not in k and v:
-                table["@" + k] = v
+        for k, v in server_keys(lang).items():
+            table["@" + k] = v
         built[lang] = case_merge(table)
         missing[lang] = miss
         stats[lang] = (len(strings), from_catalog, len(table) - from_catalog, len(miss))

@@ -12,7 +12,7 @@ Siku is a Roku SceneGraph channel written in BrightScript. It ports the Silo **A
 - **No inline scripts:** each component's XML points at a sibling `.brs` file through `<script uri=...>`. BrighterScript can't validate inline `CDATA` scripts.
 - **Reserved names:** don't use `run`, `pos`, `left`, `right`, `mid`, `str`, `len` or `type` as identifiers.
 - **Lint before you finish:** `npx bsc --project bsconfig.json` must report 0 errors.
-- **Fonts:** Inter, at `pkg:/fonts/Inter-{regular,medium,semibold,bold,black}.otf` (Inter 4.1 subset to Latin, Latin Extended and Cyrillic by `tools/subset_fonts.py`; Siku cannot count on a Roku fallback font, so a language whose script they lack is not offered). To convert Android sp to pixels, multiply by 1.72; to convert dp, multiply by 2.
+- **Fonts:** Inter, at `pkg:/fonts/Inter-{regular,medium,semibold,bold,black}.otf` (Inter 4.1 subset to Latin, Latin Extended, Vietnamese's Latin Extended Additional and Cyrillic by `tools/subset_fonts.py`; Siku cannot count on a Roku fallback font, so a language whose script they lack is not offered). To convert Android sp to pixels, multiply by 1.72; to convert dp, multiply by 2.
 - **Colors:** use `0xRRGGBBAA` strings. Use the tokens in `Theme().colors` (`components/common/Theme.brs`).
 - **Rounded shapes:** draw them as a `Poster` with a white 9-patch tinted by `blendColor`.
   - Fills: `pkg:/images/ui/r{R}.9.png`.
