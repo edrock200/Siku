@@ -266,6 +266,18 @@ clears one); GET /mock/switch lists them.
                                  flags the row featured. GET /catalog?source=library_collection|user_collection
                                  reads a collection's titles (c-empty none). Log: COLLECTION ROW scope=
                                  cards= featured=, COLLECTION ITEMS source= id= library= type= n=
+  item_collections=several|one|only|books|empty|fail|bad|caps_fail
+                                 the collections a movie or series is in (Silo Android #1007, silo-server
+                                 #4528): GET /catalog/search/capabilities adds item_collections true and GET
+                                 /catalog/items/{id}/collections answers. several: Space Sagas (library 1), Sam's
+                                 Shelf (personal, by p-sam), Laura's Picks (personal), Book Club (library 6, the
+                                 ebook library: a TV leaves it out) and No Library (left out); one: Space Sagas
+                                 with 8 preview titles (a client shows 6; the third is an ebook a TV leaves out);
+                                 only: Space Sagas alone, no preview (the "Also in" row); books: Space Sagas
+                                 whose preview is ebooks only (a TV shows its card under "Also in"); empty: no
+                                 collection; fail: 500; bad: a body without preview_items; caps_fail: the
+                                 capability read answers 500. Episodes and seasons are answered too (a client
+                                 never asks). Log: ITEM COLLECTIONS <id> mode= library=
   multi_user=1                   several server users (Silo Android #795, more than one account per server):
                                  password sign-in gives each username its own user id (laura 1, sam 2,
                                  others u-<name>), and tokens stay tied to their user, so /account/me and
@@ -469,6 +481,46 @@ def collection_row(lib=""):
     LOG.append("COLLECTION ROW scope=%s" % ("library" if lib else "home"))
     return {"id": "franchises", "section_type": "collection_posters", "title": "Franchises", "featured": featured,
             "item_limit": 20, "total_count": len(cards), "is_custom": False, "customized": False, "items": [], "collections": cards}
+
+
+def item_collections_mode():
+    """The item_collections switch ("" = an older server without the read)."""
+    v = str(STATE["switches"].get("item_collections") or "")
+    return "" if v in ("0", "off") else v
+
+
+def item_collections_body(cid, mode):
+    """A listCatalogItemCollections body for the switch's mode (see the switch's help)."""
+    space = {"id": "c-space", "source": "library", "title": "Space Sagas", "poster_url": img("poster", "collection-space"),
+             "poster_is_collage": False, "item_count": 6, "library_id": "1"}
+    if mode == "bad":
+        return {"items": [space]}
+    if mode == "empty":
+        return {"items": [], "preview_items": []}
+    if mode == "only":
+        return {"items": [space], "preview_items": []}
+    others = [mv for mv in all_movies() if mv["content_id"] != cid]
+    if mode == "one":
+        preview = others[:8]
+        ebook = {"content_id": "ebook:space-1", "id": "ebook:space-1", "type": "ebook", "title": "Space Sagas: The Novel",
+                 "poster_url": img("poster", "ebook-space-1")}
+        preview = preview[:2] + [ebook] + preview[2:7]
+        return {"items": [space], "preview_items": preview}
+    if mode == "books":
+        ebooks = [{"content_id": "ebook:space-%d" % k, "id": "ebook:space-%d" % k, "type": "ebook",
+                   "title": "Space Sagas Book %d" % k, "poster_url": img("poster", "ebook-space-%d" % k)} for k in range(1, 4)]
+        return {"items": [space], "preview_items": ebooks}
+    # several (and any other value)
+    return {"items": [
+        space,
+        {"id": "c-sam", "source": "user", "title": "Sam's Shelf", "poster_url": img("poster", "collection-sam"),
+         "poster_is_collage": True, "item_count": 3, "creator_profile_id": "p-sam"},
+        {"id": "c-laura", "source": "user", "title": "Laura's Picks", "poster_url": img("poster", "collection-laura"),
+         "poster_is_collage": True, "item_count": 5, "creator_profile_id": "p-owner"},
+        {"id": "c-books", "source": "library", "title": "Book Club", "poster_url": img("poster", "collection-books"),
+         "poster_is_collage": False, "item_count": 7, "library_id": "6"},
+        {"id": "c-nolib", "source": "library", "title": "No Library", "poster_url": "", "item_count": 2},
+    ], "preview_items": []}
 
 
 def box_set_movies(bs):
@@ -3280,7 +3332,7 @@ class Handler(BaseHTTPRequestHandler):
             if STATE["switches"].get("mixed_library"):
                 # A real server sends numeric ids; this one does, to exercise id normalisation.
                 libs.append({"id": 5, "name": "Everything", "type": "mixed", "sort_order": 4})
-            if collection_rows_mode():
+            if collection_rows_mode() or item_collections_mode():
                 # An ebook library (rows of collections): a TV hides it and its collections.
                 libs.append({"id": "6", "name": "Books", "type": "ebook", "sort_order": 5})
             if box_sets_on():
@@ -3503,6 +3555,20 @@ class Handler(BaseHTTPRequestHandler):
         if m:
             LOG.append("THEME AUDIO %s %s" % (m.group(1), m.group(2)))
             return self.send(200, silent_wav(), "audio/wav")
+        m = re.match(r"^/api/v2/catalog/items/(.+)/collections$", p)
+        if m:
+            # The collections a title is in (listCatalogItemCollections, switch item_collections).
+            cid = unquote(m.group(1))
+            mode = item_collections_mode()
+            lib = q.get("library_id", [""])[0]
+            print("ITEM COLLECTIONS %s mode=%s library=%s" % (cid, mode or "-", lib or "-"), flush=True)
+            LOG.append("ITEM COLLECTIONS %s mode=%s" % (cid, mode or "-"))
+            if not mode:
+                return self.problem(404, "not_found", "Not found")
+            if mode == "fail":
+                return self.problem(500, "internal_error", "Collections failed")
+            body = item_collections_body(cid, mode)
+            return self.send(200, body)
         m = re.match(r"^/api/v2/catalog/items/(.+)/box-set$", p)
         if m:
             # A movie's box set (getCatalogItemBoxSet): {"box_set": {...}} or {} for a movie in none.
@@ -3604,9 +3670,15 @@ class Handler(BaseHTTPRequestHandler):
             LOG.append("SEARCH CAPS people_media_scope=%s" % mode)
             if mode == "fail":
                 return self.problem(500, "internal_error", "Search capabilities failed")
+            icoll = item_collections_mode()
+            if icoll == "caps_fail":
+                print("SEARCH CAPS item_collections=fail", flush=True)
+                return self.problem(500, "internal_error", "Search capabilities failed")
             caps = {"revision": "mock-1", "state": "ready", "provider": "mock"}
             if mode not in ("0", "off"):
                 caps["people_media_scope"] = True
+            if icoll:
+                caps["item_collections"] = True
             return self.send(200, caps)
         if p == "/api/v2/catalog/people":
             text = q.get("q", [""])[0].lower()

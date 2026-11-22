@@ -3,6 +3,19 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.18.0
+
+From Silo's Android TV app (November 22, 2026).
+
+**New**
+- **See which collections a title is in:** movie and series pages show the collections a title belongs to. In one collection, you see a few of its other titles and an "Explore all" card; in several, an "Also in" row lists each collection. Needs a Silo server that supports it.
+
+**Better**
+- **Up Next follows your "Show Next Up" setting** (by default 30 seconds before the end, or only at the end) instead of appearing as soon as the credits start. Skip Credits works as before, and leaving during the closing credits still takes the series page to the next episode.
+- **A slow server is no longer remembered as a slow connection:** when playback buffers and Siku lowers the quality, it only tells the server your connection is slow if it actually measured slow downloads.
+
+**Needs testing on a real Roku:** Up Next timing (30 s before the end, "At end", resuming close to the end), a buffering stall on a transcode, and the new collections row's focus.
+
 ## v0.17.0
 
 From Silo's apps (November 21, 2026).

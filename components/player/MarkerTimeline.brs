@@ -37,10 +37,12 @@ function Markers_ranges(markers as dynamic, kind as string) as object
     return out
 end function
 
-' Where Up Next may appear because of credits: the start of the LAST credits range, extended back
-' over credits ranges that run into it (1 s of rounding allowed), so a scene between two credits
-' ranges still plays. -1 when the file has no credits range.
-function Markers_upNextCreditsStart(markers as dynamic) as float
+' Where the closing credits begin (Silo Android #994 finalCreditsStart, formerly where Up Next
+' appeared): the start of the LAST credits range, extended back over credits ranges that run into it
+' (1 s of rounding allowed), so a scene between two credits ranges still counts as part of the
+' episode. Crossing it marks the episode finished for the series page. -1 when the file has no
+' credits range.
+function Markers_finalCreditsStart(markers as dynamic) as float
     credits = Markers_ranges(markers, "credits")
     n = credits.Count()
     if n = 0 then return -1
@@ -50,6 +52,19 @@ function Markers_upNextCreditsStart(markers as dynamic) as float
         if r["end"] >= start - 1 and r.start < start then start = r.start
     end for
     return start
+end function
+
+' When the Up Next card opens before the end (Silo Android #994, NextUpPrompt.crossesPromptPoint):
+' true when playback moves from prevPosition to position across the point promptSeconds before the
+' file's duration (playback.next_up_prompt_seconds). Only the crossing counts, so resuming or seeking
+' past the point does not open the card. promptSeconds 0 ("At end") or an unknown duration never
+' opens it early: the card waits for the stream to end. Credits markers do not move this point.
+function NextUp_crossesPromptPoint(prevPosition as dynamic, position as dynamic, duration as dynamic, promptSeconds as dynamic) as boolean
+    secs = Num_or(promptSeconds, 0)
+    dur = Num_or(duration, 0)
+    if secs <= 0 or dur <= 0 then return false
+    promptStart = dur - secs
+    return Num_or(prevPosition, 0) < promptStart and Num_or(position, 0) >= promptStart
 end function
 
 ' The scrubber's marker bands (Silo Android #933 / #934; adapted from silo-roku 42249ca): every

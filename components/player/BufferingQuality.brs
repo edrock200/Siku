@@ -515,6 +515,23 @@ function BQ_slowLinkEvidence(bq as object, plan as object) as boolean
     return bq.throughputKbps < plan.deliveredKbps
 end function
 
+'' The source and reading a lowering's request carries (Silo Android #1011, PlaybackSessionManager):
+' observed_rebuffer goes only with the reading it is based on, and only when that reading is
+' evidence on this Roku. Returns { source, observedKbps, reason } (reason "" when the claim stands,
+' else why it was dropped: "no_reading" (the meter was reset, as after a new mount), "server_encodes"
+' (a server transcode: Roku's segment download time includes the wait for the encoder, so a slow
+' encoder or burn-in reads as a slow link), or "not_slow").
+' delivery: the plan's delivery (server_transcode_hls, server_remux_hls, original_http, ...).
+function BQ_claimForRequest(source as string, throughputKbps as dynamic, deliveredKbps as dynamic, delivery as dynamic) as object
+    if source <> "observed_rebuffer" then return { source: source, observedKbps: 0, reason: "" }
+    kbps = BQ_int(throughputKbps)
+    if kbps <= 0 then return { source: "", observedKbps: 0, reason: "no_reading" }
+    if LCase(BQ_str(delivery)) = "server_transcode_hls" then return { source: "", observedKbps: 0, reason: "server_encodes" }
+    delivered = BQ_int(deliveredKbps)
+    if delivered <= 0 or kbps >= delivered then return { source: "", observedKbps: 0, reason: "not_slow" }
+    return { source: source, observedKbps: kbps, reason: "" }
+end function
+
 sub BQ_suppressUntil(bq as object, st as object, liftAt as dynamic, now as dynamic)
     if st.tracker.stallStartedAt = invalid then return
     BQ_setTimer(bq, "reevaluate", liftAt, { sid: st.sid })
@@ -539,7 +556,13 @@ function BQ_loweringFor(bq as object, plan as object) as dynamic
         ' The exact integer floor of delivered x 7 / 10 (22120 gives 15484).
         estimate = (delivered * 7) \ 10
         if estimate < bq.c.MIN_ESTIMATE_KBPS then return invalid
-        return { "type": "replan", quality: "auto", estimateKbps: estimate, estimateSource: "observed_rebuffer", learnedLimit: "" }
+        ' The step-down goes out on any counted stall (a smaller output helps a slow encoder too), but
+        ' it claims a slow link (observed_rebuffer, which the server keeps as this device's limit for
+        ' 24 hours) only when the plan's media measurably arrived more slowly than its bitrate (Silo
+        ' Android #1011); otherwise the estimate goes unsourced and the server never records it.
+        estSource = ""
+        if BQ_slowLinkEvidence(bq, plan) then estSource = "observed_rebuffer"
+        return { "type": "replan", quality: "auto", estimateKbps: estimate, estimateSource: estSource, learnedLimit: "" }
     end if
     ' Below the lower of the rung the plan names and the delivered bitrate.
     ceiling = 0

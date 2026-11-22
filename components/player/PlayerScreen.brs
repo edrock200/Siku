@@ -205,9 +205,11 @@ sub resetPlaybackState()
     m.forcedDolbyWarned = false
     m.upNextShown = false
     m.upNextDismissed = false
-    ' The credits or the end of this item was reached. Opening Up Next by hand and Keep Watching
-    ' never set it (the series page moves on to the next episode only after it).
+    ' Playback crossed the closing credits or reached the end of this item (Silo Android #994). Opening
+    ' Up Next by hand and Keep Watching never set it (the series page moves on to the next episode only
+    ' after it).
     m.reachedCreditsOrEnd = false
+    m.upNextDue = false            ' playback crossed the Show Next Up point and the card has not opened yet
     m.countdown = -1
     m.markerPrefs = invalid        ' { mode, credits }: the skip settings, read at the first active marker
     m.nextUpPromptSecs = invalid   ' playback.next_up_prompt_seconds, read at the first check (checkUpNext)
@@ -465,7 +467,7 @@ sub collectMarkers()
     logCreditsRanges()
 end sub
 
-' "[siku-playback] credits ranges=2 upnext_at=2650" when the file has credits (Silo Android #694).
+' "[siku-playback] credits ranges=2 closing_at=2650" when the file has credits (Silo Android #694 / #994).
 ' Also "[siku-playback] marker bands intro=1 recap=0 credits=2 preview=0" when the scrubber draws any
 ' (Silo Android #934: one band per range, in the shared palette).
 sub logCreditsRanges()
@@ -478,7 +480,7 @@ sub logCreditsRanges()
     if total > 0 then Diag_log("[siku-playback] marker bands intro=" + counts.intro.ToStr() + " recap=" + counts.recap.ToStr() + " credits=" + counts.credits.ToStr() + " preview=" + counts.preview.ToStr())
     n = counts.credits
     if n = 0 then return
-    Diag_log("[siku-playback] credits ranges=" + n.ToStr() + " upnext_at=" + Int(Markers_upNextCreditsStart(m.markers)).ToStr())
+    Diag_log("[siku-playback] credits ranges=" + n.ToStr() + " closing_at=" + Int(Markers_finalCreditsStart(m.markers)).ToStr())
 end sub
 
 function markersOf(version as dynamic, w as dynamic) as object
@@ -1316,12 +1318,13 @@ sub onVideoPosition()
     ' Before the mount first plays, Roku reports 0 while it buffers towards PlayStart: the plan's
     ' start (applyPlan) stays the position until a real reading arrives.
     if not m.mountPlayed and Num_or(m.video.position, 0) < 1 and m.position > 1 then return
+    prevPosition = m.position
     m.position = m.video.position + m.timelineOffset
     ' The scrubber is drawn only with the controls; showControls catches it up.
     if not m.scrubbing and m.controls.visible then m.scrubber.position = m.position
     AiLive_onPosition()
     checkMarkers()
-    checkUpNext()
+    checkUpNext(prevPosition)
 end sub
 
 sub seekToSource(seconds as float)
@@ -1384,8 +1387,8 @@ sub onFinished()
         if not m.upNext.visible then
             showUpNext()
         else if not m.upNextShown then
-            ' Opened by hand without a countdown: the end of the stream arms it now, as the credits
-            ' point would have (TvPlayerViewModel.onApproachingEnd after onUserRequestedNextUp).
+            ' Opened by hand without a countdown: the end of the stream arms it now
+            ' (TvPlayerViewModel.onApproachingEnd(videoEnded) after onUserRequestedNextUp).
             m.upNextShown = true
             armUpNextCountdown()
             renderUpNext()
@@ -2273,33 +2276,51 @@ sub stopShuffling()
     exitPlayer()
 end sub
 
-sub checkUpNext()
+' Up Next timing (Silo Android #994, NextUpPrompt): the card opens when playback crosses the
+' profile's Show Next Up point, playback.next_up_prompt_seconds before the end of the file (0 = "At
+' end": only when the stream ends, onFinished). Only the crossing counts, so resuming or seeking past
+' the point does not open it; the end still does. Credits markers drive Skip Credits and no longer
+' move this point. Playing into the closing credits (the last credits range, Markers_finalCreditsStart)
+' still counts as finishing the episode for the series page, as the end does.
+' prevPosition: the position before this reading.
+sub checkUpNext(prevPosition as float)
     if not m.isEpisode and m.shuffle = invalid then return
     if m.duration <= 0 then return
-    waiting = m.nextEpisode <> invalid and not m.upNextShown and not m.upNextDismissed
-    if m.reachedCreditsOrEnd and not waiting then return
-    ' playback.next_up_prompt_seconds: how long before the end the card appears (0 = at the end).
+    if not m.reachedCreditsOrEnd then
+        creditsAt = Markers_finalCreditsStart(m.markers)
+        if creditsAt >= 0 and prevPosition < creditsAt and m.position >= creditsAt then
+            ' Recorded on its own: leaving during the closing credits returns the series page to the
+            ' next episode, though Up Next waits for its point (Silo Android #802 / #994).
+            m.reachedCreditsOrEnd = true
+            Diag_log("[siku-playback] closing credits reached at " + Int(creditsAt).ToStr() + " s; the series page moves on")
+        end if
+    end if
     ' Read once per playback: each read copies m.global.settings, and this runs on every tick.
     if m.nextUpPromptSecs = invalid then m.nextUpPromptSecs = Settings_nextUpPromptSeconds()
-    trigger = m.duration - m.nextUpPromptSecs
-    ' Credits: the start of the LAST credits range (Silo Android #694), so a scene between two
-    ' credits ranges still plays; each Skip Credits pill still ends at its own range.
-    creditsAt = Markers_upNextCreditsStart(m.markers)
-    if creditsAt >= 0 and creditsAt < trigger and creditsAt > m.duration * 0.5 then trigger = creditsAt
-    if m.position < trigger then return
-    ' Recorded before the Up Next guards: Keep Watching on a hand-opened card also dismisses it
-    ' (Silo Android #802: the series page then still moves on after these credits).
-    m.reachedCreditsOrEnd = true
-    if not waiting then return
+    if NextUp_crossesPromptPoint(prevPosition, m.position, m.duration, m.nextUpPromptSecs) then
+        m.upNextDue = true
+        Diag_log("[siku-playback] up next point crossed at " + Int(m.position).ToStr() + " s (" + m.nextUpPromptSecs.ToStr() + " s before the end)")
+    end if
+    if m.upNextDue <> true then return
+    if m.position < m.duration - m.nextUpPromptSecs then
+        ' A seek back before the point while the card waited (a dialog was open): not due any more.
+        m.upNextDue = false
+        return
+    end if
+    if m.upNextShown or m.upNextDismissed then
+        m.upNextDue = false
+        return
+    end if
+    ' No next item yet (it may still be loading): the card opens once it is known.
+    if m.nextEpisode = invalid then return
     ' A picker or subtitle dialog the viewer has open is left alone: the card shows on a later
     ' position tick once it closes (onFinished still closes it at the very end).
     if m.picker.visible or m.subsDialog.visible then return
+    m.upNextDue = false
     if m.upNext.visible then
-        ' The viewer opened the card by hand (no countdown): the credits point arms it now, keeping
-        ' the viewer's focus on the card.
-        m.upNextShown = true
-        armUpNextCountdown()
-        renderUpNext()
+        ' The viewer opened the card by hand (no countdown): it stays theirs to choose from; the end of
+        ' the stream still arms it (onFinished).
+        Diag_log("[siku-playback] up next point crossed with the card open by hand; no countdown until the end")
         return
     end if
     showUpNext()
@@ -2320,8 +2341,8 @@ function stillWatchingDue() as boolean
 end function
 
 ' Two anchors, as Silo Android TV's startNextUpCountdown: a card raised at the end of the stream
-' counts 10 s down and then plays the next item; a card raised before the end (the prompt time or
-' the credits marker) shows the playback time left, so it freezes on pause and grows on a seek
+' counts 10 s down and then plays the next item; a card raised before the end (the Show Next Up
+' point, Silo Android #994) shows the playback time left, so it freezes on pause and grows on a seek
 ' back, and the next item starts when this one finishes (onFinished), never cutting the end off.
 sub startCountdown()
     m.countdownTimer.control = "stop"
@@ -2359,8 +2380,8 @@ sub armUpNextCountdown()
 end sub
 
 ' userRequested: the transport's Up Next button. Someone who opened the card is choosing, so no
-' countdown starts (TvPlayerViewModel.onUserRequestedNextUp); the credits point or the end of the
-' stream still arms it later (m.upNextShown stays false until then).
+' countdown starts (TvPlayerViewModel.onUserRequestedNextUp); only the end of the stream arms it
+' later (m.upNextShown stays false until then; the Show Next Up point leaves it alone, #994).
 sub showUpNext(userRequested = false as boolean)
     if m.nextEpisode = invalid and m.shuffle = invalid then return
     if not userRequested then m.upNextShown = true

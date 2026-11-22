@@ -395,6 +395,15 @@ behaves the same (the registry shows `accesstoken`); check any new wire message 
   change, in case the page never got its hide. Tasks report bursts as cumulative counters (`changes`, `others`)
   because brs-engine coalesces rapid field sets.
 
+- Roku's `Video.downloadedSegment` `DownloadDuration` times the whole request, including the wait for the server's
+  first byte, so on a server transcode a slow encoder (or subtitle burn-in) reads exactly like a slow link. Never use it
+  as evidence for a claim the server remembers (`observed_rebuffer`, its 24 h learned limit): `BQ_claimForRequest`
+  withholds the claim on `server_transcode_hls` and whenever the reading is gone at send time (Silo Android #1011). The
+  step-down itself still goes out, unsourced.
+- Timing a one-shot UI prompt from playback position (Up Next, Silo Android #994): compare the previous and current
+  readings (`NextUp_crossesPromptPoint`), never "position past the point", so a resume or a seek past it does not fire;
+  `seekToSource` and the re-anchor path write `m.position` first, so a seek never looks like a crossing.
+
 ## Project conventions (short version; `docs/ARCHITECTURE.md` has the full one)
 - 1920×1080 canvas, pixel coordinates. Android dp × 2 = px; Android sp × 1.72 = px.
 - Every component is an XML file plus a sibling `.brs` referenced by `<script uri>`. No inline
@@ -797,3 +806,4 @@ v0.2.0, v0.3.0, …
 - **v0.15.0** Subtitle search gated on the server's provider status (#608); #970 (TV top bar hover-menu timing) did not apply: Siku's menus open only on Down/OK. Lessons: nothing new about devices; give a probe both a request timeout and a Timer node so the simulator honours the budget too.
 - **v0.16.0** Home watch-state refresh (#1009, silo-roku #102): re-read on every return, 1/2/4 s retries for transient failures, `HomeEventsTask` on `/api/v2/events/ws` (ticket subprotocol, `user_state` channel) with a 120 s fallback. Lessons: Silo's `user_state.changed` events carry no values, so re-read rather than patch; throttle progress-only events (30 s) so another device playing doesn't reload Home every 10 s; stop the socket whenever Home is covered. Device checks pending: wss on Roku OS 16, 4001 access-changed close.
 - **v0.17.0** 13 new languages from Silo's Android catalogs (hu ro sk sl bg ca lt lv et vi pt_PT id ms; el/he/hi/th left out: no glyphs), device-neutral phone sign-in card (#1014, silo-roku #103), dithered hero fade (#1015). Lessons: Android resource folders use legacy codes (`values-in`, `values-iw`), so map them; Vietnamese needs U+1EA0–1EF9 in the font subset; dither only 2-D masks, never stretched 4 px strips (noise becomes streaks); a test now fails when a language file uses a glyph the fonts lack. Device checks pending: Vietnamese stacked accents, long words on buttons.
+- **v0.18.0** Title collections on detail pages (#1007, `ItemCollections.brs`), Up Next at the Show Next Up point by crossing, not position (#994), slow-link claim only with throughput evidence and never on transcodes (#1011); #1010/#1013 did not apply. Lessons: open time-based prompts on a crossing (previous < point <= current) so resume/seek past the point don't fire them; Roku segment timing includes server wait, so it can't tell a slow encoder from a slow link.

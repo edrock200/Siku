@@ -243,12 +243,23 @@ sub Bufq_sendReplan(o as object)
         BQ_onReplanFailed(m.bq, Bufq_now())
         return
     end if
+    ' A slow-link claim goes only with the reading it rests on, and never on a server transcode, where
+    ' Roku's segment timings include the wait for the encoder (BQ_claimForRequest, Silo Android #1011).
+    delivered = 0
+    if m.bq.current <> invalid then delivered = m.bq.current.plan.deliveredKbps
+    claim = BQ_claimForRequest(o.estimateSource, m.bq.throughputKbps, delivered, m.plan.delivery)
     extra = {}
     if o.estimateKbps > 0 then extra.bandwidth_estimate_kbps = o.estimateKbps
-    if o.estimateSource <> "" then extra.bandwidth_estimate_source = o.estimateSource
-    if o.estimateSource = "observed_rebuffer" and m.bq.throughputKbps > 0 then extra.observed_throughput_kbps = m.bq.throughputKbps
+    if claim.source <> "" then extra.bandwidth_estimate_source = claim.source
+    if claim.observedKbps > 0 then extra.observed_throughput_kbps = claim.observedKbps
     if o.learnedLimit <> "" then extra.learned_limit = o.learnedLimit
-    Diag_log("[siku-playback] buffering replan quality=" + o.quality + " est=" + Str_orEmpty(o.estimateKbps) + " source=" + o.estimateSource + " learned_limit=" + o.learnedLimit + " observed=" + Str_orEmpty(m.bq.throughputKbps))
+    sentSource = claim.source
+    if sentSource = "" and o.estimateKbps > 0 then sentSource = "none"
+    why = ""
+    reason = claim.reason
+    if reason = "" and o.estimateSource = "" and o.estimateKbps > 0 then reason = "no_evidence"
+    if reason <> "" then why = " (no slow-link claim: " + reason + ")"
+    Diag_log("[siku-playback] buffering replan quality=" + o.quality + " est=" + Str_orEmpty(o.estimateKbps) + " source=" + sentSource + why + " learned_limit=" + o.learnedLimit + " observed=" + Str_orEmpty(m.bq.throughputKbps))
     m.prevQualityPref = m.qualityPref
     m.qualityPref = o.quality
     sendReplan("quality_change", "bq", invalid, invalid, extra, o)

@@ -516,6 +516,36 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   cover backdrop drifts only while the Audio node plays (`driftAnim`, never in the simulator). Mock: books carry
   `poster_thumbhash`, `release_date` and `audiobook.series` (Orbit Cycle, Harbor Chronicles with `series_index`); A Wider Orbit's
   raw title is "Orbit Cycle 2 - A Wider Orbit (2 of 2)"; `played` follows `/api/v2/watched`; refuse it with `--switch watched_fail=409`.
+- Collections a title is in (Silo Android #1007, silo-server #4528; `ItemCollections.brs`, host tests
+  `tests/test_item_collections.py`): a movie or series page reads GET `/api/v2/catalog/search/capabilities` on every load
+  and return, and only with `item_collections: true` GET `/api/v2/catalog/items/{id}/collections` (`library_id` when the page
+  has one; body `{items, preview_items}`, both required). One collection with other titles: up to 6 of them under its name
+  (reading titles left out) and an Explore all card; otherwise an "Also in" row of collection cards (the rows-of-collections
+  card and caption, `CollRows_withCaptions`). Below Cast & Crew on a series page, below the box set row on a movie page.
+  Server collections only from libraries this Roku shows (`m.global.collectionLibraries`, else the page reads
+  `/user/libraries` itself); a preview left with no titles shows its collection's card under "Also in". A title opens without
+  the page's library; a card or Explore all opens LibraryScreen section `collection` as a Home card does. Nothing while
+  loading, when empty or after a failed first read; a failed refresh keeps the row. `[siku-detail] collections capability
+  item_collections=true|false`, `collections row=preview titles=<n> explore_all=yes held=<n>` / `row=also_in cards=<n>
+  held=<n>` / `row=none`, `collections read failed status=N; keeping the row` (also `capability read failed`, `library list
+  read failed`), `collections wait for the library list`, `collections title opened`, `collections opened from=collection|explore
+  kind=library|user library=`. Mock: `--switch item_collections=several|one|only|books|empty|fail|bad|caps_fail` (default off:
+  an older server; log `ITEM COLLECTIONS <id> mode= library=`).
+- Up Next timing (Silo Android #994, `NextUp_crossesPromptPoint` / `Markers_finalCreditsStart` in `MarkerTimeline.brs`, host
+  tests `tests/test_marker_timeline.py`): the card opens when playback crosses the profile's Show Next Up point
+  (`playback.next_up_prompt_seconds` before the end of the file, default 30; 0 = "At end": only when the stream ends); resuming
+  or seeking past the point does not open it, the end still does. Credits markers drive only Skip Credits now. A card opened by
+  hand gets no countdown at the point (the end arms it). Crossing the closing credits (the last credits range) still marks the
+  episode finished for the series page. `[siku-playback] up next point crossed at <s> s (<n> s before the end)`, `up next point
+  crossed with the card open by hand; no countdown until the end`, `closing credits reached at <s> s; the series page moves
+  on`; the marker line now reads `credits ranges=<n> closing_at=<s>`. Simulator cannot play: device only.
+- Slow-link claim on a buffering step-down (Silo Android #1011, `BQ_loweringFor` / `BQ_claimForRequest` in
+  `BufferingQuality.brs`, host tests `tests/test_buffering_claim.py`): an Auto lowering still goes out on any counted stall,
+  but `bandwidth_estimate_source: observed_rebuffer` (+ `observed_throughput_kbps`) only when the plan's measured throughput
+  is below its delivered bitrate, only with the reading it rests on, and never on `server_transcode_hls` (Roku's
+  `downloadedSegment` time includes the wait for the encoder, so a slow encoder or burn-in would read as a slow link);
+  otherwise the estimate goes unsourced and the server does not learn it. `[siku-playback] buffering replan quality= est=
+  source=observed_rebuffer|none [(no slow-link claim: no_evidence|no_reading|server_encodes|not_slow)] learned_limit= observed=`.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

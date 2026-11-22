@@ -66,6 +66,18 @@ sub init()
     m.boxSetMarked = -1
     m.boxSetEntered = false
     m.boxSetLibsAsked = false
+    ' The collections the title is in (Silo Android #1007, ItemCollections.brs).
+    m.collectionsSection = m.top.findNode("collectionsSection")
+    m.collectionsHeader = m.top.findNode("collectionsHeader")
+    m.collectionsRow = m.top.findNode("collectionsRow")
+    m.collRow = invalid         ' the row drawn ({ kind, collection, items } / { kind, cards }), invalid = none
+    m.collRaw = invalid         ' the last read's row before this Roku's filter, while it waits for the libraries
+    m.collShown = []            ' the drawn row's entries in order: { what: "title"|"collection"|"explore", card }
+    m.collSeq = 0               ' reads sent; an answer carries its number
+    m.collLibs = invalid        ' { known, libs } read by this page when the shell published none (a deep link)
+    m.collLibsAsked = false
+    m.collSig = ""              ' FormatJson of the row drawn ("null" = none), so a same answer redraws nothing
+    m.collCapsWord = ""         ' the capability last logged ("yes" / "no")
     m.detailsSection = m.top.findNode("detailsSection")
     m.detailsBox = m.top.findNode("detailsBox")
     m.detailsBg = m.top.findNode("detailsBg")
@@ -136,6 +148,7 @@ sub init()
     m.castRow.observeField("rowItemSelected", "onCastSelected")
     m.relatedRow.observeField("rowItemSelected", "onRelatedSelected")
     m.boxSetRow.observeField("rowItemSelected", "onBoxSetRowSelected")
+    m.collectionsRow.observeField("rowItemSelected", "onCollectionsRowSelected")
     m.trailersRow.observeField("rowItemSelected", "onTrailerSelected")
     m.ytDialog.observeField("dismissed", "onYouTubeDialogDismissed")
     m.detailsBox.observeField("focusedChild", "onDetailsFocus")
@@ -225,6 +238,7 @@ sub onCardOverlays()
     CardOverlay_refresh(m.episodeRow.content)
     CardOverlay_refresh(m.relatedRow.content)
     CardOverlay_refresh(m.boxSetRow.content)
+    CardOverlay_refresh(m.collectionsRow.content)
 end sub
 
 ' Opened without the shell (a deep link): the profile's settings were never read, and theme music
@@ -361,6 +375,7 @@ sub onItem(event as object)
         Api_get("/api/v2/recommendations/similar/" + Str_urlEncode(Str_orEmpty(m.item.content_id)), Artwork_query({ limit: 12, image_size: "medium" }, "similar", Theme_posterScale()), "onSimilar")
     end if
     loadMovieBoxSet()
+    loadItemCollections()
     ' Shuffle entry points in the More menu depend on the server's capability.
     Shuffle_refreshCaps("onShuffleCaps")
 end sub
@@ -386,6 +401,8 @@ sub refreshUserState()
     Api_get(itemPath(), Artwork_query({ image_size: "large" }, "detail"), "onItemRefreshed")
     ' The box set row's watched marks follow too; a failed read keeps what it shows.
     loadMovieBoxSet()
+    ' A collection edited elsewhere shows on return (TvItemDetailViewModel.refreshOnReturn).
+    loadItemCollections()
 end sub
 
 sub onItemRefreshed(event as object)
@@ -1067,12 +1084,21 @@ sub layoutBody()
         m.castSection.translation = [x, y]
         y = y + 60 + 300 + gap
     end if
+    ' The collections row: below Cast & Crew on a series page, below the box set row on a movie page.
+    if m.collectionsSection.visible and m.itemType = "series" then
+        m.collectionsSection.translation = [x, y]
+        y = y + 60 + 364 + gap
+    end if
     if m.trailersSection.visible then
         m.trailersSection.translation = [x, y]
         y = y + 60 + 338 + gap
     end if
     if m.boxSetSection.visible then
         m.boxSetSection.translation = [x, y]
+        y = y + 60 + 364 + gap
+    end if
+    if m.collectionsSection.visible and m.itemType <> "series" then
+        m.collectionsSection.translation = [x, y]
         y = y + 60 + 364 + gap
     end if
     if m.relatedSection.visible then
@@ -1148,8 +1174,11 @@ sub buildZones()
         if m.episodesFailed then zones.Push({ name: "episodesRetry", y: sy })
     end if
     if m.castSection.visible then zones.Push({ name: "cast", y: m.castSection.translation[1] })
+    collZone = { name: "collections", y: m.collectionsSection.translation[1] }
+    if m.collectionsSection.visible and m.itemType = "series" then zones.Push(collZone)
     if m.trailersSection.visible then zones.Push({ name: "trailers", y: m.trailersSection.translation[1] })
     if m.boxSetSection.visible then zones.Push({ name: "boxset", y: m.boxSetSection.translation[1] })
+    if m.collectionsSection.visible and m.itemType <> "series" then zones.Push(collZone)
     if m.relatedSection.visible then zones.Push({ name: "related", y: m.relatedSection.translation[1] })
     if m.detailsSection.visible then zones.Push({ name: "details", y: m.detailsSection.translation[1] })
     m.zones = zones
@@ -1199,6 +1228,8 @@ sub focusZone(i as integer)
             if not m.boxSetEntered and m.boxSetMarked > 0 then m.boxSetRow.jumpToRowItem = [0, m.boxSetMarked]
             m.boxSetEntered = true
             m.boxSetRow.setFocus(true)
+        else if z.name = "collections" then
+            m.collectionsRow.setFocus(true)
         else if z.name = "related" then
             m.relatedRow.setFocus(true)
         else if z.name = "details" then
@@ -1763,14 +1794,7 @@ sub onMovieBoxSet(event as object)
         m.boxSetSection.visible = true
     end if
     Diag_log(Diag_join(["[siku-boxsets] movie box set row shown=", m.boxSetSection.visible]))
-    if had <> m.boxSetSection.visible then
-        layoutBody()
-        current = zoneName()
-        buildZones()
-        ' Keep focus on the zone it was in; the row moving in or out shifts the indexes.
-        i = zoneIndexOf(current)
-        if i >= 0 then m.zoneIndex = i
-    end if
+    if had <> m.boxSetSection.visible then relayoutKeepingZone()
 end sub
 
 ' As many films as fit across the screen at the row's poster size, less one slot for Explore all;
@@ -1837,6 +1861,199 @@ sub onBoxSetRowSelected()
     if id = "" or id = Str_orEmpty(m.item.content_id) then return
     ThemeMusic_stop()
     Nav_push("DetailScreen", { itemId: id, itemType: Str_orEmpty(movie["type"]), libraryId: lib })
+end sub
+
+' ---------- Collections the title is in (Silo Android #1007, ItemCollections.brs) ----------
+
+' Reads the search capabilities, then (only when they advertise item_collections) the collections
+' holding a movie or series. On every load and every return to the page, as Android TV's
+' loadCollections: the capability belongs to whichever server and profile is current, so it is read
+' each time rather than kept. A failed read of either keeps the row on screen.
+sub loadItemCollections()
+    if m.item = invalid or not ItemColl_asks(m.itemType) then return
+    m.collSeq = m.collSeq + 1
+    ctx = { itemId: Str_orEmpty(m.item.content_id), seq: m.collSeq }
+    Api_call({ method: "GET", path: "/api/v2/catalog/search/capabilities", timeout: 10, context: ctx }, "onItemCollectionsCaps")
+end sub
+
+' Whether an answer still belongs to the read in flight for the page on screen.
+function collAnswerCurrent(resp as object) as boolean
+    if m.item = invalid or resp.context = invalid then return false
+    return resp.context.seq = m.collSeq and resp.context.itemId = Str_orEmpty(m.item.content_id)
+end function
+
+sub onItemCollectionsCaps(event as object)
+    resp = Api_result(event)
+    if not collAnswerCurrent(resp) then return
+    if not resp.ok or Type(resp.data) <> "roAssociativeArray" then
+        Diag_log(Diag_join(["[siku-detail] collections capability read failed status=", Int(Num_or(resp.status, 0)), "; keeping the row"]))
+        return
+    end if
+    supported = ItemColl_supported(resp.data)
+    word = Session_boolWord(supported)
+    if m.collCapsWord <> word then
+        m.collCapsWord = word
+        Diag_log("[siku-detail] collections capability item_collections=" + word)
+    end if
+    if not supported then
+        ' An older server (or one that dropped the read): no row.
+        m.collRaw = invalid
+        showCollectionsRow(invalid, 0)
+        return
+    end if
+    q = Artwork_query({ image_size: "medium" }, "similar", Theme_posterScale())
+    lib = Str_orEmpty(m.top.params.libraryId)
+    if lib <> "" then q.library_id = lib
+    Api_get(itemPath() + "/collections", q, "onItemCollections", resp.context)
+end sub
+
+sub onItemCollections(event as object)
+    resp = Api_result(event)
+    if not collAnswerCurrent(resp) then return
+    read = invalid
+    if resp.ok then read = ItemColl_read(resp.data)
+    if read = invalid then
+        Diag_log(Diag_join(["[siku-detail] collections read failed status=", Int(Num_or(resp.status, 0)), "; keeping the row"]))
+        return
+    end if
+    m.collRaw = ItemColl_row(read)
+    applyItemCollections()
+end sub
+
+' The libraries this Roku shows the profile: the shell's (ShellScreen publishes them once read),
+' else the ones this page read itself (opened without the shell).
+function collLibraries() as object
+    if m.global.hasField("collectionLibraries") then
+        v = m.global.collectionLibraries
+        if v <> invalid and Type(v) = "roAssociativeArray" then
+            if CollRows_isBool(v.known) then
+                if v.known then return v
+            end if
+        end if
+    end if
+    if m.collLibs <> invalid then return m.collLibs
+    return { known: false, libs: {} }
+end function
+
+' Draws the last read's row once the libraries its server collections need are known. Until then
+' the row on screen stays (Android TV keeps it when the library list cannot be read).
+sub applyItemCollections()
+    raw = m.collRaw
+    shown = collLibraries()
+    if ItemColl_needsLibraries(raw) and shown.known <> true then
+        if not m.collLibsAsked then
+            m.collLibsAsked = true
+            Diag_log("[siku-detail] collections wait for the library list")
+            Api_get("/api/v2/user/libraries", invalid, "onItemCollectionsLibraries")
+        end if
+        return
+    end if
+    row = ItemColl_forTv(raw, shown)
+    showCollectionsRow(row, ItemColl_heldCount(raw, row))
+end sub
+
+sub onItemCollectionsLibraries(event as object)
+    resp = Api_result(event)
+    if not resp.ok or Type(resp.data) <> "roAssociativeArray" then
+        ' A later load asks again.
+        m.collLibsAsked = false
+        Diag_log(Diag_join(["[siku-detail] collections library list read failed status=", Int(Num_or(resp.status, 0)), "; keeping the row"]))
+        return
+    end if
+    m.collLibs = { known: true, libs: CollRows_libraryMap(Settings_withoutHiddenLibraries(Arr_or(resp.data.items))) }
+    if m.collRaw <> invalid then applyItemCollections()
+end sub
+
+' Puts the row on screen (or takes it off), keeping the focused card when the same row is redrawn.
+sub showCollectionsRow(row as dynamic, held as integer)
+    had = m.collectionsSection.visible
+    sig = FormatJson(row)
+    if sig = m.collSig then return
+    m.collSig = sig
+    Diag_log(ItemColl_rowLog(row, held))
+    m.collRow = row
+    if row = invalid then
+        m.collShown = []
+        m.collectionsSection.visible = false
+        m.collectionsRow.content = invalid
+    else
+        renderCollectionsRow(row)
+        m.collectionsSection.visible = true
+    end if
+    if had <> m.collectionsSection.visible then relayoutKeepingZone()
+end sub
+
+sub renderCollectionsRow(row as object)
+    m.collectionsHeader.text = ItemColl_heading(row)
+    root = CreateObject("roSGNode", "ContentNode")
+    rowNode = root.createChild("ContentNode")
+    m.collShown = []
+    if row.kind = "preview" then
+        for each it in row.items
+            node = Content_cardNode(it, "poster")
+            node.cardInsetY = 32
+            rowNode.appendChild(node)
+            m.collShown.Push({ what: "title", card: it })
+        end for
+        explore = rowNode.createChild("ContentNode")
+        Content_ensureFields(explore)
+        explore.addFields({ exploreAll: true })
+        explore.contentId = "explore:collection"
+        explore.itemType = "explore_all"
+        explore.cardStyle = "poster"
+        explore.cardInsetY = 32
+        explore.title = Tx("Explore all")
+        explore.description = Str_orEmpty(row.collection.title)
+        m.collShown.Push({ what: "explore", card: row.collection })
+    else
+        s = m.global.session
+        names = invalid
+        if m.global.hasField("profileNames") then names = m.global.profileNames
+        cards = CollRows_withCaptions(row.cards, CollRows_profileNames(s, names), s.profileId, true)
+        for each c in cards
+            node = Content_cardNode(c, "poster")
+            node.cardInsetY = 32
+            rowNode.appendChild(node)
+            m.collShown.Push({ what: "collection", card: c })
+        end for
+    end if
+    focused = -1
+    rf = m.collectionsRow.rowItemFocused
+    if m.collectionsRow.content <> invalid and rf <> invalid and rf.Count() > 1 then focused = rf[1]
+    m.collectionsRow.content = root
+    if focused > 0 and focused < m.collShown.Count() then m.collectionsRow.jumpToRowItem = [0, focused]
+end sub
+
+' A row appeared or went: the sections under it move, focus keeps the zone it was in (the row moving
+' in or out shifts the indexes).
+sub relayoutKeepingZone()
+    layoutBody()
+    current = zoneName()
+    buildZones()
+    i = zoneIndexOf(current)
+    if i >= 0 then m.zoneIndex = i
+end sub
+
+' A preview title opens its page without the page's library (a collection's titles can live in
+' other libraries, as on the collection's own page); a collection card or Explore all opens the
+' collection's page as a Home card does (CollRows_openParams: a server collection in its own
+' library, a personal one without one). Back returns to the card (the RowList keeps its focus).
+sub onCollectionsRowSelected()
+    sel = m.collectionsRow.rowItemSelected
+    if sel = invalid or sel.Count() < 2 then return
+    idx = sel[1]
+    if idx < 0 or idx >= m.collShown.Count() then return
+    e = m.collShown[idx]
+    ThemeMusic_stop()
+    if e.what = "title" then
+        id = Str_orEmpty(e.card.content_id)
+        Diag_log("[siku-detail] collections title opened")
+        Nav_openItem(id, Str_orEmpty(e.card["type"]), e.card)
+        return
+    end if
+    params = CollRows_openParams(e.card, "", "", "", "", collLibraries().libs)
+    Diag_log("[siku-detail] collections opened from=" + e.what + " kind=" + params.collectionKind + " library=" + Str_orEmpty(params.libraryId))
+    Nav_push("LibraryScreen", params)
 end sub
 
 ' ---------- Trailers & More (TvDetailTrailersSection, silo-android #640 / #641) ----------

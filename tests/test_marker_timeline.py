@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Markers_upNextCreditsStart (Silo Android #694): Up Next waits for the LAST credits range, extended
-back over credits ranges that run into it, so a scene between two credits ranges still plays."""
+"""Markers_finalCreditsStart (Silo Android #694 / #994): the closing credits begin at the LAST credits
+range, extended back over credits ranges that run into it, so a scene between two credits ranges still
+counts as part of the episode; NextUp_crossesPromptPoint (#994): Up Next opens when playback crosses
+the Show Next Up point before the end of the file, never because of a credits marker."""
 import unittest
 
 from brs import check_cases
@@ -14,7 +16,7 @@ def mk(kind, s, e):
 
 class UpNextCredits(unittest.TestCase):
     def test_cases(self):
-        c = "Markers_upNextCreditsStart"
+        c = "Markers_finalCreditsStart"
         check_cases(self, FILES, [
             ("no credits", c, [[mk("intro", 30, 90)]], -1),
             ("no markers", c, [[]], -1),
@@ -33,6 +35,27 @@ class UpNextCredits(unittest.TestCase):
              lambda v: [(x["start"], x["end"]) for x in v] == [(100, 200), (100, 300), (300, 400)]),
         ])
         self.assertTrue(r[0]["ok"])
+
+
+class NextUpPrompt(unittest.TestCase):
+    """Silo Android's NextUpPromptTest: a 48:12 episode whose credits marker starts at 46:31; the
+    marker must not move the prompt (silo-android #910)."""
+
+    def test_cases(self):
+        c = "NextUp_crossesPromptPoint"
+        d = 2892.0
+        check_cases(self, FILES, [
+            ("crossing 30 s before the end", c, [2861.6, 2862.1, d, 30], True),
+            ("crossing 10 s before the end", c, [2881.5, 2882.0, d, 10], True),
+            ("the credits marker's start does not open it", c, [2791.0, 2792.0, d, 30], False),
+            ("already past the point: no reopening", c, [2870.0, 2870.5, d, 30], False),
+            ("a resume past the point (no crossing)", c, [2875.0, 2875.0, d, 30], False),
+            ("At end never opens before the stream ends", c, [2891.0, 2892.0, d, 0], False),
+            ("unknown duration never opens it", c, [10.0, 11.0, 0.0, 30], False),
+            ("landing exactly on the point counts", c, [2861.0, 2862.0, d, 30], True),
+            ("strings from a loose settings value", c, [2861.6, 2862.1, "2892", "30"], True),
+            ("a missing setting is At end", c, [2861.6, 2862.1, d, None], False),
+        ])
 
 
 def bands(v):

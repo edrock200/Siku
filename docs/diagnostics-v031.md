@@ -24,8 +24,10 @@ Console lines (`telnet <roku-ip> 8085`), mock switches and simulator deep-link p
 
 ## Subtitles, audio, Up Next
 
-- `[siku-playback] credits ranges=<n> upnext_at=<s>`: the file's credits ranges; Up Next waits for the
-  last one (Silo Android #694). Mock `--switch credits_twice=1` (two credits ranges on every version).
+- `[siku-playback] credits ranges=<n> closing_at=<s>` (was `upnext_at=` until Silo Android #994): the file's
+  credits ranges and where the closing credits begin (the last range); crossing it marks the episode finished for
+  the series page, while Up Next follows the Show Next Up setting. Mock `--switch credits_twice=1` (two credits
+  ranges on every version).
 - Subtitle selection (`SubtitleSelect.brs`): `subtitle check settle|switch: roku plays <sidecar:<id>|mkv/N|none|url>`
   `(ok)` / `; selected again (listed=…)` / `; reloading at the position` / `after a second selection; left as it is`.
   Captions are suppressed (`Video.suppressCaptions`) while the controls or panel show.
