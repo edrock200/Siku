@@ -333,8 +333,14 @@ end function
 ' embedded_subtitles_v1 asks for native embedded subtitles (PlaybackCaps_nativeEmbedded); it goes
 ' only to a server that advertises native_embedded_limitations_v1, which honours the limitations
 ' a Roku needs (one without it would plan native for files where Roku draws another track).
+' paused_timeout_v1 (Silo Android #1043, silo-roku #107): a session the server ends for staying
+' paused past the administrator's limit then answers progress and replans with 410
+' playback_session_paused_timeout instead of an administrator's playback_session_ended, so the
+' player can say why it left (PlaybackServerEnd.brs). Sent to every server (an older one ignores a
+' client feature it does not know) on every video start and replan, since the server keeps it per
+' attempt; AudioCaps_startBody takes it out again (audio sessions are not timed out).
 function PlaybackCaps_clientFeatures() as object
-    out = ["playback_plan_v3", "hls_subtitle_renditions_v1", "hls_remux_subtitle_renditions_v1"]
+    out = ["playback_plan_v3", "hls_subtitle_renditions_v1", "hls_remux_subtitle_renditions_v1", "paused_timeout_v1"]
     if PlaybackCaps_serverHas("seek_reanchor_v1") then out.Push("seek_reanchor_v1")
     if PlaybackCaps_allRenditionsNegotiable() then out.Push("hls_subtitle_renditions_all_v1")
     if PlaybackCaps_nativeSubtitlesNegotiable() then out.Push("embedded_subtitles_v1")

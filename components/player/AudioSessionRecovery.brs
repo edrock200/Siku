@@ -15,14 +15,11 @@ function AudioSession_isMissing(resp as dynamic) as boolean
     return Str_orEmpty(e.detail) = "Playback session not found" or Str_orEmpty(e.title) = "Playback session not found"
 end function
 
-' 410 playback_session_ended: an administrator stopped the session. Starting a fresh one, even from
-' Retry, would undo that stop. The same rule as PlayerScreen's isSessionEndedByServer.
+' 410 playback_session_ended (an administrator stopped the session) or playback_session_paused_timeout
+' (PlaybackServerEnd.brs; audio starts do not ask for it, so a server sends the first). Starting a
+' fresh one, even from Retry, would undo that stop. The same rule as PlayerScreen's isSessionEndedByServer.
 function AudioSession_isEnded(resp as dynamic) as boolean
-    if resp = invalid or Type(resp) <> "roAssociativeArray" then return false
-    if Num_or(resp.status, 0) <> 410 then return false
-    e = resp.error
-    if e = invalid or Type(e) <> "roAssociativeArray" then return false
-    return Str_orEmpty(e.code) = "playback_session_ended"
+    return PlaybackEnd_reason(resp) <> ""
 end function
 
 ' A progress answer about the session playing now:

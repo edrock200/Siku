@@ -49,6 +49,9 @@ end function
 function AudioCaps_startBody(installation as string, fileId as string, attemptId as string, startPosition as dynamic, persistence as string) as object
     body = PlaybackCaps_startBody(installation, fileId, attemptId, startPosition, invalid, invalid)
     body.progress_persistence = persistence
+    ' The server times out only paused video sessions; Android's audiobook starts do not send
+    ' paused_timeout_v1 either (Silo Android #1043), so an audio session ends only as it did before.
+    body.client_features = PlaybackEnd_withoutFeature(body.client_features)
     ' Android's audiobook player asks for the original stream (QUALITY_ORIGINAL_V3).
     body.quality_preference = "original"
     containers = AudioCaps_containers()

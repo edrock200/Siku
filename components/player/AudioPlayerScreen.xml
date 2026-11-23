@@ -48,6 +48,7 @@
   <script type="text/brightscript" uri="pkg:/components/player/PlaybackCaps.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioCaps.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/PlaybackServerEnd.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioTimeline.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioResume.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AudioSkip.brs" />

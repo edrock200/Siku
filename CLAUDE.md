@@ -303,8 +303,8 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   The simulator draws translucent fills opaque (brs-engine ignores bitmap alpha); `scratchpad/pngfix.py` opens its PNGs.
 - Audiobook session expiry (Silo Android #708, `AudioSessionRecovery.brs`): `[siku-audio] session expired on the server
   (progress 404|play|voice play); starting a fresh one at <s> s (renewal N)`, `… while paused; a fresh one starts on Play at
-  <s> s`, `session expired again; not renewing after 3 renewals`, `the server ended this playback session; not starting
-  another` (410 `playback_session_ended`: Close only), `retry at <s> s`, `retry refused: …`, `play ignored: …`. Mock
+  <s> s`, `session expired again; not renewing after 3 renewals`, `the server ended this playback session
+  (session_ended|paused_timeout); not starting another` (410 `playback_session_ended`: Close only), `retry at <s> s`, `retry refused: …`, `play ignored: …`. Mock
   `--switch audiobook_session=expire|expire_v1|ended|other_404|start_fail` (audiobook sessions only; log `AUDIOBOOK SESSION
   <kind> sid=`, `AUDIO START file= start_position= persistence=`).
 - WAV audiobooks (Silo Android #707, `AudioCaps_wireNames`): a passing `pcm` probe is declared as `pcm_s16le`, `pcm_s24le`
@@ -338,6 +338,18 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   a real roWebSocket, so the simulator runs the whole path.
   Lines on screen together stack bottom-up, earliest at the bottom, each keeping its line while it shows (Silo Android
   #862; `AiLive_stackOrder` / `AiLive_blockText`).
+- Paused too long (Silo Android #1043, silo-roku #107; `PlaybackServerEnd.brs`, host tests `tests/test_paused_timeout.py`):
+  every video start and replan sends the `paused_timeout_v1` client feature (`PlaybackCaps_clientFeatures`; audiobook and
+  music starts take it out again in `AudioCaps_startBody`: the server times out only video). A session left paused past the
+  administrator's limit then answers progress posts and replans with 410 `playback_session_paused_timeout`, handled like an
+  administrator's 410 `playback_session_ended` on every path (progress, failure-recovery / quality / audio / output /
+  subtitle / buffering / reconnect replans, seek reanchor, subtitle adoption): no stop DELETE, no renewal or new attempt,
+  the player leaves and the screen it returns to toasts "Playback stopped because it was paused for too long."
+  (`player.notice.pausedTimeout`; the admin end keeps "An administrator ended this playback session."). Console:
+  `[siku-playback] the server ended this playback session reason=paused_timeout|session_ended via=progress|replan_<kind>|seek_reanchor|subtitle_adopt
+  at <s> s paused=<bool>; leaving playback without a stop`. A media 404/410 goes through the failure-recovery replan, whose
+  410 answer decides (silo-roku's separate end probe is not needed). Mock: `--switch paused_timeout=1|progress|replan`
+  (log `PAUSED_TIMEOUT 410 <progress|replan> sid= advertised=yes|no`; a start without the feature gets `playback_session_ended`).
 - Late stops (Silo Android #954/#955): a stop the server takes (2xx, `PlaybackJobs_isLanded`) sets `homeDirty` and bumps
   `m.global.playbackStopsLanded`; a DetailScreen on top that read before it (the player's 2.5 s `stopTimeout` ran out, or
   a retry delivered it) reads again: `[siku-detail] playback stop landed after the page read; reading again`. Mock:

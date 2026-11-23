@@ -45,6 +45,13 @@ clears one); GET /mock/switch lists them.
   stop_fail=<n>                  the next n DELETE /playback/{id} answer 503 (Siku resends the same stop
                                  after 2, 4, 8 ... s). Log: STOP sid= stop_id= seq= pos= status=
   replan_410=1                   POST /playback/{id}/replan answers 410 playback_session_ended
+  paused_timeout=1|progress|replan
+                                 the server ended the video session for staying paused past the administrator's
+                                 limit (Silo Android #1043, silo-roku #107): POST /playback/{id}/progress and /replan
+                                 (1 = both; progress or replan = that one only) answer 410
+                                 playback_session_paused_timeout when the session's start advertised
+                                 paused_timeout_v1, else 410 playback_session_ended. Audiobook and music sessions
+                                 are left alone. Log: PAUSED_TIMEOUT 410 <progress|replan> sid= advertised=yes|no
   subtitle_providers=<mode>      GET /api/v2/subtitles/providers/status (Silo Android #608; default some): some = a
                                  provider can search, none = no provider enabled (search hidden), denied = the
                                  profile is not allowed, fail = 500, 404 = an older server without the check,
@@ -3887,6 +3894,19 @@ class Handler(BaseHTTPRequestHandler):
                 print("START server_resume=%s" % start, flush=True)
             return self.send(201, playback_decision(sid, start or 0, b.get("file_id") or "42", b))
         m = re.match(r"^/api/v2/playback/([^/]+)/(replan|progress)$", p)
+        pt = str(STATE["switches"].get("paused_timeout") or "") if m and method == "POST" else ""
+        pt_sess = STATE["sessions"].get(m.group(1)) if pt else None
+        if pt and pt in ("1", "both", m.group(2)) and pt_sess is not None and pt_sess.get("progress_persistence") != "client":
+            # The server ended a video session left paused past the administrator's limit (Silo Android
+            # #1043). Only an attempt that advertised paused_timeout_v1 gets the paused-timeout type; others
+            # get an administrator's playback_session_ended. Audio sessions are never timed out.
+            advertised = "paused_timeout_v1" in (pt_sess.get("client_features") or [])
+            line = "PAUSED_TIMEOUT 410 %s sid=%s advertised=%s" % (m.group(2), m.group(1)[:8], "yes" if advertised else "no")
+            print(line, flush=True)
+            LOG.append(line)
+            if advertised:
+                return self.problem(410, "playback_session_paused_timeout", "Playback session paused too long")
+            return self.problem(410, "playback_session_ended", "An administrator ended this playback session")
         if m and method == "POST" and STATE["switches"].get(m.group(2) + "_410"):
             print("SESSION_ENDED 410", m.group(2), flush=True)
             LOG.append("SESSION_ENDED 410 " + m.group(2))

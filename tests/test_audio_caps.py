@@ -7,7 +7,7 @@ import unittest
 from brs import check_cases
 from test_playback_caps import ctx
 
-FILES = ["components/player/AudioCaps.brs", "components/player/PlaybackCaps.brs", "components/common/Settings.brs",
+FILES = ["components/player/AudioCaps.brs", "components/player/PlaybackServerEnd.brs", "components/player/PlaybackCaps.brs", "components/common/Settings.brs",
          "components/common/Utils.brs", "components/common/Content.brs"]
 
 

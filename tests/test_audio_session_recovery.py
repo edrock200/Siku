@@ -6,7 +6,7 @@ import unittest
 
 from brs import check_cases
 
-FILES = ["components/player/AudioSessionRecovery.brs", "components/common/Utils.brs"]
+FILES = ["components/player/AudioSessionRecovery.brs", "components/player/PlaybackServerEnd.brs", "components/common/Utils.brs"]
 
 
 def resp(status, code="", title="", detail=""):

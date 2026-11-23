@@ -205,7 +205,7 @@ sub SeekReanchor_take(resp as object)
     end if
     if isSessionEndedByServer(resp) then
         setBuffering(false)
-        leaveServerEndedSession()
+        leaveServerEndedSession(resp, "seek_reanchor")
         return
     end if
     problem = ""

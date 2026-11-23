@@ -1526,10 +1526,11 @@ sub Subs_takeAdoptReplan(resp as object)
     origin = m.subs.adoptOrigin
     m.subs.adoptId = ""
     Recovery_onReplanAnswered()
-    ' 410 playback_session_ended: an administrator stopped the session; leave as onReplan does.
+    ' 410 playback_session_ended or playback_session_paused_timeout: the server ended the session;
+    ' leave as onReplan does.
     if isSessionEndedByServer(resp) then
         setBuffering(false)
-        leaveServerEndedSession()
+        leaveServerEndedSession(resp, "subtitle_adopt")
         return
     end if
     ok = resp.ok and resp.data <> invalid and resp.data.outcome = "playable" and resp.data.playback_plan <> invalid and PlaybackCaps_planProblem(resp.data) = ""

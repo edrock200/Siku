@@ -3,6 +3,17 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.19.0
+
+From Silo's Android TV and Roku apps (November 23, 2026).
+
+**Better**
+- **Paused too long:** when your server stops a video that was left paused too long, Siku now closes the player and says "Playback stopped because it was paused for too long." instead of the administrator message. Your place is kept, so Play continues from there.
+- Siku no longer tries to restart a session the server ended this way, from any part of the player: changing subtitles, audio or quality, jumping on the timeline, or recovering from a playback error.
+- Translations updated from Silo's latest catalogs.
+
+**Needs testing on a real Roku:** a pause longer than your server's limit, and that the notice is readable (and wraps in German and French) after the player closes.
+
 ## v0.18.0
 
 From Silo's Android TV app (November 22, 2026).

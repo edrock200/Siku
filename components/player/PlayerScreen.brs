@@ -1432,7 +1432,7 @@ sub onProgressResult(event as object)
     ' session must not end this one (or leave the player).
     if resp.context = invalid or Str_orEmpty(resp.context.sid) <> m.sessionId or m.sessionId = "" then return
     if isSessionEndedByServer(resp) then
-        leaveServerEndedSession()
+        leaveServerEndedSession(resp, "progress")
         return
     end if
     if resp.status = 404 or resp.status = 410 then
@@ -1480,21 +1480,28 @@ function renewSession(reason as string) as boolean
     return true
 end function
 
-' 410 playback_session_ended: an administrator stopped this session while the server could not
-' tell the player directly. Renewing would undo that stop (Android TV isPlaybackSessionEnded, #548).
+' The server ended this session for good (PlaybackServerEnd.brs): 410 playback_session_ended, an
+' administrator stopped it while the server could not tell the player directly (Android TV
+' isPlaybackSessionEnded, #548), or 410 playback_session_paused_timeout, it stayed paused past the
+' administrator's limit (Silo Android #1043, silo-roku #107). Renewing would undo that stop.
 function isSessionEndedByServer(resp as object) as boolean
-    if resp = invalid or resp.status <> 410 or resp.error = invalid then return false
-    return Str_orEmpty(resp.error.code) = "playback_session_ended"
+    return PlaybackEnd_reason(resp) <> ""
 end function
 
-' Leaves the player the way a remote stop does, saying why once. The session is already over on
-' the server, so no DELETE is sent for it.
-sub leaveServerEndedSession()
+' Leaves the player the way a remote stop does, saying why once on the screen it returns to (the
+' toast draws over every screen). The session is already over on the server, so no DELETE is sent
+' for it, no renewal or new attempt follows, and Up Next does not carry on. via names the answer
+' (progress, replan kind, seek_reanchor, subtitle_adopt) for the console line.
+sub leaveServerEndedSession(resp as object, via as string)
     if m.closing then return
-    Diag_log("[siku-playback] the server ended this playback session; leaving playback")
+    reason = PlaybackEnd_reason(resp)
+    if reason = "" then reason = "session_ended"
+    Diag_log("[siku-playback] the server ended this playback session reason=" + reason + " via=" + via + " at " + Int(m.position).ToStr() + " s paused=" + PlaybackCaps_str(m.isPaused) + "; leaving playback without a stop")
     m.sessionId = ""
     m.progressTimer.control = "stop"
-    m.global.toast = Tx("An administrator ended this playback session.")
+    ' A full sentence the viewer reads on the screen the player returns to, after the player closes.
+    if m.global.hasField("toastSeconds") then m.global.toastSeconds = 6
+    m.global.toast = PlaybackEnd_notice(reason)
     exitPlayer()
 end sub
 
@@ -3619,7 +3626,7 @@ sub takeReplan(resp as object)
     Recovery_onReplanAnswered()
     if isSessionEndedByServer(resp) then
         setBuffering(false)
-        leaveServerEndedSession()
+        leaveServerEndedSession(resp, "replan_" + kind)
         return
     end if
     failText = Tx("Couldn't change the quality")

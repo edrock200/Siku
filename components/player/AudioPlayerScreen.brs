@@ -807,7 +807,7 @@ sub onProgressResult(event as object)
     ' The error screen is up (the stream failed): Try again starts the fresh session, not this answer.
     if m.errorGroup.visible and action <> "ended" then action = "stop_reporting"
     if action = "ended" then
-        leaveServerEndedSession()
+        leaveServerEndedSession(PlaybackEnd_reason(resp))
     else if action = "renew" then
         renewExpiredSession("progress " + Str_orEmpty(resp.status))
     else if action = "renew_on_play" then
@@ -836,11 +836,12 @@ sub renewExpiredSession(reason as string)
     startFile(tr.fileId, m.localPos, "client")
 end sub
 
-' 410 playback_session_ended: an administrator stopped this session. Stop and say so; neither Play
+' 410 playback_session_ended: an administrator stopped this session (or, never asked for by audio
+' starts, playback_session_paused_timeout; PlaybackServerEnd.brs). Stop and say so; neither Play
 ' nor Try again starts another (Android's sessionEndedByServer). No DELETE: it is already over.
-sub leaveServerEndedSession()
+sub leaveServerEndedSession(reason as string)
     if m.closing or m.endedByServer then return
-    Diag_log("[siku-audio] the server ended this playback session; not starting another")
+    Diag_log("[siku-audio] the server ended this playback session (" + reason + "); not starting another")
     syncBookProgress(true)
     m.endedByServer = true
     m.sessionId = ""
@@ -852,7 +853,7 @@ sub leaveServerEndedSession()
     m.isPaused = true
     m.playBtn.iconUri = "pkg:/images/icons/play.png"
     m.statusLabel.text = ""
-    showError(Tx("An administrator ended this playback session."))
+    showError(PlaybackEnd_notice(reason))
 end sub
 
 ' DELETE the current session with a final file-local sample. Safe to call twice.

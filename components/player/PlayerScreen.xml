@@ -29,6 +29,7 @@
   </interface>
   <script type="text/brightscript" uri="pkg:/components/player/PlayerScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/PlaybackCaps.brs" />
+  <script type="text/brightscript" uri="pkg:/components/player/PlaybackServerEnd.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/SubtitleSuite.brs" />
   <script type="text/brightscript" uri="pkg:/components/player/AiLive.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/AiLiveCues.brs" />
