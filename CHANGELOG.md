@@ -3,6 +3,15 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.20.0
+
+From Silo's Android TV app (November 24, 2026).
+
+**Better**
+- **Sports games show their date:** leagues numbered by year and game (for example "S2026E296") now show each game's date instead, such as "Nov 20, 2026", when your server marks the series that way. You'll see the date on Continue Watching and Home cards, the Home header, the series page (including "Play Nov 20, 2026"), the episode list, the player's title line and Info tab, and Up Next. Games without a date still show their numbers, and other shows are unchanged.
+
+**Needs testing on a real Roku:** the date in the player, Info tab and Up Next, and whether "Play <date>" fits its button in longer languages.
+
 ## v0.19.0
 
 From Silo's Android TV and Roku apps (November 23, 2026).

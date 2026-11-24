@@ -222,6 +222,11 @@ clears one); GET /mock/switch lists them.
   specials=1|flagged             Orbital gets a Specials season of 3 episodes: season 0, listed first as the
                                  server orders seasons (1), or flagged is_specials as season 99 and listed
                                  last (flagged), which the client must still put first (Silo Android #929)
+  sports_labels=1                Orbital is labeled by air date as a Sportarr league is (Silo Android #1035):
+                                 the series, its season details, every episode card / detail and /watch
+                                 carry episode_labels "air_date"; episodes keep their air_date, except S1E5
+                                 (none) and S1E6 ("2024-02-30", not a real day), which keep their numbers.
+                                 The log prints SPORTS LABELS <path> episode_labels=air_date air_date=
   server_resume=<seconds>        a playback start without start_position is planned at <seconds> (the
                                  server's own resume point)
   chapters=<n>                   every version in a watch detail carries n evenly spaced chapters (the player
@@ -691,7 +696,7 @@ def series(i):
         "play_content_id": play[0], "play_season_number": play[1], "first_air_date": "%d-03-04" % year,
         "networks": ["Mock Network"],
         "user_state": {"played": False, "is_favorite": cid in STATE["favorites"], "in_watchlist": cid in STATE["watchlist"]},
-    } | (overlay_series_fields(cid, seasons, eps) if overlays_on() else {})
+    } | (overlay_series_fields(cid, seasons, eps) if overlays_on() else {}) | sports_label_fields(i)
 
 
 def episode_id(series_cid, s, e):
@@ -714,7 +719,23 @@ def episode(si, s, e):
         "user_data": {"position_seconds": pos, "duration_seconds": 2880, "played": cid in STATE["watched"]},
         "user_state": {"played": cid in STATE["watched"], "is_favorite": False, "in_watchlist": False},
         **({"machine_translated_fields": ["overview"]} if si == 0 and s == 1 and e % 2 == 0 else {}),
-    } | episode_artwork_switches(sr, cid, s) | episode_translation_fields(si, s, e)
+    } | episode_artwork_switches(sr, cid, s) | episode_translation_fields(si, s, e) | sports_label_fields(si, s, e)
+
+
+def sports_labeled(si):
+    """--switch sports_labels=1: Orbital's episodes are labeled by air date (episode_labels "air_date")."""
+    return si == 0 and str(STATE["switches"].get("sports_labels") or "") not in ("", "0", "off")
+
+
+def sports_label_fields(si, s=None, e=None):
+    if not sports_labeled(si):
+        return {}
+    out = {"episode_labels": "air_date"}
+    if s == 1 and e == 5:
+        out["air_date"] = None  # undated: keeps "S01E05"
+    elif s == 1 and e == 6:
+        out["air_date"] = "2024-02-30"  # not a real day: keeps its numbers too
+    return out
 
 
 def mock_specials_season(si):
@@ -847,7 +868,7 @@ def find(cid):
                             if episode_id(s["content_id"], sn, en) not in STATE["watched"]), episode_id(s["content_id"], sn, 1))
                 return {"content_id": cid, "type": "season", "title": "Specials" if sn == sp else "Season %d" % sn, "series_id": s["content_id"],
                         "series_title": s["title"], "season_number": sn, "poster_url": s["poster_url"], "backdrop_url": s["backdrop_url"],
-                        "play_content_id": nxt}
+                        "play_content_id": nxt} | sports_label_fields(i)
             for en in range(1, eps + 1):
                 if cid == episode_id(s["content_id"], sn, en):
                     return episode(i, sn, en)
@@ -3757,6 +3778,8 @@ class Handler(BaseHTTPRequestHandler):
             # read names it with file_id.
             asked = (q.get("file_id") or [""])[0]
             print("WATCH %s file_id=%s" % (m.group(1), asked or "-"), flush=True)
+            if d.get("episode_labels"):
+                print("SPORTS LABELS /watch/%s episode_labels=%s air_date=%s" % (m.group(1), d["episode_labels"], d.get("air_date") or "-"), flush=True)
             empty = STATE["switches"].get("empty_inventory")
             if empty and (empty == "always" or m.group(1) not in STATE.setdefault("empty_served", set())):
                 STATE.setdefault("empty_served", set()).add(m.group(1))

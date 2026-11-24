@@ -530,14 +530,15 @@ sub renderHero()
     epLine = ""
     if t = "episode" then
         if not Str_isEmpty(it.series_title) then heading = it.series_title
-        epLine = Str_joinDots([Content_seShort(it.season_number, it.episode_number), it.title])
+        ' "S2 · E8 · Title", or a sports game's air date in place of the code (Silo Android #1035).
+        epLine = Str_joinDots([EpLabel_of(it, "short"), it.title])
     else if t = "season" then
         if not Str_isEmpty(it.series_title) then
             heading = it.series_title
             epLine = Str_orEmpty(it.title)
         end if
     else if t = "series" and m.nextUp <> invalid then
-        epLine = Str_joinDots([Content_seShort(m.nextUp.season_number, m.nextUp.episode_number), m.nextUp.title])
+        epLine = Str_joinDots([EpLabel_of(m.nextUp, "short", seriesEpisodeLabels()), m.nextUp.title])
     end if
 
     logoUrl = Url_resolve(it.logo_url)
@@ -681,6 +682,7 @@ end function
 sub updatePrimary()
     t = m.itemType
     resume = 0.0
+    dated = ""
     label = Tx("Play")
     canPlay = true
     if t = "series" or t = "season" then
@@ -689,7 +691,13 @@ sub updatePrimary()
             resume = resumeOf(ep)
             sn = Str_orEmpty(ep.season_number)
             en = Str_orEmpty(ep.episode_number)
-            if t = "series" then
+            ' A sports series (episode_labels "air_date", Silo Android #1035) reads "Play Nov 20, 2026";
+            ' resuming reads a plain "Resume" ("Resume {0}" names a time, not a date).
+            dated = EpLabel_airDate(EpLabel_labelsOf(ep, seriesEpisodeLabels()), ep.air_date)
+            if dated <> "" then
+                label = TxF("Play {0}", [dated])
+                if resume > 0 then label = Tx("Resume")
+            else if t = "series" then
                 label = TxF("Play S{0}:E{1}", [sn, en])
                 if resume > 0 then label = TxF("Resume S{0}:E{1}", [sn, en])
             else
@@ -699,7 +707,14 @@ sub updatePrimary()
         else
             canPlay = not Str_isEmpty(m.item.play_content_id) or m.episodes.Count() > 0
         end if
-        m.playBtn.fixedWidth = 340
+        ' A dated label outgrows the series slot, so the pill grows from the same minimum.
+        if dated = "" then
+            m.playBtn.minWidth = 0
+            m.playBtn.fixedWidth = 340
+        else
+            m.playBtn.fixedWidth = 0
+            m.playBtn.minWidth = 340
+        end if
     else
         resume = resumeOf(m.item)
         if resume > 0 then label = TxF("Resume {0}", [Time_clock(resume)])
@@ -1360,6 +1375,12 @@ sub loadEpisodes(n as integer)
     Api_get("/api/v2/catalog/series/" + Str_urlEncode(sid) + "/seasons/" + n.ToStr() + "/episodes", Artwork_query({ image_size: "medium" }, "episodes"), "onEpisodes", { season: n, seq: m.episodesSeq })
 end sub
 
+' The series' episode_labels for its episodes (the page's own detail: a series, season or episode
+' of a date-labeled series carries "air_date"; Silo Android #1035).
+function seriesEpisodeLabels() as dynamic
+    return EpLabel_labelsOf(m.item, invalid)
+end function
+
 function airDateText(d as dynamic) as string
     return Time_longDate(d)
 end function
@@ -1433,7 +1454,7 @@ sub onEpisodes(event as object)
         updatePrimary()
         loadPlayDetail()
         if m.itemType = "series" then
-            m.episodeLine.text = Str_joinDots([Content_seShort(found.season_number, found.episode_number), found.title])
+            m.episodeLine.text = Str_joinDots([EpLabel_of(found, "short", seriesEpisodeLabels()), found.title])
             m.episodeLine.visible = m.episodeLine.text <> ""
             layoutHero()
         end if
@@ -1447,7 +1468,7 @@ sub onEpisodes(event as object)
         ' Spoiler protection drops an unwatched episode's still (Content_cardNode) and description.
         node = Content_cardNode(ep, "landscape")
         node.cardInsetY = m.episodeRailGeo.insetY ' headroom for the lifted still (layoutEpisodeRail)
-        node.title = Content_episodeCaptionTitle(ep)
+        node.title = Content_episodeCaptionTitle(ep, seriesEpisodeLabels())
         node.description = Content_episodeCaptionMeta(airDateText(ep.air_date), toInt(ep.runtime)) ' read by the screen reader
         node.addFields({
             eyebrow: ""
@@ -2562,7 +2583,7 @@ sub openEpisodeMenu()
     end if
     acts.Push({ id: "ep_open", label: Tx("Go to Episode") })
     m.menuKind = "episode"
-    m.menu.title = Str_joinDots([Content_seShort(ep.season_number, ep.episode_number), Str_orEmpty(ep.title)])
+    m.menu.title = Str_joinDots([EpLabel_of(ep, "short", seriesEpisodeLabels()), Str_orEmpty(ep.title)])
     m.menu.actions = acts
     m.menu.visible = true
     m.menu.setFocus(true)

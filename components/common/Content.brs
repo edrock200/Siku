@@ -50,7 +50,8 @@ sub Content_fillCard(node as object, card as object, style as string)
     title = Str_orEmpty(card.title)
     subtitle = ""
     if t = "episode" then
-        se = Content_seasonEpisode(card.season_number, card.episode_number)
+        ' The code, or a sports game's air date (EpisodeLabel.brs, Silo Android #1035).
+        se = EpLabel_of(card, "tag")
         if style = "landscape" and not Str_isEmpty(card.series_title) then
             subtitle = Str_joinDots([se, title], " • ")
             title = card.series_title
@@ -299,10 +300,20 @@ function Content_seShort(season as dynamic, episode as dynamic) as string
 end function
 
 ' Episode card caption (EpisodeCardCaption, #644), the same on the Apple and web clients:
-' "S01E02 · Pilot", or the code alone when the episode has no title.
-function Content_episodeCaptionTitle(ep as object) as string
+' "S01E02 · Pilot", or the code alone when the episode has no title. A date-labeled series
+' (episode_labels "air_date", sports; Silo Android #1035) leads with the title alone, since the air
+' date is on the metadata line below; an untitled one shows its air date, or its code when undated.
+' labels: the series' episode_labels when the episode does not carry its own.
+function Content_episodeCaptionTitle(ep as object, labels = invalid as dynamic) as string
     code = "S" + Str_padLeft(Int(Num_or(ep.season_number, 0)).ToStr(), 2) + "E" + Str_padLeft(Int(Num_or(ep.episode_number, 0)).ToStr(), 2)
     title = Str_orEmpty(ep.title).Trim()
+    lab = EpLabel_labelsOf(ep, labels)
+    if EpLabel_byAirDate(lab) then
+        if title <> "" then return title
+        d = EpLabel_airDate(lab, ep.air_date)
+        if d <> "" then return d
+        return code
+    end if
     if title = "" then return code
     return code + " · " + title
 end function
@@ -415,7 +426,7 @@ function Content_metaLine(card as object) as string
     t = LCase(Str_orEmpty(card.type))
     parts = []
     if t = "episode" then
-        parts.Push(Content_seShort(card.season_number, card.episode_number).Replace(" · ", " "))
+        parts.Push(EpLabel_of(card, "spaced"))
         if not Str_isEmpty(card.episode_title) then parts.Push(card.episode_title)
     else
         if card.year <> invalid then parts.Push(Str_orEmpty(card.year))

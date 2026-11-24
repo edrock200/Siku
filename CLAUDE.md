@@ -514,6 +514,15 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   `[siku-detail] seasons listed= specials_first= opens=`. The player's next season never moves into a flagged Specials
   season. Mock `--switch specials=1|flagged` (Orbital: season 0 listed first, or season 99 flagged and listed last; log
   `SEASONS <id> specials=`). Show Series Info (#932/#936-#938) does not apply: Siku's hero never follows rail focus.
+- Sports episodes by air date (Silo Android #1035, `EpisodeLabel.brs`, host tests `tests/test_episode_label.py`): a series
+  the server marks `episode_labels: "air_date"` (Sportarr's S2026E296) shows the episode's `air_date` (`Time_longDate`,
+  "Nov 20, 2026") wherever the code went: Home / Continue Watching cards, the marquee meta, the series hero line and Play
+  pill ("Play Nov 20, 2026", a plain "Resume"; the pill grows from 340 px), the season rail (title alone, date on the meta
+  line), the episode menu title, the player eyebrow / Info pane / phone remote subtitle and Up Next (the next episode with
+  the playing `/watch`'s labels, a shuffle pick with its own card's). Undated or impossible dates (2026-02-30) keep the code;
+  sorting and next-up use the numbers. Every episode code goes through `EpLabel_of` / `EpLabel_text` (styles `tag` S01E02,
+  `short` S2 · E8, `spaced` S2 E8, `dotted` S2·E8); Calendar and Notifications keep their codes. No console line. Mock:
+  `--switch sports_labels=1` (Orbital; S1E5 undated, S1E6 `2024-02-30`; log `SPORTS LABELS /watch/<id> episode_labels= air_date=`).
 - Audiobook pages and player (Silo Android #975, tvOS layouts; `AudiobookFormat.brs`, `CoverPalette.brs`, host tests
   `tests/test_audiobook_format.py`, `tests/test_cover_palette.py`): the detail is an 860 px hero (cover, AUDIOBOOK · GENRE,
   the title without the series locator the server bakes in, gold series line, "by … · read by …", a progress ring with the

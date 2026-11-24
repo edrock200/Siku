@@ -394,7 +394,9 @@ sub onWatch(event as object)
     m.isEpisode = LCase(Str_orEmpty(w.type)) = "episode" and not m.isExtra
     m.seriesTitle = Str_orEmpty(w.series_title)
     if m.isEpisode then
-        tag = Content_seShort(w.season_number, w.episode_number).Replace(" · ", "·")
+        ' "S2·E8", or a sports game's air date: /watch carries episode_labels and air_date (Silo
+        ' Android #1035); the Info pane's Episode row reads this tag too.
+        tag = EpLabel_of(w, "dotted")
         if m.seriesTitle <> "" then
             m.titleLabel.text = m.seriesTitle
             m.epTag.text = Str_joinDots([tag, w.title])
@@ -2509,7 +2511,11 @@ sub renderUpNext()
             if series = "" then series = m.seriesTitle
             m.unSeries.text = series
             m.unSeries.visible = series <> ""
-            tag = Content_seShort(ep.season_number, ep.episode_number).Replace(" · ", "·")
+            ' A sports game's air date in place of the code (Silo Android #1035): a shuffle pick from
+            ' its own card's labels, the next episode from the playing /watch's.
+            nextLabels = invalid
+            if sh = invalid and m.watch <> invalid then nextLabels = m.watch.episode_labels
+            tag = EpLabel_of(ep, "dotted", nextLabels)
             if title = "" then title = Tx("Next Episode")
             m.unEpisode.text = Str_joinDots([tag, title], "  ")
         else

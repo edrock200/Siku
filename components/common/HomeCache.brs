@@ -126,7 +126,7 @@ end function
 ' The card fields Home reads (Content_fillCard and its card overlay data, Content_metaLine, the
 ' marquee, Spoilers.brs, HomeCardActions.brs). Artwork URLs are left out on purpose (see the header).
 function HomeCache_cardKeys() as object
-    return ["id", "content_id", "type", "title", "series_title", "episode_title", "series_id", "season_number", "episode_number", "year", "runtime", "duration_seconds", "position_seconds", "progress_updated_at", "play_content_id", "play_season_number", "content_rating", "watched", "item_source", "library_id", "overview", "rating_imdb", "rating_tmdb", "rating_rt_critic", "rating_rt_audience", "advisory_age", "original_language", "show_status"]
+    return ["id", "content_id", "type", "title", "series_title", "episode_title", "series_id", "season_number", "episode_number", "episode_labels", "air_date", "year", "runtime", "duration_seconds", "position_seconds", "progress_updated_at", "play_content_id", "play_season_number", "content_rating", "watched", "item_source", "library_id", "overview", "rating_imdb", "rating_tmdb", "rating_rt_critic", "rating_rt_audience", "advisory_age", "original_language", "show_status"]
 end function
 
 function HomeCache_trimCard(card as dynamic) as dynamic
