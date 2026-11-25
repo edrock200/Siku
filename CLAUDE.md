@@ -567,6 +567,24 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   `downloadedSegment` time includes the wait for the encoder, so a slow encoder or burn-in would read as a slow link);
   otherwise the estimate goes unsourced and the server does not learn it. `[siku-playback] buffering replan quality= est=
   source=observed_rebuffer|none [(no slow-link claim: no_evidence|no_reading|server_encodes|not_slow)] learned_limit= observed=`.
+- Track memory from the player (Silo Android #680, adapted from silo-roku 3ae62aa / #110; `SeriesChoice.brs`,
+  `StartAudio.brs`, host tests `tests/test_track_memory.py`): a pick in the player panel or from the phone is saved to
+  `PUT /api/v2/{audio,subtitle}-prefs/{series_id|movie id}` once it plays (a server audio change when its replan commits
+  it, `audioCommitted`; a direct-played file's local switch only when the Roku's track list matches the catalog's,
+  `SeriesChoice_directAudioOrdinal`; subtitles are client-side, so selecting the sidecar is the commit) and never for an
+  episode without a series id. `[siku-playback] player pick remembered kind=audio|subtitle track=<n|off>` /
+  `player pick not remembered kind=audio: the Roku lists N track(s), the file M, or the languages differ`. Each save bumps
+  `m.global.playerTrackSaves`; a detail page notes the counts for its key when covered and, shown again, puts that kind's
+  page pick back to Auto and reads the details (and a series page's next-up episode) again: `[siku-detail] player saved
+  audio (page pick <n|auto> -> auto) subtitle (…); reading the details again`. A pick made on the page afterwards stays.
+  Auto's audio readout names what a start that sends no track plays here: the effective track, or (no saved series track
+  decided it, read once per key with GET `/api/v2/audio-prefs/{key}`, 404 = none) the same-language main mix the server
+  plays unconverted in place of one it would convert (silo-server PreferUnconvertedAudioTrackV3), from a render-thread
+  audio probe (`StartAudio_device`). `[siku-detail] saved series audio state=none|saved|unknown status=N`, `auto audio
+  effective=<n> (<codec>) names=<m> (<codec>): the server plays it as is in place of a conversion` / `… names it saved=`.
+  Not ported: following Roku's own `*` overlay (Siku's Video node has `enableUI=false` and the options key opens Siku's
+  panel) and silo-roku's refused-subtitle memory (Siku never asks the server for a burn-in; Auto picks only tracks the
+  Roku renders). Mock: `--switch truehd_default=1` (log `TRUEHD DEFAULT`, `SERIES PREF get|put|delete`).
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

@@ -327,3 +327,57 @@ function SeriesChoice_langKey(code as dynamic) as string
     if folds.DoesExist(c) then return folds[c]
     return c
 end function
+
+' ---------- Player picks and the detail page (adapted from silo-roku 3ae62aa / #110) ----------
+' A pick saved from the player (its panel or the phone remote) bumps a counter per identity, kind
+' and key on m.global.playerTrackSaves. A detail page notes the counters for its series (or movie)
+' when it is covered and compares them when it shows again: a kind the player saved meanwhile goes
+' back to Auto on the page, whose readout then names what the server now remembers, so Play never
+' sends the page's older pick (Android TV's refreshOnReturn adopts the playback return's tracks).
+
+sub SeriesChoice_notePlayerSave(kind as string, key as string)
+    ident = SeriesChoice_identity()
+    if ident = "" or key = "" then return
+    if not m.global.hasField("playerTrackSaves") then m.global.addFields({ playerTrackSaves: {} })
+    st = m.global.playerTrackSaves
+    if st = invalid or Type(st) <> "roAssociativeArray" then st = {}
+    st = AA_copy(st)
+    id = ident + "|" + kind + "|" + key
+    st[id] = Int(Num_or(st[id], 0)) + 1
+    m.global.playerTrackSaves = st
+end sub
+
+' { identity, key, audio, subtitle }: the player saves counted so far for key, or invalid for "".
+function SeriesChoice_playerSaveMark(key as string) as dynamic
+    ident = SeriesChoice_identity()
+    if ident = "" or key = "" then return invalid
+    st = {}
+    if m.global.hasField("playerTrackSaves") then st = m.global.playerTrackSaves
+    if st = invalid or Type(st) <> "roAssociativeArray" then st = {}
+    return { identity: ident, key: key, audio: Int(Num_or(st[ident + "|audio|" + key], 0)), subtitle: Int(Num_or(st[ident + "|subtitle|" + key], 0)) }
+end function
+
+' Which kinds a player saved between two marks of the same identity and key: { audio, subtitle }.
+function SeriesChoice_savedSince(before as dynamic, now as dynamic) as object
+    out = { audio: false, subtitle: false }
+    if before = invalid or now = invalid or Type(before) <> "roAssociativeArray" or Type(now) <> "roAssociativeArray" then return out
+    if Str_orEmpty(before.identity) <> Str_orEmpty(now.identity) or Str_orEmpty(before.key) <> Str_orEmpty(now.key) then return out
+    out.audio = Int(Num_or(now.audio, 0)) > Int(Num_or(before.audio, 0))
+    out.subtitle = Int(Num_or(now.subtitle, 0)) > Int(Num_or(before.subtitle, 0))
+    return out
+end function
+
+' The catalog ordinal a direct-played file's Roku track at position idx is (availableAudioTracks
+' lists an original file's tracks in its order, as Media3 does: Android's positionalOriginalMount),
+' or -1 when the lists differ in length or the track's language contradicts the catalog's, so a
+' list that dropped or reordered tracks never saves another track's preference.
+function SeriesChoice_directAudioOrdinal(catalog as object, rokuTracks as object, idx as integer) as integer
+    if idx < 0 or catalog.Count() = 0 or catalog.Count() <> rokuTracks.Count() or idx >= catalog.Count() then return -1
+    c = catalog[idx]
+    r = rokuTracks[idx]
+    if c = invalid or r = invalid or Type(c) <> "roAssociativeArray" or Type(r) <> "roAssociativeArray" then return -1
+    want = SeriesChoice_langKey(c.language)
+    got = SeriesChoice_langKey(r.Language)
+    if want <> "" and got <> "" and want <> got then return -1
+    return idx
+end function

@@ -25,6 +25,7 @@
   <script type="text/brightscript" uri="pkg:/components/common/Tracks.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Edition.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/SeriesChoice.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common/StartAudio.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/SeriesReturn.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Seasons.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Trailers.brs" />

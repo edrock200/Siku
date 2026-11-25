@@ -3,6 +3,16 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.21.0
+
+From Silo's Roku and Android TV apps (November 25, 2026).
+
+**Better**
+- **Track picks made while watching stick:** an audio or subtitle track you pick in the player is kept for the rest of the series (or the movie). When you go back to the title's page it shows that choice, so pressing Play no longer switches back to the track picked there earlier.
+- **"Auto" names what your Roku will play:** on a title's page, Auto under Audio now names the track your Roku will actually get. For example, it shows the Dolby Digital Plus 5.1 track when the default is TrueHD, which the Roku would otherwise get converted.
+
+**Needs testing on a real Roku:** that the Auto audio readout matches what plays on a TV or receiver that takes Dolby Digital Plus, and audio switches on files played directly.
+
 ## v0.20.0
 
 From Silo's Android TV app (November 24, 2026).

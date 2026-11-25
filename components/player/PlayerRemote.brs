@@ -195,8 +195,7 @@ sub Remote_selectAudio(idx as integer)
             m.video.audioTrack = tracks[idx].Track
             ' As onPickerChosen: a direct-played file lists its tracks in catalog order, and the
             ' pick is remembered for the series (a server-side pick is saved when its replan lands).
-            catalog = serverAudioTracks()
-            if catalog.Count() = tracks.Count() then saveSeriesAudio(SeriesChoice_audioFromCatalog(catalog[idx], idx))
+            saveDirectAudio(tracks, idx)
         end if
     end if
 end sub

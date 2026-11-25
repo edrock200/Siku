@@ -211,6 +211,11 @@ clears one); GET /mock/switch lists them.
                                  Spanish (4) SubRip rows, native_selectable for a client that sent the
                                  original_http native_embedded entry; a start naming one is planned
                                  subtitle.embedded. The log prints SUBTITLE native_entry=
+  truehd_default=1               every movie's and episode's first version has four audio tracks: English TrueHD
+                                 7.1 Atmos (default), English E-AC-3 5.1, Spanish AAC 2.0 and an English AC-3
+                                 commentary; the detail page's Auto then names E-AC-3 on a Roku without TrueHD
+                                 (log TRUEHD DEFAULT). GET /api/v2/audio-prefs/{id} answers 404 when none is
+                                 stored (log SERIES PREF get <kind> <id> stored|none)
   unplayable_sub=1|legacy        every version and plan lists an embedded French track with no codec: flagged
                                  unplayable (1) or, as an older server sends it, only codec-less (legacy).
                                  A start or replan that names it logs SUBTITLE requested unplayable
@@ -932,6 +937,15 @@ def detail(cid):
     ed = STATE["switches"].get("editions")
     if ed and cid == "movie:iron-orchard":
         mock_editions(d, str(ed))
+    if STATE["switches"].get("truehd_default") and d["type"] in ("movie", "episode"):
+        # Auto's audio readout (silo-roku 3ae62aa): a TrueHD 7.1 default the Roku would get converted,
+        # beside an E-AC-3 5.1 main mix in its language the server plays as it is instead.
+        v = d["versions"][0]
+        v["audio_tracks"] = [{"index": 0, "language": "eng", "codec": "truehd", "channels": 8, "layout": "7.1", "profile": "Dolby TrueHD + Dolby Atmos", "default": True, "title": "English"},
+                             {"index": 1, "language": "eng", "codec": "eac3", "channels": 6, "layout": "5.1", "default": False, "title": "English"},
+                             {"index": 2, "language": "spa", "codec": "aac", "channels": 2, "default": False, "title": "Español"},
+                             {"index": 3, "language": "eng", "codec": "ac3", "channels": 6, "layout": "5.1", "default": False, "title": "Commentary"}]
+        print("TRUEHD DEFAULT %s file=%s" % (cid, v["file_id"]), flush=True)
     if STATE["switches"].get("unplayable_sub"):
         # An MKV S_TEXT/WEBVTT track the server's probe did not recognise: no codec (Silo Android #776).
         for v in d["versions"]:
@@ -4482,7 +4496,13 @@ def series_prefs_route(handler, method, p, b):
     store = STATE.setdefault("series_prefs", {})
     k = (prof, kind, sid)
     if method == "GET":
-        return handler.send(200, store.get(k) or {}) or True
+        # As the server's GET /api/v2/audio-prefs/{series_id}: the stored preference, else 404 not_found.
+        stored = store.get(k)
+        LOG.append("SERIES PREF get %s %s %s" % (kind, sid, "stored" if stored else "none"))
+        print("SERIES PREF get %s %s %s" % (kind, sid, "stored" if stored else "none"), flush=True)
+        if not stored:
+            return handler.problem(404, "not_found", "No preference stored for this series") or True
+        return handler.send(200, stored) or True
     if method == "DELETE":
         store.pop(k, None)
         LOG.append("SERIES PREF delete %s %s" % (kind, sid))

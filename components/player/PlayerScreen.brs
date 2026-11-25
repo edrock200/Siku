@@ -388,6 +388,9 @@ sub onWatch(event as object)
     m.seriesKey = ""
     wt = LCase(Str_orEmpty(w.type))
     if not m.isExtra and (wt = "movie" or wt = "episode") then m.seriesKey = SeriesChoice_key(w.series_id, w.content_id)
+    ' An episode whose series is unknown remembers nothing: keyed by the episode, no other episode
+    ' would read it (TvPlayerViewModel.trackChoiceKey).
+    if wt = "episode" and Str_isEmpty(w.series_id) then m.seriesKey = ""
     ' A carried pick only applies within the series (or movie) it was made in.
     if m.carriedSubtitle <> invalid and m.carriedSubtitle.key <> m.seriesKey then m.carriedSubtitle = invalid
     if Str_isEmpty(m.titleLabel.text) then m.titleLabel.text = Str_orEmpty(w.title)
@@ -3296,8 +3299,7 @@ sub onPickerChosen()
             if idx >= 0 and idx < tracks.Count() then
                 m.video.audioTrack = tracks[idx].Track
                 ' A direct-played file lists its tracks in catalog order (applyPlannedAudioTrack).
-                catalog = serverAudioTracks()
-                if catalog.Count() = tracks.Count() then saveSeriesAudio(SeriesChoice_audioFromCatalog(catalog[idx], idx))
+                saveDirectAudio(tracks, idx)
             end if
         end if
     else if kind = "subtitle" then
@@ -3330,16 +3332,34 @@ sub rememberSubtitlePick()
     if m.subtitleIndex < 0 or m.subtitleIndex >= m.subtitleTracks.Count() then
         m.carriedSubtitle = { key: m.seriesKey, off: true }
         SeriesChoice_saveSubtitle(m.seriesKey, SeriesChoice_subtitleOff())
+        SeriesChoice_notePlayerSave("subtitle", m.seriesKey)
+        Diag_log("[siku-playback] player pick remembered kind=subtitle track=off")
         return
     end if
     body = SeriesChoice_subtitleFromPlayer(m.subtitleTracks[m.subtitleIndex])
     m.carriedSubtitle = { key: m.seriesKey, off: false, signature: body.track_signature }
     SeriesChoice_saveSubtitle(m.seriesKey, body)
+    SeriesChoice_notePlayerSave("subtitle", m.seriesKey)
+    Diag_log("[siku-playback] player pick remembered kind=subtitle track=" + Str_orEmpty(body.subtitle_track_index))
 end sub
 
 sub saveSeriesAudio(body as object)
     if m.seriesKey = "" then return
     SeriesChoice_saveAudio(m.seriesKey, body)
+    SeriesChoice_notePlayerSave("audio", m.seriesKey)
+    Diag_log("[siku-playback] player pick remembered kind=audio track=" + Str_orEmpty(body.audio_track_index))
+end sub
+
+' A track picked on a direct-played file (the Video node switched it): remembered by the catalog
+' track it is, never by position alone (SeriesChoice_directAudioOrdinal).
+sub saveDirectAudio(rokuTracks as object, idx as integer)
+    catalog = serverAudioTracks()
+    o = SeriesChoice_directAudioOrdinal(catalog, rokuTracks, idx)
+    if o < 0 then
+        Diag_log("[siku-playback] player pick not remembered kind=audio: the Roku lists " + rokuTracks.Count().ToStr() + " track(s), the file " + catalog.Count().ToStr() + ", or the languages differ")
+        return
+    end if
+    saveSeriesAudio(SeriesChoice_audioFromCatalog(catalog[o], o))
 end sub
 
 sub setSubtitle(idx as integer)

@@ -122,6 +122,17 @@ sub init()
     m.selAudio = invalid        ' ordinal into audio_tracks; invalid = Auto
     m.selSubtitle = invalid     ' combined subtitle index; invalid = Auto; -1 = Off
     m.playDetail = invalid      ' the next-up episode's item detail (series/season pages)
+    ' Player picks (SeriesChoice_playerSaveMark): the counters for this page's series or movie when it
+    ' was covered; a kind the player saved since goes back to Auto when the page shows again.
+    m.trackSaveMark = invalid
+    ' The series audio the server holds for selectorSeriesKey() (GET /audio-prefs): "unknown" until
+    ' read, "none", or the stored body; it decides whether Auto's readout follows the server's
+    ' unconverted swap (StartAudio.brs). The device's audio facts are probed once per show.
+    m.audioPrefKey = ""
+    m.audioPrefSaved = "unknown"
+    m.audioPrefSeq = 0
+    m.startAudioDevice = invalid
+    m.autoAudioLogKey = ""
     m.trailers = []             ' Trailer_entries(m.item)
     m.ytTask = invalid
     m.onTop = false
@@ -193,7 +204,12 @@ sub onScreenShown()
         if not m.loading then load()
         return
     end if
-    if DataRev_current() <> m.loadedRev then refreshUserState()
+    refreshed = false
+    if DataRev_current() <> m.loadedRev then
+        refreshUserState()
+        refreshed = true
+    end if
+    takePlayerTrackSaves(refreshed)
     if m.ytDialog.visible then
         m.ytDialog.setFocus(true)
     else
@@ -220,6 +236,7 @@ end sub
 ' Covered (the player, another page) or closed: theme music never plays under anything else.
 sub onScreenHidden()
     m.onTop = false
+    m.trackSaveMark = SeriesChoice_playerSaveMark(pageTrackKey())
     if m.global.hasField("playbackStopsLanded") then m.global.unobserveFieldScoped("playbackStopsLanded")
     if m.trJob <> invalid then
         m.trTimer.control = "stop"
@@ -819,7 +836,15 @@ end sub
 function audioValueLabel(v as object) as string
     tracks = Arr_or(v.audio_tracks)
     if m.selAudio <> invalid and m.selAudio >= 0 and m.selAudio < tracks.Count() then return Tracks_audioSummary(tracks[m.selAudio], m.selAudio)
-    o = Tracks_autoAudioOrdinal(v)
+    ' Auto names what a start plays here: the effective track, or the same-language track the
+    ' server plays unconverted in its place (StartAudio.brs).
+    eff = Tracks_autoAudioOrdinal(v)
+    o = eff
+    if eff >= 0 and tracks.Count() > 1 then
+        saved = audioSavedState(selectorSeriesKey())
+        o = StartAudio_readoutOrdinal(v, startAudioDevice(), saved)
+        logAutoAudio(v, eff, o, saved)
+    end if
     if o < 0 then return Tx("Auto")
     return TxF("Auto · {0}", [Tracks_audioSummary(tracks[o], o)])
 end function
@@ -832,6 +857,23 @@ function subtitleValueLabel(v as object) as string
     if o < 0 then return Tx("On")
     return Tracks_subtitleSummary(tracks[o], o)
 end function
+
+' One console line each time Auto's audio readout is decided anew for a file.
+sub logAutoAudio(v as object, eff as integer, o as integer, saved as dynamic)
+    tracks = Arr_or(v.audio_tracks)
+    state = "saved"
+    if Type(saved) = "roString" or Type(saved) = "String" then state = saved
+    key = Str_orEmpty(v.file_id) + "|" + eff.ToStr() + "|" + o.ToStr() + "|" + state
+    if key = m.autoAudioLogKey then return
+    m.autoAudioLogKey = key
+    line = "[siku-detail] auto audio effective=" + eff.ToStr() + " (" + StartAudio_family(tracks[eff].codec) + ")"
+    if o <> eff then
+        line = line + " names=" + o.ToStr() + " (" + StartAudio_family(tracks[o].codec) + "): the server plays it as is in place of a conversion"
+    else
+        line = line + " names it saved=" + state
+    end if
+    Diag_log(line)
+end sub
 
 ' Each selector shows only when there is more than one real choice ("Auto" and "Off" don't count):
 ' Edition with two editions or more, Version with two files or more in the current edition.
@@ -998,6 +1040,95 @@ sub onSelectorChosen(kind as string, id as string)
     end if
     updateSelectors()
 end sub
+
+' The key this page's series or movie remembers tracks under (SeriesChoice_key), "" before the item.
+function pageTrackKey() as string
+    if m.item = invalid then return ""
+    if m.itemType = "series" then return Str_orEmpty(m.item.content_id)
+    if m.itemType = "season" then return Str_orEmpty(m.item.series_id)
+    return SeriesChoice_key(m.item.series_id, m.item.content_id)
+end function
+
+' Back on top: when a player saved a pick for this series or movie while the page was covered
+' (adapted from silo-roku 3ae62aa / #110; Android TV's refreshOnReturn drops the page's own picks
+' and takes the playback's), the page's pick of that kind goes back to Auto, whose readout names
+' what the server now remembers, so Play does not send the older track. The edition and version
+' stay. The details are read again (a pending write is laid over them at once); a track picked on
+' the page after this is newer and stays.
+sub takePlayerTrackSaves(refreshed as boolean)
+    before = m.trackSaveMark
+    m.trackSaveMark = invalid
+    kinds = SeriesChoice_savedSince(before, SeriesChoice_playerSaveMark(pageTrackKey()))
+    if not kinds.audio and not kinds.subtitle then return
+    line = "[siku-detail] player saved"
+    if kinds.audio then
+        line = line + " audio (page pick " + selLabel(m.selAudio) + " -> auto)"
+        m.selAudio = invalid
+        m.audioPrefKey = ""   ' read the saved series audio again
+    end if
+    if kinds.subtitle then
+        line = line + " subtitle (page pick " + selLabel(m.selSubtitle) + " -> auto)"
+        m.selSubtitle = invalid
+    end if
+    Diag_log(line + "; reading the details again")
+    m.startAudioDevice = invalid  ' the output may have changed while the player ran
+    m.item = SeriesChoice_overlay(m.item)
+    if m.playDetail <> invalid then m.playDetail = SeriesChoice_overlay(m.playDetail)
+    if not refreshed then refreshUserState()
+    target = selectorTargetId()
+    if (m.itemType = "series" or m.itemType = "season") and target <> "" then
+        ' The next-up episode's effective fields predate the pick: read them again, keeping the version.
+        Api_get("/api/v2/catalog/items/" + Str_urlEncode(target), { image_size: "small" }, "onPlayDetail", { target: target })
+    end if
+    updateSelectors()
+end sub
+
+function selLabel(v as dynamic) as string
+    if v = invalid then return "auto"
+    return Str_orEmpty(v)
+end function
+
+' The series audio the server holds for key, as StartAudio_savedChose reads it: a pick of this
+' device still on its way decides; otherwise the GET answer, read once per key.
+function audioSavedState(key as string) as dynamic
+    if key = "" then return "unknown"
+    p = SeriesChoice_pending("audio", key)
+    if p <> invalid then
+        m.audioPrefKey = ""   ' once it lands, the next readout reads the server again
+        if p.body = invalid then return "none"
+        return p.body
+    end if
+    if key <> m.audioPrefKey then
+        m.audioPrefKey = key
+        m.audioPrefSaved = "unknown"
+        m.audioPrefSeq = m.audioPrefSeq + 1
+        Api_get("/api/v2/audio-prefs/" + Str_urlEncode(key), {}, "onAudioPref", { key: key, seq: m.audioPrefSeq })
+    end if
+    return m.audioPrefSaved
+end function
+
+sub onAudioPref(event as object)
+    resp = Api_result(event)
+    ctx = resp.context
+    if ctx = invalid or Str_orEmpty(ctx.key) <> m.audioPrefKey or Int(Num_or(ctx.seq, -1)) <> m.audioPrefSeq then return
+    state = "unknown"
+    if resp.ok and Type(resp.data) = "roAssociativeArray" and resp.data.DoesExist("audio_track_index") then
+        m.audioPrefSaved = resp.data
+        state = "saved"
+    else if resp.ok or resp.status = 404 then
+        m.audioPrefSaved = "none"
+        state = "none"
+    else
+        m.audioPrefSaved = "unknown"
+    end if
+    Diag_log("[siku-detail] saved series audio state=" + state + " status=" + Str_orEmpty(resp.status))
+    if m.item <> invalid then updateSelectors()
+end sub
+
+function startAudioDevice() as object
+    if m.startAudioDevice = invalid then m.startAudioDevice = StartAudio_device()
+    return m.startAudioDevice
+end function
 
 ' The series (or movie) a selector pick is remembered for (Silo Android #680): the episode the
 ' selectors describe on a series or season page, else this movie or episode; "" for anything else.
