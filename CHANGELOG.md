@@ -3,6 +3,19 @@
 What changed in each version of Siku, in plain language. The newest version is at the top.
 Each release on GitHub shows its section from this file.
 
+## v0.22.0
+
+From Silo's Roku app (November 28, 2026).
+
+**Better**
+- **Skip Recap and Skip Credits work like Skip Intro:** each skip button now shows a filling bar while it waits, and one press skips. It stays up for 10 seconds instead of for as long as that part played, and the time only counts while the video plays.
+- **A missed skip button comes back with the controls:** if the time ran out, bring up the controls and the button is there again, above the progress bar, without a timer. Press Up from the progress bar to reach it.
+- **Back on a skip button only hides it:** it does nothing else, and that button does not come back for that part of the video, not even if you go back to it. Once you skipped a part, or Siku skipped it for you, its button does not come back either.
+- **One skip button at a time:** when an intro sits inside a recap, Skip Intro comes first, then Skip Recap. The Up Next card and the player menu hide the button and pause its timer.
+- After "Intro skipped", Watch Intro now also stays up for 10 seconds while the video plays.
+
+**Needs testing on a real Roku:** the timer bar and where the remote's focus goes as buttons appear and time out.
+
 ## v0.21.0
 
 From Silo's Roku and Android TV apps (November 25, 2026).

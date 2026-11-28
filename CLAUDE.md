@@ -585,6 +585,20 @@ without a device test (see the skill, pitfalls 13 and 14, and `docs/upstream/sil
   Not ported: following Roku's own `*` overlay (Siku's Video node has `enableUI=false` and the options key opens Siku's
   panel) and silo-roku's refused-subtitle memory (Siku never asks the server for a burn-in; Auto picks only tracks the
   Roku renders). Mock: `--switch truehd_default=1` (log `TRUEHD DEFAULT`, `SERIES PREF get|put|delete`).
+- Skip pills (adapted from silo-roku 9b1bccc / #108; `SkipOffer.brs` pure, host tests `tests/test_skip_offer.py`; PlayerScreen
+  `skipEvent` / `renderSkip`, PillButton `timerFill`): Skip Intro, Skip Recap, Skip Credits and the Watch pill after an
+  automatic skip are one-press pills with a 10 s timer drawn as a fill, counted only while playing (1.5 s rebuffer grace) and
+  held while Up Next, the player panel, a dialog or the error screen covers the pill. A press or Back on the timed pill resolves
+  the range for the title (Back does nothing else); automatic skips resolve theirs and land past every overlapping automatic
+  range. A timed-out pill comes back untimed while the controls show: no focus, no Back, Up from the scrubber reaches it, OK
+  still skips; leaving the range forgets the timeout (full timer on return). Intro before recap before credits (a lower pill
+  waits with its time held). Positions far from a seek's target are ignored for 5 s. Offer rules per kind are unchanged
+  (`playback.intro_skip_mode` never shows none, always auto-skips intro and recap, `playback.auto_skip_credits`). Console:
+  `[siku-playback] skip pill offered kind= range=<s>-<e> remaining=10 s` (or `watch=yes`), `skip pill timed out kind= range=`,
+  `skip pill returned kind= range= (no timer, controls up)`, `skip pill resolved kind= range= by=press|back`, `skip
+  auto-skipped kind= range=`, `skip pill pressed kind= watch=yes; back to <s> s`, `skip pill gone kind= watch=yes
+  reason=back|seek`. Simulator: DEBUG deep link `debugSkipPill=1` (8 s after the plan, playback "plays" inside the file's first
+  skip range; mock `--switch every_marker=1` puts a recap at 0-30 s), `debugStallSeconds=off`.
 - When a user report says "video but no sound", "direct play refused" or "fails at once", read
   the `[siku-playback]` line before touching code; the skill's error table maps each to a cause.
 

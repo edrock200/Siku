@@ -9,6 +9,9 @@
     buttonSelected (out, alwaysNotify): set when OK is pressed
     disabled: dims the button and ignores OK
     a11yLabel: what the screen reader says instead of `text` (icon-only buttons)
+    timerFill: a timer drawn as a capsule-shaped fill growing from the left, 0 to 1; below 0 (the
+      default) none. At rest white 16% over the glass; focused, solid over the capsule at 70% (the
+      skip pills, silo-roku 9b1bccc)
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <component name="PillButton" extends="Group">
@@ -27,6 +30,7 @@
     <field id="width" type="integer" value="0" />
     <field id="buttonSelected" type="boolean" alwaysNotify="true" />
     <field id="a11yLabel" type="string" />
+    <field id="timerFill" type="float" value="-1" onChange="applyFill" />
   </interface>
   <script type="text/brightscript" uri="pkg:/components/widgets/PillButton.brs" />
   <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />
@@ -35,6 +39,9 @@
   <children>
     <Group id="body">
       <Poster id="bg" />
+      <Group id="fillClip" visible="false">
+        <Poster id="fillBar" />
+      </Group>
       <Poster id="ring" />
       <Poster id="icon" visible="false" />
       <Label id="label" vertAlign="center" horizAlign="center" />

@@ -67,7 +67,9 @@ sub init()
     m.holdTimer = m.top.findNode("holdTimer")
     m.refreshTimeout = m.top.findNode("refreshTimeout")
     m.stopTimeout = m.top.findNode("stopTimeout")
-    m.captionTimer = m.top.findNode("captionTimer")
+    m.skipTimer = m.top.findNode("skipTimer")
+    m.skipClock = CreateObject("roTimespan")
+    m.skipApplying = false
     m.renditionTimer = m.top.findNode("renditionTimer")
     m.subsCheckTimer = m.top.findNode("subsCheckTimer")
     m.subsLoadTimer = m.top.findNode("subsLoadTimer")
@@ -104,7 +106,7 @@ sub init()
     m.holdTimer.observeField("fire", "onHoldTick")
     m.refreshTimeout.observeField("fire", "onTokenRefreshed")
     m.stopTimeout.observeField("fire", "finishClose")
-    m.captionTimer.observeField("fire", "hideCaption")
+    m.skipTimer.observeField("fire", "onSkipTick")
     m.renditionTimer.observeField("fire", "onRenditionTimeout")
     ' SubtitleSelect.brs: the settle check of a selection, "Loading subtitles…", and captions hidden
     ' while the controls or the panel show (Video.suppressCaptions).
@@ -178,9 +180,11 @@ sub resetPlaybackState()
     m.replanKind = ""             ' "quality" | "output": what the pending replan was for
     m.replanPending = false       ' a replan answer is on its way (voice commands wait for it)
     Replan_reset()                ' the queue of intents waiting for it (PlayerReplanFence.brs)
-    m.skipShownFor = ""
-    m.autoSkipped = {}
-    m.activeMarker = invalid
+    m.skipOffer = invalid          ' SkipOffer.brs: the skip pills' state, built at the first marker check
+    m.skipShownKey = ""            ' the pill drawn (range key, timed or not), "" while hidden
+    m.skipTimerOn = false
+    if m.skipTimer <> invalid then m.skipTimer.control = "stop"
+    if m.skipGroup <> invalid then m.skipGroup.visible = false
     m.nextEpisode = invalid
     m.nextIsEpisode = true
     m.onDeck = []
@@ -232,7 +236,6 @@ sub resetPlaybackState()
     m.resumeAfterStart = invalid
     m.mountPlayed = false       ' the mounted plan has reported "playing" (onVideoPosition trusts readings then)
     m.pauseAfterStart = false   ' a re-anchored seek made while paused stays paused once the new plan plays
-    m.watchBackTarget = invalid
     m.waitingForToken = false
     m.tokenAction = ""
     m.mountToken = ""
@@ -469,6 +472,7 @@ end sub
 ' markers at all (an older server).
 sub collectMarkers()
     m.markers = markersOf(m.version, m.watch)
+    if m.skipOffer <> invalid then SkipOffer_setMarkers(m.skipOffer, m.markers)
     logCreditsRanges()
 end sub
 
@@ -530,6 +534,10 @@ sub applyMarkers(markers as object)
     m.markerTicket = m.markerTicket + 1   ' a reconcile read sent before this is stale now
     m.markers = markers
     m.scrubber.markers = m.markers
+    if m.skipOffer <> invalid then
+        SkipOffer_setMarkers(m.skipOffer, m.markers)
+        skipSync()
+    end if
     logCreditsRanges()
 end sub
 
@@ -889,6 +897,8 @@ sub onStart(event as object)
     Voice_debugArm()
     ' Simulator aid (deep link debugDeepLink=<seconds>): a content deep link arrives mid-playback, once.
     DeepLink_debugArm()
+    ' Simulator aid (deep link debugSkipPill=1): playback "plays" inside the first skip range, once.
+    Skip_debugArm()
     ' Every new session reads the playing file's markers again (the start may also have landed on
     ' another version than the one asked for).
     if planFileId(d.playback_plan) <> m.markersFileId then
@@ -1217,6 +1227,7 @@ end sub
 sub onVideoState()
     st = m.video.state
     Bufq_onVideoState(st)
+    if m.skipOffer <> invalid then skipEvent({ type: "player", state: st })
     SeekReanchor_onStartSeekState(st)
     if st = "buffering" then
         setBuffering(true)
@@ -1335,6 +1346,8 @@ end sub
 sub seekToSource(seconds as float)
     if seconds < 0 then seconds = 0
     if m.duration > 0 and seconds > m.duration - 1 then seconds = m.duration - 1
+    ' Every seek reaches the skip pills at once (SkipOffer.brs; those it sends itself are noted there).
+    if not m.skipApplying and m.skipOffer <> invalid then skipEvent({ type: "seek", seconds: seconds })
     ' A copy remux's open-ended window: the server re-anchors the stream there (PlayerSeekReanchor).
     if SeekReanchor_intercept(seconds) then return
     resetBuffered()
@@ -1759,7 +1772,10 @@ sub showControls()
     ' Position ticks leave the hidden scrubber alone (onVideoPosition); a re-anchor in flight shows its target.
     if not m.scrubbing and m.reanchorBusy <> true then m.scrubber.position = m.position
     m.controls.visible = true
+    ' The controls open on the scrubber or the transport row, never on a pill that comes back with them.
+    if m.controlsZone = "skip" then m.controlsZone = "scrubber"
     positionSkipPill()
+    skipSync()
     focusControls()
     rearmHide()
 end sub
@@ -1786,6 +1802,7 @@ sub hideControls()
     m.controls.visible = false
     m.hideTimer.control = "stop"
     positionSkipPill()
+    skipSync()
     if not m.hud.visible and not m.upNext.visible and not m.errorGroup.visible and not m.picker.visible and not m.subsDialog.visible then
         if m.bufqPill.visible then
             m.bufqFocused = true
@@ -1909,54 +1926,130 @@ function markerLabel(kind as string) as string
 end function
 
 sub checkMarkers()
-    ' Runs on every position tick: nothing to do for a title without markers.
-    if m.markers.Count() = 0 and m.activeMarker = invalid then return
-    active = invalid
-    for each mk in m.markers
-        if mk.kind <> "preview" and m.position >= mk.start and m.position < mk["end"] - 1 then active = mk
-    end for
-    if active = invalid then
-        if m.activeMarker <> invalid and m.watchBackTarget = invalid then hideSkipPill()
-        m.activeMarker = invalid
-        return
-    end if
-    key = active.kind + ":" + Str_orEmpty(active.start)
-    m.activeMarker = active
-    ' Already handled (auto-skipped, or its pill shown): no settings read on every tick.
-    if m.autoSkipped[key] = true or m.skipShownFor = key then return
-    ' playback.intro_skip_mode (never | ask | always) and playback.auto_skip_credits, from the server,
-    ' read once per playback (each read copies m.global.settings).
-    if m.markerPrefs = invalid then m.markerPrefs = { mode: Settings_introSkipMode(), credits: Settings_autoSkipCredits() }
-    mode = m.markerPrefs.mode
-    skipCredits = m.markerPrefs.credits
-    if mode = "never" and not (active.kind = "credits" and skipCredits) then return
-    if (mode = "always" and active.kind <> "credits") or (active.kind = "credits" and skipCredits) then
-        if m.autoSkipped[key] <> true then
-            m.autoSkipped[key] = true
-            seekToSource(active["end"])
-            showSkippedCaption(active)
-        end if
-        return
-    end if
-    if m.skipShownFor <> key then
-        m.skipShownFor = key
-        m.skipBtn.text = markerLabel(active.kind)
-        m.skipBtn.visible = true
-        m.skippedCaption.visible = false
-        m.skipGroup.visible = true
-        positionSkipPill()
-        if not m.controls.visible and not m.hud.visible and not m.upNext.visible and not m.picker.visible and not m.subsDialog.visible then
-            m.skipBtn.setFocus(true)
-        end if
-    end if
+    ' Runs on every position tick: nothing to do for a title without markers. While a re-anchor is
+    ' in flight the node still reports the old stream's position.
+    if m.markers.Count() = 0 and m.skipOffer = invalid then return
+    if m.reanchorBusy = true then return
+    skipEvent({ type: "position", seconds: m.position })
 end sub
 
-sub showSkippedCaption(mk as object)
-    ' Auto-skipped credits (playback.auto_skip_credits) name the credits, not the intro.
-    if mk.kind = "recap" then
+' Whether something hides the skip pill (its timer held): Up Next, the player panel, a picker or
+' dialog, the error screen.
+function skipCovered() as boolean
+    return m.upNext.visible or m.hud.visible or m.picker.visible or m.subsDialog.visible or m.errorGroup.visible
+end function
+
+' Passes one event to the skip pills (SkipOffer.brs), carries out its seeks, prints its decisions and
+' redraws the pill. True when the event was the pill's (Back on a timed pill).
+function skipEvent(ev as object) as boolean
+    s = m.skipOffer
+    if s = invalid then
+        if m.markers = invalid or m.markers.Count() = 0 then return false
+        ' playback.intro_skip_mode (never | ask | always) and playback.auto_skip_credits, from the
+        ' server, read once per playback (each read copies m.global.settings).
+        if m.markerPrefs = invalid then m.markerPrefs = { mode: Settings_introSkipMode(), credits: Settings_autoSkipCredits() }
+        s = SkipOffer_new(m.markers, m.markerPrefs)
+        s.playerState = Str_orEmpty(m.video.state)
+        s.played = m.mountPlayed = true
+        m.skipOffer = s
+    end if
+    ev.now = m.skipClock.TotalMilliseconds()
+    ev.controls = m.controls.visible
+    ev.covered = skipCovered()
+    out = SkipOffer_event(s, ev)
+    for each line in s.log
+        Diag_log("[siku-playback] " + line)
+    end for
+    s.log = []
+    consumed = false
+    m.skipApplying = true
+    for each c in out
+        if c.type = "seek" then
+            seekToSource(c.seconds)
+        else if c.type = "consumed" then
+            consumed = true
+        end if
+    end for
+    m.skipApplying = false
+    renderSkip()
+    return consumed
+end function
+
+' The controls, a panel or Up Next changed: the pill shows, hides or comes back accordingly.
+sub skipSync()
+    if m.skipOffer <> invalid then skipEvent({ type: "sync" })
+end sub
+
+sub onSkipTick()
+    if m.skipOffer = invalid then
+        skipTimerRun(false)
+        return
+    end if
+    skipEvent({ type: "tick" })
+end sub
+
+' Draws SkipOffer_view: the label, the timer fill, the place. Focus goes to a timed pill as it
+' appears (not while a seek is chosen or a panel is open), never to the returned one, and from a
+' pill whose timer ran out under focus to the scrubber.
+sub renderSkip()
+    v = SkipOffer_view(m.skipOffer)
+    if v = invalid then
+        skipTimerRun(false)
+        m.skipShownKey = ""
+        if m.skipGroup.visible then skipPillGone()
+        return
+    end if
+    shownKey = v.key + "|u"
+    if v.watch then
+        shownKey = v.key + "|w"
+    else if v.timed then
+        shownKey = v.key + "|t"
+    end if
+    appeared = shownKey <> m.skipShownKey
+    hadFocus = m.skipBtn.hasFocus()
+    if appeared then
+        m.skipShownKey = shownKey
+        if v.watch then
+            showSkippedCaption(v.kind)
+        else
+            m.skippedCaption.visible = false
+            m.skipBtn.text = markerLabel(v.kind)
+        end if
+    end if
+    if v.timed then m.skipBtn.timerFill = v.progress else m.skipBtn.timerFill = -1.0
+    m.skipGroup.visible = true
+    positionSkipPill()
+    if appeared then
+        if v.timed then
+            if m.controls.visible then
+                if not m.scrubbing then
+                    m.controlsZone = "skip"
+                    m.skipBtn.setFocus(true)
+                end if
+            else if not m.hud.visible and not m.upNext.visible and not m.picker.visible and not m.subsDialog.visible then
+                m.skipBtn.setFocus(true)
+            end if
+        else if hadFocus and m.controls.visible then
+            ' The timer ran out under focus with the controls up: the pill stays, focus goes on.
+            m.controlsZone = "scrubber"
+            focusControls()
+        end if
+    end if
+    skipTimerRun(v.timed)
+end sub
+
+sub skipTimerRun(running as boolean)
+    if running = m.skipTimerOn then return
+    m.skipTimerOn = running
+    if running then m.skipTimer.control = "start" else m.skipTimer.control = "stop"
+end sub
+
+' "Intro skipped" over Watch Intro after an automatic skip (and the same for a recap or credits).
+sub showSkippedCaption(kind as string)
+    if kind = "recap" then
         m.skippedCaption.text = Tx("Recap skipped")
         m.skipBtn.text = Tx("Watch Recap")
-    else if mk.kind = "credits" then
+    else if kind = "credits" then
         m.skippedCaption.text = Tx("Credits skipped")
         m.skipBtn.text = Tx("Watch Credits")
     else
@@ -1964,25 +2057,14 @@ sub showSkippedCaption(mk as object)
         m.skipBtn.text = Tx("Watch Intro")
     end if
     m.skippedCaption.visible = true
-    m.skipBtn.visible = true
-    m.skipGroup.visible = true
-    m.skipShownFor = "watch:" + Str_orEmpty(mk.start)
-    m.watchBackTarget = mk.start
-    positionSkipPill()
-    if not m.controls.visible and not m.hud.visible and not m.upNext.visible and not m.picker.visible and not m.subsDialog.visible then m.skipBtn.setFocus(true)
-    m.captionTimer.control = "start"
 end sub
 
-sub hideCaption()
-    if m.skippedCaption.visible then hideSkipPill()
-end sub
-
-sub hideSkipPill()
+' The pill went (SkipOffer decided, or something covers it): focus it had moves on.
+sub skipPillGone()
     hadFocus = m.skipBtn.hasFocus()
     m.skipGroup.visible = false
     m.skippedCaption.visible = false
-    m.watchBackTarget = invalid
-    m.skipShownFor = ""
+    m.skipBtn.timerFill = -1.0
     if hadFocus then
         ' With the controls up focus goes to the scrubber, as Android TV's pill hand-off does (#928).
         if m.controls.visible then
@@ -2004,19 +2086,11 @@ sub positionSkipPill()
     m.skippedCaption.translation = [1920 - 64 - 400, y - 40]
 end sub
 
+' OK on the pill, timed or returned: Skip seeks past the range and resolves it; Watch seeks back.
 sub onSkipPill()
     viewerInteracted()
-    if m.watchBackTarget <> invalid then
-        seekToSource(m.watchBackTarget)
-        m.captionTimer.control = "stop"
-        hideSkipPill()
-        return
-    end if
-    if m.activeMarker <> invalid then
-        seekToSource(m.activeMarker["end"])
-    end if
-    hideSkipPill()
-    rearmHide()
+    skipEvent({ type: "press" })
+    if m.controls.visible then rearmHide()
 end sub
 
 ' ---------- Next episode (docs/api-spec.md §8.6) ----------
@@ -2612,6 +2686,7 @@ sub keepWatching()
         return
     end if
     m.focusSink.setFocus(true)
+    skipSync()
 end sub
 
 '' The viewer paused, sought or skipped by hand (remote, voice, a phone's remote control): they are
@@ -2713,8 +2788,8 @@ sub closeHud()
     A11y_reset()
     m.hud.visible = false
     m.picker.visible = false
-    if m.skipShownFor <> "" then m.skipGroup.visible = true
     m.focusSink.setFocus(true)
+    skipSync()
 end sub
 
 sub focusHud()
@@ -3882,6 +3957,36 @@ sub Voice_debugFire()
     scene.callFunc("handleTransport", Voice_debugInfo(Str_orEmpty(m.top.params.debugVoice)))
 end sub
 
+' debugSkipPill=1: 8 s after the first plan, the skip pills are told playback plays inside the file's
+' first intro, recap or credits range (brs-engine's Video node plays nothing and reports no position),
+' so the timed pill, its fill, its timeout and the returned pill can be watched in the simulator.
+sub Skip_debugArm()
+    if m.skipDebugDone = true or m.top.params = invalid then return
+    if not PlaybackCaps_truthy(m.top.params.debugSkipPill) then return
+    m.skipDebugDone = true
+    m.skipDebugTimer = CreateObject("roSGNode", "Timer")
+    m.skipDebugTimer.duration = 8
+    m.skipDebugTimer.observeField("fire", "Skip_debugFire")
+    m.top.appendChild(m.skipDebugTimer)
+    m.skipDebugTimer.control = "start"
+end sub
+
+sub Skip_debugFire()
+    if m.closing then return
+    first = invalid
+    for each mk in m.markers
+        if first = invalid and mk.kind <> "preview" then first = mk
+    end for
+    if first = invalid then
+        Diag_log("[siku-playback] debugSkipPill: the file has no skip range")
+        return
+    end if
+    m.position = first.start + 1
+    Diag_log("[siku-playback] debugSkipPill: playing at " + Int(m.position).ToStr() + " s inside " + first.kind)
+    skipEvent({ type: "player", state: "playing" })
+    skipEvent({ type: "position", seconds: m.position })
+end sub
+
 ' debugDeepLink=<seconds>: that long after the first plan, MainScene receives a content deep link
 ' for this item (inputArgs, as Roku sends one while the channel runs), so a link arriving over a
 ' playing player can be watched in the simulator (MainScene replaces the player).
@@ -4005,6 +4110,8 @@ end function
 function handleControlsKey(key as string) as boolean
     rearmHide()
     if key = "back" then
+        ' A timed skip pill is dismissed first, and nothing else happens (silo-roku 9b1bccc).
+        if not m.scrubbing and m.skipGroup.visible and skipEvent({ type: "back" }) then return true
         cancelScrub()
         hideControls()
         return true
@@ -4041,7 +4148,7 @@ function handleControlsKey(key as string) as boolean
         else if key = "left" or key = "right" then
             ' A focused skip pill must not block seeking (Silo Android #928): a tap skips by the
             ' seek interval, a hold starts hold-to-seek, as with the controls hidden; the pill keeps
-            ' focus while it stays up (hideSkipPill hands focus on when it goes).
+            ' focus while it stays up (skipPillGone hands focus on when it goes).
             if key = "left" then HoldSeek_pressOnPill(-1) else HoldSeek_pressOnPill(1)
         else if key = "rewind" or key = "replay" then
             onSkipBack()
@@ -4082,10 +4189,8 @@ end function
 
 function handleCleanKey(key as string) as boolean
     if key = "back" then
-        if m.skipGroup.visible and m.skipBtn.hasFocus() then
-            hideSkipPill()
-            return true
-        end if
+        ' Back on the timed pill dismisses it (resolving its range) and does nothing else.
+        if m.skipGroup.visible and skipEvent({ type: "back" }) then return true
         exitPlayer()
         return true
     else if key = "left" or key = "right" then

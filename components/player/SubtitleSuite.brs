@@ -599,6 +599,7 @@ sub Subs_closeDialog()
     else
         m.focusSink.setFocus(true)
     end if
+    skipSync()
 end sub
 
 sub Subs_onDialogDismissed()

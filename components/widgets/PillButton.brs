@@ -6,6 +6,9 @@ sub init()
     m.ring = m.top.findNode("ring")
     m.icon = m.top.findNode("icon")
     m.label = m.top.findNode("label")
+    m.fillClip = m.top.findNode("fillClip")
+    m.fillBar = m.top.findNode("fillBar")
+    m.timed = false
     m.font = CreateObject("roSGNode", "Font")
     m.font.uri = "pkg:/fonts/Inter-semibold.otf"
     m.label.font = m.font
@@ -56,6 +59,10 @@ sub layout()
     m.bg.height = h
     m.ring.width = w
     m.ring.height = h
+    m.fillBar.uri = m.bg.uri
+    m.fillBar.width = w
+    m.fillBar.height = h
+    m.fillW = w
 
     startX = (w - contentW) / 2
     if hasIcon then
@@ -76,6 +83,7 @@ sub layout()
     m.labelRest = FocusText_rest(m.label)
     m.top.width = Int(w + 0.5) ' `width` is an integer field; a float would be dropped on device (pitfall 5)
     applyState()
+    applyFill()
 end sub
 
 sub applyState()
@@ -87,6 +95,11 @@ sub applyState()
         m.ring.visible = false
         m.label.color = "0x000000FF"
         m.icon.blendColor = "0x000000FF"
+        if m.timed then
+            ' The timer runs solid over the capsule at 70%.
+            m.bg.blendColor = "0xEDEDEDB3"
+            m.fillBar.blendColor = "0xEDEDEDFF"
+        end if
         s = m.top.scaleOnFocus
         m.body.scale = [s, s]
         placeLabel(s)
@@ -116,9 +129,30 @@ sub applyState()
             m.ring.visible = true
             m.ring.blendColor = "0xFFFFFF24"
         end if
+        m.fillBar.blendColor = "0xFFFFFF29"
     end if
     if m.top.disabled then m.body.opacity = 0.4 else m.body.opacity = 1.0
     announce(focused)
+end sub
+
+' The timer fill (timerFill): the full capsule, clipped from the right, so its left end stays round.
+sub applyFill()
+    if m.fillClip = invalid then return
+    f = m.top.timerFill
+    timed = f >= 0
+    if timed <> m.timed then
+        m.timed = timed
+        applyState()
+    end if
+    if f > 1 then f = 1
+    w = 0
+    if m.fillW <> invalid then w = Int(m.fillW * f + 0.5)
+    if not timed or w <= 0 then
+        m.fillClip.visible = false
+        return
+    end if
+    m.fillClip.clippingRect = [0, 0, w, m.top.height]
+    m.fillClip.visible = true
 end sub
 
 ' Screen reader: "Play, button, 1 of 4" among the buttons next to it.

@@ -729,6 +729,7 @@ sub handleDeepLink(args as dynamic)
         if not Str_isEmpty(args.debugSubtitle) then params.subtitleTrackIndex = Int(Val(Str_orEmpty(args.debugSubtitle))) ' PlayerScreen: start with this subtitle (combined index), as a details-page pick
         if not Str_isEmpty(args.debugUrl) then params.url = args.debugUrl ' StreamTestScreen: an extra stream to try
         if not Str_isEmpty(args.debugDeepLink) then params.debugDeepLink = Str_orEmpty(args.debugDeepLink) ' PlayerScreen: a content deep link for the playing item arrives after this many seconds (replaces the player)
+        if not Str_isEmpty(args.debugSkipPill) then params.debugSkipPill = true ' PlayerScreen: 8 s after the first plan, act as if playback plays inside the file's first skip range (the simulator plays nothing)
         if not Str_isEmpty(args.debugVoice) then params.debugVoice = Str_orEmpty(args.debugVoice) ' PlayerScreen / AudioPlayerScreen: inject this voice transport command (<command>[:<seconds>]) once playback has started (the simulator sends none)
         if not Str_isEmpty(args.debugQuery) then params.query = Str_orEmpty(args.debugQuery) ' SearchScreen: search for this
         if not Str_isEmpty(args.debugLibrary) then params.libraryId = Str_orEmpty(args.debugLibrary) ' LibraryScreen: browse this library (mock: 1 = Movies)
